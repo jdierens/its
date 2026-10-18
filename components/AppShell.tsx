@@ -29,6 +29,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { AppRevision, revisionMini, revisionTooltip } from "@/components/AppRevision";
 import { isNavActive, NAV_GROUPS, pageMetaFor, type PageMeta } from "@/lib/nav";
 import { isPublicPath } from "@/lib/publicPaths";
 
@@ -135,9 +136,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           />
         ) : null}
         <aside className="sidebar no-print">
-          <Link href="/items" className="brand" title="ITS">
-            <span className="brand-mark">ITS</span>
-          </Link>
+          <div className="brand-block">
+            <Link href="/items" className="brand" title={revisionTooltip}>
+              <span className="brand-mark">ITS</span>
+              <span className="brand-rev-mini">{revisionMini}</span>
+            </Link>
+            <AppRevision />
+          </div>
           <nav className="sidebar-nav" aria-label="Main">
             {NAV_GROUPS.map((group) => (
               <div className="nav-group" key={group.label}>

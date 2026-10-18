@@ -2,6 +2,8 @@
 
 Inventory app for the ITS Supabase project. A sidebar groups Inventory, Sales, Purchasing, Warehouse, Pricing, and Admin. The item list at `/items` is a dense table. Filter by taxonomy short code and search SKU, name, description, and attribute values on the server (`ilike`). The address keeps `?tax=` and `?q=`. Arrow keys move the cell and Enter opens the item. Create and edit use taxonomies, allowed attribute values, and photos.
 
+Under the ITS title, the sidebar shows the version from `package.json` and a short git commit, for example `v0.9.0 · a1b2c3d`. Hover that line for the full commit, branch, and Pacific build time. A collapsed sidebar keeps a tiny version under the logo. Local builds add a `-dev` suffix and a dev badge. Vercel preview builds show a preview badge; production does not. Those values are `NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_GIT_SHA`, and `NEXT_PUBLIC_BUILD_TIME` (plus the branch and channel), set in `next.config.ts`. They are not secrets. Bump the version on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+
 ## Privacy and terms
 
 `/privacy` and `/terms` are public. They do not use the app shell, and they do not require sign-in. ITS has no login yet. When Google sign-in is added, leave both paths out of the auth check in `middleware.ts`. The list to keep public is `PUBLIC_PATHS` in `lib/publicPaths.ts`.
