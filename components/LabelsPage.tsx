@@ -196,6 +196,7 @@ export function LabelsPage() {
                 description={item.description}
                 code={code}
                 quantity={labelQuantity}
+                shortCode={item.shortCode}
                 printedOn={printedOn}
               />
             </div>
@@ -208,6 +209,7 @@ export function LabelsPage() {
                 description={item.description}
                 code={code}
                 quantity={labelQuantity}
+                shortCode={item.shortCode}
                 printedOn={printedOn}
               />
             ))}
