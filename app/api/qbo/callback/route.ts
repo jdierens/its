@@ -1,6 +1,8 @@
 import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { QBO_STATE_COOKIE } from "@/lib/qbo/config";
+import { writeSyncLog } from "@/lib/qbo/log";
+import { CSRF_MESSAGE } from "@/lib/qbo/messages";
 import { exchangeCode } from "@/lib/qbo/oauth";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +19,17 @@ export async function GET(request: NextRequest) {
   const state = params.get("state") ?? "";
   const realmId = params.get("realmId") ?? "";
   const cookie = request.cookies.get(QBO_STATE_COOKIE)?.value ?? "";
-  if (!code || !realmId || !safeEqual(state, cookie)) {
-    return fail(request, "QuickBooks sign-in could not be verified. Try connecting again.");
+  if (!safeEqual(state, cookie)) {
+    await writeSyncLog({
+      entity: "connection",
+      direction: "oauth",
+      status: "error",
+      message: CSRF_MESSAGE,
+    });
+    return fail(request, CSRF_MESSAGE);
+  }
+  if (!code || !realmId) {
+    return fail(request, "QuickBooks did not return a company connection. Try Connect again.");
   }
 
   try {

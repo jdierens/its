@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 
 type LogEntry = {
   id: string;
@@ -19,6 +20,7 @@ type StatusResponse = {
   redirectUri: string | null;
   serviceRole: boolean;
   connected: boolean;
+  needsReconnect: boolean;
   realmId: string | null;
   expiresAt: string | null;
   lastSyncAt: string | null;
@@ -63,7 +65,8 @@ export function IntegrationsPage() {
     try {
       const response = await fetch("/api/qbo/sync", { method: "POST" });
       const body = (await response.json()) as { message?: string };
-      setNotice(body.message || (response.ok ? "Sync finished." : "Sync failed."));
+      if (body.message === RECONNECT_MESSAGE) setError(RECONNECT_MESSAGE);
+      else setNotice(body.message || (response.ok ? "Sync finished." : "Sync failed."));
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed.");
@@ -93,6 +96,7 @@ export function IntegrationsPage() {
   const connectedFlash = params.get("connected") === "1";
   const configured = status?.configured === true;
   const connected = status?.connected === true;
+  const needsReconnect = status?.needsReconnect === true;
 
   return (
     <main className="page">
@@ -125,6 +129,7 @@ export function IntegrationsPage() {
                 <dd>{status.lastSyncAt ? formatWhen(status.lastSyncAt) : "Never"}</dd>
               </div>
             </dl>
+            {needsReconnect ? <p className="banner error">{RECONNECT_MESSAGE}</p> : null}
             {status.message ? <p className="banner error">{status.message}</p> : null}
             {!configured ? (
               <p className="hint">
@@ -137,7 +142,11 @@ export function IntegrationsPage() {
               <code>{status.redirectUri || LOCAL_REDIRECT}</code>
             </p>
             <div className="actions">
-              {configured && !connected ? (
+              {configured && needsReconnect ? (
+                <a className="button" href="/api/qbo/connect">
+                  Reconnect
+                </a>
+              ) : configured && !connected ? (
                 <a className="button" href="/api/qbo/connect">
                   Connect
                 </a>
@@ -146,7 +155,7 @@ export function IntegrationsPage() {
                   Connect
                 </button>
               )}
-              <button type="button" onClick={syncNow} disabled={!connected || busy !== null}>
+              <button type="button" onClick={syncNow} disabled={(!connected && !needsReconnect) || busy !== null}>
                 {busy === "sync" ? "Syncing…" : "Sync now"}
               </button>
               <button

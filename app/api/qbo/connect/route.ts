@@ -1,11 +1,12 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { QBO_STATE_COOKIE, authorizeUrl, readQboConfig } from "@/lib/qbo/config";
+import { authorizationRedirect } from "@/lib/qbo/oauth";
+import { QBO_STATE_COOKIE, readQboConfig } from "@/lib/qbo/config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const config = readQboConfig();
   if (!config) {
     return NextResponse.redirect(
@@ -16,7 +17,10 @@ export function GET(request: NextRequest) {
   }
 
   const state = randomBytes(24).toString("hex");
-  const response = NextResponse.redirect(authorizeUrl(config, state));
+  const response = NextResponse.redirect(await authorizationRedirect(config, state));
+  // httpOnly, SameSite=Lax, and a 10 minute max-age. Secure is set in production,
+  // where the app is served over HTTPS. Local http development omits Secure so
+  // the browser will store the cookie.
   response.cookies.set(QBO_STATE_COOKIE, state, {
     httpOnly: true,
     sameSite: "lax",

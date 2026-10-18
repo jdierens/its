@@ -21,6 +21,7 @@ export async function GET() {
   const config = readQboConfig();
   const serviceRole = Boolean(getServiceSupabase());
   let connected = false;
+  let needsReconnect = false;
   let realmId: string | null = null;
   let expiresAt: string | null = null;
   let message: string | null = null;
@@ -31,6 +32,7 @@ export async function GET() {
     try {
       const status = await connectionStatus();
       connected = status.connected;
+      needsReconnect = status.needsReconnect;
       realmId = status.realmId;
       expiresAt = status.expiresAt;
     } catch (error) {
@@ -48,6 +50,7 @@ export async function GET() {
       redirectUri: config?.redirectUri ?? null,
       serviceRole,
       connected,
+      needsReconnect,
       realmId,
       expiresAt,
       lastSyncAt,

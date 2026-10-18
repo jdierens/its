@@ -4,28 +4,35 @@ const MAX_ATTEMPTS = 4;
 let nextAllowedAt = 0;
 
 export type QboResult<T> =
-  | { ok: true; status: number; data: T }
-  | { ok: false; status: number; message: string; code: string | null };
+  | { ok: true; status: number; data: T; intuitTid: string | null }
+  | { ok: false; status: number; message: string; code: string | null; intuitTid: string | null };
 
 export async function qboRequest<T>(options: {
   method: "GET" | "POST";
   url: string;
   token: string;
   body?: unknown;
+  refresh?: () => Promise<string>;
+  gapMs?: number;
+  fetchImpl?: typeof fetch;
 }): Promise<QboResult<T>> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const gapMs = options.gapMs ?? MIN_GAP_MS;
+  let token = options.token;
+  let authRetried = false;
   let last: QboResult<T> | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     const now = Date.now();
     if (now < nextAllowedAt) await sleep(nextAllowedAt - now);
-    nextAllowedAt = Date.now() + MIN_GAP_MS;
+    nextAllowedAt = Date.now() + gapMs;
 
     let response: Response;
     try {
-      response = await fetch(options.url, {
+      response = await fetchImpl(options.url, {
         method: options.method,
         headers: {
-          Authorization: `Bearer ${options.token}`,
+          Authorization: `Bearer ${token}`,
           Accept: "application/json",
           ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
         },
@@ -34,7 +41,7 @@ export async function qboRequest<T>(options: {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "QuickBooks request failed.";
-      last = { ok: false, status: 0, message, code: null };
+      last = { ok: false, status: 0, message, code: null, intuitTid: null };
       if (attempt < MAX_ATTEMPTS) {
         await sleep(500 * attempt);
         continue;
@@ -42,6 +49,7 @@ export async function qboRequest<T>(options: {
       return last;
     }
 
+    const intuitTid = response.headers.get("intuit_tid");
     if (response.status === 429 && attempt < MAX_ATTEMPTS) {
       const retryAfter = Number(response.headers.get("Retry-After"));
       const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000 * attempt;
@@ -53,17 +61,27 @@ export async function qboRequest<T>(options: {
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       const fault = readFault(data);
+      if (
+        !authRetried &&
+        options.refresh &&
+        isExpiredAccessToken(response.status, fault.code, fault.message)
+      ) {
+        authRetried = true;
+        token = await options.refresh();
+        continue;
+      }
       return {
         ok: false,
         status: response.status,
         message: fault.message || `QuickBooks request failed (${response.status}).`,
         code: fault.code,
+        intuitTid,
       };
     }
-    return { ok: true, status: response.status, data: data as T };
+    return { ok: true, status: response.status, data: data as T, intuitTid };
   }
 
-  return last ?? { ok: false, status: 429, message: "QuickBooks rate limit persisted.", code: "429" };
+  return last ?? { ok: false, status: 429, message: "QuickBooks rate limit persisted.", code: "429", intuitTid: null };
 }
 
 export function readFault(body: unknown): { message: string; code: string | null } {
@@ -100,6 +118,11 @@ export function isStaleSyncToken(code: string | null, message: string): boolean 
   return code === "5010" || /stale object/i.test(message);
 }
 
+function isExpiredAccessToken(status: number, code: string | null, message: string): boolean {
+  return status === 401 || code === "3200" || /authenticationfailed/i.test(message) || /token expired/i.test(message);
+}
+
 function sleep(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
