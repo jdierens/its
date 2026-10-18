@@ -65,6 +65,87 @@ export function fitNameFontPx(text: string): number {
   return best;
 }
 
+function widthWithSpacing(
+  text: string,
+  fontSizePx: number,
+  weight: number,
+  letterSpacingPx: number,
+): number {
+  const probe = document.createElement("span");
+  probe.textContent = text;
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.whiteSpace = "nowrap";
+  probe.style.fontWeight = String(weight);
+  probe.style.fontFamily = "Helvetica, Arial, sans-serif";
+  probe.style.fontSize = `${fontSizePx}px`;
+  probe.style.lineHeight = "1";
+  probe.style.letterSpacing = `${letterSpacingPx}px`;
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width;
+}
+
+function fitCaptionToWidth(
+  text: string,
+  targetWidth: number,
+): { fontPx: number; letterSpacingPx: number } {
+  let fontPx = (2.6 * 96) / 25.4;
+  if (targetWidth <= 0) return { fontPx, letterSpacingPx: 0 };
+  let natural = measuredWidth(text, fontPx, 400);
+  if (natural > targetWidth) {
+    let low = 4;
+    let high = fontPx;
+    for (let step = 0; step < 14; step += 1) {
+      const mid = (low + high) / 2;
+      if (measuredWidth(text, mid, 400) <= targetWidth) {
+        fontPx = mid;
+        low = mid;
+      } else {
+        high = mid;
+        fontPx = mid;
+      }
+    }
+    natural = measuredWidth(text, fontPx, 400);
+  }
+  const gaps = Math.max(text.length - 1, 1);
+  let letterSpacingPx = Math.max(0, targetWidth - natural) / gaps;
+  const spaced = widthWithSpacing(text, fontPx, 400, letterSpacingPx);
+  if (spaced > natural && Math.abs(spaced - targetWidth) > 0.4) {
+    letterSpacingPx *= (targetWidth - natural) / (spaced - natural);
+  }
+  return { fontPx, letterSpacingPx };
+}
+
+function capTopGapPx(fontSizePx: number, weight: number): number {
+  const probe = document.createElement("span");
+  probe.textContent = "H";
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.fontWeight = String(weight);
+  probe.style.fontFamily = "Helvetica, Arial, sans-serif";
+  probe.style.fontSize = `${fontSizePx}px`;
+  probe.style.lineHeight = "1";
+  const marker = document.createElement("span");
+  marker.style.display = "inline-block";
+  marker.style.width = "0";
+  marker.style.height = "0";
+  probe.appendChild(marker);
+  document.body.appendChild(probe);
+  const baselineFromTop = marker.getBoundingClientRect().top - probe.getBoundingClientRect().top;
+  probe.remove();
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return 0;
+  context.font = `${weight} ${fontSizePx}px Helvetica, Arial, sans-serif`;
+  const ascent = context.measureText("H8").actualBoundingBoxAscent || 0;
+  return baselineFromTop - ascent;
+}
+
 function capHeightMm(fontSizePx: number): number {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
@@ -110,8 +191,10 @@ export function ItemLabel({
   const svgRef = useRef<SVGSVGElement>(null);
   const nameRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const shortRef = useRef<HTMLDivElement>(null);
+  const qtyRef = useRef<HTMLElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
+  const captionRef = useRef<HTMLDivElement>(null);
   const shownShortCode = shortCode?.trim().toUpperCase() || null;
   const descriptionSize = description.length > 90 ? "2mm" : "2.3mm";
   const displayName = labelName(name);
@@ -171,20 +254,56 @@ export function ItemLabel({
     const svgWidth = parseFloat(svg.getAttribute("width") || "");
     if (codeEl && Number.isFinite(svgWidth) && svgWidth > 0) {
       codeEl.style.fontSize = `${fitCodeFontPx(code, svgWidth)}px`;
+      codeEl.style.width = `${svgWidth}px`;
     }
 
-    const short = shortRef.current;
-    const bottom = bottomRef.current;
-    if (short && bottom && shownShortCode) {
-      const maxShortPx = (8.4 * 96) / 25.4;
-      let size = maxShortPx;
-      short.style.fontSize = `${size}px`;
-      let guard = 0;
-      while (bottom.scrollWidth > bottom.clientWidth + 0.5 && size > 12 && guard < 8) {
-        size *= bottom.clientWidth / Math.max(bottom.scrollWidth, 1);
-        short.style.fontSize = `${size}px`;
-        guard += 1;
+    const qtyEl = qtyRef.current;
+    const shortEl = shortRef.current;
+    const dateEl = dateRef.current;
+    const captionEl = captionRef.current;
+    const bigPx = (8.4 * 96) / 25.4;
+    let shortPx = bigPx;
+    let qtyPx = bigPx;
+    if (shownShortCode) {
+      const innerPx = ((90 - 3) * 96) / 25.4;
+      const gapPx = (2 * 96) / 25.4;
+      const barsPx = Number.isFinite(svgWidth) ? svgWidth : 0;
+      let shortWidth = measuredWidth(shownShortCode, shortPx, 700);
+      let qtyWidth = measuredWidth(quantity || "0", qtyPx, 700);
+      const available = innerPx - barsPx - gapPx * 2;
+      if (available > 0 && shortWidth + qtyWidth > available) {
+        const scale = available / (shortWidth + qtyWidth);
+        shortPx = Math.max(12, shortPx * scale);
+        qtyPx = Math.max(12, qtyPx * scale);
+        shortWidth = measuredWidth(shownShortCode, shortPx, 700);
       }
+      if (shortEl) {
+        shortEl.style.fontSize = `${shortPx}px`;
+        shortEl.style.width = `${shortWidth}px`;
+        shortEl.style.transform = `translateY(${-capTopGapPx(shortPx, 700)}px)`;
+      }
+      if (dateEl) {
+        const fitted = fitCaptionToWidth(printedOn, shortWidth);
+        dateEl.style.fontSize = `${fitted.fontPx}px`;
+        dateEl.style.letterSpacing = `${fitted.letterSpacingPx}px`;
+        dateEl.style.width = `${shortWidth}px`;
+        if (captionEl) captionEl.style.fontSize = `${fitted.fontPx}px`;
+      }
+    } else if (dateEl) {
+      const captionPx = (2.6 * 96) / 25.4;
+      const dateWidth = measuredWidth(printedOn, captionPx, 400);
+      dateEl.style.fontSize = "";
+      dateEl.style.letterSpacing = "0px";
+      dateEl.style.width = `${dateWidth}px`;
+      if (shortEl) {
+        shortEl.style.width = `${dateWidth}px`;
+        shortEl.style.transform = "";
+      }
+      if (captionEl) captionEl.style.fontSize = "";
+    }
+    if (qtyEl) {
+      qtyEl.style.fontSize = `${qtyPx}px`;
+      qtyEl.style.transform = `translateY(${-capTopGapPx(qtyPx, 700)}px)`;
     }
   }, [code, shownShortCode, quantity, printedOn]);
 
@@ -201,24 +320,35 @@ export function ItemLabel({
       <div className="item-label-desc" style={{ fontSize: descriptionSize }}>
         {description}
       </div>
-      <div ref={bottomRef} className="item-label-bottom">
-        <div className="item-label-barcode">
-          <svg ref={svgRef} role="img" aria-label={`Code 128 barcode for ${code}`} />
+      <div className="item-label-bottom">
+        <div className="item-label-values">
+          <svg
+            ref={svgRef}
+            className="item-label-bars"
+            role="img"
+            aria-label={`Code 128 barcode for ${code}`}
+          />
+          <strong ref={qtyRef} className="item-label-qty">
+            {quantity}
+          </strong>
+          <div
+            ref={shortRef}
+            className="item-label-short"
+            data-short-code={shownShortCode ?? ""}
+          >
+            {shownShortCode}
+          </div>
+        </div>
+        <div className="item-label-captions">
           <div ref={codeRef} className="item-label-code">
             {code}
           </div>
-        </div>
-        <div className="item-label-qty">
-          <span>Qty</span>
-          <strong>{quantity}</strong>
-        </div>
-        <div className="item-label-end">
-          {shownShortCode ? (
-            <div ref={shortRef} className="item-label-short" data-short-code={shownShortCode}>
-              {shownShortCode}
-            </div>
-          ) : null}
-          <div className="item-label-date">{printedOn}</div>
+          <div ref={captionRef} className="item-label-caption">
+            QTY
+          </div>
+          <div ref={dateRef} className="item-label-date">
+            {printedOn}
+          </div>
         </div>
       </div>
     </article>
@@ -265,27 +395,61 @@ export const LABEL_PRINT_CSS = `
 
 .item-label-bottom {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 2mm;
+  flex-direction: column;
+  row-gap: 0.45mm;
   min-height: 11mm;
 }
 
-.item-label-barcode {
-  flex: 0 1 auto;
-  max-width: 46mm;
+.item-label-values,
+.item-label-captions {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  column-gap: 2mm;
 }
 
-.item-label-barcode svg {
+.item-label-values {
+  align-items: flex-start;
+}
+
+.item-label-captions {
+  align-items: baseline;
+}
+
+.item-label-bars {
+  flex: 0 0 auto;
   display: block;
+  max-width: 46mm;
   shape-rendering: crispEdges;
 }
 
+.item-label-qty,
+.item-label-caption {
+  flex: 1 1 auto;
+  text-align: center;
+}
+
+.item-label-qty {
+  font-size: 8.4mm;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.item-label-short,
+.item-label-date {
+  flex: 0 0 auto;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.item-label-short {
+  font-size: 8.4mm;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
 .item-label-code {
-  margin-top: 0.3mm;
+  flex: 0 0 auto;
   font-size: 5mm;
   font-weight: 700;
   line-height: 1;
@@ -294,48 +458,11 @@ export const LABEL_PRINT_CSS = `
   font-variant-numeric: tabular-nums;
 }
 
-.item-label-qty {
-  flex: 1;
-  text-align: center;
-}
-
-.item-label-qty span {
-  display: block;
-  font-size: 2mm;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.item-label-qty strong {
-  font-size: 8.4mm;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.item-label-end {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: flex-end;
-}
-
-.item-label-short {
-  font-size: 8.4mm;
-  font-weight: 700;
-  line-height: 1;
-  text-align: right;
-  white-space: nowrap;
-  letter-spacing: 0;
-}
-
+.item-label-caption,
 .item-label-date {
-  margin-top: 0.2mm;
   font-size: 2.6mm;
+  font-weight: 400;
   line-height: 1;
-  text-align: right;
-  white-space: nowrap;
 }
 
 .label-frame {
