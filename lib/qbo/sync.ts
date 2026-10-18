@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ReconnectError, TokenRequestError } from "@/lib/qbo/auth";
 import { companyUrl, type QboConfig } from "@/lib/qbo/config";
-import { isStaleSyncToken, qboRequest } from "@/lib/qbo/http";
+import { isStaleSyncToken, qboRequest, type QboResult } from "@/lib/qbo/http";
 import { writeSyncLog } from "@/lib/qbo/log";
+import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import {
   formatQboTime,
   fromQbo,
@@ -15,7 +17,7 @@ import {
   type ContactKind,
   type SyncStatus,
 } from "@/lib/qbo/map";
-import { validAccessToken } from "@/lib/qbo/oauth";
+import { forceRefreshAccessToken, validAccessToken } from "@/lib/qbo/oauth";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
 
 const PAGE_SIZE = 100;
@@ -37,6 +39,22 @@ const SELECT_COLUMNS =
 
 let syncing = false;
 
+type TokenBox = { token: string };
+
+async function authed<T>(box: TokenBox, method: "GET" | "POST", url: string, body?: unknown): Promise<QboResult<T>> {
+  return qboRequest<T>({
+    method,
+    url,
+    token: box.token,
+    body,
+    refresh: async () => {
+      const next = await forceRefreshAccessToken();
+      box.token = next.access_token;
+      return next.access_token;
+    },
+  });
+}
+
 export async function runSync(): Promise<SyncReport> {
   if (syncing) throw new Error("A QuickBooks sync is already running.");
   syncing = true;
@@ -46,25 +64,14 @@ export async function runSync(): Promise<SyncReport> {
     const admin = getServiceSupabase();
     if (!admin) throw new Error("Set SUPABASE_SERVICE_ROLE_KEY on the server.");
     const { config, connection } = await validAccessToken();
-    await pushKind(admin, config, connection.realm_id, connection.access_token, "customer", report);
+    const box: TokenBox = { token: connection.access_token };
+    await pushKind(admin, config, connection.realm_id, box, "customer", report);
     const refreshed = await validAccessToken();
-    await pushKind(
-      admin,
-      refreshed.config,
-      refreshed.connection.realm_id,
-      refreshed.connection.access_token,
-      "vendor",
-      report,
-    );
+    box.token = refreshed.connection.access_token;
+    await pushKind(admin, refreshed.config, refreshed.connection.realm_id, box, "vendor", report);
     const pullAuth = await validAccessToken();
-    await pullChanges(
-      admin,
-      pullAuth.config,
-      pullAuth.connection.realm_id,
-      pullAuth.connection.access_token,
-      startedAt,
-      report,
-    );
+    box.token = pullAuth.connection.access_token;
+    await pullChanges(admin, pullAuth.config, pullAuth.connection.realm_id, box, startedAt, report);
     report.message = `Pushed ${report.pushed}, pulled ${report.pulled}, conflicts ${report.conflicts}, errors ${report.errors}.`;
     await writeSyncLog({
       entity: "sync",
@@ -83,13 +90,20 @@ export async function runSync(): Promise<SyncReport> {
   } catch (error) {
     const message = error instanceof Error ? error.message : "QuickBooks sync failed.";
     report.errors += 1;
-    report.message = message;
+    report.message = message === RECONNECT_MESSAGE ? RECONNECT_MESSAGE : message;
+    const intuitTid =
+      error instanceof ReconnectError || error instanceof TokenRequestError
+        ? error.intuitTid
+        : error && typeof error === "object" && "intuitTid" in error && (typeof error.intuitTid === "string" || error.intuitTid === null)
+          ? error.intuitTid
+          : null;
     await writeSyncLog({
       entity: "sync",
       direction: "pull",
       status: "error",
-      message,
+      message: report.message,
       startedAt,
+      detail: { intuitTid },
     });
     return report;
   } finally {
@@ -101,7 +115,7 @@ async function pushKind(
   admin: SupabaseClient,
   config: QboConfig,
   realmId: string,
-  token: string,
+  box: TokenBox,
   kind: ContactKind,
   report: SyncReport,
 ) {
@@ -111,7 +125,7 @@ async function pushKind(
     .in("sync_status", ["local", "pending", "error"]);
   if (error) throw new Error(error.message);
   for (const row of (data ?? []) as ContactRecord[]) {
-    await pushOne(admin, config, realmId, token, kind, row, report);
+    await pushOne(admin, config, realmId, box, kind, row, report);
   }
 }
 
@@ -119,7 +133,7 @@ async function pushOne(
   admin: SupabaseClient,
   config: QboConfig,
   realmId: string,
-  token: string,
+  box: TokenBox,
   kind: ContactKind,
   row: ContactRecord,
   report: SyncReport,
@@ -132,19 +146,20 @@ async function pushOne(
     return;
   }
 
-  const result = await qboRequest<Record<string, unknown>>({
-    method: "POST",
-    url: companyUrl(config, realmId, path),
-    token,
-    body: toQboBody(kind, row, mode),
-  });
+  const result = await authed<Record<string, unknown>>(
+    box,
+    "POST",
+    companyUrl(config, realmId, path),
+    toQboBody(kind, row, mode),
+  );
 
+  if (!result.ok && result.message === RECONNECT_MESSAGE) throw new ReconnectError(result.intuitTid);
   if (!result.ok && isStaleSyncToken(result.code, result.message) && row.qbo_id) {
-    await resolveStale(admin, config, realmId, token, kind, row, report, result.message);
+    await resolveStale(admin, config, realmId, box, kind, row, report, result.message, result.intuitTid);
     return;
   }
   if (!result.ok) {
-    await markError(admin, kind, row, report, result.message, result.code, result.status);
+    await markError(admin, kind, row, report, result.message, result.code, result.status, result.intuitTid);
     return;
   }
 
@@ -172,19 +187,30 @@ async function resolveStale(
   admin: SupabaseClient,
   config: QboConfig,
   realmId: string,
-  token: string,
+  box: TokenBox,
   kind: ContactKind,
   row: ContactRecord,
   report: SyncReport,
   message: string,
+  intuitTid: string | null,
 ) {
-  const fetched = await qboRequest<Record<string, unknown>>({
-    method: "GET",
-    url: companyUrl(config, realmId, `${qboEntityPath(kind)}/${encodeURIComponent(row.qbo_id ?? "")}`),
-    token,
-  });
+  const fetched = await authed<Record<string, unknown>>(
+    box,
+    "GET",
+    companyUrl(config, realmId, `${qboEntityPath(kind)}/${encodeURIComponent(row.qbo_id ?? "")}`),
+  );
+  if (!fetched.ok && fetched.message === RECONNECT_MESSAGE) throw new ReconnectError(fetched.intuitTid);
   if (!fetched.ok) {
-    await markError(admin, kind, row, report, `${message} Refetch failed: ${fetched.message}`, fetched.code, fetched.status);
+    await markError(
+      admin,
+      kind,
+      row,
+      report,
+      `${message} Refetch failed: ${fetched.message}`,
+      fetched.code,
+      fetched.status,
+      fetched.intuitTid ?? intuitTid,
+    );
     return;
   }
   const entity = unwrapEntity(fetched.data, qboEntityName(kind));
@@ -201,7 +227,7 @@ async function resolveStale(
       direction: "push",
       status: "error",
       message: `SyncToken for ${row.display_name} was stale. The QuickBooks record was kept and the local edit was discarded.`,
-      detail: { qboId: row.qbo_id, code: "5010" },
+      detail: { qboId: row.qbo_id, code: "5010", intuitTid },
     });
   } catch (error) {
     await markError(
@@ -218,28 +244,28 @@ async function pullChanges(
   admin: SupabaseClient,
   config: QboConfig,
   realmId: string,
-  token: string,
+  box: TokenBox,
   startedAt: string,
   report: SyncReport,
 ) {
   const watermark = await lastFullPull(admin);
   if (!watermark) {
-    await pullQuery(admin, config, realmId, token, "customer", report);
-    await pullQuery(admin, config, realmId, token, "vendor", report);
+    await pullQuery(admin, config, realmId, box, "customer", report);
+    await pullQuery(admin, config, realmId, box, "vendor", report);
     return;
   }
   const changedSince = formatQboTime(new Date(Date.parse(watermark) - OVERLAP_MS));
   let cursor = changedSince;
   for (let page = 0; page < 20; page += 1) {
-    const result = await qboRequest<Record<string, unknown>>({
-      method: "GET",
-      url: companyUrl(config, realmId, "cdc", {
+    const result = await authed<Record<string, unknown>>(
+      box,
+      "GET",
+      companyUrl(config, realmId, "cdc", {
         entities: "Customer,Vendor",
         changedSince: cursor,
       }),
-      token,
-    });
-    if (!result.ok) throw new Error(result.message);
+    );
+    if (!result.ok) throw httpFailure(result);
     const customers = cdcEntities(result.data, "Customer");
     const vendors = cdcEntities(result.data, "Vendor");
     let latest = Date.parse(cursor);
@@ -269,21 +295,21 @@ async function pullQuery(
   admin: SupabaseClient,
   config: QboConfig,
   realmId: string,
-  token: string,
+  box: TokenBox,
   kind: ContactKind,
   report: SyncReport,
 ) {
   const name = qboEntityName(kind);
   let start = 1;
   for (;;) {
-    const result = await qboRequest<Record<string, unknown>>({
-      method: "GET",
-      url: companyUrl(config, realmId, "query", {
+    const result = await authed<Record<string, unknown>>(
+      box,
+      "GET",
+      companyUrl(config, realmId, "query", {
         query: `select * from ${name} where Active in (true, false) startposition ${start} maxresults ${PAGE_SIZE}`,
       }),
-      token,
-    });
-    if (!result.ok) throw new Error(result.message);
+    );
+    if (!result.ok) throw httpFailure(result);
     const entities = queryEntities(result.data, name);
     for (const entity of entities) await applyIncoming(admin, kind, entity, report);
     if (entities.length < PAGE_SIZE) return;
@@ -422,6 +448,7 @@ async function markError(
   message: string,
   code?: string | null,
   httpStatus?: number,
+  intuitTid?: string | null,
 ) {
   report.errors += 1;
   await admin.from(tableFor(kind)).update({ sync_status: "error" }).eq("id", row.id);
@@ -434,8 +461,16 @@ async function markError(
       qboId: row.qbo_id,
       code: code ?? null,
       httpStatus: httpStatus ?? null,
+      intuitTid: intuitTid ?? null,
     },
   });
+}
+
+function httpFailure(result: { ok: false; message: string; intuitTid: string | null }): Error {
+  if (result.message === RECONNECT_MESSAGE) return new ReconnectError(result.intuitTid);
+  const error = new Error(result.message) as Error & { intuitTid?: string | null };
+  error.intuitTid = result.intuitTid;
+  return error;
 }
 
 async function writeFields(
