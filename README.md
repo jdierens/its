@@ -2,6 +2,12 @@
 
 Inventory app for the ITS Supabase project. A sidebar groups Inventory, Sales, Purchasing, Warehouse, Pricing, and Admin. The item list at `/items` is a dense table. Filter by taxonomy short code and search SKU, name, description, and attribute values on the server (`ilike`). The address keeps `?tax=` and `?q=`. Arrow keys move the cell and Enter opens the item. Create and edit use taxonomies, allowed attribute values, and photos.
 
+## Privacy and terms
+
+`/privacy` and `/terms` are public. They do not use the app shell, and they do not require sign-in. ITS has no login yet. When Google sign-in is added, leave both paths out of the auth check in `middleware.ts`. The list to keep public is `PUBLIC_PATHS` in `lib/publicPaths.ts`.
+
+The pages are a plain-language template, not legal advice. Before they are treated as final, replace `[Company mailing address]` and `[State]`.
+
 ## Try it
 
 1. Copy `.env.example` to `.env.local`.
