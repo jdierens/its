@@ -37,6 +37,8 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("");
   const [taxonomyName, setTaxonomyName] = useState("");
+  const [longCode, setLongCode] = useState("");
+  const [shortCode, setShortCode] = useState("");
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>({});
   const [loadedAttributes, setLoadedAttributes] = useState<Record<string, string>>({});
   const [loadedTaxonomyName, setLoadedTaxonomyName] = useState<string | null>(null);
@@ -177,6 +179,22 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       return;
     }
 
+    const creatingTaxonomy = trimmedTaxonomy !== "" && !taxonomy;
+    let longCodeValue: string | null = null;
+    let shortCodeValue: string | null = null;
+    if (creatingTaxonomy) {
+      longCodeValue = longCode.trim().toUpperCase();
+      shortCodeValue = shortCode.trim().toUpperCase();
+      if (!/^[A-Z0-9]+(?:\/[A-Z0-9]+)*$/.test(longCodeValue)) {
+        setSaveError("Long code must be uppercase letters, digits, and slashes, like CRD/NIC.");
+        return;
+      }
+      if (!/^[A-Z0-9]{3}$/.test(shortCodeValue)) {
+        setSaveError("Short code must be exactly 3 letters or digits.");
+        return;
+      }
+    }
+
     const quantityText = quantity.trim();
     const parsedQuantity = quantityText === "" ? null : Number(quantityText);
     if (parsedQuantity !== null && (!Number.isFinite(parsedQuantity) || !Number.isInteger(parsedQuantity))) {
@@ -223,6 +241,8 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       taxonomyName: trimmedTaxonomy || null,
       attributes,
       attributeDefs,
+      longCode: longCodeValue,
+      shortCode: shortCodeValue,
     };
 
     setSaving(true);
@@ -384,9 +404,45 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             ))}
           </datalist>
           {isNewTaxonomy ? (
-            <span className="hint">New taxonomy. It is created when you save.</span>
+            <span className="hint">
+              New taxonomy. Enter its codes, then save. It is added at the end of the list.
+            </span>
           ) : null}
         </label>
+        {isNewTaxonomy ? (
+          <div className="grid">
+            <label>
+              Long code
+              <input
+                value={longCode}
+                placeholder="CRD/NIC"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                onChange={(event) => {
+                  setLongCode(event.target.value.toUpperCase());
+                  setSaved(false);
+                }}
+              />
+            </label>
+            <label>
+              Short code
+              <input
+                value={shortCode}
+                placeholder="NIC"
+                maxLength={3}
+                autoComplete="off"
+                spellCheck={false}
+                required
+                onChange={(event) => {
+                  setShortCode(event.target.value.toUpperCase().slice(0, 3));
+                  setSaved(false);
+                }}
+              />
+              <span className="hint">Exactly 3 letters or digits. Printed on the label.</span>
+            </label>
+          </div>
+        ) : null}
         {taxonomyName.trim() ? (
           <fieldset>
             <legend>{taxonomy?.name ?? taxonomyName.trim()} attributes</legend>

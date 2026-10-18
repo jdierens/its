@@ -1,7 +1,7 @@
 "use client";
 
 import JsBarcode from "jsbarcode";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 type ItemLabelProps = {
   name: string;
@@ -9,6 +9,7 @@ type ItemLabelProps = {
   code: string;
   quantity: string;
   printedOn: string;
+  shortCode?: string | null;
 };
 
 // 300 dpi dots are 3.125 CSS pixels (96 dpi). 1.28px is 4 dots, 0.96px is 3 dots.
@@ -98,10 +99,20 @@ export function barcodeValue(sku: string, id: string): string {
   return trimmed || id;
 }
 
-export function ItemLabel({ name, description, code, quantity, printedOn }: ItemLabelProps) {
+export function ItemLabel({
+  name,
+  description,
+  code,
+  quantity,
+  printedOn,
+  shortCode,
+}: ItemLabelProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const nameRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const shortRef = useRef<HTMLDivElement>(null);
+  const shownShortCode = shortCode?.trim().toUpperCase() || null;
   const descriptionSize = description.length > 90 ? "2mm" : "2.3mm";
   const displayName = labelName(name);
 
@@ -128,7 +139,7 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
     return () => el.removeEventListener("fit-name", fit);
   }, [displayName]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const svg = svgRef.current;
     if (!svg || !code) return;
 
@@ -161,7 +172,21 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
     if (codeEl && Number.isFinite(svgWidth) && svgWidth > 0) {
       codeEl.style.fontSize = `${fitCodeFontPx(code, svgWidth)}px`;
     }
-  }, [code]);
+
+    const short = shortRef.current;
+    const bottom = bottomRef.current;
+    if (short && bottom && shownShortCode) {
+      const maxShortPx = (8.4 * 96) / 25.4;
+      let size = maxShortPx;
+      short.style.fontSize = `${size}px`;
+      let guard = 0;
+      while (bottom.scrollWidth > bottom.clientWidth + 0.5 && size > 12 && guard < 8) {
+        size *= bottom.clientWidth / Math.max(bottom.scrollWidth, 1);
+        short.style.fontSize = `${size}px`;
+        guard += 1;
+      }
+    }
+  }, [code, shownShortCode, quantity, printedOn]);
 
   return (
     <article className="item-label">
@@ -176,7 +201,7 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
       <div className="item-label-desc" style={{ fontSize: descriptionSize }}>
         {description}
       </div>
-      <div className="item-label-bottom">
+      <div ref={bottomRef} className="item-label-bottom">
         <div className="item-label-barcode">
           <svg ref={svgRef} role="img" aria-label={`Code 128 barcode for ${code}`} />
           <div ref={codeRef} className="item-label-code">
@@ -187,7 +212,14 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
           <span>Qty</span>
           <strong>{quantity}</strong>
         </div>
-        <div className="item-label-date">{printedOn}</div>
+        <div className="item-label-end">
+          {shownShortCode ? (
+            <div ref={shortRef} className="item-label-short" data-short-code={shownShortCode}>
+              {shownShortCode}
+            </div>
+          ) : null}
+          <div className="item-label-date">{printedOn}</div>
+        </div>
       </div>
     </article>
   );
@@ -281,8 +313,27 @@ export const LABEL_PRINT_CSS = `
   font-variant-numeric: tabular-nums;
 }
 
+.item-label-end {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.item-label-short {
+  font-size: 8.4mm;
+  font-weight: 700;
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
 .item-label-date {
+  margin-top: 0.2mm;
   font-size: 2.6mm;
+  line-height: 1;
   text-align: right;
   white-space: nowrap;
 }

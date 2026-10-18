@@ -313,6 +313,46 @@ legend {
   margin-top: 1rem;
 }
 
+.page-note {
+  margin: 0 0 1rem;
+}
+
+.taxonomy-table td {
+  vertical-align: middle;
+}
+
+.taxonomy-table input {
+  min-width: 0;
+}
+
+.order-cell,
+.save-cell {
+  white-space: nowrap;
+}
+
+.order-cell button {
+  margin-right: 0.25rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.drag-handle {
+  cursor: grab;
+}
+
+.taxonomy-table tr.drop-target td {
+  background: #e8f1fa;
+}
+
+.code-input {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.code-short {
+  width: 5.5rem;
+}
+
 @media (max-width: 700px) {
   .grid {
     grid-template-columns: 1fr;

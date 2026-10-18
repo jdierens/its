@@ -28,6 +28,9 @@ type AttributeRow = {
 type TaxonomyRow = {
   id: string;
   name: string;
+  long_code: string | null;
+  short_code: string | null;
+  sort_order: number;
   attributes: AttributeRow[] | null;
 };
 
@@ -97,7 +100,10 @@ function mapAttribute(attribute: AttributeRow): Attribute {
 export async function fetchTaxonomies(): Promise<Taxonomy[]> {
   const { data, error } = await getSupabase()
     .from("taxonomies")
-    .select("id, name, attributes(id, name, data_type, unit, uses_list, attribute_values(value, sort_order))")
+    .select(
+      "id, name, long_code, short_code, sort_order, attributes(id, name, data_type, unit, uses_list, attribute_values(value, sort_order))",
+    )
+    .order("sort_order")
     .order("name");
 
   if (error) throw new Error(errorText(error));
@@ -105,6 +111,9 @@ export async function fetchTaxonomies(): Promise<Taxonomy[]> {
   return ((data ?? []) as TaxonomyRow[]).map((taxonomy) => ({
     id: taxonomy.id,
     name: taxonomy.name,
+    longCode: taxonomy.long_code,
+    shortCode: taxonomy.short_code,
+    sortOrder: taxonomy.sort_order,
     attributes: (taxonomy.attributes ?? [])
       .map(mapAttribute)
       .sort((a, b) => a.name.localeCompare(b.name)),
@@ -173,7 +182,7 @@ export async function findItemForLabel(identifier: string): Promise<LabelItem | 
   if (!query) return null;
 
   const supabase = getSupabase();
-  const columns = "id, sku, name, description";
+  const columns = "id, sku, name, description, taxonomies(short_code)";
 
   if (UUID_PATTERN.test(query)) {
     const byId = await supabase.from("items").select(columns).eq("id", query).maybeSingle();
@@ -187,12 +196,22 @@ export async function findItemForLabel(identifier: string): Promise<LabelItem | 
   return toLabelItem(bySku.data as LabelRow);
 }
 
+type LabelTaxonomy = { short_code: string | null };
+
 type LabelRow = {
   id: string;
   sku: string | null;
   name: string | null;
   description: string | null;
+  taxonomies: LabelTaxonomy | LabelTaxonomy[] | null;
 };
+
+function embeddedShortCode(value: LabelRow["taxonomies"]): string | null {
+  if (!value) return null;
+  const row = Array.isArray(value) ? value[0] : value;
+  const code = row?.short_code?.trim().toUpperCase() ?? "";
+  return code || null;
+}
 
 function toLabelItem(row: LabelRow): LabelItem {
   return {
@@ -200,6 +219,7 @@ function toLabelItem(row: LabelRow): LabelItem {
     sku: row.sku ?? "",
     name: row.name ?? "",
     description: row.description ?? "",
+    shortCode: embeddedShortCode(row.taxonomies),
   };
 }
 
@@ -211,6 +231,14 @@ export type ItemInput = {
   taxonomyName: string | null;
   attributes: Record<string, string>;
   attributeDefs: AttributeDefinition[];
+  longCode?: string | null;
+  shortCode?: string | null;
+};
+
+export type TaxonomyInput = {
+  name: string;
+  longCode: string | null;
+  shortCode: string | null;
 };
 
 export async function createItem(input: ItemInput): Promise<string> {
@@ -222,6 +250,8 @@ export async function createItem(input: ItemInput): Promise<string> {
     p_description: input.description,
     p_quantity: input.quantity,
     p_attribute_defs: input.attributeDefs,
+    p_long_code: input.longCode ?? null,
+    p_short_code: input.shortCode ?? null,
   });
 
   if (error) throw new Error(errorText(error));
@@ -239,7 +269,33 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
     p_description: input.description,
     p_quantity: input.quantity,
     p_attribute_defs: input.taxonomyName ? input.attributeDefs : [],
+    p_long_code: input.longCode ?? null,
+    p_short_code: input.shortCode ?? null,
   });
 
   if (error) throw new Error(errorText(error));
+}
+
+export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<void> {
+  const { error } = await getSupabase()
+    .from("taxonomies")
+    .update({
+      name: input.name,
+      long_code: input.longCode,
+      short_code: input.shortCode,
+    })
+    .eq("id", id);
+
+  if (error) throw new Error(errorText(error));
+}
+
+export async function saveTaxonomyOrder(ids: string[]): Promise<void> {
+  const supabase = getSupabase();
+  const results = await Promise.all(
+    ids.map((id, index) =>
+      supabase.from("taxonomies").update({ sort_order: index + 1 }).eq("id", id),
+    ),
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw new Error(errorText(failed.error));
 }
