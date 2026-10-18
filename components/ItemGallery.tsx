@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { errorText } from "@/lib/errors";
 import {
@@ -133,6 +134,8 @@ export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryPro
         url: image.url,
         name: "Item photo",
         isPrimary: image.isPrimary,
+        edited: Boolean(image.sourceImageId),
+        editHref: `/items/${itemId}/photos/${image.id}`,
         onDelete: () => void removeSaved(image),
         onPrimary: () => void makePrimary(image),
       }))
@@ -141,6 +144,8 @@ export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryPro
         url: image.url,
         name: image.file.name,
         isPrimary: image.isPrimary,
+        edited: false,
+        editHref: null,
         onDelete: () => removePending(image.key),
         onPrimary: () => makePendingPrimary(image.key),
       }));
@@ -174,6 +179,12 @@ export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryPro
               )}
               <div className="gallery-actions">
                 {tile.isPrimary ? <span className="hint">Primary</span> : null}
+                {tile.edited ? <span className="hint">Edited</span> : null}
+                {tile.editHref ? (
+                  <Link className="button secondary" href={tile.editHref}>
+                    Edit
+                  </Link>
+                ) : null}
                 {!tile.isPrimary ? (
                   <button type="button" className="secondary" disabled={busy} onClick={tile.onPrimary}>
                     Make primary

@@ -15,6 +15,8 @@ Attribute fields with a list accept a listed value or a new one. Integer and dec
 
 Photos upload to the private `item-images` bucket. On an existing item they save immediately. On a new item they upload after the item row is created. The list uses the primary image.
 
+**Edit** on a saved photo opens the editor. Auto-improve adjusts brightness, contrast, white balance, and sharpness, with a before/after toggle. Crop includes a free rectangle and a 1:1 square, and the photo can rotate 90 degrees. Remove background runs in the browser with `@imgly/background-removal` (the smaller `isnet_quint8` model) and can leave white or transparency. Redact drags a rectangle that is pixelated, or filled solid when the area is small, into the pixels. Saving adds a new gallery photo and does not replace the original. `source_image_id` records which photo it came from. A white background exports as JPEG at quality 0.92, keeping the edited size and at least 1600 px on the long side when the photo is that large. A transparent background exports as PNG.
+
 **Print labels** opens `/labels`. Look up an item by SKU or uuid, enter the quantity to print and how many copies (default 1), then print. The quantity is only printed on the label. It does not change the item's stock. The edit page has a **Print label** button that opens this page with the item filled in.
 
 The label is one 90 mm × 29 mm landscape page, for a Brother QL-820NWB with DK-1201 (29 × 90 mm) die-cut labels. The barcode is Code 128 from [JsBarcode](https://github.com/lindell/JsBarcode), encoding the SKU, or the item id when the SKU is empty. Bars are sized to a whole number of 300 dpi dots (4 dots wide, or 3 if the code is long).
@@ -31,7 +33,7 @@ From a Mac browser, use these print-dialog settings:
 
 Migrations live in `supabase/migrations`. Deploying this repo does not apply them. They are already applied on project `fxsbpreasbdalwthyzvk`. On a new database, run them in order in the SQL editor.
 
-`attribute_values` holds the allowed values. `attributes.uses_list` turns that list on. `item_images` points at files in the `item-images` bucket (`<item_id>/<image_id>.<ext>`). The bucket is private, with a 5 MB limit and JPEG, PNG, WebP, and GIF only.
+`attribute_values` holds the allowed values. `attributes.uses_list` turns that list on. `item_images` points at files in the `item-images` bucket (`<item_id>/<image_id>.<ext>`). The bucket is private, with a 10 MB limit and JPEG, PNG, WebP, and GIF only.
 
 Storage policies on `storage.objects`, for `anon` and `authenticated`, bucket `item-images` only:
 

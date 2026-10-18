@@ -47,6 +47,7 @@ export type ItemImage = {
   storagePath: string;
   isPrimary: boolean;
   sortOrder: number;
+  sourceImageId: string | null;
   url: string | null;
 };
 

@@ -3,6 +3,7 @@ import { getSupabase } from "@/lib/supabase";
 import type { ItemImage } from "@/lib/types";
 
 export const ITEM_IMAGE_BUCKET = "item-images";
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const SIGNED_URL_SECONDS = 60 * 60;
 
@@ -12,6 +13,7 @@ type ImageRow = {
   storage_path: string;
   is_primary: boolean;
   sort_order: number;
+  source_image_id: string | null;
 };
 
 export type PendingUpload = {
@@ -35,8 +37,8 @@ export function imageFileError(file: File): string | null {
   if (!allowed.includes(file.type)) {
     return `${file.name} must be a JPEG, PNG, WebP, or GIF.`;
   }
-  if (file.size > 5 * 1024 * 1024) {
-    return `${file.name} is larger than 5 MB.`;
+  if (file.size > MAX_IMAGE_BYTES) {
+    return `${file.name} is larger than 10 MB.`;
   }
   return null;
 }
@@ -77,6 +79,7 @@ function toItemImage(row: ImageRow, url: string | null): ItemImage {
     storagePath: row.storage_path,
     isPrimary: row.is_primary,
     sortOrder: row.sort_order,
+    sourceImageId: row.source_image_id,
     url,
   };
 }
@@ -84,7 +87,7 @@ function toItemImage(row: ImageRow, url: string | null): ItemImage {
 export async function fetchItemImages(itemId: string): Promise<ItemImage[]> {
   const { data, error } = await getSupabase()
     .from("item_images")
-    .select("id, item_id, storage_path, is_primary, sort_order")
+    .select("id, item_id, storage_path, is_primary, sort_order, source_image_id")
     .eq("item_id", itemId)
     .order("sort_order")
     .order("created_at");
@@ -140,6 +143,56 @@ export async function deleteItemImage(image: ItemImage): Promise<void> {
   if (removed.error) throw new Error(errorText(removed.error));
   const { error } = await supabase.from("item_images").delete().eq("id", image.id);
   if (error) throw new Error(errorText(error));
+}
+
+export async function saveEditedImage(input: {
+  itemId: string;
+  sourceImageId: string;
+  blob: Blob;
+  makePrimary: boolean;
+}): Promise<string> {
+  const supabase = getSupabase();
+  const id = crypto.randomUUID();
+  const extension = input.blob.type === "image/png" ? "png" : "jpg";
+  const path = `${input.itemId}/${id}.${extension}`;
+  const contentType = extension === "png" ? "image/png" : "image/jpeg";
+
+  const existing = await supabase
+    .from("item_images")
+    .select("sort_order")
+    .eq("item_id", input.itemId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  if (existing.error) throw new Error(errorText(existing.error));
+  const sortOrder = ((existing.data?.[0]?.sort_order as number | undefined) ?? 0) + 1;
+
+  const uploaded = await supabase.storage.from(ITEM_IMAGE_BUCKET).upload(path, input.blob, {
+    contentType,
+    upsert: false,
+  });
+  if (uploaded.error) throw new Error(errorText(uploaded.error));
+
+  const inserted = await supabase.from("item_images").insert({
+    id,
+    item_id: input.itemId,
+    storage_path: path,
+    is_primary: input.makePrimary,
+    sort_order: sortOrder,
+    source_image_id: input.sourceImageId,
+  });
+  if (inserted.error) {
+    await supabase.storage.from(ITEM_IMAGE_BUCKET).remove([path]);
+    throw new Error(errorText(inserted.error));
+  }
+  return id;
+}
+
+export async function downloadItemImage(storagePath: string): Promise<Blob> {
+  const downloaded = await getSupabase().storage.from(ITEM_IMAGE_BUCKET).download(storagePath);
+  if (downloaded.error || !downloaded.data) {
+    throw new Error(downloaded.error ? errorText(downloaded.error) : "Could not download the photo.");
+  }
+  return downloaded.data;
 }
 
 export async function setPrimaryImage(image: ItemImage): Promise<void> {
