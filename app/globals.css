@@ -353,6 +353,84 @@ legend {
   width: 5.5rem;
 }
 
+.editor-page {
+  max-width: 1080px;
+}
+
+.editor-tools {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+}
+
+.editor-tools .check {
+  margin-top: 0;
+}
+
+.editor-frame {
+  touch-action: none;
+}
+
+.editor-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  background-color: #f4f5f7;
+  background-image:
+    linear-gradient(45deg, #e3e6eb 25%, transparent 25%),
+    linear-gradient(-45deg, #e3e6eb 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e3e6eb 75%),
+    linear-gradient(-45deg, transparent 75%, #e3e6eb 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.editor-stage canvas {
+  display: block;
+  max-width: 100%;
+}
+
+.crop-box,
+.redact-box {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.crop-box {
+  border: 2px solid #0f4c81;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 32, 0.45);
+}
+
+.redact-box {
+  border: 2px solid #8a1f11;
+  background: rgba(138, 31, 17, 0.28);
+}
+
+.crop-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  background: #fff;
+  border: 2px solid #0f4c81;
+  border-radius: 2px;
+}
+
+.crop-handle.nw { top: -7px; left: -7px; }
+.crop-handle.ne { top: -7px; right: -7px; }
+.crop-handle.sw { bottom: -7px; left: -7px; }
+.crop-handle.se { bottom: -7px; right: -7px; }
+
+.editor-save {
+  margin-top: 0.9rem;
+}
+
+.gallery-actions .button {
+  padding: 0.25rem 0.45rem;
+  font-size: 0.78rem;
+}
+
 @media (max-width: 700px) {
   .grid {
     grid-template-columns: 1fr;
