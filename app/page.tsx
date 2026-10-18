@@ -33,6 +33,9 @@ export default function HomePage() {
       <div className="page-head">
         <h1>Items</h1>
         <div className="actions">
+          <Link className="button secondary" href="/taxonomies">
+            Taxonomies
+          </Link>
           <Link className="button secondary" href="/labels">
             Print labels
           </Link>

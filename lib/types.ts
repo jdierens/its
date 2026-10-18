@@ -19,6 +19,9 @@ export type AttributeDefinition = {
 export type Taxonomy = {
   id: string;
   name: string;
+  longCode: string | null;
+  shortCode: string | null;
+  sortOrder: number;
   attributes: Attribute[];
 };
 
@@ -55,4 +58,5 @@ export type LabelItem = {
   sku: string;
   name: string;
   description: string;
+  shortCode: string | null;
 };
