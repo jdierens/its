@@ -67,7 +67,13 @@ For local dev, register this redirect URI on the Intuit app and set `QBO_REDIREC
 
 Intuit matches the URI exactly. If you open the app at `http://127.0.0.1:3000` instead, register `http://127.0.0.1:3000/api/qbo/callback` and set the env var to that. Production keys require `https`. Sandbox keys can use `http://localhost`.
 
-Connect starts at `/api/qbo/connect`, which sends the browser to Intuit with scope `com.intuit.quickbooks.accounting` and a short-lived CSRF cookie. Intuit returns to `/api/qbo/callback`, which stores the company id and tokens. Disconnect calls Intuit's revoke endpoint and deletes the local row. Access tokens are refreshed when they are close to expiry. Sandbox and production use the same OAuth host. `QBO_ENVIRONMENT` chooses `https://sandbox-quickbooks.api.intuit.com` or `https://quickbooks.api.intuit.com`.
+Connect starts at `/api/qbo/connect`, which sends the browser to Intuit with scope `com.intuit.quickbooks.accounting` and a short-lived CSRF cookie. The cookie is httpOnly, SameSite=Lax, and expires after 10 minutes. It is marked Secure in production. Intuit returns to `/api/qbo/callback`, which checks that cookie with a constant-time compare. A mismatch shows "Connection could not be verified, please try Connect again" and is written to `qbo_sync_log`.
+
+Authorization, token, and revoke URLs come from Intuit's OpenID discovery document (`openid_sandbox_configuration` or `openid_configuration`), cached in memory for 24 hours. If that fetch fails, ITS uses the documented Intuit hosts. `QBO_ENVIRONMENT` still chooses the QuickBooks API host, sandbox or production.
+
+Access tokens are refreshed when they are close to expiry. If a QuickBooks call returns 401, AuthenticationFailed, code 3200, or "Token expired", ITS refreshes once and retries that call once. If the refresh token is past `refresh_expires_at`, or Intuit returns `invalid_grant`, the connection is marked `needs_reconnect`. Admin, then Integrations, shows "QuickBooks needs to be reconnected" and a Reconnect button. Sync now returns that same message. Token-endpoint calls retry network errors, HTTP 429, and HTTP 5xx up to three times. `invalid_grant` and `invalid_client` are not retried. QuickBooks errors stored in `qbo_sync_log` include the `intuit_tid` response header when Intuit sent one.
+
+Disconnect calls Intuit's revoke endpoint and deletes the local row.
 
 **Sync now** pushes ITS rows marked local, pending, or error, then pulls. A conflict stays put until you edit the contact again. The first successful pull reads every active and inactive customer and vendor. Later syncs use change data capture from the last successful pull, with a two-minute overlap. Rows match on `qbo_id`. An update sends the QuickBooks `SyncToken`. If QuickBooks returns a stale-object error (5010), ITS refetches that record, keeps the QuickBooks version, and logs the discarded local edit. Inactive QuickBooks records stay in the list with Active set to No.
 
@@ -89,6 +95,6 @@ There is no update policy, so objects cannot be overwritten. Deleting a photo re
 
 Row level security is disabled on `items`, `taxonomies`, `attributes`, `item_attributes`, `attribute_values`, `item_images`, `customers`, `vendors`, and `qbo_sync_log`. The anon key can read and write those rows. This app does not turn RLS on for them. Enabling it without policies would block the client.
 
-`qbo_connection` is the exception. Row level security is enabled and there are no policies for `anon` or `authenticated`. Their grants are revoked. Only the service role, from server route handlers, can read the tokens.
+`qbo_connection` is the exception. Row level security is enabled and there are no policies for `anon` or `authenticated`. Their grants are revoked. Only the service role, from server route handlers, can read the tokens. `needs_reconnect` is set when the refresh token can no longer be used.
 
 `npm run typecheck` and `npm run build` both need to pass.

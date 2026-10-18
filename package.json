@@ -6,7 +6,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/qbo/map.test.ts"
+    "test": "node --experimental-strip-types --test lib/qbo/*.test.ts"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",
