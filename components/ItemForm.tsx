@@ -3,18 +3,31 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  AttributeValueField,
+  attributeValueError,
+  canonicalValue,
+} from "@/components/AttributeValueField";
+import { ItemGallery, type PendingImage } from "@/components/ItemGallery";
 import { errorText } from "@/lib/errors";
+import { uploadItemImages } from "@/lib/images";
 import { createItem, fetchItem, fetchTaxonomies, updateItem } from "@/lib/items";
-import type { Taxonomy } from "@/lib/types";
+import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 
 type ItemFormProps = {
   mode: "create" | "edit";
   itemId?: string;
 };
 
-function attributeLabel(name: string, unit: string | null): string {
-  return unit ? `${name} (${unit})` : name;
-}
+type DraftAttribute = {
+  key: string;
+  name: string;
+  data_type: DataType;
+  unit: string;
+  uses_list: boolean;
+};
+
+const DATA_TYPE_OPTIONS: DataType[] = ["integer", "decimal", "text"];
 
 export function ItemForm({ mode, itemId }: ItemFormProps) {
   const router = useRouter();
@@ -23,10 +36,17 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("");
-  const [taxonomyId, setTaxonomyId] = useState("");
+  const [taxonomyName, setTaxonomyName] = useState("");
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>({});
   const [loadedAttributes, setLoadedAttributes] = useState<Record<string, string>>({});
-  const [loadedTaxonomyId, setLoadedTaxonomyId] = useState<string | null>(null);
+  const [loadedTaxonomyName, setLoadedTaxonomyName] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<DraftAttribute[]>([]);
+  const [draftName, setDraftName] = useState("");
+  const [draftType, setDraftType] = useState<DataType>("text");
+  const [draftUnit, setDraftUnit] = useState("");
+  const [draftUsesList, setDraftUsesList] = useState(true);
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [createdId, setCreatedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
@@ -50,14 +70,24 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             setMissing(true);
             return;
           }
+          const taxonomy = taxonomyRows.find((row) => row.id === item.taxonomyId) ?? null;
+          const values: Record<string, string> = {};
+          for (const [attributeName, value] of Object.entries(item.attributes)) {
+            const attribute = taxonomy?.attributes.find(
+              (row) => row.name.toLowerCase() === attributeName.toLowerCase(),
+            );
+            values[attribute?.name ?? attributeName] = attribute
+              ? canonicalValue(attribute, value)
+              : value;
+          }
           setSku(item.sku);
           setName(item.name);
           setDescription(item.description);
           setQuantity(item.quantity === null ? "" : String(item.quantity));
-          setTaxonomyId(item.taxonomyId ?? "");
-          setLoadedTaxonomyId(item.taxonomyId);
-          setLoadedAttributes(item.attributes);
-          setAttributeValues(item.attributes);
+          setTaxonomyName(taxonomy?.name ?? "");
+          setLoadedTaxonomyName(taxonomy?.name ?? null);
+          setLoadedAttributes(values);
+          setAttributeValues(values);
         }
       } catch (error) {
         if (!cancelled) setLoadError(errorText(error));
@@ -72,19 +102,58 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     };
   }, [mode, itemId]);
 
-  const taxonomy = useMemo(
-    () => taxonomies.find((row) => row.id === taxonomyId) ?? null,
-    [taxonomies, taxonomyId],
-  );
+  const taxonomy = useMemo(() => {
+    const query = taxonomyName.trim().toLowerCase();
+    if (!query) return null;
+    return taxonomies.find((row) => row.name.toLowerCase() === query) ?? null;
+  }, [taxonomies, taxonomyName]);
 
-  function onTaxonomyChange(nextId: string) {
-    setTaxonomyId(nextId);
+  const isNewTaxonomy = taxonomyName.trim() !== "" && !taxonomy;
+
+  function onTaxonomyChange(nextName: string) {
+    setTaxonomyName(nextName);
     setSaved(false);
-    if (nextId && nextId === loadedTaxonomyId) {
+    setDrafts([]);
+    const match = taxonomies.find(
+      (row) => row.name.toLowerCase() === nextName.trim().toLowerCase(),
+    );
+    if (match && loadedTaxonomyName && match.name.toLowerCase() === loadedTaxonomyName.toLowerCase()) {
       setAttributeValues(loadedAttributes);
       return;
     }
     setAttributeValues({});
+  }
+
+  function addDraft() {
+    const trimmed = draftName.trim();
+    if (!trimmed) {
+      setSaveError("Enter a name for the new attribute.");
+      return;
+    }
+    const existing = [
+      ...(taxonomy?.attributes.map((attribute) => attribute.name) ?? []),
+      ...drafts.map((draft) => draft.name),
+    ];
+    if (existing.some((entry) => entry.toLowerCase() === trimmed.toLowerCase())) {
+      setSaveError(`Attribute ${trimmed} already exists on this taxonomy.`);
+      return;
+    }
+    setSaveError(null);
+    setDrafts((current) => [
+      ...current,
+      {
+        key: crypto.randomUUID(),
+        name: trimmed,
+        data_type: draftType,
+        unit: draftUnit.trim(),
+        uses_list: draftUsesList,
+      },
+    ]);
+    setDraftName("");
+    setDraftUnit("");
+    setDraftType("text");
+    setDraftUsesList(true);
+    setSaved(false);
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -94,6 +163,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     const trimmedName = name.trim();
     const trimmedSku = sku.trim();
+    const trimmedTaxonomy = taxonomy?.name ?? taxonomyName.trim();
     if (!trimmedName) {
       setSaveError("Name is required.");
       return;
@@ -102,14 +172,14 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       setSaveError("SKU is required.");
       return;
     }
-    if (mode === "create" && !taxonomy) {
+    if (mode === "create" && !trimmedTaxonomy) {
       setSaveError("Choose a taxonomy.");
       return;
     }
 
     const quantityText = quantity.trim();
     const parsedQuantity = quantityText === "" ? null : Number(quantityText);
-    if (parsedQuantity !== null && !Number.isFinite(parsedQuantity)) {
+    if (parsedQuantity !== null && (!Number.isFinite(parsedQuantity) || !Number.isInteger(parsedQuantity))) {
       setSaveError("Quantity must be a whole number.");
       return;
     }
@@ -117,7 +187,32 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     const attributes: Record<string, string> = {};
     for (const attribute of taxonomy?.attributes ?? []) {
       const value = (attributeValues[attribute.name] ?? "").trim();
-      if (value) attributes[attribute.name] = value;
+      if (!value) continue;
+      const problem = attributeValueError(attribute.data_type, value);
+      if (problem) {
+        setSaveError(`${attribute.name}: ${problem}`);
+        return;
+      }
+      attributes[attribute.name] = value;
+    }
+
+    const attributeDefs: AttributeDefinition[] = [];
+    for (const draft of drafts) {
+      const value = (attributeValues[draft.key] ?? "").trim();
+      if (value) {
+        const problem = attributeValueError(draft.data_type, value);
+        if (problem) {
+          setSaveError(`${draft.name}: ${problem}`);
+          return;
+        }
+        attributes[draft.name] = value;
+      }
+      attributeDefs.push({
+        name: draft.name,
+        data_type: draft.data_type,
+        unit: draft.unit || null,
+        uses_list: draft.uses_list,
+      });
     }
 
     const input = {
@@ -125,21 +220,35 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       sku: trimmedSku,
       description: description.trim(),
       quantity: parsedQuantity,
-      taxonomyName: taxonomy?.name ?? null,
+      taxonomyName: trimmedTaxonomy || null,
       attributes,
+      attributeDefs,
     };
 
     setSaving(true);
     try {
       if (mode === "create") {
-        const id = await createItem(input);
+        const id = createdId ?? (await createItem(input));
+        setCreatedId(id);
+        if (pendingImages.length > 0) {
+          await uploadItemImages(
+            id,
+            pendingImages.map((image) => ({ file: image.file, isPrimary: image.isPrimary })),
+          );
+        }
         router.push(`/items/${id}`);
         return;
       }
       if (!itemId) throw new Error("Missing item id.");
       await updateItem(itemId, input);
-      setLoadedTaxonomyId(taxonomy?.id ?? null);
+      const refreshed = await fetchTaxonomies();
+      setTaxonomies(refreshed);
+      const match = refreshed.find((row) => row.name.toLowerCase() === trimmedTaxonomy.toLowerCase());
+      setTaxonomyName(match?.name ?? trimmedTaxonomy);
+      setLoadedTaxonomyName(match?.name ?? (trimmedTaxonomy || null));
       setLoadedAttributes(attributes);
+      setAttributeValues(attributes);
+      setDrafts([]);
       setSaved(true);
     } catch (error) {
       setSaveError(errorText(error));
@@ -175,13 +284,26 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     );
   }
 
+  const labelHref = sku.trim()
+    ? `/labels?sku=${encodeURIComponent(sku.trim())}`
+    : itemId
+      ? `/labels?id=${itemId}`
+      : "/labels";
+
   return (
     <main className="page">
       <div className="page-head">
         <h1>{mode === "create" ? "New item" : "Edit item"}</h1>
-        <Link className="button secondary" href="/">
-          Back
-        </Link>
+        <div className="actions">
+          {mode === "edit" && itemId ? (
+            <Link className="button secondary" href={labelHref}>
+              Print label
+            </Link>
+          ) : null}
+          <Link className="button secondary" href="/">
+            Back
+          </Link>
+        </div>
       </div>
       {saveError ? (
         <p className="banner error" role="alert">
@@ -191,6 +313,11 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       {saved ? (
         <p className="banner ok" role="status">
           Saved.
+        </p>
+      ) : null}
+      {createdId && saveError ? (
+        <p className="muted">
+          The item was saved. <Link href={`/items/${createdId}`}>Open it</Link> to finish the photos.
         </p>
       ) : null}
       <form onSubmit={onSubmit} noValidate>
@@ -244,57 +371,105 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
         </label>
         <label>
           Taxonomy
-          <select
-            value={taxonomyId}
+          <input
+            list="taxonomy-names"
+            value={taxonomyName}
+            placeholder="Select or type a taxonomy"
+            autoComplete="off"
             onChange={(event) => onTaxonomyChange(event.target.value)}
-            required={mode === "create"}
-          >
-            <option value="">
-              {mode === "create" ? "Select a taxonomy" : "No taxonomy"}
-            </option>
+          />
+          <datalist id="taxonomy-names">
             {taxonomies.map((row) => (
-              <option key={row.id} value={row.id}>
-                {row.name}
-              </option>
+              <option key={row.id} value={row.name} />
             ))}
-          </select>
+          </datalist>
+          {isNewTaxonomy ? (
+            <span className="hint">New taxonomy. It is created when you save.</span>
+          ) : null}
         </label>
-        {taxonomy ? (
+        {taxonomyName.trim() ? (
           <fieldset>
-            <legend>{taxonomy.name} attributes</legend>
+            <legend>{taxonomy?.name ?? taxonomyName.trim()} attributes</legend>
             <div className="grid">
-              {taxonomy.attributes.map((attribute) => {
-                const numeric = attribute.data_type !== "text";
-                return (
-                  <label key={attribute.id}>
-                    {attributeLabel(attribute.name, attribute.unit)}
-                    <input
-                      type={numeric ? "number" : "text"}
-                      step={attribute.data_type === "decimal" ? "any" : numeric ? "1" : undefined}
-                      inputMode={
-                        attribute.data_type === "decimal"
-                          ? "decimal"
-                          : numeric
-                            ? "numeric"
-                            : undefined
-                      }
-                      value={attributeValues[attribute.name] ?? ""}
-                      autoComplete="off"
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setAttributeValues((current) => ({
-                          ...current,
-                          [attribute.name]: value,
-                        }));
-                        setSaved(false);
-                      }}
-                    />
-                  </label>
-                );
-              })}
+              {(taxonomy?.attributes ?? []).map((attribute) => (
+                <AttributeValueField
+                  key={attribute.id}
+                  attribute={attribute}
+                  value={attributeValues[attribute.name] ?? ""}
+                  onChange={(value) => {
+                    setAttributeValues((current) => ({ ...current, [attribute.name]: value }));
+                    setSaved(false);
+                  }}
+                />
+              ))}
+              {drafts.map((draft) => (
+                <AttributeValueField
+                  key={draft.key}
+                  attribute={{
+                    id: draft.key,
+                    name: draft.name,
+                    data_type: draft.data_type,
+                    unit: draft.unit || null,
+                    uses_list: draft.uses_list,
+                    allowedValues: [],
+                  }}
+                  value={attributeValues[draft.key] ?? ""}
+                  onChange={(value) => {
+                    setAttributeValues((current) => ({ ...current, [draft.key]: value }));
+                    setSaved(false);
+                  }}
+                />
+              ))}
+            </div>
+            <div className="draft-attribute">
+              <label>
+                New attribute
+                <input
+                  value={draftName}
+                  autoComplete="off"
+                  onChange={(event) => setDraftName(event.target.value)}
+                />
+              </label>
+              <label>
+                Type
+                <select
+                  value={draftType}
+                  onChange={(event) => setDraftType(event.target.value as DataType)}
+                >
+                  {DATA_TYPE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Unit
+                <input
+                  value={draftUnit}
+                  autoComplete="off"
+                  onChange={(event) => setDraftUnit(event.target.value)}
+                />
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={draftUsesList}
+                  onChange={(event) => setDraftUsesList(event.target.checked)}
+                />
+                Allowed values
+              </label>
+              <button type="button" className="secondary" onClick={addDraft}>
+                Add attribute
+              </button>
             </div>
           </fieldset>
         ) : null}
+        <ItemGallery
+          itemId={mode === "edit" ? itemId : undefined}
+          pending={pendingImages}
+          onPendingChange={setPendingImages}
+        />
         <div className="actions">
           <button type="submit" disabled={saving}>
             {saving ? "Saving…" : mode === "create" ? "Create item" : "Save changes"}

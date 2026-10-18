@@ -5,6 +5,15 @@ export type Attribute = {
   name: string;
   data_type: DataType;
   unit: string | null;
+  uses_list: boolean;
+  allowedValues: string[];
+};
+
+export type AttributeDefinition = {
+  name: string;
+  data_type: DataType;
+  unit: string | null;
+  uses_list: boolean;
 };
 
 export type Taxonomy = {
@@ -19,6 +28,7 @@ export type ItemSummary = {
   name: string;
   quantity: number | null;
   taxonomyName: string | null;
+  imageUrl: string | null;
 };
 
 export type ItemDetail = {
@@ -29,4 +39,20 @@ export type ItemDetail = {
   quantity: number | null;
   taxonomyId: string | null;
   attributes: Record<string, string>;
+};
+
+export type ItemImage = {
+  id: string;
+  itemId: string;
+  storagePath: string;
+  isPrimary: boolean;
+  sortOrder: number;
+  url: string | null;
+};
+
+export type LabelItem = {
+  id: string;
+  sku: string;
+  name: string;
+  description: string;
 };
