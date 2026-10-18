@@ -1,7 +1,7 @@
 "use client";
 
 import JsBarcode from "jsbarcode";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 type ItemLabelProps = {
   name: string;
@@ -15,7 +15,63 @@ type ItemLabelProps = {
 const WIDE_MODULE_PX = 1.28;
 const NARROW_MODULE_PX = 0.96;
 const BAR_HEIGHT_PX = 38.4;
-const MAX_BARCODE_MM = 48;
+const MAX_BARCODE_MM = 46;
+// Label is 90mm with 1.5mm padding on each side. Leave 1px so the last glyph is not clipped.
+const NAME_WIDTH_PX = ((90 - 1.5 - 1.5) * 96) / 25.4 - 1;
+const NAME_MAX_FONT_PX = (3.4 * 96) / 25.4;
+const CODE_MAX_FONT_PX = (1.8 * 96) / 25.4;
+
+function measuredWidth(text: string, fontSizePx: number, weight: number): number {
+  const probe = document.createElement("span");
+  probe.textContent = text;
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.whiteSpace = "nowrap";
+  probe.style.fontWeight = String(weight);
+  probe.style.fontFamily = "Helvetica, Arial, sans-serif";
+  probe.style.fontSize = `${fontSizePx}px`;
+  probe.style.lineHeight = "1";
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width;
+}
+
+export function fitNameFontPx(text: string): number {
+  const value = text || "Untitled";
+  if (typeof document === "undefined") return NAME_MAX_FONT_PX;
+  let low = 1;
+  let high = NAME_MAX_FONT_PX;
+  let best = low;
+  for (let step = 0; step < 16; step += 1) {
+    const mid = (low + high) / 2;
+    if (measuredWidth(value, mid, 700) <= NAME_WIDTH_PX) {
+      best = mid;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return best;
+}
+
+function fitCodeFontPx(text: string, maxWidthPx: number): number {
+  if (typeof document === "undefined") return CODE_MAX_FONT_PX;
+  let low = 1;
+  let high = CODE_MAX_FONT_PX;
+  let best = low;
+  for (let step = 0; step < 14; step += 1) {
+    const mid = (low + high) / 2;
+    if (measuredWidth(text, mid, 400) <= maxWidthPx - 1) {
+      best = mid;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return best;
+}
 
 export function barcodeValue(sku: string, id: string): string {
   const trimmed = sku.trim();
@@ -24,8 +80,31 @@ export function barcodeValue(sku: string, id: string): string {
 
 export function ItemLabel({ name, description, code, quantity, printedOn }: ItemLabelProps) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const nameSize = `${Math.min(3.4, Math.max(1.9, 150 / Math.max(name.length, 1)))}mm`;
+  const nameRef = useRef<HTMLDivElement>(null);
+  const codeRef = useRef<HTMLDivElement>(null);
   const descriptionSize = description.length > 90 ? "2mm" : "2.3mm";
+  const displayName = name || "Untitled";
+
+  useLayoutEffect(() => {
+    const el = nameRef.current;
+    if (!el) return;
+
+    const fit = () => {
+      let size = fitNameFontPx(el.textContent || displayName);
+      el.style.fontSize = `${size}px`;
+      if (el.clientWidth === 0) return;
+      let guard = 0;
+      while (el.scrollWidth > el.clientWidth && size > 1 && guard < 8) {
+        size *= el.clientWidth / Math.max(el.scrollWidth, 1);
+        el.style.fontSize = `${size}px`;
+        guard += 1;
+      }
+    };
+
+    fit();
+    el.addEventListener("fit-name", fit);
+    return () => el.removeEventListener("fit-name", fit);
+  }, [displayName]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -54,12 +133,18 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
     const drawn = Number(svg.getAttribute("width"));
     const maxPx = (MAX_BARCODE_MM * 96) / 25.4;
     if (Number.isFinite(drawn) && drawn > maxPx) draw(NARROW_MODULE_PX);
+
+    const codeEl = codeRef.current;
+    const svgWidth = Number(svg.getAttribute("width"));
+    if (codeEl && Number.isFinite(svgWidth) && svgWidth > 0) {
+      codeEl.style.fontSize = `${fitCodeFontPx(code, svgWidth)}px`;
+    }
   }, [code]);
 
   return (
     <article className="item-label">
-      <div className="item-label-name" style={{ fontSize: nameSize }}>
-        {name || "Untitled"}
+      <div ref={nameRef} className="item-label-name" style={{ fontSize: `${NAME_MAX_FONT_PX}px` }}>
+        {displayName}
       </div>
       <div className="item-label-desc" style={{ fontSize: descriptionSize }}>
         {description}
@@ -67,6 +152,9 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
       <div className="item-label-bottom">
         <div className="item-label-barcode">
           <svg ref={svgRef} role="img" aria-label={`Code 128 barcode for ${code}`} />
+          <div ref={codeRef} className="item-label-code">
+            {code}
+          </div>
         </div>
         <div className="item-label-qty">
           <span>Qty</span>
@@ -103,8 +191,7 @@ export const LABEL_PRINT_CSS = `
   line-height: 1.05;
   text-align: center;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
 }
 
 .item-label-desc {
@@ -127,13 +214,23 @@ export const LABEL_PRINT_CSS = `
 
 .item-label-barcode {
   flex: 0 1 auto;
-  max-width: 48mm;
-  overflow: hidden;
+  max-width: 46mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .item-label-barcode svg {
   display: block;
   shape-rendering: crispEdges;
+}
+
+.item-label-code {
+  margin-top: 0.3mm;
+  font-size: 1.8mm;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .item-label-qty {

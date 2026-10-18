@@ -17,7 +17,7 @@ Photos upload to the private `item-images` bucket. On an existing item they save
 
 **Print labels** opens `/labels`. Look up an item by SKU or uuid, enter the quantity to print and how many copies (default 1), then print. The quantity is only printed on the label. It does not change the item's stock. The edit page has a **Print label** button that opens this page with the item filled in.
 
-The label is one 90 mm × 29 mm landscape page, for a Brother QL-820NWB with DK-1201 (29 × 90 mm) die-cut labels. The barcode is Code 128 from [JsBarcode](https://github.com/lindell/JsBarcode), encoding the SKU, or the item id when the SKU is empty. Bars are sized to a whole number of 300 dpi dots (4 dots wide, or 3 if the code is long).
+The label is one 90 mm × 29 mm landscape page, for a Brother QL-820NWB with DK-1201 (29 × 90 mm) die-cut labels. The item name stays on one line. The font shrinks so a name of up to 80 characters fits the label width without wrapping or being cut off. The barcode is Code 128 from [JsBarcode](https://github.com/lindell/JsBarcode), encoding the SKU, or the item id when the SKU is empty. That same value is printed in small type under the bars. Bars are sized to a whole number of 300 dpi dots (4 dots wide, or 3 if the code is long).
 
 From a Mac browser, use these print-dialog settings:
 
