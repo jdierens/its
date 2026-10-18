@@ -32,9 +32,14 @@ export default function HomePage() {
     <main className="page">
       <div className="page-head">
         <h1>Items</h1>
-        <Link className="button" href="/items/new">
-          New item
-        </Link>
+        <div className="actions">
+          <Link className="button secondary" href="/labels">
+            Print labels
+          </Link>
+          <Link className="button" href="/items/new">
+            New item
+          </Link>
+        </div>
       </div>
       {error ? <p className="banner error">{error}</p> : null}
       {loading ? <p className="muted">Loading items…</p> : null}
@@ -46,6 +51,7 @@ export default function HomePage() {
           <table>
             <thead>
               <tr>
+                <th>Photo</th>
                 <th>SKU</th>
                 <th>Name</th>
                 <th>Quantity</th>
@@ -55,6 +61,13 @@ export default function HomePage() {
             <tbody>
               {items.map((item) => (
                 <tr key={item.id}>
+                  <td className="photo">
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt="" />
+                    ) : (
+                      <span className="thumb-missing">—</span>
+                    )}
+                  </td>
                   <td className="sku">{item.sku || "—"}</td>
                   <td className="name">
                     <Link href={`/items/${item.id}`}>{item.name || "Untitled"}</Link>
