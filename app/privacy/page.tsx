@@ -17,7 +17,7 @@ export default function PrivacyPage() {
       </p>
       <p>
         Email <a href="mailto:jan@deepdiscountservers.com">jan@deepdiscountservers.com</a>.
-        Mailing address: [Company mailing address]
+        Mailing address: 3730 E Dale Ave, Henderson, Nevada 89044
       </p>
 
       <h2>What the app is for</h2>

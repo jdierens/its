@@ -15,8 +15,8 @@ export function LegalDocument({
         <h1>{title}</h1>
         <p className="legal-updated">Last updated October 18, 2026</p>
         <p className="legal-notice">
-          This page is a plain-language template for an internal business tool. It is not legal
-          advice. Replace each marked placeholder before you rely on it.
+          This page is a plain-language notice for an internal business tool. It is not legal
+          advice.
         </p>
         {children}
       </article>

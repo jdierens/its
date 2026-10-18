@@ -76,15 +76,15 @@ export default function TermsPage() {
 
       <h2>Governing law</h2>
       <p>
-        These terms are governed by the laws of [State], except where those rules would apply
-        another place&apos;s law. This template does not choose a court or venue.
+        These terms are governed by the laws of the State of Nevada, except where those rules
+        would apply another place&apos;s law. These terms do not choose a court or venue.
       </p>
 
       <h2>Contact</h2>
       <p>
         Questions about these terms:{" "}
         <a href="mailto:jan@deepdiscountservers.com">jan@deepdiscountservers.com</a>. Mailing
-        address: [Company mailing address]
+        address: 3730 E Dale Ave, Henderson, Nevada 89044
       </p>
     </LegalDocument>
   );
