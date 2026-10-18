@@ -479,6 +479,31 @@ legend {
   color: #fff;
 }
 
+.sidebar-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.75rem;
+  margin: 0.35rem 1.15rem 0.15rem;
+  font-size: 0.75rem;
+}
+
+.sidebar-legal a {
+  color: #9aabbd;
+  text-decoration: none;
+}
+
+.sidebar-legal a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.app-shell.collapsed .sidebar-legal {
+  flex-direction: column;
+  align-items: center;
+  margin-right: 0.4rem;
+  margin-left: 0.4rem;
+}
+
 .sidebar-collapse {
   display: flex;
   align-items: center;
@@ -1033,6 +1058,95 @@ button.danger {
   margin: 0;
   padding: 0.8rem;
   color: var(--muted);
+}
+
+.legal {
+  box-sizing: border-box;
+  min-height: 100vh;
+  margin: 0;
+  padding: 2.5rem 1.25rem 3rem;
+  background: #fff;
+  color: #1c1915;
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  font-size: 1.125rem;
+  line-height: 1.65;
+}
+
+.legal-brand {
+  max-width: 40rem;
+  margin: 0 auto 1.5rem;
+  color: #5c564e;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.legal article {
+  max-width: 40rem;
+  margin: 0 auto;
+}
+
+.legal h1 {
+  margin: 0 0 0.35rem;
+  font-size: 2.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.legal h2 {
+  margin: 1.75rem 0 0.45rem;
+  font-size: 1.28rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.legal p,
+.legal li {
+  margin: 0 0 0.85rem;
+}
+
+.legal ul {
+  margin: 0 0 0.85rem;
+  padding-left: 1.25rem;
+}
+
+.legal a {
+  color: #0f4c81;
+}
+
+.legal code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.legal-updated {
+  margin: 0 0 1.1rem;
+  color: #5c564e;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 0.95rem;
+}
+
+.legal-notice {
+  margin: 0 0 1.4rem;
+  padding: 0.8rem 0.95rem;
+  border-left: 3px solid #c4b8a5;
+  background: #f7f4ef;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 0.98rem;
+}
+
+.legal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  max-width: 40rem;
+  margin: 2.4rem auto 0;
+  padding-top: 1rem;
+  border-top: 1px solid #e4ddd3;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 0.92rem;
 }
 
 .sr-only {

@@ -30,6 +30,7 @@ import {
   type ReactNode,
 } from "react";
 import { isNavActive, NAV_GROUPS, pageMetaFor, type PageMeta } from "@/lib/nav";
+import { isPublicPath } from "@/lib/publicPaths";
 
 const STORAGE_KEY = "its.sidebar.collapsed";
 
@@ -108,6 +109,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     });
   }
 
+  // Public legal pages render on their own. When Google sign-in is added, these
+  // paths must also stay outside the auth middleware. See lib/publicPaths.ts.
+  if (isPublicPath(pathname)) {
+    return children;
+  }
+
   const shellClass = [
     "app-shell",
     collapsed ? "collapsed" : "",
@@ -155,6 +162,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             ))}
           </nav>
+          <div className="sidebar-legal">
+            <Link href="/privacy" title="Privacy Policy">
+              Privacy
+            </Link>
+            <Link href="/terms" title="Terms of Use">
+              Terms
+            </Link>
+          </div>
           <button
             type="button"
             className="sidebar-collapse"
