@@ -12,14 +12,22 @@ type ItemLabelProps = {
 };
 
 // 300 dpi dots are 3.125 CSS pixels (96 dpi). 1.28px is 4 dots, 0.96px is 3 dots.
+// 32px is 100 dots, 8.47mm, above the 8mm scan floor.
 const WIDE_MODULE_PX = 1.28;
 const NARROW_MODULE_PX = 0.96;
-const BAR_HEIGHT_PX = 38.4;
+const BAR_HEIGHT_PX = 32;
 const MAX_BARCODE_MM = 46;
+const CODE_CAP_TARGET_MM = 4;
 // Label is 90mm with 1.5mm padding on each side. Leave 1px so the last glyph is not clipped.
 const NAME_WIDTH_PX = ((90 - 1.5 - 1.5) * 96) / 25.4 - 1;
 const NAME_MAX_FONT_PX = (3.4 * 96) / 25.4;
-const CODE_MAX_FONT_PX = (1.8 * 96) / 25.4;
+const NAME_MAX_CHARS = 60;
+
+export function labelName(name: string): string {
+  const value = name || "Untitled";
+  if (value.length <= NAME_MAX_CHARS) return value;
+  return `${value.slice(0, NAME_MAX_CHARS - 1)}…`;
+}
 
 function measuredWidth(text: string, fontSizePx: number, weight: number): number {
   const probe = document.createElement("span");
@@ -56,14 +64,26 @@ export function fitNameFontPx(text: string): number {
   return best;
 }
 
+function capHeightMm(fontSizePx: number): number {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return fontSizePx * 0.72 * (25.4 / 96);
+  context.font = `700 ${fontSizePx}px Helvetica, Arial, sans-serif`;
+  const metrics = context.measureText("0123456789");
+  const ascent = metrics.actualBoundingBoxAscent || fontSizePx * 0.72;
+  return (ascent * 25.4) / 96;
+}
+
 function fitCodeFontPx(text: string, maxWidthPx: number): number {
-  if (typeof document === "undefined") return CODE_MAX_FONT_PX;
+  if (typeof document === "undefined") return (CODE_CAP_TARGET_MM * 96) / 25.4;
   let low = 1;
-  let high = CODE_MAX_FONT_PX;
+  let high = 48;
   let best = low;
-  for (let step = 0; step < 14; step += 1) {
+  for (let step = 0; step < 16; step += 1) {
     const mid = (low + high) / 2;
-    if (measuredWidth(text, mid, 400) <= maxWidthPx - 1) {
+    const fitsWidth = measuredWidth(text, mid, 700) <= maxWidthPx - 1;
+    const fitsCap = capHeightMm(mid) <= CODE_CAP_TARGET_MM + 0.02;
+    if (fitsWidth && fitsCap) {
       best = mid;
       low = mid;
     } else {
@@ -83,14 +103,16 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
   const nameRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLDivElement>(null);
   const descriptionSize = description.length > 90 ? "2mm" : "2.3mm";
-  const displayName = name || "Untitled";
+  const displayName = labelName(name);
 
   useLayoutEffect(() => {
     const el = nameRef.current;
     if (!el) return;
 
     const fit = () => {
-      let size = fitNameFontPx(el.textContent || displayName);
+      const shown = labelName(el.dataset.fullName || el.textContent || displayName);
+      el.textContent = shown;
+      let size = fitNameFontPx(shown);
       el.style.fontSize = `${size}px`;
       if (el.clientWidth === 0) return;
       let guard = 0;
@@ -130,12 +152,12 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
     };
 
     draw(WIDE_MODULE_PX);
-    const drawn = Number(svg.getAttribute("width"));
+    const drawn = parseFloat(svg.getAttribute("width") || "");
     const maxPx = (MAX_BARCODE_MM * 96) / 25.4;
     if (Number.isFinite(drawn) && drawn > maxPx) draw(NARROW_MODULE_PX);
 
     const codeEl = codeRef.current;
-    const svgWidth = Number(svg.getAttribute("width"));
+    const svgWidth = parseFloat(svg.getAttribute("width") || "");
     if (codeEl && Number.isFinite(svgWidth) && svgWidth > 0) {
       codeEl.style.fontSize = `${fitCodeFontPx(code, svgWidth)}px`;
     }
@@ -143,7 +165,12 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
 
   return (
     <article className="item-label">
-      <div ref={nameRef} className="item-label-name" style={{ fontSize: `${NAME_MAX_FONT_PX}px` }}>
+      <div
+        ref={nameRef}
+        className="item-label-name"
+        data-full-name={name || "Untitled"}
+        style={{ fontSize: `${NAME_MAX_FONT_PX}px` }}
+      >
         {displayName}
       </div>
       <div className="item-label-desc" style={{ fontSize: descriptionSize }}>
@@ -227,10 +254,12 @@ export const LABEL_PRINT_CSS = `
 
 .item-label-code {
   margin-top: 0.3mm;
-  font-size: 1.8mm;
+  font-size: 5mm;
+  font-weight: 700;
   line-height: 1;
   text-align: center;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .item-label-qty {
