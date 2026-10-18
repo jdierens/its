@@ -431,8 +431,8 @@ legend {
 .brand {
   display: flex;
   align-items: center;
-  min-height: 64px;
-  padding: 0 1.15rem;
+  min-height: 0;
+  padding: 0.9rem 1.15rem 0.15rem;
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -441,6 +441,40 @@ legend {
 
 .brand-mark {
   font-size: 1.05rem;
+}
+
+.brand-rev {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0 1.15rem 0.65rem;
+  color: #8b98a8;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.brand-rev-mini {
+  display: none;
+  margin-top: 0.15rem;
+  color: #8b98a8;
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.rev-badge {
+  padding: 0 0.32rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  color: #c5d0dc;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+  text-transform: uppercase;
 }
 
 .sidebar-nav {
@@ -524,8 +558,18 @@ legend {
 }
 
 .app-shell.collapsed .brand {
+  flex-direction: column;
   justify-content: center;
-  padding: 0;
+  gap: 0.05rem;
+  padding: 0.7rem 0 0.35rem;
+}
+
+.app-shell.collapsed .brand-rev {
+  display: none;
+}
+
+.app-shell.collapsed .brand-rev-mini {
+  display: block;
 }
 
 .app-shell.collapsed .nav-label {
@@ -799,8 +843,17 @@ button.danger {
   }
 
   .app-shell.collapsed .brand {
+    flex-direction: row;
     justify-content: flex-start;
-    padding: 0 1.15rem;
+    padding: 0.9rem 1.15rem 0.15rem;
+  }
+
+  .app-shell.collapsed .brand-rev {
+    display: flex;
+  }
+
+  .app-shell.collapsed .brand-rev-mini {
+    display: none;
   }
 
   .app-shell.collapsed .nav-link,
