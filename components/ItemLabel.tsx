@@ -1,7 +1,7 @@
 "use client";
 
 import JsBarcode from "jsbarcode";
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 type ItemLabelProps = {
   name: string;
@@ -9,25 +9,220 @@ type ItemLabelProps = {
   code: string;
   quantity: string;
   printedOn: string;
+  shortCode?: string | null;
 };
 
 // 300 dpi dots are 3.125 CSS pixels (96 dpi). 1.28px is 4 dots, 0.96px is 3 dots.
+// 32px is 100 dots, 8.47mm, above the 8mm scan floor.
 const WIDE_MODULE_PX = 1.28;
 const NARROW_MODULE_PX = 0.96;
-const BAR_HEIGHT_PX = 38.4;
-const MAX_BARCODE_MM = 48;
+const BAR_HEIGHT_PX = 32;
+const MAX_BARCODE_MM = 46;
+const CODE_CAP_TARGET_MM = 4;
+// Label is 90mm with 1.5mm padding on each side. Leave 1px so the last glyph is not clipped.
+const NAME_WIDTH_PX = ((90 - 1.5 - 1.5) * 96) / 25.4 - 1;
+const NAME_MAX_FONT_PX = (3.4 * 96) / 25.4;
+const NAME_MAX_CHARS = 60;
+
+export function labelName(name: string): string {
+  const value = name || "Untitled";
+  if (value.length <= NAME_MAX_CHARS) return value;
+  return `${value.slice(0, NAME_MAX_CHARS - 1)}…`;
+}
+
+function measuredWidth(text: string, fontSizePx: number, weight: number): number {
+  const probe = document.createElement("span");
+  probe.textContent = text;
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.whiteSpace = "nowrap";
+  probe.style.fontWeight = String(weight);
+  probe.style.fontFamily = "Helvetica, Arial, sans-serif";
+  probe.style.fontSize = `${fontSizePx}px`;
+  probe.style.lineHeight = "1";
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width;
+}
+
+export function fitNameFontPx(text: string): number {
+  const value = text || "Untitled";
+  if (typeof document === "undefined") return NAME_MAX_FONT_PX;
+  let low = 1;
+  let high = NAME_MAX_FONT_PX;
+  let best = low;
+  for (let step = 0; step < 16; step += 1) {
+    const mid = (low + high) / 2;
+    if (measuredWidth(value, mid, 700) <= NAME_WIDTH_PX) {
+      best = mid;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return best;
+}
+
+function widthWithSpacing(
+  text: string,
+  fontSizePx: number,
+  weight: number,
+  letterSpacingPx: number,
+): number {
+  const probe = document.createElement("span");
+  probe.textContent = text;
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.whiteSpace = "nowrap";
+  probe.style.fontWeight = String(weight);
+  probe.style.fontFamily = "Helvetica, Arial, sans-serif";
+  probe.style.fontSize = `${fontSizePx}px`;
+  probe.style.lineHeight = "1";
+  probe.style.letterSpacing = `${letterSpacingPx}px`;
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width;
+}
+
+function fitCaptionToWidth(
+  text: string,
+  targetWidth: number,
+): { fontPx: number; letterSpacingPx: number } {
+  let fontPx = (2.6 * 96) / 25.4;
+  if (targetWidth <= 0) return { fontPx, letterSpacingPx: 0 };
+  let natural = measuredWidth(text, fontPx, 400);
+  if (natural > targetWidth) {
+    let low = 4;
+    let high = fontPx;
+    for (let step = 0; step < 14; step += 1) {
+      const mid = (low + high) / 2;
+      if (measuredWidth(text, mid, 400) <= targetWidth) {
+        fontPx = mid;
+        low = mid;
+      } else {
+        high = mid;
+        fontPx = mid;
+      }
+    }
+    natural = measuredWidth(text, fontPx, 400);
+  }
+  const gaps = Math.max(text.length - 1, 1);
+  let letterSpacingPx = Math.max(0, targetWidth - natural) / gaps;
+  const spaced = widthWithSpacing(text, fontPx, 400, letterSpacingPx);
+  if (spaced > natural && Math.abs(spaced - targetWidth) > 0.4) {
+    letterSpacingPx *= (targetWidth - natural) / (spaced - natural);
+  }
+  return { fontPx, letterSpacingPx };
+}
+
+function capTopGapPx(fontSizePx: number, weight: number): number {
+  const probe = document.createElement("span");
+  probe.textContent = "H";
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.top = "0";
+  probe.style.fontWeight = String(weight);
+  probe.style.fontFamily = "Helvetica, Arial, sans-serif";
+  probe.style.fontSize = `${fontSizePx}px`;
+  probe.style.lineHeight = "1";
+  const marker = document.createElement("span");
+  marker.style.display = "inline-block";
+  marker.style.width = "0";
+  marker.style.height = "0";
+  probe.appendChild(marker);
+  document.body.appendChild(probe);
+  const baselineFromTop = marker.getBoundingClientRect().top - probe.getBoundingClientRect().top;
+  probe.remove();
+
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return 0;
+  context.font = `${weight} ${fontSizePx}px Helvetica, Arial, sans-serif`;
+  const ascent = context.measureText("H8").actualBoundingBoxAscent || 0;
+  return baselineFromTop - ascent;
+}
+
+function capHeightMm(fontSizePx: number): number {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return fontSizePx * 0.72 * (25.4 / 96);
+  context.font = `700 ${fontSizePx}px Helvetica, Arial, sans-serif`;
+  const metrics = context.measureText("0123456789");
+  const ascent = metrics.actualBoundingBoxAscent || fontSizePx * 0.72;
+  return (ascent * 25.4) / 96;
+}
+
+function fitCodeFontPx(text: string, maxWidthPx: number): number {
+  if (typeof document === "undefined") return (CODE_CAP_TARGET_MM * 96) / 25.4;
+  let low = 1;
+  let high = 48;
+  let best = low;
+  for (let step = 0; step < 16; step += 1) {
+    const mid = (low + high) / 2;
+    const fitsWidth = measuredWidth(text, mid, 700) <= maxWidthPx - 1;
+    const fitsCap = capHeightMm(mid) <= CODE_CAP_TARGET_MM + 0.02;
+    if (fitsWidth && fitsCap) {
+      best = mid;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return best;
+}
 
 export function barcodeValue(sku: string, id: string): string {
   const trimmed = sku.trim();
   return trimmed || id;
 }
 
-export function ItemLabel({ name, description, code, quantity, printedOn }: ItemLabelProps) {
+export function ItemLabel({
+  name,
+  description,
+  code,
+  quantity,
+  printedOn,
+  shortCode,
+}: ItemLabelProps) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const nameSize = `${Math.min(3.4, Math.max(1.9, 150 / Math.max(name.length, 1)))}mm`;
+  const nameRef = useRef<HTMLDivElement>(null);
+  const codeRef = useRef<HTMLDivElement>(null);
+  const shortRef = useRef<HTMLDivElement>(null);
+  const qtyRef = useRef<HTMLElement>(null);
+  const dateRef = useRef<HTMLDivElement>(null);
+  const captionRef = useRef<HTMLDivElement>(null);
+  const shownShortCode = shortCode?.trim().toUpperCase() || null;
   const descriptionSize = description.length > 90 ? "2mm" : "2.3mm";
+  const displayName = labelName(name);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const el = nameRef.current;
+    if (!el) return;
+
+    const fit = () => {
+      const shown = labelName(el.dataset.fullName || el.textContent || displayName);
+      el.textContent = shown;
+      let size = fitNameFontPx(shown);
+      el.style.fontSize = `${size}px`;
+      if (el.clientWidth === 0) return;
+      let guard = 0;
+      while (el.scrollWidth > el.clientWidth && size > 1 && guard < 8) {
+        size *= el.clientWidth / Math.max(el.scrollWidth, 1);
+        el.style.fontSize = `${size}px`;
+        guard += 1;
+      }
+    };
+
+    fit();
+    el.addEventListener("fit-name", fit);
+    return () => el.removeEventListener("fit-name", fit);
+  }, [displayName]);
+
+  useLayoutEffect(() => {
     const svg = svgRef.current;
     if (!svg || !code) return;
 
@@ -51,28 +246,110 @@ export function ItemLabel({ name, description, code, quantity, printedOn }: Item
     };
 
     draw(WIDE_MODULE_PX);
-    const drawn = Number(svg.getAttribute("width"));
+    const drawn = parseFloat(svg.getAttribute("width") || "");
     const maxPx = (MAX_BARCODE_MM * 96) / 25.4;
     if (Number.isFinite(drawn) && drawn > maxPx) draw(NARROW_MODULE_PX);
-  }, [code]);
+
+    const codeEl = codeRef.current;
+    const svgWidth = parseFloat(svg.getAttribute("width") || "");
+    if (codeEl && Number.isFinite(svgWidth) && svgWidth > 0) {
+      codeEl.style.fontSize = `${fitCodeFontPx(code, svgWidth)}px`;
+      codeEl.style.width = `${svgWidth}px`;
+    }
+
+    const qtyEl = qtyRef.current;
+    const shortEl = shortRef.current;
+    const dateEl = dateRef.current;
+    const captionEl = captionRef.current;
+    const bigPx = (8.4 * 96) / 25.4;
+    let shortPx = bigPx;
+    let qtyPx = bigPx;
+    if (shownShortCode) {
+      const innerPx = ((90 - 3) * 96) / 25.4;
+      const gapPx = (2 * 96) / 25.4;
+      const barsPx = Number.isFinite(svgWidth) ? svgWidth : 0;
+      let shortWidth = measuredWidth(shownShortCode, shortPx, 700);
+      let qtyWidth = measuredWidth(quantity || "0", qtyPx, 700);
+      const available = innerPx - barsPx - gapPx * 2;
+      if (available > 0 && shortWidth + qtyWidth > available) {
+        const scale = available / (shortWidth + qtyWidth);
+        shortPx = Math.max(12, shortPx * scale);
+        qtyPx = Math.max(12, qtyPx * scale);
+        shortWidth = measuredWidth(shownShortCode, shortPx, 700);
+      }
+      if (shortEl) {
+        shortEl.style.fontSize = `${shortPx}px`;
+        shortEl.style.width = `${shortWidth}px`;
+        shortEl.style.transform = `translateY(${-capTopGapPx(shortPx, 700)}px)`;
+      }
+      if (dateEl) {
+        const fitted = fitCaptionToWidth(printedOn, shortWidth);
+        dateEl.style.fontSize = `${fitted.fontPx}px`;
+        dateEl.style.letterSpacing = `${fitted.letterSpacingPx}px`;
+        dateEl.style.width = `${shortWidth}px`;
+        if (captionEl) captionEl.style.fontSize = `${fitted.fontPx}px`;
+      }
+    } else if (dateEl) {
+      const captionPx = (2.6 * 96) / 25.4;
+      const dateWidth = measuredWidth(printedOn, captionPx, 400);
+      dateEl.style.fontSize = "";
+      dateEl.style.letterSpacing = "0px";
+      dateEl.style.width = `${dateWidth}px`;
+      if (shortEl) {
+        shortEl.style.width = `${dateWidth}px`;
+        shortEl.style.transform = "";
+      }
+      if (captionEl) captionEl.style.fontSize = "";
+    }
+    if (qtyEl) {
+      qtyEl.style.fontSize = `${qtyPx}px`;
+      qtyEl.style.transform = `translateY(${-capTopGapPx(qtyPx, 700)}px)`;
+    }
+  }, [code, shownShortCode, quantity, printedOn]);
 
   return (
     <article className="item-label">
-      <div className="item-label-name" style={{ fontSize: nameSize }}>
-        {name || "Untitled"}
+      <div
+        ref={nameRef}
+        className="item-label-name"
+        data-full-name={name || "Untitled"}
+        style={{ fontSize: `${NAME_MAX_FONT_PX}px` }}
+      >
+        {displayName}
       </div>
       <div className="item-label-desc" style={{ fontSize: descriptionSize }}>
         {description}
       </div>
       <div className="item-label-bottom">
-        <div className="item-label-barcode">
-          <svg ref={svgRef} role="img" aria-label={`Code 128 barcode for ${code}`} />
+        <div className="item-label-values">
+          <svg
+            ref={svgRef}
+            className="item-label-bars"
+            role="img"
+            aria-label={`Code 128 barcode for ${code}`}
+          />
+          <strong ref={qtyRef} className="item-label-qty">
+            {quantity}
+          </strong>
+          <div
+            ref={shortRef}
+            className="item-label-short"
+            data-short-code={shownShortCode ?? ""}
+          >
+            {shownShortCode}
+          </div>
         </div>
-        <div className="item-label-qty">
-          <span>Qty</span>
-          <strong>{quantity}</strong>
+        <div className="item-label-captions">
+          <div ref={codeRef} className="item-label-code">
+            {code}
+          </div>
+          <div ref={captionRef} className="item-label-caption">
+            QTY
+          </div>
+          <div ref={dateRef} className="item-label-date">
+            {printedOn}
+          </div>
         </div>
-        <div className="item-label-date">{printedOn}</div>
       </div>
     </article>
   );
@@ -103,8 +380,7 @@ export const LABEL_PRINT_CSS = `
   line-height: 1.05;
   text-align: center;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
 }
 
 .item-label-desc {
@@ -119,45 +395,74 @@ export const LABEL_PRINT_CSS = `
 
 .item-label-bottom {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 2mm;
+  flex-direction: column;
+  row-gap: 0.45mm;
   min-height: 11mm;
 }
 
-.item-label-barcode {
-  flex: 0 1 auto;
-  max-width: 48mm;
-  overflow: hidden;
+.item-label-values,
+.item-label-captions {
+  display: flex;
+  column-gap: 2mm;
 }
 
-.item-label-barcode svg {
+.item-label-values {
+  align-items: flex-start;
+}
+
+.item-label-captions {
+  align-items: baseline;
+}
+
+.item-label-bars {
+  flex: 0 0 auto;
   display: block;
+  max-width: 46mm;
   shape-rendering: crispEdges;
 }
 
-.item-label-qty {
-  flex: 1;
+.item-label-qty,
+.item-label-caption {
+  flex: 1 1 auto;
   text-align: center;
 }
 
-.item-label-qty span {
-  display: block;
-  font-size: 2mm;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.item-label-qty strong {
-  font-size: 4.2mm;
+.item-label-qty {
+  font-size: 8.4mm;
   font-weight: 700;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
+.item-label-short,
+.item-label-date {
+  flex: 0 0 auto;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.item-label-short {
+  font-size: 8.4mm;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.item-label-code {
+  flex: 0 0 auto;
+  font-size: 5mm;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.item-label-caption,
 .item-label-date {
   font-size: 2.6mm;
-  text-align: right;
-  white-space: nowrap;
+  font-weight: 400;
+  line-height: 1;
 }
 
 .label-frame {
