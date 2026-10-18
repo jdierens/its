@@ -47,6 +47,32 @@ From a Mac browser, use these print-dialog settings:
 - Margins: None
 - Headers and footers: off
 
+## QuickBooks customers and vendors
+
+**Contacts** in the sidebar lists customers and vendors. **Admin > Integrations** connects QuickBooks Online. The app has no Intuit credentials until you add them. Lists and forms work before that. Sync runs after the connection is saved.
+
+Copy these into `.env.local`. They are server-only. Do not prefix them with `NEXT_PUBLIC_` and do not commit the file.
+
+| Variable | Purpose |
+| --- | --- |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server key for `qbo_connection`. The browser never sees tokens. |
+| `QBO_CLIENT_ID` | Intuit app client id |
+| `QBO_CLIENT_SECRET` | Intuit app client secret |
+| `QBO_REDIRECT_URI` | Must match a redirect URI on the Intuit app |
+| `QBO_ENVIRONMENT` | `sandbox` or `production` |
+
+For local dev, register this redirect URI on the Intuit app and set `QBO_REDIRECT_URI` to the same value:
+
+`http://localhost:3000/api/qbo/callback`
+
+Intuit matches the URI exactly. If you open the app at `http://127.0.0.1:3000` instead, register `http://127.0.0.1:3000/api/qbo/callback` and set the env var to that. Production keys require `https`. Sandbox keys can use `http://localhost`.
+
+Connect starts at `/api/qbo/connect`, which sends the browser to Intuit with scope `com.intuit.quickbooks.accounting` and a short-lived CSRF cookie. Intuit returns to `/api/qbo/callback`, which stores the company id and tokens. Disconnect calls Intuit's revoke endpoint and deletes the local row. Access tokens are refreshed when they are close to expiry. Sandbox and production use the same OAuth host. `QBO_ENVIRONMENT` chooses `https://sandbox-quickbooks.api.intuit.com` or `https://quickbooks.api.intuit.com`.
+
+**Sync now** pushes ITS rows marked local, pending, or error, then pulls. A conflict stays put until you edit the contact again. The first successful pull reads every active and inactive customer and vendor. Later syncs use change data capture from the last successful pull, with a two-minute overlap. Rows match on `qbo_id`. An update sends the QuickBooks `SyncToken`. If QuickBooks returns a stale-object error (5010), ITS refetches that record, keeps the QuickBooks version, and logs the discarded local edit. Inactive QuickBooks records stay in the list with Active set to No.
+
+Customer tax id is `ResaleNum`. Vendor tax id is `TaxIdentifier`. Vendor notes and shipping addresses stay in ITS, because QuickBooks vendors do not store them. Clearing an email, phone, or address in ITS leaves the previous QuickBooks value in place; the next pull keeps that QuickBooks value. Setting Active to off is sent.
+
 ## Database
 
 Migrations live in `supabase/migrations`. Deploying this repo does not apply them. They are already applied on project `fxsbpreasbdalwthyzvk`. On a new database, run them in order in the SQL editor.
@@ -61,6 +87,8 @@ Storage policies on `storage.objects`, for `anon` and `authenticated`, bucket `i
 
 There is no update policy, so objects cannot be overwritten. Deleting a photo removes the file through the Storage API and then deletes the `item_images` row. Storage does not allow deleting `storage.objects` from a database trigger.
 
-Row level security is disabled on `items`, `taxonomies`, `attributes`, `item_attributes`, `attribute_values`, and `item_images`. The anon key can read and write those rows. This app does not turn RLS on. Enabling it without policies would block the client.
+Row level security is disabled on `items`, `taxonomies`, `attributes`, `item_attributes`, `attribute_values`, `item_images`, `customers`, `vendors`, and `qbo_sync_log`. The anon key can read and write those rows. This app does not turn RLS on for them. Enabling it without policies would block the client.
+
+`qbo_connection` is the exception. Row level security is enabled and there are no policies for `anon` or `authenticated`. Their grants are revoked. Only the service role, from server route handlers, can read the tokens.
 
 `npm run typecheck` and `npm run build` both need to pass.

@@ -33,6 +33,13 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Contacts",
+    items: [
+      { label: "Customers", href: "/customers", description: "Customers synced with QuickBooks." },
+      { label: "Vendors", href: "/vendors", description: "Vendors synced with QuickBooks." },
+    ],
+  },
+  {
     label: "Sales",
     items: [
       {
@@ -85,6 +92,11 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/admin/users",
         description: "Manage who can sign in and what they can do.",
       },
+      {
+        label: "Integrations",
+        href: "/admin/integrations",
+        description: "Connect QuickBooks and sync customers and vendors.",
+      },
     ],
   },
 ];
@@ -125,6 +137,50 @@ export function pageMetaFor(pathname: string): PageMeta {
         { label: "Inventory" },
         { label: "Items", href: "/items" },
         { label: "Edit item" },
+      ],
+    };
+  }
+
+  if (pathname === "/customers/new") {
+    return {
+      title: "New customer",
+      crumbs: [
+        { label: "Contacts" },
+        { label: "Customers", href: "/customers" },
+        { label: "New customer" },
+      ],
+    };
+  }
+
+  if (/^\/customers\/[^/]+$/.test(pathname)) {
+    return {
+      title: "Edit customer",
+      crumbs: [
+        { label: "Contacts" },
+        { label: "Customers", href: "/customers" },
+        { label: "Edit customer" },
+      ],
+    };
+  }
+
+  if (pathname === "/vendors/new") {
+    return {
+      title: "New vendor",
+      crumbs: [
+        { label: "Contacts" },
+        { label: "Vendors", href: "/vendors" },
+        { label: "New vendor" },
+      ],
+    };
+  }
+
+  if (/^\/vendors\/[^/]+$/.test(pathname)) {
+    return {
+      title: "Edit vendor",
+      crumbs: [
+        { label: "Contacts" },
+        { label: "Vendors", href: "/vendors" },
+        { label: "Edit vendor" },
       ],
     };
   }
