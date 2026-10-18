@@ -1,0 +1,105 @@
+const MIN_GAP_MS = 180;
+const MAX_ATTEMPTS = 4;
+
+let nextAllowedAt = 0;
+
+export type QboResult<T> =
+  | { ok: true; status: number; data: T }
+  | { ok: false; status: number; message: string; code: string | null };
+
+export async function qboRequest<T>(options: {
+  method: "GET" | "POST";
+  url: string;
+  token: string;
+  body?: unknown;
+}): Promise<QboResult<T>> {
+  let last: QboResult<T> | null = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const now = Date.now();
+    if (now < nextAllowedAt) await sleep(nextAllowedAt - now);
+    nextAllowedAt = Date.now() + MIN_GAP_MS;
+
+    let response: Response;
+    try {
+      response = await fetch(options.url, {
+        method: options.method,
+        headers: {
+          Authorization: `Bearer ${options.token}`,
+          Accept: "application/json",
+          ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "QuickBooks request failed.";
+      last = { ok: false, status: 0, message, code: null };
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(500 * attempt);
+        continue;
+      }
+      return last;
+    }
+
+    if (response.status === 429 && attempt < MAX_ATTEMPTS) {
+      const retryAfter = Number(response.headers.get("Retry-After"));
+      const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000 * attempt;
+      nextAllowedAt = Date.now() + wait;
+      await sleep(wait);
+      continue;
+    }
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const fault = readFault(data);
+      return {
+        ok: false,
+        status: response.status,
+        message: fault.message || `QuickBooks request failed (${response.status}).`,
+        code: fault.code,
+      };
+    }
+    return { ok: true, status: response.status, data: data as T };
+  }
+
+  return last ?? { ok: false, status: 429, message: "QuickBooks rate limit persisted.", code: "429" };
+}
+
+export function readFault(body: unknown): { message: string; code: string | null } {
+  if (!body || typeof body !== "object") {
+    return { message: "QuickBooks request failed.", code: null };
+  }
+  const record = body as {
+    Fault?: { Error?: unknown };
+    error_description?: unknown;
+    error?: unknown;
+  };
+  const errors = record.Fault?.Error;
+  const first = Array.isArray(errors) ? errors[0] : errors;
+  if (first && typeof first === "object") {
+    const error = first as { Message?: unknown; Detail?: unknown; code?: unknown };
+    const message = [error.Message, error.Detail]
+      .filter((part): part is string => typeof part === "string" && part.length > 0)
+      .join(" ");
+    return {
+      message: message || "QuickBooks request failed.",
+      code: typeof error.code === "string" ? error.code : null,
+    };
+  }
+  if (typeof record.error_description === "string") {
+    return {
+      message: record.error_description,
+      code: typeof record.error === "string" ? record.error : null,
+    };
+  }
+  return { message: "QuickBooks request failed.", code: null };
+}
+
+export function isStaleSyncToken(code: string | null, message: string): boolean {
+  return code === "5010" || /stale object/i.test(message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

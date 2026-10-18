@@ -4,9 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BadgeDollarSign,
+  Building,
   ClipboardList,
+  Contact,
   Menu,
   Package,
+  Plug,
   PackageCheck,
   PackagePlus,
   PanelLeftClose,
@@ -32,6 +35,8 @@ const STORAGE_KEY = "its.sidebar.collapsed";
 
 const ICONS: Record<string, LucideIcon> = {
   "/": Package,
+  "/customers": Contact,
+  "/vendors": Building,
   "/taxonomies": Shapes,
   "/labels": Tag,
   "/sales/orders": ShoppingCart,
@@ -40,6 +45,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/warehouse/receiving": PackagePlus,
   "/pricing": BadgeDollarSign,
   "/admin/users": Users,
+  "/admin/integrations": Plug,
 };
 
 type ShellContextValue = {
