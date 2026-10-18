@@ -275,8 +275,9 @@ export const LABEL_PRINT_CSS = `
 }
 
 .item-label-qty strong {
-  font-size: 4.2mm;
+  font-size: 8.4mm;
   font-weight: 700;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
