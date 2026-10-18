@@ -485,8 +485,25 @@ export const LABEL_PRINT_CSS = `
   }
 
   .topbar,
+  .sidebar,
+  .shell-top,
+  .shell-backdrop,
   .no-print {
     display: none !important;
+  }
+
+  .app-shell,
+  .shell-body,
+  .shell-content {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+    position: static !important;
   }
 
   .page {

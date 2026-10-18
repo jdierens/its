@@ -1,5 +1,11 @@
 export type DataType = "integer" | "text" | "decimal";
 
+export type ListedValue = {
+  id: string;
+  value: string;
+  sortOrder: number;
+};
+
 export type Attribute = {
   id: string;
   name: string;
@@ -7,6 +13,7 @@ export type Attribute = {
   unit: string | null;
   uses_list: boolean;
   allowedValues: string[];
+  values: ListedValue[];
 };
 
 export type AttributeDefinition = {
@@ -25,13 +32,32 @@ export type Taxonomy = {
   attributes: Attribute[];
 };
 
-export type ItemSummary = {
+export type ItemListColumn = {
+  name: string;
+  unit: string | null;
+};
+
+export type ItemListRow = {
   id: string;
   sku: string;
   name: string;
   quantity: number | null;
   taxonomyName: string | null;
+  shortCode: string | null;
   imageUrl: string | null;
+  fields: Record<string, string>;
+};
+
+export type ItemList = {
+  rows: ItemListRow[];
+  total: number;
+  columns: ItemListColumn[];
+  unknownTax: boolean;
+};
+
+export type TaxonomyChoice = {
+  name: string;
+  shortCode: string;
 };
 
 export type ItemDetail = {

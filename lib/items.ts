@@ -1,17 +1,20 @@
 import { errorText } from "@/lib/errors";
-import { signedImageUrls } from "@/lib/images";
+import { ITEM_IMAGE_BUCKET, signedImageUrls } from "@/lib/images";
 import { getSupabase } from "@/lib/supabase";
 import type {
   Attribute,
   AttributeDefinition,
   DataType,
   ItemDetail,
-  ItemSummary,
+  ItemList,
+  ItemListColumn,
   LabelItem,
   Taxonomy,
+  TaxonomyChoice,
 } from "@/lib/types";
 
 type AttributeValueRow = {
+  id: string;
   value: string;
   sort_order: number;
 };
@@ -56,14 +59,25 @@ type SummaryImage = {
   is_primary: boolean;
 };
 
-type SummaryRow = {
+type ListTaxonomy = { name: string; short_code: string | null };
+
+type ListField = {
+  value: string;
+  attributes: { name: string } | { name: string }[] | null;
+};
+
+type ListRow = {
   id: string;
   sku: string;
   name: string;
   quantity: number | null;
-  taxonomies: { name: string } | { name: string }[] | null;
+  taxonomies: ListTaxonomy | ListTaxonomy[] | null;
   item_images: SummaryImage[] | null;
+  item_attributes: ListField[] | null;
 };
+
+const LIST_COLUMNS =
+  "id, sku, name, quantity, taxonomies(name, short_code), item_images(storage_path, is_primary), item_attributes(value, attributes(name))";
 
 const DATA_TYPES = new Set<DataType>(["integer", "text", "decimal"]);
 const UUID_PATTERN =
@@ -82,10 +96,14 @@ function embeddedName(
 }
 
 function mapAttribute(attribute: AttributeRow): Attribute {
-  const allowedValues = (attribute.attribute_values ?? [])
+  const values = (attribute.attribute_values ?? [])
     .slice()
     .sort((a, b) => a.sort_order - b.sort_order || a.value.localeCompare(b.value, undefined, { numeric: true }))
-    .map((row) => row.value);
+    .map((row) => ({
+      id: row.id,
+      value: row.value,
+      sortOrder: row.sort_order,
+    }));
 
   return {
     id: attribute.id,
@@ -93,22 +111,16 @@ function mapAttribute(attribute: AttributeRow): Attribute {
     data_type: asDataType(attribute.data_type),
     unit: attribute.unit,
     uses_list: attribute.uses_list !== false,
-    allowedValues,
+    allowedValues: values.map((row) => row.value),
+    values,
   };
 }
 
-export async function fetchTaxonomies(): Promise<Taxonomy[]> {
-  const { data, error } = await getSupabase()
-    .from("taxonomies")
-    .select(
-      "id, name, long_code, short_code, sort_order, attributes(id, name, data_type, unit, uses_list, attribute_values(value, sort_order))",
-    )
-    .order("sort_order")
-    .order("name");
+const TAXONOMY_COLUMNS =
+  "id, name, long_code, short_code, sort_order, attributes(id, name, data_type, unit, uses_list, attribute_values(id, value, sort_order))";
 
-  if (error) throw new Error(errorText(error));
-
-  return ((data ?? []) as TaxonomyRow[]).map((taxonomy) => ({
+function toTaxonomy(taxonomy: TaxonomyRow): Taxonomy {
+  return {
     id: taxonomy.id,
     name: taxonomy.name,
     longCode: taxonomy.long_code,
@@ -117,29 +129,148 @@ export async function fetchTaxonomies(): Promise<Taxonomy[]> {
     attributes: (taxonomy.attributes ?? [])
       .map(mapAttribute)
       .sort((a, b) => a.name.localeCompare(b.name)),
-  }));
+  };
 }
 
-export async function fetchItems(): Promise<ItemSummary[]> {
+export async function fetchTaxonomy(id: string): Promise<Taxonomy | null> {
   const { data, error } = await getSupabase()
-    .from("items")
-    .select("id, sku, name, quantity, taxonomies(name), item_images(storage_path, is_primary)")
-    .order("created_at", { ascending: false });
+    .from("taxonomies")
+    .select(TAXONOMY_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw new Error(errorText(error));
+  if (!data) return null;
+  return toTaxonomy(data as TaxonomyRow);
+}
+
+export async function fetchTaxonomies(): Promise<Taxonomy[]> {
+  const { data, error } = await getSupabase()
+    .from("taxonomies")
+    .select(TAXONOMY_COLUMNS)
+    .order("sort_order")
+    .order("name");
 
   if (error) throw new Error(errorText(error));
 
-  const rows = (data ?? []) as SummaryRow[];
-  const primaryPaths = rows.map((item) => primaryPath(item.item_images));
-  const urls = await signedImageUrls(primaryPaths.filter((path): path is string => Boolean(path)));
+  return ((data ?? []) as TaxonomyRow[]).map(toTaxonomy);
+}
 
-  return rows.map((item, index) => ({
-    id: item.id,
-    sku: item.sku,
-    name: item.name,
-    quantity: item.quantity,
-    taxonomyName: embeddedName(item.taxonomies),
-    imageUrl: primaryPaths[index] ? urls.get(primaryPaths[index] as string) ?? null : null,
-  }));
+function embeddedTaxonomy(value: ListRow["taxonomies"]): ListTaxonomy | null {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+function likePattern(raw: string): string {
+  return `%${raw.replace(/\\/g, "\\\\").replace(/[%_]/g, "\\$&")}%`;
+}
+
+export async function fetchTaxonomyChoices(): Promise<TaxonomyChoice[]> {
+  const { data, error } = await getSupabase()
+    .from("taxonomies")
+    .select("name, short_code")
+    .order("sort_order")
+    .order("name");
+
+  if (error) throw new Error(errorText(error));
+
+  return (data ?? [])
+    .map((row) => ({
+      name: String(row.name ?? ""),
+      shortCode: String(row.short_code ?? "").trim().toUpperCase(),
+    }))
+    .filter((row) => row.shortCode.length > 0);
+}
+
+export async function fetchItemList(input: { tax?: string | null; q?: string | null }): Promise<ItemList> {
+  const supabase = getSupabase();
+  const tax = input.tax?.trim().toUpperCase() ?? "";
+  const q = input.q?.trim() ?? "";
+
+  const counted = await supabase.from("items").select("id", { count: "exact", head: true });
+  if (counted.error) throw new Error(errorText(counted.error));
+  const total = counted.count ?? 0;
+
+  let taxonomyId: string | null = null;
+  let columns: ItemListColumn[] = [];
+  if (tax) {
+    const found = await supabase
+      .from("taxonomies")
+      .select("id, attributes(name, unit)")
+      .eq("short_code", tax)
+      .maybeSingle();
+    if (found.error) throw new Error(errorText(found.error));
+    if (!found.data) return { rows: [], total, columns: [], unknownTax: true };
+    taxonomyId = found.data.id as string;
+    const attributes = (found.data.attributes ?? []) as { name: string; unit: string | null }[];
+    columns = attributes
+      .map((attribute) => ({ name: attribute.name, unit: attribute.unit }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  let ids: string[] | null = null;
+  if (q) {
+    const pattern = likePattern(q);
+    const textQueries = (["sku", "name", "description"] as const).map((column) => {
+      let query = supabase.from("items").select("id").ilike(column, pattern);
+      if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
+      return query;
+    });
+    const [textResults, attributeResult] = await Promise.all([
+      Promise.all(textQueries),
+      supabase.from("item_attributes").select("item_id").ilike("value", pattern),
+    ]);
+    const failed = textResults.find((result) => result.error);
+    if (failed?.error) throw new Error(errorText(failed.error));
+    if (attributeResult.error) throw new Error(errorText(attributeResult.error));
+
+    const matched = new Set<string>();
+    for (const result of textResults) {
+      for (const row of result.data ?? []) {
+        if (typeof row.id === "string") matched.add(row.id);
+      }
+    }
+    for (const row of attributeResult.data ?? []) {
+      if (typeof row.item_id === "string") matched.add(row.item_id);
+    }
+    ids = [...matched];
+    if (ids.length === 0) return { rows: [], total, columns, unknownTax: false };
+  }
+
+  let query = supabase.from("items").select(LIST_COLUMNS).order("sku", { ascending: true });
+  if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
+  if (ids) query = query.in("id", ids);
+
+  const listed = await query;
+  if (listed.error) throw new Error(errorText(listed.error));
+
+  const records = (listed.data ?? []) as ListRow[];
+  const paths = records.map((item) => primaryPath(item.item_images));
+  const urls = await signedImageUrls(paths.filter((path): path is string => Boolean(path)));
+
+  return {
+    rows: records.map((item, index) => {
+      const taxonomy = embeddedTaxonomy(item.taxonomies);
+      const fields: Record<string, string> = {};
+      for (const field of item.item_attributes ?? []) {
+        const name = embeddedName(field.attributes);
+        if (name) fields[name] = field.value;
+      }
+      return {
+        id: item.id,
+        sku: item.sku,
+        name: item.name,
+        quantity: item.quantity,
+        taxonomyName: taxonomy?.name ?? null,
+        shortCode: taxonomy?.short_code?.trim().toUpperCase() || null,
+        imageUrl: paths[index] ? urls.get(paths[index] as string) ?? null : null,
+        fields,
+      };
+    }),
+    total,
+    columns,
+    unknownTax: false,
+  };
 }
 
 function primaryPath(images: SummaryImage[] | null): string | null {
@@ -257,6 +388,26 @@ export async function createItem(input: ItemInput): Promise<string> {
   if (error) throw new Error(errorText(error));
   if (typeof data !== "string") throw new Error("Create did not return an item id.");
   return data;
+}
+
+export async function deleteItem(id: string): Promise<void> {
+  const supabase = getSupabase();
+  const images = await supabase.from("item_images").select("storage_path").eq("item_id", id);
+  if (images.error) throw new Error(errorText(images.error));
+
+  const paths = (images.data ?? [])
+    .map((row) => row.storage_path)
+    .filter((path): path is string => typeof path === "string" && path.length > 0);
+  if (paths.length > 0) {
+    const removed = await supabase.storage.from(ITEM_IMAGE_BUCKET).remove(paths);
+    if (removed.error) throw new Error(errorText(removed.error));
+  }
+
+  const deleted = await supabase.from("items").delete().eq("id", id).select("id");
+  if (deleted.error) throw new Error(errorText(deleted.error));
+  if (!deleted.data || deleted.data.length === 0) {
+    throw new Error("That item is already gone.");
+  }
 }
 
 export async function updateItem(id: string, input: ItemInput): Promise<void> {
