@@ -133,16 +133,11 @@ export function TaxonomiesPage() {
 
   return (
     <main className="page">
-      <div className="page-head">
-        <h1>Taxonomies</h1>
-        <Link className="button secondary" href="/">
-          Back
-        </Link>
-      </div>
       <p className="hint page-note">
         Codes are stored in uppercase. The short code is exactly 3 characters and is printed on the
         label. Drag a row, or use Up and Down, to set the order used in taxonomy lists. A taxonomy
-        created from the item form is added at the end.
+        created from the item form is added at the end. Fields opens that taxonomy&apos;s attributes
+        and allowed values.
       </p>
       {error ? <p className="banner error">{error}</p> : null}
       {status ? <p className="banner ok">{status}</p> : null}
@@ -157,6 +152,7 @@ export function TaxonomiesPage() {
                 <th>Name</th>
                 <th>Long code</th>
                 <th>Short code</th>
+                <th>Fields</th>
                 <th />
               </tr>
             </thead>
@@ -242,6 +238,11 @@ export function TaxonomiesPage() {
                         })
                       }
                     />
+                  </td>
+                  <td>
+                    <Link className="button secondary" href={`/taxonomies/${row.id}`}>
+                      Fields ({row.attributes.length})
+                    </Link>
                   </td>
                   <td className="save-cell">
                     <button

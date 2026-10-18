@@ -366,7 +366,7 @@ export function PhotoEditor({ itemId, imageId }: PhotoEditorProps) {
   if (missing) {
     return (
       <main className="page">
-        <h1>Photo not found</h1>
+        <p>Photo not found.</p>
         <Link href={`/items/${itemId}`}>Back to item</Link>
       </main>
     );
@@ -375,9 +375,8 @@ export function PhotoEditor({ itemId, imageId }: PhotoEditorProps) {
   return (
     <main className="page editor-page">
       <div className="page-head">
-        <h1>Edit photo</h1>
         <Link className="button secondary" href={`/items/${itemId}`}>
-          Back
+          Back to item
         </Link>
       </div>
       <p className="hint page-note">

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { barcodeValue, ItemLabel, LABEL_PRINT_CSS } from "@/components/ItemLabel";
@@ -102,12 +101,6 @@ export function LabelsPage() {
   return (
     <main className="page">
       <style>{LABEL_PRINT_CSS}</style>
-      <div className="page-head no-print">
-        <h1>Print labels</h1>
-        <Link className="button secondary" href="/">
-          Back
-        </Link>
-      </div>
       <form className="no-print" onSubmit={onFind}>
         <p className="hint">
           The quantity is printed on the label. It does not change the item&apos;s stock.

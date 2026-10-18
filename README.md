@@ -1,6 +1,6 @@
 # ITS
 
-Inventory app for the ITS Supabase project. The item list shows the primary photo, sku, name, quantity, and taxonomy. Create and edit use taxonomies, allowed attribute values, and photos.
+Inventory app for the ITS Supabase project. A sidebar groups Inventory, Sales, Purchasing, Warehouse, Pricing, and Admin. The item list at `/items` is a dense table. Filter by taxonomy short code and search SKU, name, description, and attribute values on the server (`ilike`). The address keeps `?tax=` and `?q=`. Arrow keys move the cell and Enter opens the item. Create and edit use taxonomies, allowed attribute values, and photos.
 
 ## Try it
 
@@ -11,7 +11,9 @@ Inventory app for the ITS Supabase project. The item list shows the primary phot
 
 Create an item from **New item**. The taxonomy field lists existing taxonomies in `sort_order` and accepts a new name. A new name is created when you save, matched without regard to case, and needs a long code (like `CRD/NIC`) and a 3-character short code (like `NIC`). Both are uppercased as you type and stored in uppercase. The new taxonomy is placed at the end of the order. On the selected taxonomy you can add an attribute (name, integer/decimal/text, optional unit, and whether it uses an allowed-value list).
 
-**Taxonomies** opens `/taxonomies`. Edit the name, long code, and short code, then save the row. Drag a row, or use Up and Down, to change `sort_order`. That order is what the item form lists.
+**Taxonomies & fields** opens `/taxonomies`. Edit the name, long code, and short code, then save the row. Drag a row, or use Up and Down, to change `sort_order`. That order is what the item form lists. **Fields** on a taxonomy adds, renames, and deletes its attributes (type, unit, and whether they use a list) and reorders the allowed values. A field or value that items already use cannot be deleted.
+
+Deleting an item asks for confirmation, then removes the item, its attribute values, and its photos, including the files in storage. The original row is not left behind.
 
 Attribute fields with a list accept a listed value or a new one. Integer and decimal values are checked before save. A new value is written into `attribute_values` in the same `create_item` or `update_item` call. Numeric lists are ordered by number.
 

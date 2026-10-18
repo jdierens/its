@@ -8,10 +8,12 @@ import {
   attributeValueError,
   canonicalValue,
 } from "@/components/AttributeValueField";
+import { usePageMeta } from "@/components/AppShell";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ItemGallery, type PendingImage } from "@/components/ItemGallery";
 import { errorText } from "@/lib/errors";
 import { uploadItemImages } from "@/lib/images";
-import { createItem, fetchItem, fetchTaxonomies, updateItem } from "@/lib/items";
+import { createItem, deleteItem, fetchItem, fetchTaxonomies, updateItem } from "@/lib/items";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 
 type ItemFormProps = {
@@ -55,6 +57,17 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  usePageMeta({
+    title: mode === "create" ? "New item" : name.trim() || "Edit item",
+    crumbs: [
+      { label: "Inventory" },
+      { label: "Items", href: "/items" },
+      { label: mode === "create" ? "New item" : name.trim() || "Edit item" },
+    ],
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -277,6 +290,20 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     }
   }
 
+  async function onDelete() {
+    if (!itemId) return;
+    setDeleting(true);
+    setSaveError(null);
+    try {
+      await deleteItem(itemId);
+      router.push("/items");
+    } catch (error) {
+      setSaveError(errorText(error));
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="page">
@@ -289,7 +316,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     return (
       <main className="page">
         <p className="banner error">{loadError}</p>
-        <Link href="/">Back to items</Link>
+        <Link href="/items">Back to items</Link>
       </main>
     );
   }
@@ -297,9 +324,9 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   if (missing) {
     return (
       <main className="page">
-        <h1>Item not found</h1>
+        <p>Item not found.</p>
         <p className="muted">That item is not in the inventory.</p>
-        <Link href="/">Back to items</Link>
+        <Link href="/items">Back to items</Link>
       </main>
     );
   }
@@ -312,19 +339,13 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
   return (
     <main className="page">
-      <div className="page-head">
-        <h1>{mode === "create" ? "New item" : "Edit item"}</h1>
-        <div className="actions">
-          {mode === "edit" && itemId ? (
-            <Link className="button secondary" href={labelHref}>
-              Print label
-            </Link>
-          ) : null}
-          <Link className="button secondary" href="/">
-            Back
+      {mode === "edit" && itemId ? (
+        <div className="page-head">
+          <Link className="button secondary" href={labelHref}>
+            Print label
           </Link>
         </div>
-      </div>
+      ) : null}
       {saveError ? (
         <p className="banner error" role="alert">
           {saveError}
@@ -468,6 +489,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                     unit: draft.unit || null,
                     uses_list: draft.uses_list,
                     allowedValues: [],
+                    values: [],
                   }}
                   value={attributeValues[draft.key] ?? ""}
                   onChange={(value) => {
@@ -532,6 +554,30 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           </button>
         </div>
       </form>
+      {mode === "edit" && itemId ? (
+        <section className="danger-zone">
+          <h2>Delete item</h2>
+          <p>
+            Removes this item, its attribute values, and its photos. The photo files are deleted
+            from storage as well.
+          </p>
+          <button type="button" className="danger" onClick={() => setConfirmDelete(true)} disabled={deleting}>
+            Delete item
+          </button>
+        </section>
+      ) : null}
+      {confirmDelete ? (
+        <ConfirmDialog
+          title="Delete this item?"
+          body="Its attribute values and photos are removed, including the files in storage. This cannot be undone."
+          confirmLabel="Delete item"
+          busy={deleting}
+          onCancel={() => {
+            if (!deleting) setConfirmDelete(false);
+          }}
+          onConfirm={() => void onDelete()}
+        />
+      ) : null}
     </main>
   );
 }

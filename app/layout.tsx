@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { AppShell } from "@/components/AppShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ITS Inventory",
-  description: "Create and edit inventory items",
+  title: "ITS",
+  description: "Inventory, orders, warehouse, and pricing",
 };
 
 export default function RootLayout({
@@ -15,11 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <header className="topbar">
-          <Link href="/">ITS</Link>
-          <span>Inventory</span>
-        </header>
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
