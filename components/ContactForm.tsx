@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePageMeta } from "@/components/AppShell";
+import { PageToolbar } from "@/components/PageToolbar";
 import { createContact, fetchContact, updateContact, type ContactInput } from "@/lib/contacts";
 import { errorText } from "@/lib/errors";
+import { isDirty } from "@/lib/formDirty";
 import type { ContactKind, PostalAddress, SyncStatus } from "@/lib/qbo/map";
 
 const EMPTY_ADDRESS: PostalAddress = {
@@ -16,6 +18,14 @@ const EMPTY_ADDRESS: PostalAddress = {
   postalCode: "",
   country: "",
 };
+
+function cloneContact(input: ContactInput): ContactInput {
+  return {
+    ...input,
+    billingAddress: { ...input.billingAddress },
+    shippingAddress: { ...input.shippingAddress },
+  };
+}
 
 const EMPTY: ContactInput = {
   displayName: "",
@@ -53,6 +63,9 @@ export function ContactForm({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [baseline, setBaseline] = useState<ContactInput>(EMPTY);
+  const savingRef = useRef(false);
+  const dirty = isDirty(form, baseline);
 
   const title =
     mode === "create" ? `New ${noun}` : form.displayName.trim() || `Edit ${noun}`;
@@ -72,7 +85,7 @@ export function ContactForm({
           setMissing(true);
           return;
         }
-        setForm({
+        const loaded = cloneContact({
           displayName: contact.displayName,
           companyName: contact.companyName,
           givenName: contact.givenName,
@@ -85,6 +98,8 @@ export function ContactForm({
           notes: contact.notes,
           active: contact.active,
         });
+        setForm(loaded);
+        setBaseline(cloneContact(loaded));
         setQboId(contact.qboId);
         setSyncStatus(contact.syncStatus);
       })
@@ -112,43 +127,58 @@ export function ContactForm({
     setSaved(false);
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function save(): Promise<boolean> {
+    if (savingRef.current) return false;
+    savingRef.current = true;
     setSaveError(null);
     setSaved(false);
     const displayName = form.displayName.trim();
     if (!displayName) {
       setSaveError("Enter a display name.");
-      return;
+      savingRef.current = false;
+      return false;
     }
     if (displayName.length > 500) {
       setSaveError("Display name must be 500 characters or less.");
-      return;
+      savingRef.current = false;
+      return false;
     }
     if (form.primaryEmail.trim().length > 100) {
       setSaveError("Email must be 100 characters or less.");
-      return;
+      savingRef.current = false;
+      return false;
     }
     if (form.phone.trim().length > 30) {
       setSaveError("Phone must be 30 characters or less.");
-      return;
+      savingRef.current = false;
+      return false;
     }
     setSaving(true);
     try {
       if (mode === "create") {
         const id = await createContact(kind, form);
         router.push(`${listHref}/${id}`);
-        return;
+        return true;
       }
-      if (!contactId) return;
+      if (!contactId) return false;
       await updateContact(kind, contactId, form, qboId);
       setSyncStatus(qboId ? "pending" : "local");
+      setBaseline(cloneContact(form));
       setSaved(true);
+      return true;
     } catch (error) {
       setSaveError(errorText(error));
+      return false;
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!dirty || savingRef.current) return;
+    await save();
   }
 
   if (loading) {
@@ -172,6 +202,7 @@ export function ContactForm({
 
   return (
     <main className="page">
+      <PageToolbar dirty={dirty} saving={saving} saved={saved} onSave={() => void save()} />
       {loadError ? <p className="banner error">{loadError}</p> : null}
       {syncStatus === "conflict" ? (
         <p className="banner error">
@@ -274,11 +305,7 @@ export function ContactForm({
         </label>
         <p className="hint">QuickBooks is updated the next time you sync from Admin &gt; Integrations.</p>
         {saveError ? <p className="banner error">{saveError}</p> : null}
-        {saved ? <p className="banner ok">Saved. Sync status is {qboId ? "pending" : "local"}.</p> : null}
         <div className="actions">
-          <button type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </button>
           <Link className="button secondary" href={listHref}>
             Cancel
           </Link>

@@ -1,7 +1,14 @@
 import { errorText } from "@/lib/errors";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { ITEM_IMAGE_BUCKET, signedImageUrls } from "@/lib/images";
-import { DEFAULT_CONDITION, DEFAULT_ECCN, isItemCondition } from "@/lib/itemFields";
+import {
+  DEFAULT_CONDITION,
+  DEFAULT_ECCN,
+  isItemCondition,
+  isItemType,
+  itemTypeOrDefault,
+  type ItemType,
+} from "@/lib/itemFields";
 import { getSupabase } from "@/lib/supabase";
 import type {
   Attribute,
@@ -10,6 +17,7 @@ import type {
   ItemDetail,
   ItemList,
   ItemListColumn,
+  ItemListRow,
   LabelItem,
   Taxonomy,
   TaxonomyChoice,
@@ -33,6 +41,7 @@ type AttributeRow = {
 
 type AttributeLinkRow = {
   sort_order: number;
+  required: boolean | null;
   attributes: AttributeRow | AttributeRow[] | null;
 };
 
@@ -49,6 +58,7 @@ type EmbeddedAttribute = { name: string } | { name: string }[] | null;
 
 type ItemAttributeRow = {
   value: string;
+  attribute_id: string;
   attributes: EmbeddedAttribute;
 };
 
@@ -57,6 +67,7 @@ type ItemRow = {
   sku: string;
   name: string;
   description: string | null;
+  notes: string | null;
   quantity: number | null;
   taxonomy_id: string | null;
   manufacturer_id: string | null;
@@ -68,6 +79,7 @@ type ItemRow = {
   us_hts: string | null;
   ccats: string | null;
   coo: string | null;
+  item_type: string | null;
   manufacturers: EmbeddedAttribute;
   item_attributes: ItemAttributeRow[] | null;
 };
@@ -93,14 +105,26 @@ type ListRow = {
   model: string | null;
   part_number: string | null;
   condition: string | null;
+  condition_note: string | null;
+  eccn: string | null;
+  us_hts: string | null;
+  ccats: string | null;
+  coo: string | null;
+  item_type: string | null;
+  updated_at: string | null;
+  ecommerce_price?: unknown;
+  market_price?: unknown;
+  msrp?: unknown;
   manufacturers: EmbeddedAttribute;
   taxonomies: ListTaxonomy | ListTaxonomy[] | null;
   item_images: SummaryImage[] | null;
   item_attributes: ListField[] | null;
 };
 
-const LIST_COLUMNS =
-  "id, sku, name, quantity, manufacturer_id, model, part_number, condition, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
+const LIST_DETAIL =
+  "id, sku, name, item_type, quantity, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
+
+const PRICE_COLUMNS = ["ecommerce_price", "market_price", "msrp"] as const;
 
 const DATA_TYPES = new Set<DataType>(["integer", "text", "decimal"]);
 const UUID_PATTERN =
@@ -135,6 +159,7 @@ function mapAttribute(attribute: AttributeRow): Attribute {
     data_type: asDataType(attribute.data_type),
     unit: attribute.unit,
     uses_list: attribute.uses_list !== false,
+    required: false,
     sortOrder: 0,
     allowedValues: values.map((row) => row.value),
     values,
@@ -142,7 +167,7 @@ function mapAttribute(attribute: AttributeRow): Attribute {
 }
 
 const TAXONOMY_COLUMNS =
-  "id, name, long_code, short_code, sort_order, taxonomy_attributes(sort_order, attributes(id, name, label, data_type, unit, uses_list, attribute_values(id, value, sort_order)))";
+  "id, name, long_code, short_code, sort_order, taxonomy_attributes(sort_order, required, attributes(id, name, label, data_type, unit, uses_list, attribute_values(id, value, sort_order)))";
 
 function linkedAttribute(value: AttributeRow | AttributeRow[] | null): AttributeRow | null {
   if (!value) return null;
@@ -156,7 +181,7 @@ function toTaxonomy(taxonomy: TaxonomyRow): Taxonomy {
     .flatMap((link) => {
       const attribute = linkedAttribute(link.attributes);
       if (!attribute) return [];
-      return [{ ...mapAttribute(attribute), sortOrder: link.sort_order }];
+      return [{ ...mapAttribute(attribute), sortOrder: link.sort_order, required: link.required === true }];
     });
 
   return {
@@ -219,36 +244,74 @@ export async function fetchTaxonomyChoices(): Promise<TaxonomyChoice[]> {
     .filter((row) => row.shortCode.length > 0);
 }
 
-export async function fetchItemList(input: {
+export type ResolvedItemQuery = {
+  taxonomyId: string | null;
+  columns: ItemListColumn[];
+  ids: string[] | null;
+  condition: "" | "New" | "Used";
+  manufacturerId: string | null;
+  itemType: "" | ItemType;
+  unknownTax: boolean;
+  empty: boolean;
+};
+
+export async function resolveItemQuery(input: {
   tax?: string | null;
   q?: string | null;
   condition?: string | null;
   manufacturerId?: string | null;
-}): Promise<ItemList> {
+  itemType?: string | null;
+}): Promise<ResolvedItemQuery> {
   const supabase = getSupabase();
   const tax = input.tax?.trim().toUpperCase() ?? "";
   const q = input.q?.trim() ?? "";
   const condition = input.condition === "New" || input.condition === "Used" ? input.condition : "";
   const manufacturerId = input.manufacturerId?.trim() ?? "";
-
-  const counted = await supabase.from("items").select("id", { count: "exact", head: true });
-  if (counted.error) throw new Error(errorText(counted.error));
-  const total = counted.count ?? 0;
+  const rawItemType = input.itemType?.trim() ?? "";
+  const itemType = isItemType(rawItemType) ? rawItemType : "";
 
   let taxonomyId: string | null = null;
   let columns: ItemListColumn[] = [];
   if (tax) {
     const found = await supabase
       .from("taxonomies")
-      .select("id, taxonomy_attributes(sort_order, attributes(name, unit))")
+      .select(
+        "id, taxonomy_attributes(sort_order, attributes(name, unit, data_type, uses_list, attribute_values(value, sort_order)))",
+      )
       .eq("short_code", tax)
       .maybeSingle();
     if (found.error) throw new Error(errorText(found.error));
-    if (!found.data) return { rows: [], total, columns: [], unknownTax: true };
+    if (!found.data) {
+      return {
+        taxonomyId: null,
+        columns: [],
+        ids: null,
+        condition,
+        manufacturerId: null,
+        itemType,
+        unknownTax: true,
+        empty: true,
+      };
+    }
     taxonomyId = found.data.id as string;
     const links = (found.data.taxonomy_attributes ?? []) as {
       sort_order: number;
-      attributes: { name: string; unit: string | null } | { name: string; unit: string | null }[] | null;
+      attributes:
+        | {
+            name: string;
+            unit: string | null;
+            data_type: string;
+            uses_list: boolean | null;
+            attribute_values: { value: string; sort_order: number }[] | null;
+          }
+        | {
+            name: string;
+            unit: string | null;
+            data_type: string;
+            uses_list: boolean | null;
+            attribute_values: { value: string; sort_order: number }[] | null;
+          }[]
+        | null;
     }[];
     columns = links
       .slice()
@@ -256,12 +319,34 @@ export async function fetchItemList(input: {
       .flatMap((link) => {
         const attribute = Array.isArray(link.attributes) ? link.attributes[0] : link.attributes;
         if (!attribute) return [];
-        return [{ name: attribute.name, unit: attribute.unit }];
+        const dataType = asDataType(attribute.data_type);
+        const allowed = (attribute.attribute_values ?? [])
+          .slice()
+          .sort((a, b) => a.sort_order - b.sort_order || a.value.localeCompare(b.value, undefined, { numeric: true }))
+          .map((entry) => entry.value);
+        return [
+          {
+            name: attribute.name,
+            unit: attribute.unit,
+            dataType,
+            usesList: attribute.uses_list !== false,
+            allowedValues: allowed,
+          },
+        ];
       });
   }
 
   if (manufacturerId && !UUID_PATTERN.test(manufacturerId)) {
-    return { rows: [], total, columns, unknownTax: false };
+    return {
+      taxonomyId,
+      columns,
+      ids: null,
+      condition,
+      manufacturerId: null,
+      itemType,
+      unknownTax: false,
+      empty: true,
+    };
   }
 
   let ids: string[] | null = null;
@@ -312,49 +397,171 @@ export async function fetchItemList(input: {
     }
 
     ids = [...matched];
-    if (ids.length === 0) return { rows: [], total, columns, unknownTax: false };
+    if (ids.length === 0) {
+      return {
+        taxonomyId,
+        columns,
+        ids,
+        condition,
+        manufacturerId: manufacturerId || null,
+        itemType,
+        unknownTax: false,
+        empty: true,
+      };
+    }
   }
 
-  let query = supabase.from("items").select(LIST_COLUMNS).order("sku", { ascending: true });
-  if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
-  if (condition) query = query.eq("condition", condition);
-  if (manufacturerId) query = query.eq("manufacturer_id", manufacturerId);
-  if (ids) query = query.in("id", ids);
+  return {
+    taxonomyId,
+    columns,
+    ids,
+    condition,
+    manufacturerId: manufacturerId || null,
+    itemType,
+    unknownTax: false,
+    empty: false,
+  };
+}
+
+export async function fetchItemList(input: {
+  tax?: string | null;
+  q?: string | null;
+  condition?: string | null;
+  manufacturerId?: string | null;
+  itemType?: string | null;
+}): Promise<ItemList> {
+  const supabase = getSupabase();
+  const counted = await supabase.from("items").select("id", { count: "exact", head: true });
+  if (counted.error) throw new Error(errorText(counted.error));
+  const total = counted.count ?? 0;
+
+  const resolved = await resolveItemQuery(input);
+  if (resolved.unknownTax) return { rows: [], total, columns: [], pricing: false, unknownTax: true };
+  if (resolved.empty) return { rows: [], total, columns: resolved.columns, pricing: false, unknownTax: false };
+
+  const pricing = await pricingAvailable(supabase);
+  let query = supabase.from("items").select(listColumns(pricing)).order("sku", { ascending: true });
+  if (resolved.taxonomyId) query = query.eq("taxonomy_id", resolved.taxonomyId);
+  if (resolved.condition) query = query.eq("condition", resolved.condition);
+  if (resolved.manufacturerId) query = query.eq("manufacturer_id", resolved.manufacturerId);
+  if (resolved.itemType) query = query.eq("item_type", resolved.itemType);
+  if (resolved.ids) query = query.in("id", resolved.ids);
 
   const listed = await query;
   if (listed.error) throw new Error(errorText(listed.error));
 
-  const records = (listed.data ?? []) as ListRow[];
+  const records = (listed.data ?? []) as unknown as ListRow[];
   const paths = records.map((item) => primaryPath(item.item_images));
   const urls = await signedImageUrls(paths.filter((path): path is string => Boolean(path)));
 
   return {
-    rows: records.map((item, index) => {
-      const taxonomy = embeddedTaxonomy(item.taxonomies);
-      const fields: Record<string, string> = {};
-      for (const field of item.item_attributes ?? []) {
-        const name = embeddedName(field.attributes);
-        if (name) fields[name] = field.value;
-      }
-      return {
-        id: item.id,
-        sku: item.sku,
-        name: item.name,
-        quantity: item.quantity,
-        taxonomyName: taxonomy?.name ?? null,
-        shortCode: taxonomy?.short_code?.trim().toUpperCase() || null,
-        imageUrl: paths[index] ? urls.get(paths[index] as string) ?? null : null,
-        manufacturerId: item.manufacturer_id,
-        manufacturerName: embeddedName(item.manufacturers),
-        model: item.model ?? "",
-        partNumber: item.part_number ?? "",
-        condition: item.condition ?? DEFAULT_CONDITION,
-        fields,
-      };
-    }),
+    rows: records.map((item, index) =>
+      toListRow(item, paths[index] ? urls.get(paths[index] as string) ?? null : null),
+    ),
     total,
-    columns,
+    columns: resolved.columns,
+    pricing,
     unknownTax: false,
+  };
+}
+
+function listColumns(pricing: boolean): string {
+  if (!pricing) return LIST_DETAIL;
+  return `${LIST_DETAIL}, ${PRICE_COLUMNS.join(", ")}`;
+}
+
+async function pricingAvailable(supabase: ReturnType<typeof getSupabase>): Promise<boolean> {
+  const probe = await supabase.from("items").select(PRICE_COLUMNS.join(",")).limit(1);
+  return !probe.error;
+}
+
+function moneyText(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  return number.toFixed(2);
+}
+
+function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
+  const taxonomy = embeddedTaxonomy(item.taxonomies);
+  const fields: Record<string, string> = {};
+  for (const field of item.item_attributes ?? []) {
+    const name = embeddedName(field.attributes);
+    if (name) fields[name] = field.value;
+  }
+  return {
+    id: item.id,
+    sku: item.sku,
+    name: item.name,
+    quantity: item.quantity,
+    taxonomyName: taxonomy?.name ?? null,
+    shortCode: taxonomy?.short_code?.trim().toUpperCase() || null,
+    imageUrl,
+    manufacturerId: item.manufacturer_id,
+    manufacturerName: embeddedName(item.manufacturers),
+    model: item.model ?? "",
+    partNumber: item.part_number ?? "",
+    itemType: itemTypeOrDefault(item.item_type),
+    condition: item.condition ?? DEFAULT_CONDITION,
+    conditionNote: item.condition_note ?? "",
+    eccn: item.eccn ?? DEFAULT_ECCN,
+    usHts: item.us_hts ?? "",
+    ccats: item.ccats ?? "",
+    coo: item.coo ?? "",
+    ecommercePrice: moneyText(item.ecommerce_price),
+    marketPrice: moneyText(item.market_price),
+    msrp: moneyText(item.msrp),
+    updatedAt: item.updated_at ?? "",
+    fields,
+  };
+}
+
+export async function fetchListedItem(id: string): Promise<ItemListRow | null> {
+  const supabase = getSupabase();
+  const pricing = await pricingAvailable(supabase);
+  const listed = await supabase.from("items").select(listColumns(pricing)).eq("id", id).maybeSingle();
+  if (listed.error) throw new Error(errorText(listed.error));
+  if (!listed.data) return null;
+  const item = listed.data as unknown as ListRow;
+  const path = primaryPath(item.item_images);
+  const urls = path ? await signedImageUrls([path]) : new Map<string, string>();
+  return toListRow(item, path ? urls.get(path) ?? null : null);
+}
+
+export type CellSave = {
+  updatedAt: string;
+  value: string;
+  conditionNote: string;
+  manufacturerId: string | null;
+  manufacturerName: string | null;
+};
+
+export async function saveItemCell(input: {
+  id: string;
+  field: string;
+  value: string;
+  expectedUpdatedAt: string;
+}): Promise<CellSave> {
+  const { data, error } = await getSupabase().rpc("update_item_cell", {
+    p_id: input.id,
+    p_field: input.field,
+    p_value: input.value,
+    p_expected_updated_at: input.expectedUpdatedAt,
+  });
+  if (error) throw new Error(errorText(error));
+  const record = (data ?? {}) as {
+    updated_at?: string;
+    value?: string;
+    condition_note?: string;
+    manufacturer_id?: string | null;
+    manufacturer_name?: string | null;
+  };
+  return {
+    updatedAt: record.updated_at ?? "",
+    value: record.value ?? "",
+    conditionNote: record.condition_note ?? "",
+    manufacturerId: record.manufacturer_id ?? null,
+    manufacturerName: record.manufacturer_name ?? null,
   };
 }
 
@@ -366,7 +573,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
   const { data, error } = await getSupabase()
     .from("items")
     .select(
-      "id, sku, name, description, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attributes(name))",
+      "id, sku, name, description, notes, item_type, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -376,9 +583,12 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
 
   const item = data as ItemRow;
   const attributes: Record<string, string> = {};
+  const attributeLinks: { id: string; name: string; value: string }[] = [];
   for (const row of item.item_attributes ?? []) {
     const name = embeddedName(row.attributes);
-    if (name) attributes[name] = row.value;
+    if (!name) continue;
+    attributes[name] = row.value;
+    attributeLinks.push({ id: row.attribute_id, name, value: row.value });
   }
 
   const rawCondition = item.condition ?? "";
@@ -389,6 +599,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     sku: item.sku,
     name: item.name,
     description: item.description ?? "",
+    itemType: itemTypeOrDefault(item.item_type),
     quantity: item.quantity,
     taxonomyId: item.taxonomy_id,
     manufacturerId: item.manufacturer_id,
@@ -401,7 +612,9 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     usHts: item.us_hts ?? "",
     ccats: item.ccats ?? "",
     coo: item.coo ?? "",
+    notes: item.notes ?? "",
     attributes,
+    attributeLinks,
   };
 }
 
@@ -470,6 +683,7 @@ export type ItemInput = {
   usHts: string;
   ccats: string;
   coo: string;
+  itemType: ItemType;
 };
 
 export type TaxonomyInput = {
@@ -489,6 +703,7 @@ function coreArgs(input: ItemInput) {
     p_us_hts: input.usHts.trim() || null,
     p_ccats: input.ccats.trim() || null,
     p_coo: input.coo.trim() || null,
+    p_item_type: input.itemType,
   };
 }
 
@@ -547,6 +762,38 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
   });
 
   if (error) throw new Error(errorText(error));
+}
+
+export async function saveItemNotes(id: string, notes: string): Promise<void> {
+  const { error } = await getSupabase().from("items").update({ notes: notes.trim() || null }).eq("id", id);
+  if (error) throw new Error(errorText(error));
+}
+
+export type TaxonomyChangeResult = {
+  taxonomyId: string;
+  sku: string;
+  notes: string;
+};
+
+export async function changeItemTaxonomy(input: {
+  id: string;
+  taxonomyId: string;
+  copyNotes: boolean;
+  regenerateSku: boolean;
+}): Promise<TaxonomyChangeResult> {
+  const { data, error } = await getSupabase().rpc("change_item_taxonomy", {
+    p_id: input.id,
+    p_taxonomy_id: input.taxonomyId,
+    p_copy_notes: input.copyNotes,
+    p_regenerate_sku: input.regenerateSku,
+  });
+  if (error) throw new Error(errorText(error));
+  const record = (data ?? {}) as { taxonomy_id?: string; sku?: string; notes?: string };
+  return {
+    taxonomyId: record.taxonomy_id ?? input.taxonomyId,
+    sku: record.sku ?? "",
+    notes: record.notes ?? "",
+  };
 }
 
 function friendlyTaxonomyError(error: unknown): string {

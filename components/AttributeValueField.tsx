@@ -1,3 +1,6 @@
+import { attributeValueError } from "@/lib/itemFields";
+
+export { attributeValueError };
 import type { Attribute, DataType } from "@/lib/types";
 
 export function attributeLabel(name: string, unit: string | null): string {
@@ -18,20 +21,6 @@ export function canonicalValue(attribute: Attribute, value: string): string {
     valuesMatch(attribute.data_type, option, value),
   );
   return match ?? value;
-}
-
-export function attributeValueError(dataType: DataType, value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (dataType === "integer") {
-    if (!/^-?\d+$/.test(trimmed)) return "Enter a whole number.";
-    return null;
-  }
-  if (dataType === "decimal") {
-    if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return "Enter a decimal number.";
-    return null;
-  }
-  return null;
 }
 
 type AttributeValueFieldProps = {

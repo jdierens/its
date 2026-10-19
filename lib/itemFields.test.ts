@@ -4,6 +4,8 @@ import {
   conditionNoteAfterChange,
   countryLabel,
   htsError,
+  isItemType,
+  itemTypeOrDefault,
   normalizeLabel,
 } from "./itemFields.ts";
 
@@ -24,6 +26,14 @@ test("changing condition clears a note that no longer fits", () => {
   assert.equal(conditionNoteAfterChange("New", "Factory Sealed"), "Factory Sealed");
   assert.equal(conditionNoteAfterChange("Used", "Factory Sealed"), "");
   assert.equal(conditionNoteAfterChange("Used", "pulled from a server"), "pulled from a server");
+});
+
+test("item type accepts the four names and treats anything else as Product", () => {
+  assert.equal(isItemType("Kit/Package"), true);
+  assert.equal(isItemType("Non-inventory"), true);
+  assert.equal(isItemType("Inventory"), false);
+  assert.equal(itemTypeOrDefault(null), "Product");
+  assert.equal(itemTypeOrDefault("Service"), "Service");
 });
 
 test("country option shows the alpha-3 code and the name", () => {
