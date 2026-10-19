@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.0
+
+- Edit ecommerce, market, and MSRP prices on the item page. Each price keeps its own updated time.
+- Keep price quotes as history. The item page shows the latest quote for each source and the full list, with the captured time. Add a manual quote for BrokerBin, an inbound quote, or another source.
+- Update pricing looks up the part number, or the model, and stores eBay listed prices. eBay sold prices stay off unless Marketplace Insights is enabled. BrokerBin stays off until an API key is set. Prices far from the median are kept and marked.
+- Record buy and sell transactions on the item, with last price and window totals. Admin > Settings sets the pricing and sales window, starting at 90 days.
+
 ## 0.13.0
 
 - Store manufacturer, model, part number, condition, and trade-compliance fields on the item itself. Condition starts as Used. ECCN starts as 5A992.C. Country of origin stays empty until it is set.
