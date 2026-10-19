@@ -15,7 +15,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ message: "That item was not found." }, { status: 404 });
   }
 
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const item = await supabase.from("items").select("id, part_number, model").eq("id", id).maybeSingle();
   if (item.error) return NextResponse.json({ message: item.error.message }, { status: 400 });
   if (!item.data) return NextResponse.json({ message: "That item was not found." }, { status: 404 });

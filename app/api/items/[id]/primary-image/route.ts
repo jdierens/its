@@ -18,7 +18,7 @@ export async function GET(
     return new NextResponse("Item not found.", { status: 404 });
   }
 
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const listed = await supabase
     .from("item_images")
     .select("storage_path, sort_order")

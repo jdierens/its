@@ -76,7 +76,7 @@ export async function fetchAttributeUsage(
   const usage: Record<string, AttributeUsage> = {};
   if (attributeIds.length === 0) return usage;
 
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("item_attributes")
     .select("attribute_id, value")
     .in("attribute_id", attributeIds);
@@ -119,7 +119,7 @@ function oneTaxonomy(value: CatalogTaxonomy | CatalogTaxonomy[] | null): Catalog
 }
 
 export async function fetchFieldCatalog(): Promise<FieldCatalogEntry[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("attributes")
     .select(
       "id, name, label, data_type, unit, uses_list, taxonomy_attributes(taxonomies(id, name, short_code))",
@@ -162,7 +162,7 @@ export async function fetchTaxonomyAttributeUsage(
   const counts: Record<string, number> = {};
   if (attributeIds.length === 0) return counts;
 
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const items = await supabase.from("items").select("id").eq("taxonomy_id", taxonomyId);
   if (items.error) throw new Error(errorText(items.error));
   const itemIds = (items.data ?? []).map((row) => row.id as string);
@@ -183,7 +183,7 @@ export async function fetchTaxonomyAttributeUsage(
 }
 
 export async function createAttribute(taxonomyId: string, input: AttributeInput): Promise<void> {
-  const { error } = await getSupabase().rpc("create_field", {
+  const { error } = await (await getSupabase()).rpc("create_field", {
     p_taxonomy_id: taxonomyId,
     p_name: input.name.trim(),
     p_data_type: input.dataType,
@@ -209,12 +209,12 @@ export async function updateAttribute(id: string, input: AttributeInput): Promis
   };
   if (input.label !== undefined) patch.label = input.label?.trim() || null;
 
-  const { error } = await getSupabase().from("attributes").update(patch).eq("id", id);
+  const { error } = await (await getSupabase()).from("attributes").update(patch).eq("id", id);
   if (error) throw new Error(friendlyAttributeError(error));
 }
 
 export async function linkAttributes(taxonomyId: string, attributeIds: string[]): Promise<number> {
-  const { data, error } = await getSupabase().rpc("link_taxonomy_attributes", {
+  const { data, error } = await (await getSupabase()).rpc("link_taxonomy_attributes", {
     p_taxonomy_id: taxonomyId,
     p_attribute_ids: attributeIds,
   });
@@ -223,7 +223,7 @@ export async function linkAttributes(taxonomyId: string, attributeIds: string[])
 }
 
 export async function unlinkAttribute(taxonomyId: string, attributeId: string): Promise<void> {
-  const { error } = await getSupabase().rpc("unlink_taxonomy_attribute", {
+  const { error } = await (await getSupabase()).rpc("unlink_taxonomy_attribute", {
     p_taxonomy_id: taxonomyId,
     p_attribute_id: attributeId,
   });
@@ -231,12 +231,12 @@ export async function unlinkAttribute(taxonomyId: string, attributeId: string): 
 }
 
 export async function deleteField(id: string): Promise<void> {
-  const { error } = await getSupabase().rpc("delete_field", { p_attribute_id: id });
+  const { error } = await (await getSupabase()).rpc("delete_field", { p_attribute_id: id });
   if (error) throw new Error(friendlyAttributeError(error));
 }
 
 export async function mergeFields(keepId: string, dropId: string): Promise<void> {
-  const { error } = await getSupabase().rpc("merge_attributes", {
+  const { error } = await (await getSupabase()).rpc("merge_attributes", {
     p_keep: keepId,
     p_drop: dropId,
   });
@@ -244,7 +244,7 @@ export async function mergeFields(keepId: string, dropId: string): Promise<void>
 }
 
 export async function setFieldRequired(taxonomyId: string, attributeId: string, required: boolean): Promise<void> {
-  const { error } = await getSupabase()
+  const { error } = await (await getSupabase())
     .from("taxonomy_attributes")
     .update({ required })
     .eq("taxonomy_id", taxonomyId)
@@ -253,7 +253,7 @@ export async function setFieldRequired(taxonomyId: string, attributeId: string, 
 }
 
 export async function saveFieldOrder(taxonomyId: string, attributeIds: string[]): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const results = await Promise.all(
     attributeIds.map((attributeId, index) =>
       supabase
@@ -268,7 +268,7 @@ export async function saveFieldOrder(taxonomyId: string, attributeIds: string[])
 }
 
 export async function addAttributeValue(attributeId: string, value: string): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const existing = await supabase
     .from("attribute_values")
     .select("sort_order")
@@ -287,7 +287,7 @@ export async function addAttributeValue(attributeId: string, value: string): Pro
 }
 
 export async function deleteAttributeValue(id: string): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const row = await supabase
     .from("attribute_values")
     .select("id, attribute_id, value")
@@ -319,7 +319,7 @@ export async function deleteAttributeValue(id: string): Promise<void> {
 }
 
 export async function saveAttributeValueOrder(ids: string[]): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const results = await Promise.all(
     ids.map((id, index) =>
       supabase.from("attribute_values").update({ sort_order: index + 1 }).eq("id", id),

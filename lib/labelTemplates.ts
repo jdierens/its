@@ -43,7 +43,7 @@ export function qrLabelPayload(origin: string, id: string, sku: string): string 
 }
 
 export async function fetchLabelTemplate(): Promise<LabelTemplateId> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("app_settings")
     .select("value")
     .eq("key", LABEL_TEMPLATE_KEY)
@@ -53,7 +53,7 @@ export async function fetchLabelTemplate(): Promise<LabelTemplateId> {
 }
 
 export async function saveLabelTemplate(id: LabelTemplateId): Promise<void> {
-  const { error } = await getSupabase().from("app_settings").upsert({
+  const { error } = await (await getSupabase()).from("app_settings").upsert({
     key: LABEL_TEMPLATE_KEY,
     value: id,
     updated_at: new Date().toISOString(),

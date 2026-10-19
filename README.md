@@ -2,13 +2,40 @@
 
 Inventory app for the ITS Supabase project. A sidebar groups Inventory, Sales, Purchasing, Warehouse, Pricing, and Admin. The item list at `/items` is a dense table. Filter by taxonomy short code, condition, and manufacturer, and search SKU, name, description, manufacturer, aliases, model, part number, and attribute values on the server (`ilike`). The address keeps `?tax=`, `?q=`, `?condition=`, and `?mfr=`. Arrow keys move the cell and Enter opens the item. Create and edit use taxonomies, allowed attribute values, and photos.
 
-Under the ITS title, the sidebar shows the version from `package.json` and a short git commit, for example `v0.20.0 · a1b2c3d`. Hover that line for the full commit, branch, and Pacific build time. A collapsed sidebar keeps a tiny version under the logo. Local builds add a `-dev` suffix and a dev badge. Vercel preview builds show a preview badge; production does not. Those values are `NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_GIT_SHA`, and `NEXT_PUBLIC_BUILD_TIME` (plus the branch and channel), set in `next.config.ts`. They are not secrets. Bump the version on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+Under the ITS title, the sidebar shows the version from `package.json` and a short git commit, for example `v0.21.0 · a1b2c3d`. Hover that line for the full commit, branch, and Pacific build time. A collapsed sidebar keeps a tiny version under the logo. Local builds add a `-dev` suffix and a dev badge. Vercel preview builds show a preview badge; production does not. Those values are `NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_GIT_SHA`, and `NEXT_PUBLIC_BUILD_TIME` (plus the branch and channel), set in `next.config.ts`. They are not secrets. Bump the version on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Privacy and terms
 
-`/privacy` and `/terms` are public. They do not use the app shell, and they do not require sign-in. ITS has no login yet. When Google sign-in is added, leave both paths out of the auth check in `middleware.ts`. The list to keep public is `PUBLIC_PATHS` in `lib/publicPaths.ts`.
+`/privacy` and `/terms` are public. They do not use the app shell, and they do not require sign-in. The list to keep public is `PUBLIC_PATHS` in `lib/publicPaths.ts`. `/login` and `/auth/callback` are also reachable with no session so a person can sign in. They are gate exceptions, not entries in `PUBLIC_PATHS`.
 
 The pages are a plain-language notice, not legal advice. They give the mailing address 3730 E Dale Ave, Henderson, Nevada 89044, and the terms use the laws of the State of Nevada.
+
+## Sign-in
+
+The app asks for a Google session on every page except `PUBLIC_PATHS` (`/privacy`, `/terms`, `/api/ebay/callback`, `/api/ebay/account-deletion`, `/api/qbo/callback`). `/login` and `/auth/callback` are open so sign-in can start. A signed-in person whose email is not `@deepdiscountservers.com` is signed out. Google's hosted-domain (`hd`) claim is checked on the callback, and the email domain is checked from the verified session after that.
+
+The first sign-in creates a pending row in `app_users`. Pending and disabled people see **Waiting for approval** and cannot open the rest of the app. `jan@deepdiscountservers.com` is seeded as an approved admin. The seed uses a placeholder id until that Google account signs in, then the row moves onto that account.
+
+**Admin > Users** (admins only) approves an account, sets admin, staff, or read only, or disables it. An admin cannot remove their own access, and the last approved admin stays. Read only is recorded and does not block saves yet. That wait is phase 2, below.
+
+Creating or editing an item, changing its taxonomy, saving a price quote, or recording a transaction stores the signed-in user id when the request has a session. Bins do the same when that table is present. A request with no user, which is how the copy deployed today writes, leaves those columns empty.
+
+### Google Cloud and Supabase Auth
+
+Do this once in the `deepdiscountservers.com` Google account and in the Supabase project `fxsbpreasbdalwthyzvk`. The app does not ship a client id or secret.
+
+1. In Google Cloud, open the project you want for ITS sign-in (or create one). Set the OAuth consent screen to **Internal** if that Cloud project belongs to the `deepdiscountservers.com` Workspace. Internal is the right restriction for this company. The app also sends `hd=deepdiscountservers.com` and rejects any other email after Google returns.
+2. Create an OAuth client of type **Web application**.
+3. Authorized JavaScript origins: `https://its-epks.vercel.app` and `http://localhost:3000`.
+4. Authorized redirect URI: `https://fxsbpreasbdalwthyzvk.supabase.co/auth/v1/callback`. Google sends the user there. Supabase then returns the browser to the app.
+5. In the Supabase dashboard, Authentication → URL configuration, set Site URL to `https://its-epks.vercel.app`. Add these redirect URLs: `https://its-epks.vercel.app/auth/callback` and `http://localhost:3000/auth/callback`.
+6. Authentication → Providers → Google: turn it on and paste the client id and client secret. Leave the provider on.
+
+### Phase 2, not applied
+
+This release does not enable row level security, and it does not revoke the anon grants already on the inventory tables. Doing that now would stop the deployed app, which still uses the anon key. `app_users` is new: anon has no access to it, and a signed-in user can read it but cannot write it except through `ensure_app_user` and `set_app_user`. `qbo_connection`, `qbo_sync_cursor`, and `ebay_connection` stay service-role only.
+
+After this version is deployed, a follow-up can turn policies on. Ask before applying it. The plan is: approved users can read; staff and admin can write; settings, users, and integrations stay admin-only; anon writes are revoked; the QuickBooks and eBay token tables stay service-role only. When that follow-up is deployed, Vercel Deployment Protection can be turned off. Until then, leave Deployment Protection on, because the anon key can still change inventory.
 
 ## Try it
 
@@ -139,9 +166,9 @@ Production keysets must answer marketplace account deletion notifications. The e
 
 Set the same URL and `EBAY_DEPLETION_VERIFICATION_TOKEN` in the eBay developer portal. A GET with `challenge_code` responds with `{ "challengeResponse": "<sha256 hex>" }`, where the hash is `challengeCode + verificationToken + endpoint` with no separator. A POST notification is acknowledged with HTTP 200 and a log line. ITS does not store the buyer username, user id, or eias token from that notification.
 
-`/api/ebay/callback` and `/api/ebay/account-deletion` are in `PUBLIC_PATHS`. When Google sign-in is added, leave both out of the auth check. eBay's servers call the deletion endpoint with no session.
+`/api/ebay/callback` and `/api/ebay/account-deletion` are in `PUBLIC_PATHS`. `/api/qbo/callback` is too. Those routes stay outside the session check. eBay's servers call the deletion endpoint with no session.
 
-Vercel Deployment Protection blocks those calls. eBay will not send a Vercel bypass header, so a protected deployment returns a login wall instead of the challenge JSON and eBay rejects the endpoint. Two options: turn Deployment Protection off for this deployment, or use Vercel's Protection Bypass for Automation only if the request can actually carry the bypass (eBay's notification call cannot). Once Google sign-in exists, Deployment Protection can stay off and the app can require a session everywhere except `PUBLIC_PATHS`.
+Vercel Deployment Protection still has to stay on. Sign-in does not lock the database: the anon key can still write the existing tables until the phase 2 policies below are applied. eBay will not send a Vercel bypass header, so a protected deployment returns a login wall instead of the challenge JSON. That is unchanged. Turn Deployment Protection off only after phase 2 is deployed.
 
 The Integrations card shows the accept URL and the deletion URL for the origin you are browsing. On production that is the two URLs above.
 

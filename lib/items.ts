@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { errorText } from "@/lib/errors";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { ITEM_IMAGE_BUCKET, signedImageUrls } from "@/lib/images";
@@ -195,7 +196,7 @@ function toTaxonomy(taxonomy: TaxonomyRow): Taxonomy {
 }
 
 export async function fetchTaxonomy(id: string): Promise<Taxonomy | null> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .select(TAXONOMY_COLUMNS)
     .eq("id", id)
@@ -207,7 +208,7 @@ export async function fetchTaxonomy(id: string): Promise<Taxonomy | null> {
 }
 
 export async function fetchTaxonomies(): Promise<Taxonomy[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .select(TAXONOMY_COLUMNS)
     .order("sort_order")
@@ -228,7 +229,7 @@ function likePattern(raw: string): string {
 }
 
 export async function fetchTaxonomyChoices(): Promise<TaxonomyChoice[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .select("name, short_code")
     .order("sort_order")
@@ -262,7 +263,7 @@ export async function resolveItemQuery(input: {
   manufacturerId?: string | null;
   itemType?: string | null;
 }): Promise<ResolvedItemQuery> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const tax = input.tax?.trim().toUpperCase() ?? "";
   const q = input.q?.trim() ?? "";
   const condition = input.condition === "New" || input.condition === "Used" ? input.condition : "";
@@ -430,7 +431,7 @@ export async function fetchItemList(input: {
   manufacturerId?: string | null;
   itemType?: string | null;
 }): Promise<ItemList> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const counted = await supabase.from("items").select("id", { count: "exact", head: true });
   if (counted.error) throw new Error(errorText(counted.error));
   const total = counted.count ?? 0;
@@ -470,7 +471,7 @@ function listColumns(pricing: boolean): string {
   return `${LIST_DETAIL}, ${PRICE_COLUMNS.join(", ")}`;
 }
 
-async function pricingAvailable(supabase: ReturnType<typeof getSupabase>): Promise<boolean> {
+async function pricingAvailable(supabase: SupabaseClient): Promise<boolean> {
   const probe = await supabase.from("items").select(PRICE_COLUMNS.join(",")).limit(1);
   return !probe.error;
 }
@@ -517,7 +518,7 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
 }
 
 export async function fetchListedItem(id: string): Promise<ItemListRow | null> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const pricing = await pricingAvailable(supabase);
   const listed = await supabase.from("items").select(listColumns(pricing)).eq("id", id).maybeSingle();
   if (listed.error) throw new Error(errorText(listed.error));
@@ -542,7 +543,7 @@ export async function saveItemCell(input: {
   value: string;
   expectedUpdatedAt: string;
 }): Promise<CellSave> {
-  const { data, error } = await getSupabase().rpc("update_item_cell", {
+  const { data, error } = await (await getSupabase()).rpc("update_item_cell", {
     p_id: input.id,
     p_field: input.field,
     p_value: input.value,
@@ -570,7 +571,7 @@ function primaryPath(images: SummaryImage[] | null): string | null {
 }
 
 export async function fetchItem(id: string): Promise<ItemDetail | null> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("items")
     .select(
       "id, sku, name, description, notes, item_type, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
@@ -622,7 +623,7 @@ export async function findItemForLabel(identifier: string): Promise<LabelItem | 
   const query = identifier.trim();
   if (!query) return null;
 
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const columns = "id, sku, name, description, taxonomies(short_code)";
 
   if (UUID_PATTERN.test(query)) {
@@ -708,7 +709,7 @@ function coreArgs(input: ItemInput) {
 }
 
 export async function createItem(input: ItemInput): Promise<string> {
-  const { data, error } = await getSupabase().rpc("create_item", {
+  const { data, error } = await (await getSupabase()).rpc("create_item", {
     p_name: input.name,
     p_taxonomy: input.taxonomyName,
     p_attributes: input.attributes,
@@ -727,7 +728,7 @@ export async function createItem(input: ItemInput): Promise<string> {
 }
 
 export async function deleteItem(id: string): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const images = await supabase.from("item_images").select("storage_path").eq("item_id", id);
   if (images.error) throw new Error(errorText(images.error));
 
@@ -747,7 +748,7 @@ export async function deleteItem(id: string): Promise<void> {
 }
 
 export async function updateItem(id: string, input: ItemInput): Promise<void> {
-  const { error } = await getSupabase().rpc("update_item", {
+  const { error } = await (await getSupabase()).rpc("update_item", {
     p_id: id,
     p_name: input.name,
     p_taxonomy: input.taxonomyName,
@@ -765,7 +766,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
 }
 
 export async function saveItemNotes(id: string, notes: string): Promise<void> {
-  const { error } = await getSupabase().from("items").update({ notes: notes.trim() || null }).eq("id", id);
+  const { error } = await (await getSupabase()).from("items").update({ notes: notes.trim() || null }).eq("id", id);
   if (error) throw new Error(errorText(error));
 }
 
@@ -781,7 +782,7 @@ export async function changeItemTaxonomy(input: {
   copyNotes: boolean;
   regenerateSku: boolean;
 }): Promise<TaxonomyChangeResult> {
-  const { data, error } = await getSupabase().rpc("change_item_taxonomy", {
+  const { data, error } = await (await getSupabase()).rpc("change_item_taxonomy", {
     p_id: input.id,
     p_taxonomy_id: input.taxonomyId,
     p_copy_notes: input.copyNotes,
@@ -811,7 +812,7 @@ function friendlyTaxonomyError(error: unknown): string {
 }
 
 export async function createTaxonomy(input: TaxonomyInput): Promise<string> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .insert({
       name: input.name.trim(),
@@ -825,7 +826,7 @@ export async function createTaxonomy(input: TaxonomyInput): Promise<string> {
 }
 
 export async function countTaxonomyItems(id: string): Promise<number> {
-  const { count, error } = await getSupabase()
+  const { count, error } = await (await getSupabase())
     .from("items")
     .select("id", { count: "exact", head: true })
     .eq("taxonomy_id", id);
@@ -842,13 +843,13 @@ export async function deleteTaxonomy(id: string): Promise<void> {
         : `Can't delete this taxonomy. ${count} items use it.`,
     );
   }
-  const deleted = await getSupabase().from("taxonomies").delete().eq("id", id).select("id");
+  const deleted = await (await getSupabase()).from("taxonomies").delete().eq("id", id).select("id");
   if (deleted.error) throw new Error(friendlyTaxonomyError(deleted.error));
   if (!deleted.data || deleted.data.length === 0) throw new Error("That taxonomy is already gone.");
 }
 
 export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<void> {
-  const { error } = await getSupabase()
+  const { error } = await (await getSupabase())
     .from("taxonomies")
     .update({
       name: input.name,
@@ -861,7 +862,7 @@ export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<
 }
 
 export async function saveTaxonomyOrder(ids: string[]): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const results = await Promise.all(
     ids.map((id, index) =>
       supabase.from("taxonomies").update({ sort_order: index + 1 }).eq("id", id),
