@@ -1,5 +1,6 @@
 import { errorText } from "@/lib/errors";
 import { ITEM_IMAGE_BUCKET, signedImageUrls } from "@/lib/images";
+import { DEFAULT_CONDITION, DEFAULT_ECCN, isItemCondition } from "@/lib/itemFields";
 import { getSupabase } from "@/lib/supabase";
 import type {
   Attribute,
@@ -57,6 +58,16 @@ type ItemRow = {
   description: string | null;
   quantity: number | null;
   taxonomy_id: string | null;
+  manufacturer_id: string | null;
+  model: string | null;
+  part_number: string | null;
+  condition: string | null;
+  condition_note: string | null;
+  eccn: string | null;
+  us_hts: string | null;
+  ccats: string | null;
+  coo: string | null;
+  manufacturers: EmbeddedAttribute;
   item_attributes: ItemAttributeRow[] | null;
 };
 
@@ -77,13 +88,18 @@ type ListRow = {
   sku: string;
   name: string;
   quantity: number | null;
+  manufacturer_id: string | null;
+  model: string | null;
+  part_number: string | null;
+  condition: string | null;
+  manufacturers: EmbeddedAttribute;
   taxonomies: ListTaxonomy | ListTaxonomy[] | null;
   item_images: SummaryImage[] | null;
   item_attributes: ListField[] | null;
 };
 
 const LIST_COLUMNS =
-  "id, sku, name, quantity, taxonomies(name, short_code), item_images(storage_path, is_primary), item_attributes(value, attributes(name))";
+  "id, sku, name, quantity, manufacturer_id, model, part_number, condition, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, is_primary), item_attributes(value, attributes(name))";
 
 const DATA_TYPES = new Set<DataType>(["integer", "text", "decimal"]);
 const UUID_PATTERN =
@@ -202,10 +218,17 @@ export async function fetchTaxonomyChoices(): Promise<TaxonomyChoice[]> {
     .filter((row) => row.shortCode.length > 0);
 }
 
-export async function fetchItemList(input: { tax?: string | null; q?: string | null }): Promise<ItemList> {
+export async function fetchItemList(input: {
+  tax?: string | null;
+  q?: string | null;
+  condition?: string | null;
+  manufacturerId?: string | null;
+}): Promise<ItemList> {
   const supabase = getSupabase();
   const tax = input.tax?.trim().toUpperCase() ?? "";
   const q = input.q?.trim() ?? "";
+  const condition = input.condition === "New" || input.condition === "Used" ? input.condition : "";
+  const manufacturerId = input.manufacturerId?.trim() ?? "";
 
   const counted = await supabase.from("items").select("id", { count: "exact", head: true });
   if (counted.error) throw new Error(errorText(counted.error));
@@ -236,21 +259,29 @@ export async function fetchItemList(input: { tax?: string | null; q?: string | n
       });
   }
 
+  if (manufacturerId && !UUID_PATTERN.test(manufacturerId)) {
+    return { rows: [], total, columns, unknownTax: false };
+  }
+
   let ids: string[] | null = null;
   if (q) {
     const pattern = likePattern(q);
-    const textQueries = (["sku", "name", "description"] as const).map((column) => {
+    const textQueries = (["sku", "name", "description", "model", "part_number"] as const).map((column) => {
       let query = supabase.from("items").select("id").ilike(column, pattern);
       if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
       return query;
     });
-    const [textResults, attributeResult] = await Promise.all([
+    const [textResults, attributeResult, nameResult, aliasResult] = await Promise.all([
       Promise.all(textQueries),
       supabase.from("item_attributes").select("item_id").ilike("value", pattern),
+      supabase.from("manufacturers").select("id").ilike("name", pattern),
+      supabase.from("manufacturer_aliases").select("manufacturer_id").ilike("alias", pattern),
     ]);
     const failed = textResults.find((result) => result.error);
     if (failed?.error) throw new Error(errorText(failed.error));
     if (attributeResult.error) throw new Error(errorText(attributeResult.error));
+    if (nameResult.error) throw new Error(errorText(nameResult.error));
+    if (aliasResult.error) throw new Error(errorText(aliasResult.error));
 
     const matched = new Set<string>();
     for (const result of textResults) {
@@ -261,12 +292,32 @@ export async function fetchItemList(input: { tax?: string | null; q?: string | n
     for (const row of attributeResult.data ?? []) {
       if (typeof row.item_id === "string") matched.add(row.item_id);
     }
+
+    const makerIds = new Set<string>();
+    for (const row of nameResult.data ?? []) {
+      if (typeof row.id === "string") makerIds.add(row.id);
+    }
+    for (const row of aliasResult.data ?? []) {
+      if (typeof row.manufacturer_id === "string") makerIds.add(row.manufacturer_id);
+    }
+    if (makerIds.size > 0) {
+      let makerItems = supabase.from("items").select("id").in("manufacturer_id", [...makerIds]);
+      if (taxonomyId) makerItems = makerItems.eq("taxonomy_id", taxonomyId);
+      const made = await makerItems;
+      if (made.error) throw new Error(errorText(made.error));
+      for (const row of made.data ?? []) {
+        if (typeof row.id === "string") matched.add(row.id);
+      }
+    }
+
     ids = [...matched];
     if (ids.length === 0) return { rows: [], total, columns, unknownTax: false };
   }
 
   let query = supabase.from("items").select(LIST_COLUMNS).order("sku", { ascending: true });
   if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
+  if (condition) query = query.eq("condition", condition);
+  if (manufacturerId) query = query.eq("manufacturer_id", manufacturerId);
   if (ids) query = query.in("id", ids);
 
   const listed = await query;
@@ -292,6 +343,11 @@ export async function fetchItemList(input: { tax?: string | null; q?: string | n
         taxonomyName: taxonomy?.name ?? null,
         shortCode: taxonomy?.short_code?.trim().toUpperCase() || null,
         imageUrl: paths[index] ? urls.get(paths[index] as string) ?? null : null,
+        manufacturerId: item.manufacturer_id,
+        manufacturerName: embeddedName(item.manufacturers),
+        model: item.model ?? "",
+        partNumber: item.part_number ?? "",
+        condition: item.condition ?? DEFAULT_CONDITION,
         fields,
       };
     }),
@@ -310,7 +366,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
   const { data, error } = await getSupabase()
     .from("items")
     .select(
-      "id, sku, name, description, quantity, taxonomy_id, item_attributes(value, attributes(name))",
+      "id, sku, name, description, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attributes(name))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -325,6 +381,9 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     if (name) attributes[name] = row.value;
   }
 
+  const rawCondition = item.condition ?? "";
+  const condition = isItemCondition(rawCondition) ? rawCondition : DEFAULT_CONDITION;
+
   return {
     id: item.id,
     sku: item.sku,
@@ -332,6 +391,16 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     description: item.description ?? "",
     quantity: item.quantity,
     taxonomyId: item.taxonomy_id,
+    manufacturerId: item.manufacturer_id,
+    manufacturerName: embeddedName(item.manufacturers) ?? "",
+    model: item.model ?? "",
+    partNumber: item.part_number ?? "",
+    condition,
+    conditionNote: item.condition_note ?? "",
+    eccn: item.eccn ?? DEFAULT_ECCN,
+    usHts: item.us_hts ?? "",
+    ccats: item.ccats ?? "",
+    coo: item.coo ?? "",
     attributes,
   };
 }
@@ -392,6 +461,15 @@ export type ItemInput = {
   attributeDefs: AttributeDefinition[];
   longCode?: string | null;
   shortCode?: string | null;
+  manufacturerId: string | null;
+  model: string;
+  partNumber: string;
+  condition: "New" | "Used";
+  conditionNote: string;
+  eccn: string;
+  usHts: string;
+  ccats: string;
+  coo: string;
 };
 
 export type TaxonomyInput = {
@@ -399,6 +477,20 @@ export type TaxonomyInput = {
   longCode: string | null;
   shortCode: string | null;
 };
+
+function coreArgs(input: ItemInput) {
+  return {
+    p_manufacturer_id: input.manufacturerId,
+    p_model: input.model.trim() || null,
+    p_part_number: input.partNumber.trim() || null,
+    p_condition: input.condition,
+    p_condition_note: input.conditionNote.trim() || null,
+    p_eccn: input.eccn.trim() || DEFAULT_ECCN,
+    p_us_hts: input.usHts.trim() || null,
+    p_ccats: input.ccats.trim() || null,
+    p_coo: input.coo.trim() || null,
+  };
+}
 
 export async function createItem(input: ItemInput): Promise<string> {
   const { data, error } = await getSupabase().rpc("create_item", {
@@ -411,6 +503,7 @@ export async function createItem(input: ItemInput): Promise<string> {
     p_attribute_defs: input.attributeDefs,
     p_long_code: input.longCode ?? null,
     p_short_code: input.shortCode ?? null,
+    ...coreArgs(input),
   });
 
   if (error) throw new Error(errorText(error));
@@ -450,6 +543,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
     p_attribute_defs: input.taxonomyName ? input.attributeDefs : [],
     p_long_code: input.longCode ?? null,
     p_short_code: input.shortCode ?? null,
+    ...coreArgs(input),
   });
 
   if (error) throw new Error(errorText(error));

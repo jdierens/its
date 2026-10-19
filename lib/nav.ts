@@ -88,6 +88,11 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Admin",
     items: [
       {
+        label: "Manufacturers",
+        href: "/admin/manufacturers",
+        description: "Manufacturer names and aliases.",
+      },
+      {
         label: "Users",
         href: "/admin/users",
         description: "Manage who can sign in and what they can do.",

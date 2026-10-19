@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.0
+
+- Store manufacturer, model, part number, condition, and trade-compliance fields on the item itself. Condition starts as Used. ECCN starts as 5A992.C. Country of origin stays empty until it is set.
+- Keep manufacturers on a list with aliases. Search suggests close names before adding one. Admin > Manufacturers can rename, edit aliases, and merge two names. Existing Manufacturer and Brand values are copied once, without deleting the old fields.
+- Show Manufacturer, Model, Part number, and Condition on the items table. Search and filter include the manufacturer name and its aliases.
+
 ## 0.12.0
 
 - Choose customers, vendors, and direction on Admin > Integrations, with a full resync option. Sync customers and Sync vendors run one entity. The last choice is remembered in the browser.
