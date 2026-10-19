@@ -1334,9 +1334,103 @@ button.danger {
 
 .items-grid th:first-child,
 .items-grid td:first-child {
-  width: 36px;
-  padding-right: 0.25rem;
-  padding-left: 0.45rem;
+  width: 58px;
+  padding-right: 0.3rem;
+  padding-left: 0.4rem;
+}
+
+.photo-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.items-grid input.row-select {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.cell-input {
+  width: 100%;
+  min-width: 7.5rem;
+  height: 24px;
+  margin: 0;
+  padding: 0 0.35rem;
+  font: inherit;
+  border: 1px solid #0b3f6e;
+  border-radius: 3px;
+  background: #fff;
+}
+
+.cell-combo {
+  position: relative;
+  display: block;
+}
+
+.cell-menu {
+  position: fixed;
+  z-index: 40;
+  right: auto;
+  min-width: 14rem;
+}
+
+.items-grid td {
+  position: relative;
+}
+
+.cell-flag {
+  margin-left: 0.35rem;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.cell-flag.error {
+  color: var(--danger-ink);
+}
+
+.items-grid td.has-flag.clip {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.edited-time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.45rem;
+  padding: 0.4rem 0.65rem;
+  background: #f6f8fa;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.bulk-bar label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: inherit;
+  font-size: 13px;
+}
+
+.bulk-bar select,
+.bulk-bar input,
+.bulk-bar button {
+  width: auto;
+  height: 28px;
+  padding: 0.15rem 0.5rem;
+  font-size: 13px;
 }
 
 .thumb-sm {

@@ -39,3 +39,20 @@ export function conditionNoteAfterChange(condition: ItemCondition, note: string)
 export function isItemCondition(value: string): value is ItemCondition {
   return value === "New" || value === "Used";
 }
+
+export function attributeValueError(
+  dataType: "integer" | "text" | "decimal",
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (dataType === "integer") {
+    if (!/^-?\d+$/.test(trimmed)) return "Enter a whole number.";
+    return null;
+  }
+  if (dataType === "decimal") {
+    if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return "Enter a decimal number.";
+    return null;
+  }
+  return null;
+}

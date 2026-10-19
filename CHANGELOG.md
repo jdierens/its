@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0
+
+- Edit cells in the items table. Enter, double-click, or typing starts the edit. Enter and Tab save and move. Esc cancels. SKU and taxonomy stay read-only.
+- Manufacturer, condition, country, and new-item condition notes use the same lists as the item form. Taxonomy attribute columns follow the field type and pick list.
+- Each cell saves on its own, with a saving, saved, or error mark. A changed `updated_at` reloads that row instead of overwriting it. The Edited column shows when the row last changed.
+- Select several rows and set condition, country of origin, or ECCN on all of them after a confirmation.
+
 ## 0.16.0
 
 - Export items from the items page to a new Google Sheet or a CSV download. Current view follows the taxonomy filter and search, and includes every matching item. All items ignores those filters.

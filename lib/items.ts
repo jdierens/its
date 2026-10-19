@@ -10,6 +10,7 @@ import type {
   ItemDetail,
   ItemList,
   ItemListColumn,
+  ItemListRow,
   LabelItem,
   Taxonomy,
   TaxonomyChoice,
@@ -93,14 +94,25 @@ type ListRow = {
   model: string | null;
   part_number: string | null;
   condition: string | null;
+  condition_note: string | null;
+  eccn: string | null;
+  us_hts: string | null;
+  ccats: string | null;
+  coo: string | null;
+  updated_at: string | null;
+  ecommerce_price?: unknown;
+  market_price?: unknown;
+  msrp?: unknown;
   manufacturers: EmbeddedAttribute;
   taxonomies: ListTaxonomy | ListTaxonomy[] | null;
   item_images: SummaryImage[] | null;
   item_attributes: ListField[] | null;
 };
 
-const LIST_COLUMNS =
-  "id, sku, name, quantity, manufacturer_id, model, part_number, condition, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
+const LIST_DETAIL =
+  "id, sku, name, quantity, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
+
+const PRICE_COLUMNS = ["ecommerce_price", "market_price", "msrp"] as const;
 
 const DATA_TYPES = new Set<DataType>(["integer", "text", "decimal"]);
 const UUID_PATTERN =
@@ -246,7 +258,9 @@ export async function resolveItemQuery(input: {
   if (tax) {
     const found = await supabase
       .from("taxonomies")
-      .select("id, taxonomy_attributes(sort_order, attributes(name, unit))")
+      .select(
+        "id, taxonomy_attributes(sort_order, attributes(name, unit, data_type, uses_list, attribute_values(value, sort_order)))",
+      )
       .eq("short_code", tax)
       .maybeSingle();
     if (found.error) throw new Error(errorText(found.error));
@@ -264,7 +278,22 @@ export async function resolveItemQuery(input: {
     taxonomyId = found.data.id as string;
     const links = (found.data.taxonomy_attributes ?? []) as {
       sort_order: number;
-      attributes: { name: string; unit: string | null } | { name: string; unit: string | null }[] | null;
+      attributes:
+        | {
+            name: string;
+            unit: string | null;
+            data_type: string;
+            uses_list: boolean | null;
+            attribute_values: { value: string; sort_order: number }[] | null;
+          }
+        | {
+            name: string;
+            unit: string | null;
+            data_type: string;
+            uses_list: boolean | null;
+            attribute_values: { value: string; sort_order: number }[] | null;
+          }[]
+        | null;
     }[];
     columns = links
       .slice()
@@ -272,7 +301,20 @@ export async function resolveItemQuery(input: {
       .flatMap((link) => {
         const attribute = Array.isArray(link.attributes) ? link.attributes[0] : link.attributes;
         if (!attribute) return [];
-        return [{ name: attribute.name, unit: attribute.unit }];
+        const dataType = asDataType(attribute.data_type);
+        const allowed = (attribute.attribute_values ?? [])
+          .slice()
+          .sort((a, b) => a.sort_order - b.sort_order || a.value.localeCompare(b.value, undefined, { numeric: true }))
+          .map((entry) => entry.value);
+        return [
+          {
+            name: attribute.name,
+            unit: attribute.unit,
+            dataType,
+            usesList: attribute.uses_list !== false,
+            allowedValues: allowed,
+          },
+        ];
       });
   }
 
@@ -372,10 +414,11 @@ export async function fetchItemList(input: {
   const total = counted.count ?? 0;
 
   const resolved = await resolveItemQuery(input);
-  if (resolved.unknownTax) return { rows: [], total, columns: [], unknownTax: true };
-  if (resolved.empty) return { rows: [], total, columns: resolved.columns, unknownTax: false };
+  if (resolved.unknownTax) return { rows: [], total, columns: [], pricing: false, unknownTax: true };
+  if (resolved.empty) return { rows: [], total, columns: resolved.columns, pricing: false, unknownTax: false };
 
-  let query = supabase.from("items").select(LIST_COLUMNS).order("sku", { ascending: true });
+  const pricing = await pricingAvailable(supabase);
+  let query = supabase.from("items").select(listColumns(pricing)).order("sku", { ascending: true });
   if (resolved.taxonomyId) query = query.eq("taxonomy_id", resolved.taxonomyId);
   if (resolved.condition) query = query.eq("condition", resolved.condition);
   if (resolved.manufacturerId) query = query.eq("manufacturer_id", resolved.manufacturerId);
@@ -384,37 +427,117 @@ export async function fetchItemList(input: {
   const listed = await query;
   if (listed.error) throw new Error(errorText(listed.error));
 
-  const records = (listed.data ?? []) as ListRow[];
+  const records = (listed.data ?? []) as unknown as ListRow[];
   const paths = records.map((item) => primaryPath(item.item_images));
   const urls = await signedImageUrls(paths.filter((path): path is string => Boolean(path)));
 
   return {
-    rows: records.map((item, index) => {
-      const taxonomy = embeddedTaxonomy(item.taxonomies);
-      const fields: Record<string, string> = {};
-      for (const field of item.item_attributes ?? []) {
-        const name = embeddedName(field.attributes);
-        if (name) fields[name] = field.value;
-      }
-      return {
-        id: item.id,
-        sku: item.sku,
-        name: item.name,
-        quantity: item.quantity,
-        taxonomyName: taxonomy?.name ?? null,
-        shortCode: taxonomy?.short_code?.trim().toUpperCase() || null,
-        imageUrl: paths[index] ? urls.get(paths[index] as string) ?? null : null,
-        manufacturerId: item.manufacturer_id,
-        manufacturerName: embeddedName(item.manufacturers),
-        model: item.model ?? "",
-        partNumber: item.part_number ?? "",
-        condition: item.condition ?? DEFAULT_CONDITION,
-        fields,
-      };
-    }),
+    rows: records.map((item, index) =>
+      toListRow(item, paths[index] ? urls.get(paths[index] as string) ?? null : null),
+    ),
     total,
     columns: resolved.columns,
+    pricing,
     unknownTax: false,
+  };
+}
+
+function listColumns(pricing: boolean): string {
+  if (!pricing) return LIST_DETAIL;
+  return `${LIST_DETAIL}, ${PRICE_COLUMNS.join(", ")}`;
+}
+
+async function pricingAvailable(supabase: ReturnType<typeof getSupabase>): Promise<boolean> {
+  const probe = await supabase.from("items").select(PRICE_COLUMNS.join(",")).limit(1);
+  return !probe.error;
+}
+
+function moneyText(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  return number.toFixed(2);
+}
+
+function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
+  const taxonomy = embeddedTaxonomy(item.taxonomies);
+  const fields: Record<string, string> = {};
+  for (const field of item.item_attributes ?? []) {
+    const name = embeddedName(field.attributes);
+    if (name) fields[name] = field.value;
+  }
+  return {
+    id: item.id,
+    sku: item.sku,
+    name: item.name,
+    quantity: item.quantity,
+    taxonomyName: taxonomy?.name ?? null,
+    shortCode: taxonomy?.short_code?.trim().toUpperCase() || null,
+    imageUrl,
+    manufacturerId: item.manufacturer_id,
+    manufacturerName: embeddedName(item.manufacturers),
+    model: item.model ?? "",
+    partNumber: item.part_number ?? "",
+    condition: item.condition ?? DEFAULT_CONDITION,
+    conditionNote: item.condition_note ?? "",
+    eccn: item.eccn ?? DEFAULT_ECCN,
+    usHts: item.us_hts ?? "",
+    ccats: item.ccats ?? "",
+    coo: item.coo ?? "",
+    ecommercePrice: moneyText(item.ecommerce_price),
+    marketPrice: moneyText(item.market_price),
+    msrp: moneyText(item.msrp),
+    updatedAt: item.updated_at ?? "",
+    fields,
+  };
+}
+
+export async function fetchListedItem(id: string): Promise<ItemListRow | null> {
+  const supabase = getSupabase();
+  const pricing = await pricingAvailable(supabase);
+  const listed = await supabase.from("items").select(listColumns(pricing)).eq("id", id).maybeSingle();
+  if (listed.error) throw new Error(errorText(listed.error));
+  if (!listed.data) return null;
+  const item = listed.data as unknown as ListRow;
+  const path = primaryPath(item.item_images);
+  const urls = path ? await signedImageUrls([path]) : new Map<string, string>();
+  return toListRow(item, path ? urls.get(path) ?? null : null);
+}
+
+export type CellSave = {
+  updatedAt: string;
+  value: string;
+  conditionNote: string;
+  manufacturerId: string | null;
+  manufacturerName: string | null;
+};
+
+export async function saveItemCell(input: {
+  id: string;
+  field: string;
+  value: string;
+  expectedUpdatedAt: string;
+}): Promise<CellSave> {
+  const { data, error } = await getSupabase().rpc("update_item_cell", {
+    p_id: input.id,
+    p_field: input.field,
+    p_value: input.value,
+    p_expected_updated_at: input.expectedUpdatedAt,
+  });
+  if (error) throw new Error(errorText(error));
+  const record = (data ?? {}) as {
+    updated_at?: string;
+    value?: string;
+    condition_note?: string;
+    manufacturer_id?: string | null;
+    manufacturer_name?: string | null;
+  };
+  return {
+    updatedAt: record.updated_at ?? "",
+    value: record.value ?? "",
+    conditionNote: record.condition_note ?? "",
+    manufacturerId: record.manufacturer_id ?? null,
+    manufacturerName: record.manufacturer_name ?? null,
   };
 }
 

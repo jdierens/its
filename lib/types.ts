@@ -37,6 +37,9 @@ export type Taxonomy = {
 export type ItemListColumn = {
   name: string;
   unit: string | null;
+  dataType: DataType;
+  usesList: boolean;
+  allowedValues: string[];
 };
 
 export type ItemListRow = {
@@ -52,6 +55,15 @@ export type ItemListRow = {
   model: string;
   partNumber: string;
   condition: string;
+  conditionNote: string;
+  eccn: string;
+  usHts: string;
+  ccats: string;
+  coo: string;
+  ecommercePrice: string | null;
+  marketPrice: string | null;
+  msrp: string | null;
+  updatedAt: string;
   fields: Record<string, string>;
 };
 
@@ -59,6 +71,7 @@ export type ItemList = {
   rows: ItemListRow[];
   total: number;
   columns: ItemListColumn[];
+  pricing: boolean;
   unknownTax: boolean;
 };
 
