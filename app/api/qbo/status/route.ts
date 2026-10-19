@@ -41,7 +41,8 @@ export async function GET() {
   }
 
   const logs = await readLogs();
-  const lastSyncAt = logs.find((entry) => entry.entity === "sync")?.startedAt ?? null;
+  const lastSync = await readCursors();
+  const lastSyncAt = latest(lastSync.customer, lastSync.vendor) ?? logs.find((entry) => entry.entity === "sync")?.startedAt ?? null;
 
   return NextResponse.json(
     {
@@ -54,11 +55,33 @@ export async function GET() {
       realmId,
       expiresAt,
       lastSyncAt,
+      lastSync,
       message,
       logs,
     },
     { headers: { "Cache-Control": "no-store" } },
   );
+}
+
+async function readCursors(): Promise<{ customer: string | null; vendor: string | null }> {
+  const empty = { customer: null, vendor: null };
+  const admin = getServiceSupabase();
+  if (!admin) return empty;
+  const { data, error } = await admin.from("qbo_sync_cursor").select("entity, last_sync_at");
+  if (error || !data) return empty;
+  const lastSync: { customer: string | null; vendor: string | null } = { ...empty };
+  for (const row of data as { entity?: unknown; last_sync_at?: unknown }[]) {
+    const entity = row.entity === "customer" || row.entity === "vendor" ? row.entity : null;
+    if (!entity) continue;
+    lastSync[entity] = typeof row.last_sync_at === "string" ? row.last_sync_at : null;
+  }
+  return lastSync;
+}
+
+function latest(left: string | null, right: string | null): string | null {
+  if (!left) return right;
+  if (!right) return left;
+  return Date.parse(left) >= Date.parse(right) ? left : right;
 }
 
 async function readLogs() {
