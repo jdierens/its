@@ -17,6 +17,32 @@ function jsonResponse(
   });
 }
 
+test("client credentials grant does not require a refresh token", async () => {
+  const original = globalThis.fetch;
+  let body = "";
+  globalThis.fetch = async (_input, init) => {
+    body = String(init?.body ?? "");
+    return jsonResponse({ access_token: "app-token", expires_in: 7200 }, 200, { rlogid: "rlog-app" });
+  };
+  try {
+    const tokens = await requestToken({
+      config,
+      tokenEndpoint,
+      backoffMs: 0,
+      fields: {
+        grant_type: "client_credentials",
+        scope: "https://api.ebay.com/oauth/api_scope",
+      },
+    });
+    assert.equal(tokens.access_token, "app-token");
+    assert.equal(tokens.refresh_token, null);
+    assert.match(body, /grant_type=client_credentials/);
+    assert.match(body, /api_scope/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("refresh grant returns a new access token", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () =>
