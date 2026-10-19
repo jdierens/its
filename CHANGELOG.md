@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.0
+
+- Export items from the items page to a new Google Sheet or a CSV download. Current view follows the taxonomy filter and search, and includes every matching item. All items ignores those filters.
+- The sheet is named `ITS items export YYYY-MM-DD HH:mm` in Pacific time, created in a shared Drive folder, with the header row frozen. CSV still downloads when Google is not configured.
+- Include pricing columns when those fields exist. Attribute columns are one per attribute name across the exported taxonomies.
+
 ## 0.15.0
 
 - Open a photo by clicking its thumbnail, or by pressing Enter when it is focused. Delete stays a corner icon and asks for confirmation.

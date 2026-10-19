@@ -2,7 +2,7 @@
 
 Inventory app for the ITS Supabase project. A sidebar groups Inventory, Sales, Purchasing, Warehouse, Pricing, and Admin. The item list at `/items` is a dense table. Filter by taxonomy short code, condition, and manufacturer, and search SKU, name, description, manufacturer, aliases, model, part number, and attribute values on the server (`ilike`). The address keeps `?tax=`, `?q=`, `?condition=`, and `?mfr=`. Arrow keys move the cell and Enter opens the item. Create and edit use taxonomies, allowed attribute values, and photos.
 
-Under the ITS title, the sidebar shows the version from `package.json` and a short git commit, for example `v0.15.0 · a1b2c3d`. Hover that line for the full commit, branch, and Pacific build time. A collapsed sidebar keeps a tiny version under the logo. Local builds add a `-dev` suffix and a dev badge. Vercel preview builds show a preview badge; production does not. Those values are `NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_GIT_SHA`, and `NEXT_PUBLIC_BUILD_TIME` (plus the branch and channel), set in `next.config.ts`. They are not secrets. Bump the version on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+Under the ITS title, the sidebar shows the version from `package.json` and a short git commit, for example `v0.16.0 · a1b2c3d`. Hover that line for the full commit, branch, and Pacific build time. A collapsed sidebar keeps a tiny version under the logo. Local builds add a `-dev` suffix and a dev badge. Vercel preview builds show a preview badge; production does not. Those values are `NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_GIT_SHA`, and `NEXT_PUBLIC_BUILD_TIME` (plus the branch and channel), set in `next.config.ts`. They are not secrets. Bump the version on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Privacy and terms
 
@@ -21,7 +21,9 @@ Create an item from **New item**. **Main** and **Trade compliance** sit above th
 
 **Admin > Manufacturers** lists those names. Rename one, add or remove aliases, or merge two. Merge moves the items and keeps the other name as an alias. Lookup trims the text, ignores case, and collapses spaces, so `SK Hynix` and `SK hynix` are the same name. `Hynix` is a separate alias.
 
-The items table puts Taxonomy between the photo and the SKU. Manufacturer, Model, Part number, and Condition follow the name. Search matches the manufacturer name and its aliases. The 90×29 mm label is unchanged. It already holds the name, description, barcode, quantity, short code, and date, so there is no spare line for a part number. There is no CSV export.
+The items table puts Taxonomy between the photo and the SKU. Manufacturer, Model, Part number, and Condition follow the name. Search matches the manufacturer name and its aliases. The 90×29 mm label is unchanged. It already holds the name, description, barcode, quantity, short code, and date, so there is no spare line for a part number.
+
+**Export** on the items page offers Google Sheet and CSV download. Current view uses the taxonomy filter and the search, and also condition and manufacturer when those are set. It exports every matching item, not only the rows on screen. All items ignores the filters. Columns are SKU, taxonomy, manufacturer, model, part number, condition, condition note, ECCN, US HTS, CCATS, COO, then ecommerce price, market price, MSRP, and pricing checked when those columns exist, then the primary image URL, created, updated, and one column per attribute name across the exported taxonomies. The primary image link opens the current first photo. CSV downloads without Google. Until both Google env vars are set, the Google option says Not configured and links to the setup notes.
 
 The taxonomy field lists existing taxonomies in `sort_order` and accepts a new name. A new name is created when you save, matched without regard to case, and needs a long code (like `CRD/NIC`) and a 3-character short code (like `NIC`). Both are uppercased as you type and stored in uppercase. The new taxonomy is placed at the end of the order. On the selected taxonomy you can add an attribute (name, integer/decimal/text, optional unit, and whether it uses an allowed-value list).
 
@@ -141,9 +143,25 @@ Vercel Deployment Protection blocks those calls. eBay will not send a Vercel byp
 
 The Integrations card shows the accept URL and the deletion URL for the origin you are browsing. On production that is the two URLs above.
 
+## Google Sheets export
+
+CSV download works with no extra setup. Google Sheet needs the two server env vars below. Do not prefix them with `NEXT_PUBLIC_` and do not commit the key.
+
+1. Create a project in Google Cloud.
+2. Enable the Google Sheets API and the Google Drive API.
+3. Create a service account and download its JSON key. The email is the `client_email` field.
+4. In Google Drive, signed in at deepdiscountservers.com, create a folder on a shared drive so spreadsheets are owned by the Workspace. Share that folder with the service account email as Editor.
+5. Add both variables in Vercel Production and in `.env.local`:
+   - `GOOGLE_SERVICE_ACCOUNT_JSON`: the full JSON key file.
+   - `GOOGLE_EXPORT_FOLDER_ID`: the folder id, which is the path segment after `/folders/` in the Drive URL. A full folder URL is also accepted.
+
+Export creates a spreadsheet named `ITS items export YYYY-MM-DD HH:mm` in Pacific time, inside that folder, freezes the header row, and opens the link in a new tab. The same steps are linked from the items page when Google is not configured.
+
 ## Database
 
 Migrations live in `supabase/migrations`. Deploying this repo does not apply them. They are already applied on project `fxsbpreasbdalwthyzvk`. On a new database, run them in order in the SQL editor.
+
+`items.updated_at` is set on each update. Rows that already existed start equal to `created_at`. The export includes that timestamp. Adding the column does not change the item save functions the deployed app already calls.
 
 `attribute_values` holds the allowed values. `attributes.uses_list` turns that list on. `taxonomies.long_code` and `taxonomies.short_code` are unique and nullable. A trigger uppercases them, and check constraints keep `long_code` equal to `upper(long_code)` and `short_code` matching `^[A-Z0-9]{3}$`. `taxonomies.sort_order` is the list order. `item_images` points at files in the `item-images` bucket (`<item_id>/<image_id>.<ext>`). `sort_order` is the gallery order, backfilled from `created_at`. The lowest `sort_order` is the primary photo. `is_primary` is still present and a statement trigger keeps it equal to that first photo, so the currently deployed app can keep selecting it. Dropping the column waits until this release is deployed. The bucket is private, with a 10 MB limit and JPEG, PNG, WebP, and GIF only.
 

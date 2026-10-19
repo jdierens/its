@@ -1195,6 +1195,73 @@ button.danger {
   font-size: 13px;
 }
 
+.export-wrap {
+  position: relative;
+}
+
+.export-menu {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  top: calc(100% + 0.3rem);
+  width: 18rem;
+  padding: 0.7rem 0.75rem 0.8rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(16, 24, 32, 0.12);
+}
+
+.export-menu fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.export-menu label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.15rem 0;
+  font-size: 13px;
+}
+
+.export-note,
+.export-error {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.export-error {
+  color: var(--danger-ink);
+}
+
+.export-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+  margin: 0.55rem 0 0;
+  font-size: 13px;
+}
+
+.export-menu button {
+  width: 100%;
+  margin-top: 0.45rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 13px;
+}
+
+.setup-steps {
+  padding-left: 1.2rem;
+}
+
+.setup-steps li {
+  margin: 0.45rem 0;
+}
+
 .items-count {
   margin: 0 0 0 auto;
   color: var(--muted);

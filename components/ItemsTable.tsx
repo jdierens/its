@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ItemExportMenu } from "@/components/ItemExportMenu";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { errorText } from "@/lib/errors";
@@ -268,6 +269,7 @@ export function ItemsTable() {
         <p className="items-count">
           {loading && rows.length === 0 ? "Loading items…" : `${rows.length} of ${total} items`}
         </p>
+        <ItemExportMenu tax={tax} q={q} condition={condition} manufacturerId={manufacturerId} />
         <Link className="button" href="/items/new">
           New item
         </Link>

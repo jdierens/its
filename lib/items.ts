@@ -219,21 +219,27 @@ export async function fetchTaxonomyChoices(): Promise<TaxonomyChoice[]> {
     .filter((row) => row.shortCode.length > 0);
 }
 
-export async function fetchItemList(input: {
+export type ResolvedItemQuery = {
+  taxonomyId: string | null;
+  columns: ItemListColumn[];
+  ids: string[] | null;
+  condition: "" | "New" | "Used";
+  manufacturerId: string | null;
+  unknownTax: boolean;
+  empty: boolean;
+};
+
+export async function resolveItemQuery(input: {
   tax?: string | null;
   q?: string | null;
   condition?: string | null;
   manufacturerId?: string | null;
-}): Promise<ItemList> {
+}): Promise<ResolvedItemQuery> {
   const supabase = getSupabase();
   const tax = input.tax?.trim().toUpperCase() ?? "";
   const q = input.q?.trim() ?? "";
   const condition = input.condition === "New" || input.condition === "Used" ? input.condition : "";
   const manufacturerId = input.manufacturerId?.trim() ?? "";
-
-  const counted = await supabase.from("items").select("id", { count: "exact", head: true });
-  if (counted.error) throw new Error(errorText(counted.error));
-  const total = counted.count ?? 0;
 
   let taxonomyId: string | null = null;
   let columns: ItemListColumn[] = [];
@@ -244,7 +250,17 @@ export async function fetchItemList(input: {
       .eq("short_code", tax)
       .maybeSingle();
     if (found.error) throw new Error(errorText(found.error));
-    if (!found.data) return { rows: [], total, columns: [], unknownTax: true };
+    if (!found.data) {
+      return {
+        taxonomyId: null,
+        columns: [],
+        ids: null,
+        condition,
+        manufacturerId: null,
+        unknownTax: true,
+        empty: true,
+      };
+    }
     taxonomyId = found.data.id as string;
     const links = (found.data.taxonomy_attributes ?? []) as {
       sort_order: number;
@@ -261,7 +277,15 @@ export async function fetchItemList(input: {
   }
 
   if (manufacturerId && !UUID_PATTERN.test(manufacturerId)) {
-    return { rows: [], total, columns, unknownTax: false };
+    return {
+      taxonomyId,
+      columns,
+      ids: null,
+      condition,
+      manufacturerId: null,
+      unknownTax: false,
+      empty: true,
+    };
   }
 
   let ids: string[] | null = null;
@@ -312,14 +336,50 @@ export async function fetchItemList(input: {
     }
 
     ids = [...matched];
-    if (ids.length === 0) return { rows: [], total, columns, unknownTax: false };
+    if (ids.length === 0) {
+      return {
+        taxonomyId,
+        columns,
+        ids,
+        condition,
+        manufacturerId: manufacturerId || null,
+        unknownTax: false,
+        empty: true,
+      };
+    }
   }
 
+  return {
+    taxonomyId,
+    columns,
+    ids,
+    condition,
+    manufacturerId: manufacturerId || null,
+    unknownTax: false,
+    empty: false,
+  };
+}
+
+export async function fetchItemList(input: {
+  tax?: string | null;
+  q?: string | null;
+  condition?: string | null;
+  manufacturerId?: string | null;
+}): Promise<ItemList> {
+  const supabase = getSupabase();
+  const counted = await supabase.from("items").select("id", { count: "exact", head: true });
+  if (counted.error) throw new Error(errorText(counted.error));
+  const total = counted.count ?? 0;
+
+  const resolved = await resolveItemQuery(input);
+  if (resolved.unknownTax) return { rows: [], total, columns: [], unknownTax: true };
+  if (resolved.empty) return { rows: [], total, columns: resolved.columns, unknownTax: false };
+
   let query = supabase.from("items").select(LIST_COLUMNS).order("sku", { ascending: true });
-  if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
-  if (condition) query = query.eq("condition", condition);
-  if (manufacturerId) query = query.eq("manufacturer_id", manufacturerId);
-  if (ids) query = query.in("id", ids);
+  if (resolved.taxonomyId) query = query.eq("taxonomy_id", resolved.taxonomyId);
+  if (resolved.condition) query = query.eq("condition", resolved.condition);
+  if (resolved.manufacturerId) query = query.eq("manufacturer_id", resolved.manufacturerId);
+  if (resolved.ids) query = query.in("id", resolved.ids);
 
   const listed = await query;
   if (listed.error) throw new Error(errorText(listed.error));
@@ -353,7 +413,7 @@ export async function fetchItemList(input: {
       };
     }),
     total,
-    columns,
+    columns: resolved.columns,
     unknownTax: false,
   };
 }
