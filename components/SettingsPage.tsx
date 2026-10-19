@@ -3,10 +3,18 @@
 import { FormEvent, useEffect, useState } from "react";
 import { fetchSalesWindowDays, saveSalesWindowDays } from "@/lib/itemPricing";
 import { errorText } from "@/lib/errors";
+import {
+  DEFAULT_LABEL_TEMPLATE,
+  fetchLabelTemplate,
+  LABEL_TEMPLATES,
+  saveLabelTemplate,
+  type LabelTemplateId,
+} from "@/lib/labelTemplates";
 import { parseWindowDays } from "@/lib/pricing/quotes";
 
 export function SettingsPage() {
   const [days, setDays] = useState("90");
+  const [template, setTemplate] = useState<LabelTemplateId>(DEFAULT_LABEL_TEMPLATE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,8 +24,14 @@ export function SettingsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const value = await fetchSalesWindowDays();
-        if (!cancelled) setDays(String(value));
+        const [value, labelTemplate] = await Promise.all([
+          fetchSalesWindowDays(),
+          fetchLabelTemplate(),
+        ]);
+        if (!cancelled) {
+          setDays(String(value));
+          setTemplate(labelTemplate);
+        }
       } catch (loadError) {
         if (!cancelled) setError(errorText(loadError));
       } finally {
@@ -43,6 +57,7 @@ export function SettingsPage() {
     setSaved(false);
     try {
       await saveSalesWindowDays(parsed);
+      await saveLabelTemplate(template);
       setDays(String(parsed));
       setSaved(true);
     } catch (saveError) {
@@ -71,6 +86,27 @@ export function SettingsPage() {
         />
         <span className="hint">
           Item sales totals count buys and sells in this many days. The default is 90.
+        </span>
+        <label htmlFor="label-template">Label template</label>
+        <select
+          id="label-template"
+          aria-label="Label template"
+          value={template}
+          disabled={loading}
+          onChange={(event) => {
+            setTemplate(event.target.value as LabelTemplateId);
+            setSaved(false);
+          }}
+        >
+          {LABEL_TEMPLATES.map((choice) => (
+            <option key={choice.id} value={choice.id}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
+        <span className="hint">
+          Barcode (current) is the default 90 × 29 mm Code 128 label. QR code is the same size,
+          with the SKU under the symbol. Print label on an item uses this choice.
         </span>
         {error ? (
           <p className="banner error" role="alert">

@@ -2,9 +2,17 @@
 
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { barcodeValue, ItemLabel, LABEL_PRINT_CSS } from "@/components/ItemLabel";
+import { PrintedLabel } from "@/components/labelRenderers";
+import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { errorText } from "@/lib/errors";
 import { findItemForLabel } from "@/lib/items";
+import {
+  fetchLabelTemplate,
+  labelTemplateLabel,
+  labelTemplateOrDefault,
+  qrLabelPayload,
+  type LabelTemplateId,
+} from "@/lib/labelTemplates";
 import type { LabelItem } from "@/lib/types";
 
 function todayLabel(date: Date): string {
@@ -26,11 +34,33 @@ export function LabelsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [printStamp, setPrintStamp] = useState(0);
+  const [template, setTemplate] = useState<LabelTemplateId | null>(null);
+  const [origin, setOrigin] = useState("");
 
   useEffect(() => {
     if (printStamp === 0) return;
     window.print();
   }, [printStamp]);
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLabelTemplate()
+      .then((value) => {
+        if (!cancelled) setTemplate(value);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setTemplate(labelTemplateOrDefault(null));
+        setError(errorText(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!initialIdentifier) return;
@@ -97,6 +127,10 @@ export function LabelsPage() {
 
   const code = item ? barcodeValue(item.sku, item.id) : "";
   const labelQuantity = quantity.trim() || "0";
+  const readyTemplate = template;
+  const qrReady = readyTemplate !== "qr" || origin !== "";
+  const payload =
+    item && readyTemplate === "qr" && origin ? qrLabelPayload(origin, item.id, item.sku) : "";
 
   return (
     <main className="page">
@@ -176,18 +210,23 @@ export function LabelsPage() {
           <p>Each copy is one 90 mm × 29 mm page. The preview below is the same size.</p>
         </div>
       </form>
-      {item ? (
+      {item && readyTemplate && qrReady ? (
         <>
           <div className="no-print label-preview">
             <p className="hint">
               Preview for {item.sku || item.id}. {copies} {copies === 1 ? "copy" : "copies"} will print.
-              Barcode encodes {code}.
+              Template: {labelTemplateLabel(readyTemplate)}.{" "}
+              {readyTemplate === "qr" ? `QR code opens ${payload}.` : `Barcode encodes ${code}.`}
             </p>
             <div className="label-frame">
-              <ItemLabel
+              <PrintedLabel
+                template={readyTemplate}
                 name={item.name}
                 description={item.description}
                 code={code}
+                sku={item.sku}
+                itemId={item.id}
+                origin={origin}
                 quantity={labelQuantity}
                 shortCode={item.shortCode}
                 printedOn={printedOn}
@@ -196,11 +235,15 @@ export function LabelsPage() {
           </div>
           <div className="print-sheet">
             {Array.from({ length: Math.max(copies, 1) }, (_, index) => (
-              <ItemLabel
-                key={`${item.id}-${index}`}
+              <PrintedLabel
+                key={`${item.id}-${readyTemplate}-${index}`}
+                template={readyTemplate}
                 name={item.name}
                 description={item.description}
                 code={code}
+                sku={item.sku}
+                itemId={item.id}
+                origin={origin}
                 quantity={labelQuantity}
                 shortCode={item.shortCode}
                 printedOn={printedOn}

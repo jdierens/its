@@ -100,7 +100,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         label: "Settings",
         href: "/admin/settings",
-        description: "Pricing window and other app settings.",
+        description: "Pricing window, label template, and other app settings.",
       },
       {
         label: "Integrations",
