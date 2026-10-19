@@ -1064,14 +1064,65 @@ button.danger {
   color: var(--danger-ink);
 }
 
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
 .integration-card {
   padding: 1rem 1.1rem;
   margin-bottom: 1rem;
 }
 
+.integration-grid .integration-card {
+  margin-bottom: 0;
+}
+
+.integration-grid .integration-facts {
+  grid-template-columns: 1fr;
+}
+
+.env-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: #eef1f4;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.env-badge.sandbox {
+  background: #fff4d6;
+  color: #7a4b00;
+}
+
+.env-badge.production {
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+}
+
+@media (max-width: 980px) {
+  .integration-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .integration-card h2 {
   margin: 0 0 0.7rem;
   font-size: 1.05rem;
+}
+
+.integration-card h3 {
+  margin: 1rem 0 0.45rem;
+  font-size: 0.92rem;
 }
 
 .integration-status {
@@ -1131,6 +1182,7 @@ button.danger {
 
 .integration-card code {
   font-size: 0.86rem;
+  overflow-wrap: anywhere;
 }
 
 .log-table td:last-child {

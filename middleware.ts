@@ -4,7 +4,8 @@ import { isPublicPath } from "@/lib/publicPaths";
 /**
  * Sign-in is not enforced yet. When Google sign-in is added, put the session
  * check in the branch below and do not require a session for isPublicPath().
- * /privacy and /terms must stay publicly reachable without an account.
+ * /privacy, /terms, /api/ebay/callback, and /api/ebay/account-deletion
+ * must stay publicly reachable without an account.
  */
 export function middleware(request: NextRequest) {
   if (isPublicPath(request.nextUrl.pathname)) {
