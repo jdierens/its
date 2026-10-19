@@ -141,6 +141,26 @@ Vercel Deployment Protection blocks those calls. eBay will not send a Vercel byp
 
 The Integrations card shows the accept URL and the deletion URL for the origin you are browsing. On production that is the two URLs above.
 
+## Item pricing
+
+An existing item shows **Pricing** under the item form. Ecommerce price, market price, and MSRP are USD. Each price stores the time it last changed. Saving the item form does not change them. **Save prices** writes only those three amounts.
+
+**Update pricing** looks up the part number. When the part number is blank, it uses the model. Each result is a new price quote. Older quotes stay. **Last updated** is the time of that lookup.
+
+- eBay listed prices use the Browse API `item_summary/search` with an application token. The token is a client-credentials grant from `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`. The scope is `https://api.ebay.com/oauth/api_scope` and `https://api.ebay.com/oauth/api_scope/buy.browse`. The token is not stored.
+- eBay sold prices use Marketplace Insights and stay off unless `EBAY_INSIGHTS_ENABLED=true`. That API needs eBay approval.
+- BrokerBin stays off unless `BROKERBIN_API_KEY` is set. With a key, the provider reports that lookup is not connected yet.
+
+The page lists which providers ran, how many quotes they returned, and any error. A price under 30% or over 300% of the median for its currency is kept and marked as an outlier. One price in a currency is not marked.
+
+**Price references** lists every quote. The newest quote for each source is highlighted. Column headers sort the table. Each row shows a relative time such as `captured 2h ago` and the exact Pacific time. **Add quote** records a manual observation, such as a BrokerBin quote or an inbound quote.
+
+**Transactions** lists buys and sells. Filter by type and by date. **Add transaction** records a manual row. The total is quantity times unit price, rounded to cents in the database. A sell can name a customer. A buy can name a vendor. A later QuickBooks or eBay import can insert rows the same way. The same source, reference, and item cannot be inserted twice.
+
+**Admin > Settings** has **Pricing/sales window (days)**. It starts at 90. Last sold price and last bought price are the newest transaction of that type. Quantity sold, revenue, average sell price, quantity bought, and spend count transactions inside the window.
+
+`price_quotes`, `item_transactions`, and `app_settings` hold prices and the sales window. They are not credentials. Row level security stays off on them, matching `items`.
+
 ## Database
 
 Migrations live in `supabase/migrations`. Deploying this repo does not apply them. They are already applied on project `fxsbpreasbdalwthyzvk`. On a new database, run them in order in the SQL editor.
@@ -157,7 +177,7 @@ Storage policies on `storage.objects`, for `anon` and `authenticated`, bucket `i
 
 There is no update policy, so objects cannot be overwritten. Deleting a photo removes the file through the Storage API and then deletes the `item_images` row. Storage does not allow deleting `storage.objects` from a database trigger.
 
-Row level security is disabled on `items`, `taxonomies`, `attributes`, `item_attributes`, `attribute_values`, `item_images`, `customers`, `vendors`, `qbo_sync_log`, `ebay_sync_log`, `countries`, `manufacturers`, and `manufacturer_aliases`. The anon key can read and write those rows. This app does not turn RLS on for them. Enabling it without policies would block the client, and the app has no login. `countries` is the ISO 3166-1 list. Manufacturer names and aliases are unique after the same trim, case, and space normalization used by the form. `ebay_sync_log` messages must not include tokens or buyer personal data.
+Row level security is disabled on `items`, `taxonomies`, `attributes`, `item_attributes`, `attribute_values`, `item_images`, `customers`, `vendors`, `qbo_sync_log`, `ebay_sync_log`, `countries`, `manufacturers`, `manufacturer_aliases`, `price_quotes`, `item_transactions`, and `app_settings`. The anon key can read and write those rows. This app does not turn RLS on for them. Enabling it without policies would block the client, and the app has no login. `countries` is the ISO 3166-1 list. Manufacturer names and aliases are unique after the same trim, case, and space normalization used by the form. `ebay_sync_log` messages must not include tokens or buyer personal data.
 
 `qbo_connection`, `qbo_sync_cursor`, and `ebay_connection` are the exceptions. Row level security is enabled and there are no policies for `anon` or `authenticated`. Their grants are revoked. Only the service role, from server route handlers, can read them. `qbo_connection` and `ebay_connection` hold the tokens. `needs_reconnect` is set when the refresh token can no longer be used. `qbo_sync_cursor` holds each QuickBooks entity's change cursor and last sync time.
 

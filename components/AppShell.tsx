@@ -14,6 +14,7 @@ import {
   PackagePlus,
   PanelLeftClose,
   PanelLeftOpen,
+  Settings,
   Shapes,
   ShoppingCart,
   Tag,
@@ -47,6 +48,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/warehouse/receiving": PackagePlus,
   "/pricing": BadgeDollarSign,
   "/admin/users": Users,
+  "/admin/settings": Settings,
   "/admin/integrations": Plug,
 };
 

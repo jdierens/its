@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/qbo/*.test.ts lib/ebay/*.test.ts lib/itemFields.test.ts lib/imageOrder.test.ts"
+    "test": "node --experimental-strip-types --import ./test/register.mjs --test lib/qbo/*.test.ts lib/ebay/*.test.ts lib/itemFields.test.ts lib/imageOrder.test.ts lib/pricing/*.test.ts"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",
