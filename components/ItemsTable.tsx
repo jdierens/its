@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { errorText } from "@/lib/errors";
 import { fetchItemList, fetchTaxonomyChoices } from "@/lib/items";
+import { fetchManufacturerChoices } from "@/lib/manufacturers";
 import type { ItemListColumn, ItemListRow, TaxonomyChoice } from "@/lib/types";
 
 type ActiveCell = { row: number; col: number };
@@ -13,6 +14,10 @@ const BASE_COLUMNS = [
   { id: "photo", label: "Photo" },
   { id: "sku", label: "SKU" },
   { id: "name", label: "Name" },
+  { id: "manufacturer", label: "Manufacturer" },
+  { id: "model", label: "Model" },
+  { id: "part_number", label: "Part number" },
+  { id: "condition", label: "Condition" },
   { id: "taxonomy", label: "Taxonomy" },
   { id: "quantity", label: "Quantity" },
 ] as const;
@@ -33,8 +38,12 @@ export function ItemsTable() {
   const params = useSearchParams();
   const tax = (params.get("tax") ?? "").trim().toUpperCase();
   const q = params.get("q") ?? "";
+  const conditionParam = params.get("condition") ?? "";
+  const condition = conditionParam === "New" || conditionParam === "Used" ? conditionParam : "";
+  const manufacturerId = params.get("mfr") ?? "";
   const [draft, setDraft] = useState(q);
   const [choices, setChoices] = useState<TaxonomyChoice[]>([]);
+  const [manufacturers, setManufacturers] = useState<{ id: string; name: string }[]>([]);
   const [rows, setRows] = useState<ItemListRow[]>([]);
   const [columns, setColumns] = useState<ItemListColumn[]>([]);
   const [total, setTotal] = useState(0);
@@ -60,9 +69,11 @@ export function ItemsTable() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchTaxonomyChoices()
-      .then((next) => {
-        if (!cancelled) setChoices(next);
+    Promise.all([fetchTaxonomyChoices(), fetchManufacturerChoices()])
+      .then(([nextChoices, nextMakers]) => {
+        if (cancelled) return;
+        setChoices(nextChoices);
+        setManufacturers(nextMakers);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(errorText(err));
@@ -88,7 +99,7 @@ export function ItemsTable() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchItemList({ tax, q })
+    fetchItemList({ tax, q, condition, manufacturerId })
       .then((result) => {
         if (cancelled) return;
         setRows(result.rows);
@@ -111,7 +122,7 @@ export function ItemsTable() {
     return () => {
       cancelled = true;
     };
-  }, [tax, q]);
+  }, [tax, q, condition, manufacturerId]);
 
   useEffect(() => {
     if (!active) return;
@@ -140,10 +151,10 @@ export function ItemsTable() {
     return () => window.removeEventListener("keydown", onSlash);
   }, []);
 
-  function setTax(code: string) {
+  function setParam(key: string, value: string) {
     const next = new URLSearchParams(params.toString());
-    if (code) next.set("tax", code);
-    else next.delete("tax");
+    if (value) next.set(key, value);
+    else next.delete(key);
     const query = next.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
@@ -189,6 +200,10 @@ export function ItemsTable() {
   function cellText(item: ItemListRow, columnId: string): string {
     if (columnId === "sku") return item.sku || "—";
     if (columnId === "name") return item.name || "Untitled";
+    if (columnId === "manufacturer") return item.manufacturerName || "—";
+    if (columnId === "model") return item.model || "—";
+    if (columnId === "part_number") return item.partNumber || "—";
+    if (columnId === "condition") return item.condition || "—";
     if (columnId === "quantity") return item.quantity === null ? "—" : String(item.quantity);
     if (columnId === "fields") return fieldSummary(item.fields) || "—";
     if (columnId.startsWith("attr:")) return item.fields[columnId.slice(5)] || "—";
@@ -203,7 +218,7 @@ export function ItemsTable() {
         <select
           aria-label="Filter by taxonomy"
           value={knownTax ? tax : ""}
-          onChange={(event) => setTax(event.target.value)}
+          onChange={(event) => setParam("tax", event.target.value)}
         >
           <option value="">All taxonomies</option>
           {choices.map((choice) => (
@@ -212,12 +227,33 @@ export function ItemsTable() {
             </option>
           ))}
         </select>
+        <select
+          aria-label="Filter by condition"
+          value={condition}
+          onChange={(event) => setParam("condition", event.target.value)}
+        >
+          <option value="">All conditions</option>
+          <option value="New">New</option>
+          <option value="Used">Used</option>
+        </select>
+        <select
+          aria-label="Filter by manufacturer"
+          value={manufacturers.some((maker) => maker.id === manufacturerId) ? manufacturerId : ""}
+          onChange={(event) => setParam("mfr", event.target.value)}
+        >
+          <option value="">All manufacturers</option>
+          {manufacturers.map((maker) => (
+            <option key={maker.id} value={maker.id}>
+              {maker.name}
+            </option>
+          ))}
+        </select>
         <input
           ref={searchRef}
           className="items-search"
           type="search"
           aria-label="Search items"
-          placeholder="Search SKU, name, description, values"
+          placeholder="Search SKU, name, manufacturer, model, part number"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -291,7 +327,15 @@ export function ItemsTable() {
                         aria-colindex={colIndex + 1}
                         aria-selected={selected}
                         tabIndex={selected ? 0 : -1}
-                        className={column.id === "name" || column.id === "fields" ? "clip" : undefined}
+                        className={
+                          column.id === "name" ||
+                          column.id === "fields" ||
+                          column.id === "manufacturer" ||
+                          column.id === "model" ||
+                          column.id === "part_number"
+                            ? "clip"
+                            : undefined
+                        }
                         onClick={() => setActive({ row: rowIndex, col: colIndex })}
                         onDoubleClick={() => router.push(`/items/${item.id}`)}
                       >

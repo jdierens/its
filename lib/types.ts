@@ -47,6 +47,11 @@ export type ItemListRow = {
   taxonomyName: string | null;
   shortCode: string | null;
   imageUrl: string | null;
+  manufacturerId: string | null;
+  manufacturerName: string | null;
+  model: string;
+  partNumber: string;
+  condition: string;
   fields: Record<string, string>;
 };
 
@@ -69,6 +74,16 @@ export type ItemDetail = {
   description: string;
   quantity: number | null;
   taxonomyId: string | null;
+  manufacturerId: string | null;
+  manufacturerName: string;
+  model: string;
+  partNumber: string;
+  condition: "New" | "Used";
+  conditionNote: string;
+  eccn: string;
+  usHts: string;
+  ccats: string;
+  coo: string;
   attributes: Record<string, string>;
 };
 

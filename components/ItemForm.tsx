@@ -10,9 +10,20 @@ import {
 } from "@/components/AttributeValueField";
 import { usePageMeta } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { CountrySelect } from "@/components/CountrySelect";
 import { ItemGallery, type PendingImage } from "@/components/ItemGallery";
+import { ManufacturerSelect } from "@/components/ManufacturerSelect";
+import { fetchCountries, type Country } from "@/lib/countries";
 import { errorText } from "@/lib/errors";
 import { uploadItemImages } from "@/lib/images";
+import {
+  DEFAULT_CONDITION,
+  DEFAULT_ECCN,
+  NEW_CONDITION_NOTES,
+  conditionNoteAfterChange,
+  htsError,
+  type ItemCondition,
+} from "@/lib/itemFields";
 import { createItem, deleteItem, fetchItem, fetchTaxonomies, updateItem } from "@/lib/items";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 
@@ -41,6 +52,18 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [taxonomyName, setTaxonomyName] = useState("");
   const [longCode, setLongCode] = useState("");
   const [shortCode, setShortCode] = useState("");
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [manufacturerId, setManufacturerId] = useState<string | null>(null);
+  const [manufacturerName, setManufacturerName] = useState("");
+  const [manufacturerUnresolved, setManufacturerUnresolved] = useState(false);
+  const [model, setModel] = useState("");
+  const [partNumber, setPartNumber] = useState("");
+  const [condition, setCondition] = useState<ItemCondition>(DEFAULT_CONDITION);
+  const [conditionNote, setConditionNote] = useState("");
+  const [eccn, setEccn] = useState(DEFAULT_ECCN);
+  const [usHts, setUsHts] = useState("");
+  const [ccats, setCcats] = useState("");
+  const [coo, setCoo] = useState("");
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>({});
   const [loadedAttributes, setLoadedAttributes] = useState<Record<string, string>>({});
   const [loadedTaxonomyName, setLoadedTaxonomyName] = useState<string | null>(null);
@@ -74,12 +97,14 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     async function load() {
       try {
-        const [taxonomyRows, item] = await Promise.all([
+        const [taxonomyRows, countryRows, item] = await Promise.all([
           fetchTaxonomies(),
+          fetchCountries(),
           mode === "edit" && itemId ? fetchItem(itemId) : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setTaxonomies(taxonomyRows);
+        setCountries(countryRows);
         if (mode === "edit") {
           if (!item) {
             setMissing(true);
@@ -103,6 +128,16 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           setLoadedTaxonomyName(taxonomy?.name ?? null);
           setLoadedAttributes(values);
           setAttributeValues(values);
+          setManufacturerId(item.manufacturerId);
+          setManufacturerName(item.manufacturerName);
+          setModel(item.model);
+          setPartNumber(item.partNumber);
+          setCondition(item.condition);
+          setConditionNote(item.conditionNote);
+          setEccn(item.eccn || DEFAULT_ECCN);
+          setUsHts(item.usHts);
+          setCcats(item.ccats);
+          setCoo(item.coo);
         }
       } catch (error) {
         if (!cancelled) setLoadError(errorText(error));
@@ -191,6 +226,15 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       setSaveError("Choose a taxonomy.");
       return;
     }
+    if (manufacturerUnresolved) {
+      setSaveError("Choose a manufacturer from the list, or add the new name.");
+      return;
+    }
+    const htsProblem = htsError(usHts);
+    if (htsProblem) {
+      setSaveError(`US HTS: ${htsProblem}`);
+      return;
+    }
 
     const creatingTaxonomy = trimmedTaxonomy !== "" && !taxonomy;
     let longCodeValue: string | null = null;
@@ -256,6 +300,15 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       attributeDefs,
       longCode: longCodeValue,
       shortCode: shortCodeValue,
+      manufacturerId,
+      model,
+      partNumber,
+      condition,
+      conditionNote,
+      eccn,
+      usHts,
+      ccats,
+      coo,
     };
 
     setSaving(true);
@@ -464,6 +517,146 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             </label>
           </div>
         ) : null}
+        <fieldset>
+          <legend>Main</legend>
+          <div className="grid">
+            <ManufacturerSelect
+              manufacturerId={manufacturerId}
+              manufacturerName={manufacturerName}
+              onChange={(id, nextName) => {
+                setManufacturerId(id);
+                setManufacturerName(nextName);
+                setSaved(false);
+              }}
+              onUnresolved={setManufacturerUnresolved}
+            />
+            <label>
+              Model
+              <input
+                value={model}
+                autoComplete="off"
+                onChange={(event) => {
+                  setModel(event.target.value);
+                  setSaved(false);
+                }}
+              />
+            </label>
+            <label>
+              Part number
+              <input
+                value={partNumber}
+                autoComplete="off"
+                onChange={(event) => {
+                  setPartNumber(event.target.value);
+                  setSaved(false);
+                }}
+              />
+            </label>
+            <label>
+              Condition
+              <select
+                value={condition}
+                onChange={(event) => {
+                  const next = event.target.value === "New" ? "New" : "Used";
+                  setCondition(next);
+                  setConditionNote((note) => conditionNoteAfterChange(next, note));
+                  setSaved(false);
+                }}
+              >
+                <option value="Used">Used</option>
+                <option value="New">New</option>
+              </select>
+            </label>
+            {condition === "New" ? (
+              <label>
+                Condition note
+                <select
+                  value={
+                    NEW_CONDITION_NOTES.includes(conditionNote as (typeof NEW_CONDITION_NOTES)[number])
+                      ? conditionNote
+                      : ""
+                  }
+                  onChange={(event) => {
+                    setConditionNote(event.target.value);
+                    setSaved(false);
+                  }}
+                >
+                  <option value="">None</option>
+                  {NEW_CONDITION_NOTES.map((note) => (
+                    <option key={note} value={note}>
+                      {note}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label>
+                Condition note
+                <input
+                  value={conditionNote}
+                  autoComplete="off"
+                  onChange={(event) => {
+                    setConditionNote(event.target.value);
+                    setSaved(false);
+                  }}
+                />
+                <span className="hint">Optional.</span>
+              </label>
+            )}
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Trade compliance</legend>
+          <div className="grid">
+            <label>
+              ECCN
+              <input
+                value={eccn}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  setEccn(event.target.value);
+                  setSaved(false);
+                }}
+              />
+              <span className="hint">Blank saves as {DEFAULT_ECCN}.</span>
+            </label>
+            <label>
+              US HTS
+              <input
+                value={usHts}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="8471.30.0100"
+                onChange={(event) => {
+                  setUsHts(event.target.value);
+                  setSaved(false);
+                }}
+              />
+              <span className="hint">Digits and optional dots, up to 10 digits.</span>
+            </label>
+            <label>
+              CCATS
+              <input
+                value={ccats}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  setCcats(event.target.value);
+                  setSaved(false);
+                }}
+              />
+            </label>
+            <CountrySelect
+              countries={countries}
+              value={coo}
+              onChange={(alpha3) => {
+                setCoo(alpha3);
+                setSaved(false);
+              }}
+            />
+          </div>
+        </fieldset>
         {taxonomyName.trim() ? (
           <fieldset>
             <legend>{taxonomy?.name ?? taxonomyName.trim()} attributes</legend>
