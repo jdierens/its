@@ -61,7 +61,7 @@ export async function requestToken(input: {
 }): Promise<TokenSet> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const authorization = `Basic ${Buffer.from(`${input.config.clientId}:${input.config.clientSecret}`).toString("base64")}`;
-  const requireRefresh = input.fields.grant_type !== "refresh_token";
+  const requireRefresh = input.fields.grant_type === "authorization_code";
   let lastError: TokenRequestError | null = null;
 
   for (let attempt = 1; attempt <= MAX_TOKEN_ATTEMPTS; attempt += 1) {

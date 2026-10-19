@@ -98,6 +98,11 @@ export const NAV_GROUPS: NavGroup[] = [
         description: "Manage who can sign in and what they can do.",
       },
       {
+        label: "Settings",
+        href: "/admin/settings",
+        description: "Pricing window and other app settings.",
+      },
+      {
         label: "Integrations",
         href: "/admin/integrations",
         description: "Connect QuickBooks and sync customers and vendors.",
