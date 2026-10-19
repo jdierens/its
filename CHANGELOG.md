@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20.0
+
+- Admin > Settings has a Label template choice. Barcode (current) stays the default, so labels print as they do today until an admin switches it. QR code is the other choice. The value is `label_template` in `app_settings`. A missing or unknown value stays on the barcode.
+- Both templates print at 90 mm × 29 mm on the Brother QL-820NWB. The QR label puts the code on the left with the SKU under it. The name wraps to two lines. Quantity and the taxonomy code are large, with a QTY caption and the date under them. The description is not printed. The QR payload is the item page on the address you are printing from, plus the SKU. Error correction is M, each module is 0.423 mm, and the quiet zone stays intact. The version follows the payload length.
+- Print label on an item stays a single icon. The template is chosen in settings.
+
 ## 0.19.0
 
 - Edit pages keep Save and the other actions in a sticky toolbar: item create and edit, customers, vendors, taxonomy fields, manufacturers, and Admin > Integrations.

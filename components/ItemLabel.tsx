@@ -471,6 +471,97 @@ export const LABEL_PRINT_CSS = `
   background: #fff;
 }
 
+.item-label-qr {
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: stretch;
+  column-gap: 2mm;
+}
+
+.qr-col {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  max-width: 46mm;
+}
+
+.qr-symbol {
+  display: block;
+  flex: 0 0 auto;
+  margin-bottom: 0.6mm;
+  shape-rendering: crispEdges;
+}
+
+.qr-symbol-pending {
+  width: 19.05mm;
+  height: 19.05mm;
+}
+
+.qr-sku {
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.qr-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+}
+
+.qr-name {
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: left;
+  overflow-wrap: break-word;
+}
+
+.qr-facts {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  column-gap: 2mm;
+}
+
+.qr-fact-qty {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+}
+
+.qr-fact-code {
+  flex: 0 0 auto;
+  text-align: left;
+}
+
+.qr-big {
+  font-size: 12mm;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.qr-cap,
+.qr-date {
+  font-size: 3.8mm;
+  font-weight: 400;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.qr-fact-qty .qr-big,
+.qr-fact-qty .qr-cap {
+  text-align: center;
+}
+
 .print-sheet {
   display: none;
 }
