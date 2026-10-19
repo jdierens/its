@@ -1,9 +1,11 @@
 "use client";
 
-import { DragEvent, useCallback, useEffect, useState } from "react";
+import { DragEvent, useCallback, useEffect, useRef, useState } from "react";
+import { GitMerge, Link2 } from "lucide-react";
 import { valuesMatch, attributeValueError } from "@/components/AttributeValueField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { usePageMeta } from "@/components/AppShell";
+import { PageToolbar, ToolbarButton } from "@/components/PageToolbar";
 import {
   addAttributeValue,
   createAttribute,
@@ -23,6 +25,7 @@ import {
   type FieldCatalogEntry,
 } from "@/lib/attributes";
 import { errorText } from "@/lib/errors";
+import { isDirty } from "@/lib/formDirty";
 import { fetchTaxonomy } from "@/lib/items";
 import type { Attribute, DataType, ListedValue, Taxonomy } from "@/lib/types";
 
@@ -36,6 +39,24 @@ type PendingDelete =
   | { kind: "unlink"; id: string; name: string }
   | { kind: "definition"; id: string; name: string }
   | { kind: "value"; id: string; attributeId: string; label: string };
+
+type FieldDefinition = {
+  name: string;
+  data_type: DataType;
+  unit: string;
+  label: string;
+  uses_list: boolean;
+};
+
+function fieldDefinition(attribute: Attribute): FieldDefinition {
+  return {
+    name: attribute.name.trim(),
+    data_type: attribute.data_type,
+    unit: (attribute.unit ?? "").trim(),
+    label: (attribute.label ?? "").trim(),
+    uses_list: attribute.uses_list,
+  };
+}
 
 function itemPhrase(count: number): string {
   return `${count} ${count === 1 ? "item" : "items"}`;
@@ -77,6 +98,9 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeKeep, setMergeKeep] = useState("");
   const [mergeDrop, setMergeDrop] = useState("");
+  const [savedFields, setSavedFields] = useState<Record<string, FieldDefinition>>({});
+  const [toolbarSaved, setToolbarSaved] = useState(false);
+  const savingRef = useRef(false);
 
   const reload = useCallback(async () => {
     const next = await fetchTaxonomy(taxonomyId);
@@ -92,6 +116,9 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
       fetchFieldCatalog(),
     ]);
     setTaxonomy(next);
+    setSavedFields(
+      Object.fromEntries(next.attributes.map((attribute) => [attribute.id, fieldDefinition(attribute)])),
+    );
     setMissing(false);
     setUsage(nextUsage);
     setLocalUse(nextLocal);
@@ -165,12 +192,21 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
         : current,
     );
     setStatus(null);
+    setToolbarSaved(false);
   }
 
   async function onCreate() {
     const name = draftName.trim();
     if (!name) {
       setError("Enter a name for the new field.");
+      return;
+    }
+    const pendingEdits = taxonomy?.attributes.some((attribute) => {
+      const saved = savedFields[attribute.id];
+      return saved ? isDirty(fieldDefinition(attribute), saved) : false;
+    });
+    if (pendingEdits) {
+      setError("Save field changes before adding another field.");
       return;
     }
     setSavingId("new");
@@ -198,43 +234,88 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
     }
   }
 
-  async function onSave(attribute: Attribute) {
-    const name = attribute.name.trim();
-    if (!name) {
-      setError("Field name is required.");
-      return;
-    }
-    const used = usage[attribute.id]?.itemCount ?? 0;
-    const original = taxonomy?.attributes.find((row) => row.id === attribute.id);
-    if (original && attribute.data_type !== original.data_type && used > 0) {
-      setError(`${name} is used on ${itemPhrase(used)}, so its type stays ${original.data_type}.`);
-      return;
-    }
-    if (original && attribute.data_type !== original.data_type) {
-      const bad = original.values.find((row) => attributeValueError(attribute.data_type, row.value));
-      if (bad) {
-        setError(`Remove or change “${bad.value}” before switching this field to ${attribute.data_type}.`);
+  const changedFields =
+    taxonomy?.attributes.filter((attribute) => {
+      const saved = savedFields[attribute.id];
+      return !saved || isDirty(fieldDefinition(attribute), saved);
+    }) ?? [];
+  const draftDirty =
+    draftName.trim() !== "" ||
+    draftUnit.trim() !== "" ||
+    draftLabel.trim() !== "" ||
+    draftType !== "text" ||
+    draftUsesList !== true;
+  const fieldsDirty = changedFields.length > 0 || draftDirty;
+
+  async function saveFields() {
+    if (!taxonomy || savingRef.current) return;
+    const pendingFields = changedFields;
+    if (pendingFields.length === 0 && !draftDirty) return;
+    for (const attribute of pendingFields) {
+      const name = attribute.name.trim();
+      if (!name) {
+        setError("Field name is required.");
         return;
       }
+      const used = usage[attribute.id]?.itemCount ?? 0;
+      const original = savedFields[attribute.id];
+      if (original && attribute.data_type !== original.data_type && used > 0) {
+        setError(`${name} is used on ${itemPhrase(used)}, so its type stays ${original.data_type}.`);
+        return;
+      }
+      if (original && attribute.data_type !== original.data_type) {
+        const bad = attribute.values.find((row) => attributeValueError(attribute.data_type, row.value));
+        if (bad) {
+          setError(`Remove or change “${bad.value}” before switching this field to ${attribute.data_type}.`);
+          return;
+        }
+      }
     }
-    if (!confirmShared(attribute, "Saving it")) return;
+    if (draftDirty && !draftName.trim()) {
+      setError("Enter a name for the new field.");
+      return;
+    }
+    for (const attribute of pendingFields) {
+      if (!confirmShared(attribute, "Saving it")) return;
+    }
 
-    setSavingId(attribute.id);
+    savingRef.current = true;
+    setSavingId("toolbar");
     setError(null);
     setStatus(null);
+    setToolbarSaved(false);
     try {
-      await updateAttribute(attribute.id, {
-        name,
-        dataType: attribute.data_type,
-        unit: attribute.unit?.trim() || null,
-        usesList: attribute.uses_list,
-        label: attribute.label,
-      });
+      for (const attribute of pendingFields) {
+        await updateAttribute(attribute.id, {
+          name: attribute.name.trim(),
+          dataType: attribute.data_type,
+          unit: attribute.unit?.trim() || null,
+          usesList: attribute.uses_list,
+          label: attribute.label?.trim() || null,
+        });
+      }
+      const newName = draftName.trim();
+      if (newName) {
+        await createAttribute(taxonomyId, {
+          name: newName,
+          dataType: draftType,
+          unit: draftUnit.trim() || null,
+          usesList: draftUsesList,
+          label: draftLabel.trim() || null,
+        });
+        setDraftName("");
+        setDraftUnit("");
+        setDraftLabel("");
+        setDraftType("text");
+        setDraftUsesList(true);
+      }
       await reload();
-      setStatus(`Saved ${name}.`);
+      setToolbarSaved(true);
+      setStatus(newName ? `Saved changes and added ${newName}.` : "Saved field changes.");
     } catch (err) {
       setError(errorText(err));
     } finally {
+      savingRef.current = false;
       setSavingId(null);
     }
   }
@@ -508,31 +589,36 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
 
   return (
     <main className="page">
-      <div className="page-toolbar">
-        <button
-          type="button"
-          className="secondary"
+      <PageToolbar
+        dirty={fieldsDirty}
+        saving={savingId === "toolbar"}
+        saved={toolbarSaved}
+        onSave={() => void saveFields()}
+        disabled={savingId !== null && savingId !== "toolbar"}
+        listen={!pickerOpen && !mergeOpen && !pending}
+      >
+        <ToolbarButton
+          icon={Link2}
+          label="Add existing field"
+          disabled={savingId !== null}
           onClick={() => {
             setPickerQuery("");
             setPickerSelected([]);
             setSourceTaxonomyId("");
             setPickerOpen(true);
           }}
-        >
-          Add existing field
-        </button>
-        <button
-          type="button"
-          className="secondary"
+        />
+        <ToolbarButton
+          icon={GitMerge}
+          label="Merge fields"
+          disabled={savingId !== null}
           onClick={() => {
             setMergeKeep("");
             setMergeDrop("");
             setMergeOpen(true);
           }}
-        >
-          Merge fields
-        </button>
-      </div>
+        />
+      </PageToolbar>
       <p className="hint page-note">
         Fields are shared definitions. Linking one here does not copy it. A badge lists the other
         taxonomies that use the same field, and editing the name, unit, label, or value list changes
@@ -759,9 +845,6 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
                   : "Remove from this taxonomy unlinks it here and leaves the definition."}
             </p>
             <div className="actions">
-              <button type="button" disabled={savingId === attribute.id} onClick={() => void onSave(attribute)}>
-                {savingId === attribute.id ? "Saving…" : "Save field"}
-              </button>
               <button
                 type="button"
                 className="secondary"

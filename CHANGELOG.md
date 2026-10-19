@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.0
+
+- Edit pages keep Save and the other actions in a sticky toolbar: item create and edit, customers, vendors, taxonomy fields, manufacturers, and Admin > Integrations.
+- Save is an icon. It stays grey until the form differs from the loaded values, and it turns grey again if those edits are undone. A dot marks unsaved changes, a spinner shows while saving, and a check shows briefly after a save. Ctrl or Cmd+S saves.
+- Print label is a barcode icon. Unsaved item changes ask you to save first so the label matches. Delete is a trash icon and still asks before removing the item. Change taxonomy sits in the same toolbar.
+- Leaving a page with unsaved changes asks you to confirm, in the browser and when following a link in the app.
+
 ## 0.18.0
 
 - Change an item's taxonomy from the item page. The confirmation lists shared fields that keep their values, saved values that will be removed, and fields the new taxonomy adds. Required fields are marked.
