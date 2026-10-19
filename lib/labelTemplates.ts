@@ -2,6 +2,7 @@ import { errorText } from "@/lib/errors";
 import { getSupabase } from "@/lib/supabase";
 
 export const LABEL_TEMPLATE_KEY = "label_template";
+export const ITEM_LABEL_TEMPLATE_KEY = "label_template_item";
 
 export const LABEL_TEMPLATES = [
   { id: "barcode", label: "Barcode (current)" },
@@ -12,14 +13,71 @@ export type LabelTemplateId = (typeof LABEL_TEMPLATES)[number]["id"];
 
 export const DEFAULT_LABEL_TEMPLATE: LabelTemplateId = "barcode";
 
+export const LABEL_TYPES = [
+  {
+    id: "item",
+    label: "Item",
+    detail: "Printed from an item. 90 × 29 mm.",
+    ready: true,
+  },
+  {
+    id: "pallet",
+    label: "Pallet",
+    detail: "Bin label. Coming soon.",
+    ready: false,
+  },
+  {
+    id: "crate",
+    label: "Crate",
+    detail: "Bin label. Coming soon.",
+    ready: false,
+  },
+  {
+    id: "box",
+    label: "Box",
+    detail: "Bin label. Coming soon.",
+    ready: false,
+  },
+  {
+    id: "location",
+    label: "Rack location",
+    detail: "Warehouse rack location. Coming soon.",
+    ready: false,
+  },
+] as const;
+
+export type LabelTypeId = (typeof LABEL_TYPES)[number]["id"];
+
+// Templates available for each label type. Only item prints today.
+export const TEMPLATES_BY_LABEL_TYPE: Record<LabelTypeId, readonly (typeof LABEL_TEMPLATES)[number][]> = {
+  item: LABEL_TEMPLATES,
+  pallet: [],
+  crate: [],
+  box: [],
+  location: [],
+};
+
 // Five printer dots at 300 dpi. 1.6 CSS px, so a 300 dpi print stays on whole dots.
 export const QR_MODULE_MM = (5 * 25.4) / 300;
 export const QR_QUIET_MODULES = 4;
 export const QR_ERROR_CORRECTION = "M" as const;
 
+export function isLabelTemplateId(value: string | null | undefined): value is LabelTemplateId {
+  return LABEL_TEMPLATES.some((template) => template.id === value);
+}
+
 export function labelTemplateOrDefault(value: string | null | undefined): LabelTemplateId {
-  const found = LABEL_TEMPLATES.find((template) => template.id === value);
-  return found ? found.id : DEFAULT_LABEL_TEMPLATE;
+  return isLabelTemplateId(value) ? value : DEFAULT_LABEL_TEMPLATE;
+}
+
+// label_template_item wins. The older label_template key is the fallback so a
+// database that only has the original setting still prints the chosen template.
+export function itemTemplateFromSettings(
+  itemValue: string | null | undefined,
+  legacyValue: string | null | undefined,
+): LabelTemplateId {
+  if (isLabelTemplateId(itemValue)) return itemValue;
+  return labelTemplateOrDefault(legacyValue);
 }
 
 export function labelTemplateLabel(id: LabelTemplateId): string {
@@ -45,18 +103,25 @@ export function qrLabelPayload(origin: string, id: string, sku: string): string 
 export async function fetchLabelTemplate(): Promise<LabelTemplateId> {
   const { data, error } = await getSupabase()
     .from("app_settings")
-    .select("value")
-    .eq("key", LABEL_TEMPLATE_KEY)
-    .maybeSingle();
+    .select("key, value")
+    .in("key", [ITEM_LABEL_TEMPLATE_KEY, LABEL_TEMPLATE_KEY]);
   if (error) throw new Error(errorText(error));
-  return labelTemplateOrDefault(typeof data?.value === "string" ? data.value : null);
+  const rows = data ?? [];
+  const itemValue = rows.find((row) => row.key === ITEM_LABEL_TEMPLATE_KEY)?.value;
+  const legacyValue = rows.find((row) => row.key === LABEL_TEMPLATE_KEY)?.value;
+  return itemTemplateFromSettings(
+    typeof itemValue === "string" ? itemValue : null,
+    typeof legacyValue === "string" ? legacyValue : null,
+  );
 }
 
 export async function saveLabelTemplate(id: LabelTemplateId): Promise<void> {
-  const { error } = await getSupabase().from("app_settings").upsert({
-    key: LABEL_TEMPLATE_KEY,
-    value: id,
-    updated_at: new Date().toISOString(),
-  });
+  const updated_at = new Date().toISOString();
+  const { error } = await getSupabase()
+    .from("app_settings")
+    .upsert([
+      { key: ITEM_LABEL_TEMPLATE_KEY, value: id, updated_at },
+      { key: LABEL_TEMPLATE_KEY, value: id, updated_at },
+    ]);
   if (error) throw new Error(errorText(error));
 }

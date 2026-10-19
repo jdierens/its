@@ -251,12 +251,12 @@ export function QrItemLabel({
 
     let captionPx = mmPx(CAPTION_MM);
     const codeWidth = shownShortCode ? measuredWidth(shownShortCode, bigPx, 700) : 0;
-    if (shownShortCode && codeWidth > 0 && measuredWidth(printedOn, captionPx, 400) > codeWidth) {
+    if (shownShortCode && codeWidth > 0 && measuredWidth(printedOn, captionPx, 700) > codeWidth) {
       let low = mmPx(CAPTION_MIN_MM);
       let high = captionPx;
       for (let step = 0; step < 12; step += 1) {
         const mid = (low + high) / 2;
-        if (measuredWidth(printedOn, mid, 400) <= codeWidth) {
+        if (measuredWidth(printedOn, mid, 700) <= codeWidth) {
           captionPx = mid;
           low = mid;
         } else {
@@ -270,10 +270,10 @@ export function QrItemLabel({
     dateEl.style.letterSpacing = "0px";
     dateEl.style.width = "";
     if (shownShortCode && codeWidth > 0) {
-      const natural = measuredWidth(printedOn, captionPx, 400);
+      const natural = measuredWidth(printedOn, captionPx, 700);
       const gaps = Math.max(printedOn.length - 1, 1);
       let spacing = Math.max(0, codeWidth - natural) / gaps;
-      const spaced = widthWithSpacing(printedOn, captionPx, 400, spacing);
+      const spaced = widthWithSpacing(printedOn, captionPx, 700, spacing);
       if (spaced > natural && Math.abs(spaced - codeWidth) > 0.4) {
         spacing *= (codeWidth - natural) / (spaced - natural);
       }
@@ -283,7 +283,7 @@ export function QrItemLabel({
     }
 
     const bigGaps = inkGaps(qtyText, bigPx, 700, qtyEl);
-    const capGaps = inkGaps("QTY", captionPx, 400, qtyCaptionEl);
+    const capGaps = inkGaps("QTY", captionPx, 700, qtyCaptionEl);
     const margin = mmPx(BREATH_MM) - bigGaps.bottom - capGaps.top;
     qtyCaptionEl.style.marginTop = `${margin}px`;
     dateEl.style.marginTop = `${margin}px`;
