@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.0
+
+- Connect an eBay seller account: OAuth, token refresh, and the marketplace account deletion endpoint. Listing creation, quantity sync, order import, and tracking push come later.
+
 ## 0.9.0
 
 - #1 Show taxonomy attributes on the item form.
