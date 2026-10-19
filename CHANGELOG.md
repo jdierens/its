@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Add a taxonomy from Taxonomies & Fields, with a long code, a short code, and fields linked from another taxonomy. Delete a taxonomy only when no items use it.
+- Share field definitions across taxonomies. Link an existing field, link every field from another taxonomy, reorder fields per taxonomy, and merge two fields of the same type. A label keeps separate definitions when the name, type, and unit already collide.
+- Show Save changes on a taxonomy row only after the name or codes change. Reordering still saves on its own.
+- Capitalize the Taxonomies & Fields menu, breadcrumb, and page title.
+
 ## 0.9.0
 
 - #1 Show taxonomy attributes on the item form.
