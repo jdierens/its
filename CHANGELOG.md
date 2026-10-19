@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.0
+
+- Change an item's taxonomy from the item page. The confirmation lists shared fields that keep their values, saved values that will be removed, and fields the new taxonomy adds. Required fields are marked.
+- The confirm button names how many values will be removed. Lost values can be copied into item notes. If the SKU contains the current short code, keep it or replace that code. The default is to keep the SKU.
+- The move is one database change. Removed values are logged in `item_taxonomy_changes`.
+
 ## 0.17.0
 
 - Edit cells in the items table. Enter, double-click, or typing starts the edit. Enter and Tab save and move. Esc cancels. SKU and taxonomy stay read-only.

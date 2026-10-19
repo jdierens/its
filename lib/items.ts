@@ -34,6 +34,7 @@ type AttributeRow = {
 
 type AttributeLinkRow = {
   sort_order: number;
+  required: boolean | null;
   attributes: AttributeRow | AttributeRow[] | null;
 };
 
@@ -50,6 +51,7 @@ type EmbeddedAttribute = { name: string } | { name: string }[] | null;
 
 type ItemAttributeRow = {
   value: string;
+  attribute_id: string;
   attributes: EmbeddedAttribute;
 };
 
@@ -58,6 +60,7 @@ type ItemRow = {
   sku: string;
   name: string;
   description: string | null;
+  notes: string | null;
   quantity: number | null;
   taxonomy_id: string | null;
   manufacturer_id: string | null;
@@ -147,6 +150,7 @@ function mapAttribute(attribute: AttributeRow): Attribute {
     data_type: asDataType(attribute.data_type),
     unit: attribute.unit,
     uses_list: attribute.uses_list !== false,
+    required: false,
     sortOrder: 0,
     allowedValues: values.map((row) => row.value),
     values,
@@ -154,7 +158,7 @@ function mapAttribute(attribute: AttributeRow): Attribute {
 }
 
 const TAXONOMY_COLUMNS =
-  "id, name, long_code, short_code, sort_order, taxonomy_attributes(sort_order, attributes(id, name, label, data_type, unit, uses_list, attribute_values(id, value, sort_order)))";
+  "id, name, long_code, short_code, sort_order, taxonomy_attributes(sort_order, required, attributes(id, name, label, data_type, unit, uses_list, attribute_values(id, value, sort_order)))";
 
 function linkedAttribute(value: AttributeRow | AttributeRow[] | null): AttributeRow | null {
   if (!value) return null;
@@ -168,7 +172,7 @@ function toTaxonomy(taxonomy: TaxonomyRow): Taxonomy {
     .flatMap((link) => {
       const attribute = linkedAttribute(link.attributes);
       if (!attribute) return [];
-      return [{ ...mapAttribute(attribute), sortOrder: link.sort_order }];
+      return [{ ...mapAttribute(attribute), sortOrder: link.sort_order, required: link.required === true }];
     });
 
   return {
@@ -549,7 +553,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
   const { data, error } = await getSupabase()
     .from("items")
     .select(
-      "id, sku, name, description, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attributes(name))",
+      "id, sku, name, description, notes, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -559,9 +563,12 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
 
   const item = data as ItemRow;
   const attributes: Record<string, string> = {};
+  const attributeLinks: { id: string; name: string; value: string }[] = [];
   for (const row of item.item_attributes ?? []) {
     const name = embeddedName(row.attributes);
-    if (name) attributes[name] = row.value;
+    if (!name) continue;
+    attributes[name] = row.value;
+    attributeLinks.push({ id: row.attribute_id, name, value: row.value });
   }
 
   const rawCondition = item.condition ?? "";
@@ -584,7 +591,9 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     usHts: item.us_hts ?? "",
     ccats: item.ccats ?? "",
     coo: item.coo ?? "",
+    notes: item.notes ?? "",
     attributes,
+    attributeLinks,
   };
 }
 
@@ -730,6 +739,38 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
   });
 
   if (error) throw new Error(errorText(error));
+}
+
+export async function saveItemNotes(id: string, notes: string): Promise<void> {
+  const { error } = await getSupabase().from("items").update({ notes: notes.trim() || null }).eq("id", id);
+  if (error) throw new Error(errorText(error));
+}
+
+export type TaxonomyChangeResult = {
+  taxonomyId: string;
+  sku: string;
+  notes: string;
+};
+
+export async function changeItemTaxonomy(input: {
+  id: string;
+  taxonomyId: string;
+  copyNotes: boolean;
+  regenerateSku: boolean;
+}): Promise<TaxonomyChangeResult> {
+  const { data, error } = await getSupabase().rpc("change_item_taxonomy", {
+    p_id: input.id,
+    p_taxonomy_id: input.taxonomyId,
+    p_copy_notes: input.copyNotes,
+    p_regenerate_sku: input.regenerateSku,
+  });
+  if (error) throw new Error(errorText(error));
+  const record = (data ?? {}) as { taxonomy_id?: string; sku?: string; notes?: string };
+  return {
+    taxonomyId: record.taxonomy_id ?? input.taxonomyId,
+    sku: record.sku ?? "",
+    notes: record.notes ?? "",
+  };
 }
 
 function friendlyTaxonomyError(error: unknown): string {

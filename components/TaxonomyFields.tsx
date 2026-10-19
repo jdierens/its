@@ -16,6 +16,7 @@ import {
   mergeFields,
   saveAttributeValueOrder,
   saveFieldOrder,
+  setFieldRequired,
   unlinkAttribute,
   updateAttribute,
   type AttributeUsage,
@@ -720,6 +721,29 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
                   onChange={(event) => patchAttribute(attribute.id, { uses_list: event.target.checked })}
                 />
                 Allowed-value list
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={attribute.required}
+                  onChange={(event) => {
+                    const required = event.target.checked;
+                    setTaxonomy((current) =>
+                      current
+                        ? {
+                            ...current,
+                            attributes: current.attributes.map((row) =>
+                              row.id === attribute.id ? { ...row, required } : row,
+                            ),
+                          }
+                        : current,
+                    );
+                    setFieldRequired(taxonomyId, attribute.id, required).catch((err: unknown) => {
+                      setError(errorText(err));
+                    });
+                  }}
+                />
+                Required on this taxonomy
               </label>
             </div>
             <p className="hint">

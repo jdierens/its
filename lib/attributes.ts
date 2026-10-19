@@ -243,6 +243,15 @@ export async function mergeFields(keepId: string, dropId: string): Promise<void>
   if (error) throw new Error(friendlyAttributeError(error));
 }
 
+export async function setFieldRequired(taxonomyId: string, attributeId: string, required: boolean): Promise<void> {
+  const { error } = await getSupabase()
+    .from("taxonomy_attributes")
+    .update({ required })
+    .eq("taxonomy_id", taxonomyId)
+    .eq("attribute_id", attributeId);
+  if (error) throw new Error(errorText(error));
+}
+
 export async function saveFieldOrder(taxonomyId: string, attributeIds: string[]): Promise<void> {
   const supabase = getSupabase();
   const results = await Promise.all(

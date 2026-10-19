@@ -9,6 +9,7 @@ import {
   canonicalValue,
 } from "@/components/AttributeValueField";
 import { usePageMeta } from "@/components/AppShell";
+import { ChangeTaxonomyDialog } from "@/components/ChangeTaxonomyDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CountrySelect } from "@/components/CountrySelect";
 import { ItemGallery, type PendingImage } from "@/components/ItemGallery";
@@ -24,7 +25,7 @@ import {
   htsError,
   type ItemCondition,
 } from "@/lib/itemFields";
-import { createItem, deleteItem, fetchItem, fetchTaxonomies, updateItem } from "@/lib/items";
+import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 
 type ItemFormProps = {
@@ -64,6 +65,10 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [usHts, setUsHts] = useState("");
   const [ccats, setCcats] = useState("");
   const [coo, setCoo] = useState("");
+  const [notes, setNotes] = useState("");
+  const [attributeLinks, setAttributeLinks] = useState<{ id: string; name: string; value: string }[]>([]);
+  const [changeTaxonomy, setChangeTaxonomy] = useState(false);
+  const [changingTaxonomy, setChangingTaxonomy] = useState(false);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>({});
   const [loadedAttributes, setLoadedAttributes] = useState<Record<string, string>>({});
   const [loadedTaxonomyName, setLoadedTaxonomyName] = useState<string | null>(null);
@@ -138,6 +143,8 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           setUsHts(item.usHts);
           setCcats(item.ccats);
           setCoo(item.coo);
+          setNotes(item.notes);
+          setAttributeLinks(item.attributeLinks);
         }
       } catch (error) {
         if (!cancelled) setLoadError(errorText(error));
@@ -316,6 +323,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       if (mode === "create") {
         const id = createdId ?? (await createItem(input));
         setCreatedId(id);
+        if (notes.trim()) await saveItemNotes(id, notes);
         if (pendingImages.length > 0) {
           await uploadItemImages(
             id,
@@ -327,6 +335,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       }
       if (!itemId) throw new Error("Missing item id.");
       await updateItem(itemId, input);
+      await saveItemNotes(itemId, notes);
       const refreshed = await fetchTaxonomies();
       setTaxonomies(refreshed);
       const match = refreshed.find((row) => row.name.toLowerCase() === trimmedTaxonomy.toLowerCase());
@@ -464,25 +473,57 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           />
         </label>
         <label>
-          Taxonomy
-          <input
-            list="taxonomy-names"
-            value={taxonomyName}
-            placeholder="Select or type a taxonomy"
-            autoComplete="off"
-            onChange={(event) => onTaxonomyChange(event.target.value)}
+          Notes
+          <textarea
+            value={notes}
+            onChange={(event) => {
+              setNotes(event.target.value);
+              setSaved(false);
+            }}
           />
-          <datalist id="taxonomy-names">
-            {taxonomies.map((row) => (
-              <option key={row.id} value={row.name} />
-            ))}
-          </datalist>
-          {isNewTaxonomy ? (
-            <span className="hint">
-              New taxonomy. Enter its codes, then save. It is added at the end of the list.
-            </span>
-          ) : null}
+          <span className="hint">Optional. A taxonomy change can append removed field values here.</span>
         </label>
+        {mode === "edit" ? (
+          <div className="taxonomy-lock">
+            <label>
+              Taxonomy
+              <input
+                value={
+                  taxonomy
+                    ? taxonomy.shortCode
+                      ? `${taxonomy.shortCode} — ${taxonomy.name}`
+                      : taxonomy.name
+                    : "No taxonomy"
+                }
+                readOnly
+              />
+            </label>
+            <button type="button" className="secondary" onClick={() => setChangeTaxonomy(true)}>
+              Change taxonomy
+            </button>
+          </div>
+        ) : (
+          <label>
+            Taxonomy
+            <input
+              list="taxonomy-names"
+              value={taxonomyName}
+              placeholder="Select or type a taxonomy"
+              autoComplete="off"
+              onChange={(event) => onTaxonomyChange(event.target.value)}
+            />
+            <datalist id="taxonomy-names">
+              {taxonomies.map((row) => (
+                <option key={row.id} value={row.name} />
+              ))}
+            </datalist>
+            {isNewTaxonomy ? (
+              <span className="hint">
+                New taxonomy. Enter its codes, then save. It is added at the end of the list.
+              </span>
+            ) : null}
+          </label>
+        )}
         {isNewTaxonomy ? (
           <div className="grid">
             <label>
@@ -682,6 +723,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                     data_type: draft.data_type,
                     unit: draft.unit || null,
                     uses_list: draft.uses_list,
+                    required: false,
                     sortOrder: 0,
                     allowedValues: [],
                     values: [],
@@ -760,6 +802,46 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             Delete item
           </button>
         </section>
+      ) : null}
+      {changeTaxonomy && mode === "edit" && itemId ? (
+        <ChangeTaxonomyDialog
+          taxonomies={taxonomies}
+          current={taxonomy}
+          values={attributeLinks}
+          sku={sku}
+          busy={changingTaxonomy}
+          onCancel={() => {
+            if (!changingTaxonomy) setChangeTaxonomy(false);
+          }}
+          onConfirm={(choice) => {
+            setChangingTaxonomy(true);
+            setSaveError(null);
+            changeItemTaxonomy({ id: itemId, ...choice })
+              .then(async (result) => {
+                const [refreshed, item] = await Promise.all([fetchTaxonomies(), fetchItem(itemId)]);
+                setTaxonomies(refreshed);
+                if (!item) return;
+                const match = refreshed.find((row) => row.id === item.taxonomyId) ?? null;
+                const values: Record<string, string> = {};
+                for (const link of item.attributeLinks) {
+                  const attribute = match?.attributes.find((row) => row.id === link.id);
+                  values[attribute?.name ?? link.name] = attribute ? canonicalValue(attribute, link.value) : link.value;
+                }
+                setSku(result.sku || item.sku);
+                setNotes(result.notes);
+                setTaxonomyName(match?.name ?? "");
+                setLoadedTaxonomyName(match?.name ?? null);
+                setLoadedAttributes(values);
+                setAttributeValues(values);
+                setAttributeLinks(item.attributeLinks);
+                setDrafts([]);
+                setSaved(true);
+                setChangeTaxonomy(false);
+              })
+              .catch((error: unknown) => setSaveError(errorText(error)))
+              .finally(() => setChangingTaxonomy(false));
+          }}
+        />
       ) : null}
       {confirmDelete ? (
         <ConfirmDialog

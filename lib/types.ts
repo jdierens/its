@@ -13,6 +13,7 @@ export type Attribute = {
   data_type: DataType;
   unit: string | null;
   uses_list: boolean;
+  required: boolean;
   sortOrder: number;
   allowedValues: string[];
   values: ListedValue[];
@@ -97,7 +98,9 @@ export type ItemDetail = {
   usHts: string;
   ccats: string;
   coo: string;
+  notes: string;
   attributes: Record<string, string>;
+  attributeLinks: { id: string; name: string; value: string }[];
 };
 
 export type ItemImage = {
