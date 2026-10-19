@@ -319,7 +319,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
         if (pendingImages.length > 0) {
           await uploadItemImages(
             id,
-            pendingImages.map((image) => ({ file: image.file, isPrimary: image.isPrimary })),
+            pendingImages.map((image) => image.file),
           );
         }
         router.push(`/items/${id}`);

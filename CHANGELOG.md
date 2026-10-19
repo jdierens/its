@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.0
+
+- Open a photo by clicking its thumbnail, or by pressing Enter when it is focused. Delete stays a corner icon and asks for confirmation.
+- Reorder photos by dragging, or with the left and right arrow keys. The order saves immediately. The first photo is the primary image.
+- Add new photos at the end. Saving an edit adds the new photo just after the original.
+
 ## 0.13.0
 
 - Store manufacturer, model, part number, condition, and trade-compliance fields on the item itself. Condition starts as Used. ECCN starts as 5A992.C. Country of origin stays empty until it is set.

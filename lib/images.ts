@@ -1,4 +1,9 @@
 import { errorText } from "@/lib/errors";
+import {
+  appendSortStart,
+  shiftedSortOrders,
+  sortOrderAfterSource,
+} from "@/lib/imageOrder";
 import { getSupabase } from "@/lib/supabase";
 import type { ItemImage } from "@/lib/types";
 
@@ -11,14 +16,8 @@ type ImageRow = {
   id: string;
   item_id: string;
   storage_path: string;
-  is_primary: boolean;
   sort_order: number;
   source_image_id: string | null;
-};
-
-export type PendingUpload = {
-  file: File;
-  isPrimary: boolean;
 };
 
 function extensionFor(file: File): string {
@@ -77,7 +76,6 @@ function toItemImage(row: ImageRow, url: string | null): ItemImage {
     id: row.id,
     itemId: row.item_id,
     storagePath: row.storage_path,
-    isPrimary: row.is_primary,
     sortOrder: row.sort_order,
     sourceImageId: row.source_image_id,
     url,
@@ -87,7 +85,7 @@ function toItemImage(row: ImageRow, url: string | null): ItemImage {
 export async function fetchItemImages(itemId: string): Promise<ItemImage[]> {
   const { data, error } = await getSupabase()
     .from("item_images")
-    .select("id, item_id, storage_path, is_primary, sort_order, source_image_id")
+    .select("id, item_id, storage_path, sort_order, source_image_id")
     .eq("item_id", itemId)
     .order("sort_order")
     .order("created_at");
@@ -99,23 +97,26 @@ export async function fetchItemImages(itemId: string): Promise<ItemImage[]> {
   return rows.map((row) => toItemImage(row, urls.get(row.storage_path) ?? null));
 }
 
-export async function uploadItemImages(itemId: string, uploads: PendingUpload[]): Promise<void> {
-  if (uploads.length === 0) return;
+export async function uploadItemImages(itemId: string, files: File[]): Promise<void> {
+  if (files.length === 0) return;
 
   const supabase = getSupabase();
-  const ordered = [...uploads].sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
+  const existing = await supabase
+    .from("item_images")
+    .select("sort_order")
+    .eq("item_id", itemId);
+  if (existing.error) throw new Error(errorText(existing.error));
+  let sortOrder = appendSortStart((existing.data ?? []).map((row) => Number(row.sort_order)));
   const uploadedPaths: string[] = [];
 
   try {
-    for (const [index, upload] of ordered.entries()) {
+    for (const file of files) {
       const id = crypto.randomUUID();
-      const path = `${itemId}/${id}.${extensionFor(upload.file)}`;
-      const { error: uploadError } = await supabase.storage
-        .from(ITEM_IMAGE_BUCKET)
-        .upload(path, upload.file, {
-          contentType: upload.file.type,
-          upsert: false,
-        });
+      const path = `${itemId}/${id}.${extensionFor(file)}`;
+      const { error: uploadError } = await supabase.storage.from(ITEM_IMAGE_BUCKET).upload(path, file, {
+        contentType: file.type,
+        upsert: false,
+      });
       if (uploadError) throw new Error(errorText(uploadError));
       uploadedPaths.push(path);
 
@@ -123,10 +124,10 @@ export async function uploadItemImages(itemId: string, uploads: PendingUpload[])
         id,
         item_id: itemId,
         storage_path: path,
-        is_primary: upload.isPrimary,
-        sort_order: index,
+        sort_order: sortOrder,
       });
       if (insertError) throw new Error(errorText(insertError));
+      sortOrder += 1;
     }
   } catch (error) {
     if (uploadedPaths.length > 0) {
@@ -135,6 +136,17 @@ export async function uploadItemImages(itemId: string, uploads: PendingUpload[])
     }
     throw error;
   }
+}
+
+export async function reorderItemImages(itemId: string, orderedIds: string[]): Promise<void> {
+  const supabase = getSupabase();
+  const results = await Promise.all(
+    orderedIds.map((id, sortOrder) =>
+      supabase.from("item_images").update({ sort_order: sortOrder }).eq("id", id).eq("item_id", itemId),
+    ),
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw new Error(errorText(failed.error));
 }
 
 export async function deleteItemImage(image: ItemImage): Promise<void> {
@@ -149,7 +161,6 @@ export async function saveEditedImage(input: {
   itemId: string;
   sourceImageId: string;
   blob: Blob;
-  makePrimary: boolean;
 }): Promise<string> {
   const supabase = getSupabase();
   const id = crypto.randomUUID();
@@ -157,14 +168,14 @@ export async function saveEditedImage(input: {
   const path = `${input.itemId}/${id}.${extension}`;
   const contentType = extension === "png" ? "image/png" : "image/jpeg";
 
-  const existing = await supabase
-    .from("item_images")
-    .select("sort_order")
-    .eq("item_id", input.itemId)
-    .order("sort_order", { ascending: false })
-    .limit(1);
+  const existing = await supabase.from("item_images").select("id, sort_order").eq("item_id", input.itemId);
   if (existing.error) throw new Error(errorText(existing.error));
-  const sortOrder = ((existing.data?.[0]?.sort_order as number | undefined) ?? 0) + 1;
+  const orders = (existing.data ?? []).map((row) => ({
+    id: String(row.id),
+    sortOrder: Number(row.sort_order),
+  }));
+  const insertAt = sortOrderAfterSource(orders, input.sourceImageId);
+  const shifts = shiftedSortOrders(orders, insertAt);
 
   const uploaded = await supabase.storage.from(ITEM_IMAGE_BUCKET).upload(path, input.blob, {
     contentType,
@@ -172,17 +183,25 @@ export async function saveEditedImage(input: {
   });
   if (uploaded.error) throw new Error(errorText(uploaded.error));
 
-  const inserted = await supabase.from("item_images").insert({
-    id,
-    item_id: input.itemId,
-    storage_path: path,
-    is_primary: input.makePrimary,
-    sort_order: sortOrder,
-    source_image_id: input.sourceImageId,
-  });
-  if (inserted.error) {
+  try {
+    for (const shift of shifts) {
+      const updated = await supabase.from("item_images").update({ sort_order: shift.sortOrder }).eq("id", shift.id);
+      if (updated.error) throw new Error(errorText(updated.error));
+    }
+    const inserted = await supabase.from("item_images").insert({
+      id,
+      item_id: input.itemId,
+      storage_path: path,
+      sort_order: insertAt,
+      source_image_id: input.sourceImageId,
+    });
+    if (inserted.error) throw new Error(errorText(inserted.error));
+  } catch (error) {
     await supabase.storage.from(ITEM_IMAGE_BUCKET).remove([path]);
-    throw new Error(errorText(inserted.error));
+    for (const shift of [...shifts].reverse()) {
+      await supabase.from("item_images").update({ sort_order: shift.sortOrder - 1 }).eq("id", shift.id);
+    }
+    throw error;
   }
   return id;
 }
@@ -193,12 +212,4 @@ export async function downloadItemImage(storagePath: string): Promise<Blob> {
     throw new Error(downloaded.error ? errorText(downloaded.error) : "Could not download the photo.");
   }
   return downloaded.data;
-}
-
-export async function setPrimaryImage(image: ItemImage): Promise<void> {
-  const { error } = await getSupabase()
-    .from("item_images")
-    .update({ is_primary: true })
-    .eq("id", image.id);
-  if (error) throw new Error(errorText(error));
 }
