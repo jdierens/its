@@ -22,10 +22,16 @@ type AttributeValueRow = {
 type AttributeRow = {
   id: string;
   name: string;
+  label: string | null;
   data_type: string;
   unit: string | null;
   uses_list: boolean | null;
   attribute_values: AttributeValueRow[] | null;
+};
+
+type AttributeLinkRow = {
+  sort_order: number;
+  attributes: AttributeRow | AttributeRow[] | null;
 };
 
 type TaxonomyRow = {
@@ -34,7 +40,7 @@ type TaxonomyRow = {
   long_code: string | null;
   short_code: string | null;
   sort_order: number;
-  attributes: AttributeRow[] | null;
+  taxonomy_attributes: AttributeLinkRow[] | null;
 };
 
 type EmbeddedAttribute = { name: string } | { name: string }[] | null;
@@ -108,27 +114,41 @@ function mapAttribute(attribute: AttributeRow): Attribute {
   return {
     id: attribute.id,
     name: attribute.name,
+    label: attribute.label,
     data_type: asDataType(attribute.data_type),
     unit: attribute.unit,
     uses_list: attribute.uses_list !== false,
+    sortOrder: 0,
     allowedValues: values.map((row) => row.value),
     values,
   };
 }
 
 const TAXONOMY_COLUMNS =
-  "id, name, long_code, short_code, sort_order, attributes(id, name, data_type, unit, uses_list, attribute_values(id, value, sort_order))";
+  "id, name, long_code, short_code, sort_order, taxonomy_attributes(sort_order, attributes(id, name, label, data_type, unit, uses_list, attribute_values(id, value, sort_order)))";
+
+function linkedAttribute(value: AttributeRow | AttributeRow[] | null): AttributeRow | null {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
 
 function toTaxonomy(taxonomy: TaxonomyRow): Taxonomy {
+  const attributes = (taxonomy.taxonomy_attributes ?? [])
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .flatMap((link) => {
+      const attribute = linkedAttribute(link.attributes);
+      if (!attribute) return [];
+      return [{ ...mapAttribute(attribute), sortOrder: link.sort_order }];
+    });
+
   return {
     id: taxonomy.id,
     name: taxonomy.name,
     longCode: taxonomy.long_code,
     shortCode: taxonomy.short_code,
     sortOrder: taxonomy.sort_order,
-    attributes: (taxonomy.attributes ?? [])
-      .map(mapAttribute)
-      .sort((a, b) => a.name.localeCompare(b.name)),
+    attributes,
   };
 }
 
@@ -196,16 +216,24 @@ export async function fetchItemList(input: { tax?: string | null; q?: string | n
   if (tax) {
     const found = await supabase
       .from("taxonomies")
-      .select("id, attributes(name, unit)")
+      .select("id, taxonomy_attributes(sort_order, attributes(name, unit))")
       .eq("short_code", tax)
       .maybeSingle();
     if (found.error) throw new Error(errorText(found.error));
     if (!found.data) return { rows: [], total, columns: [], unknownTax: true };
     taxonomyId = found.data.id as string;
-    const attributes = (found.data.attributes ?? []) as { name: string; unit: string | null }[];
-    columns = attributes
-      .map((attribute) => ({ name: attribute.name, unit: attribute.unit }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const links = (found.data.taxonomy_attributes ?? []) as {
+      sort_order: number;
+      attributes: { name: string; unit: string | null } | { name: string; unit: string | null }[] | null;
+    }[];
+    columns = links
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .flatMap((link) => {
+        const attribute = Array.isArray(link.attributes) ? link.attributes[0] : link.attributes;
+        if (!attribute) return [];
+        return [{ name: attribute.name, unit: attribute.unit }];
+      });
   }
 
   let ids: string[] | null = null;
@@ -427,6 +455,57 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
   if (error) throw new Error(errorText(error));
 }
 
+function friendlyTaxonomyError(error: unknown): string {
+  const text = errorText(error);
+  if (text.includes("taxonomies_name_lower") || text.includes("taxonomies_name_key")) {
+    return "A taxonomy with that name already exists.";
+  }
+  if (text.includes("taxonomies_long_code") || text.includes("Long code")) {
+    return text.includes("already") ? "That long code is already used." : text;
+  }
+  if (text.includes("taxonomies_short_code") || text.includes("Short code")) {
+    return text.includes("already") ? "That short code is already used." : text;
+  }
+  return text;
+}
+
+export async function createTaxonomy(input: TaxonomyInput): Promise<string> {
+  const { data, error } = await getSupabase()
+    .from("taxonomies")
+    .insert({
+      name: input.name.trim(),
+      long_code: input.longCode,
+      short_code: input.shortCode,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(friendlyTaxonomyError(error));
+  return data.id as string;
+}
+
+export async function countTaxonomyItems(id: string): Promise<number> {
+  const { count, error } = await getSupabase()
+    .from("items")
+    .select("id", { count: "exact", head: true })
+    .eq("taxonomy_id", id);
+  if (error) throw new Error(errorText(error));
+  return count ?? 0;
+}
+
+export async function deleteTaxonomy(id: string): Promise<void> {
+  const count = await countTaxonomyItems(id);
+  if (count > 0) {
+    throw new Error(
+      count === 1
+        ? "Can't delete this taxonomy. 1 item uses it."
+        : `Can't delete this taxonomy. ${count} items use it.`,
+    );
+  }
+  const deleted = await getSupabase().from("taxonomies").delete().eq("id", id).select("id");
+  if (deleted.error) throw new Error(friendlyTaxonomyError(deleted.error));
+  if (!deleted.data || deleted.data.length === 0) throw new Error("That taxonomy is already gone.");
+}
+
 export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<void> {
   const { error } = await getSupabase()
     .from("taxonomies")
@@ -437,7 +516,7 @@ export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<
     })
     .eq("id", id);
 
-  if (error) throw new Error(errorText(error));
+  if (error) throw new Error(friendlyTaxonomyError(error));
 }
 
 export async function saveTaxonomyOrder(ids: string[]): Promise<void> {

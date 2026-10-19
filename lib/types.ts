@@ -9,9 +9,11 @@ export type ListedValue = {
 export type Attribute = {
   id: string;
   name: string;
+  label: string | null;
   data_type: DataType;
   unit: string | null;
   uses_list: boolean;
+  sortOrder: number;
   allowedValues: string[];
   values: ListedValue[];
 };
