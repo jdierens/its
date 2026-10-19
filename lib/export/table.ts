@@ -5,6 +5,9 @@ export const FIXED_HEADERS = [
   "Manufacturer",
   "Model",
   "Part number",
+  "OEM name",
+  "OEM part number",
+  "Unit",
   "Condition",
   "Condition note",
   "ECCN",
@@ -37,6 +40,9 @@ export type ExportItem = {
   manufacturer: string;
   model: string;
   partNumber: string;
+  oemName: string;
+  oemPartNumber: string;
+  unit: string;
   condition: string;
   conditionNote: string;
   eccn: string;
@@ -132,6 +138,9 @@ export function buildExportTable(items: readonly ExportItem[], pricingKeys: read
     item.manufacturer,
     item.model,
     item.partNumber,
+    item.oemName,
+    item.oemPartNumber,
+    item.unit,
     item.condition,
     item.conditionNote,
     item.eccn,

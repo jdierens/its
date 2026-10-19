@@ -1,6 +1,8 @@
 import {
   DEFAULT_ECCN,
+  DEFAULT_UNIT,
   NEW_CONDITION_NOTES,
+  SEEDED_UNITS,
   attributeValueError,
   conditionNoteAfterChange,
   htsError,
@@ -28,6 +30,9 @@ export function isEditableColumn(columnId: string): boolean {
     columnId === "manufacturer" ||
     columnId === "model" ||
     columnId === "part_number" ||
+    columnId === "oem_name" ||
+    columnId === "oem_part_number" ||
+    columnId === "unit" ||
     columnId === "condition" ||
     columnId === "condition_note" ||
     columnId === "eccn" ||
@@ -71,8 +76,16 @@ export function validateCell(input: {
   condition: string;
   conditionNote?: string;
   dataType?: DataType;
+  units?: readonly string[];
 }): CellCheck {
   const trimmed = input.value.trim();
+  if (input.columnId === "unit") {
+    if (!trimmed) return { value: DEFAULT_UNIT, error: null };
+    const choices = input.units && input.units.length > 0 ? input.units : SEEDED_UNITS;
+    const found = choices.find((unit) => unit.toLowerCase() === trimmed.toLowerCase());
+    if (!found) return { value: trimmed, error: "Unit must be one of the units list." };
+    return { value: found, error: null };
+  }
   if (input.columnId === "item_type") {
     if (!isItemType(trimmed)) {
       return { value: trimmed, error: "Item type must be Product, Kit/Package, Service, or Non-inventory." };
@@ -143,6 +156,9 @@ export function patchRow(row: ItemListRow, columnId: string, value: string): Ite
   if (columnId === "manufacturer") return row;
   if (columnId === "model") return { ...row, model: value };
   if (columnId === "part_number") return { ...row, partNumber: value };
+  if (columnId === "oem_name") return { ...row, oemName: value };
+  if (columnId === "oem_part_number") return { ...row, oemPartNumber: value };
+  if (columnId === "unit") return { ...row, unit: value };
   if (columnId === "condition") {
     const next = value === "New" ? "New" : "Used";
     return {
@@ -188,6 +204,9 @@ export function rawCellValue(row: ItemListRow, columnId: string): string {
   if (columnId === "manufacturer") return row.manufacturerId ?? "";
   if (columnId === "model") return row.model;
   if (columnId === "part_number") return row.partNumber;
+  if (columnId === "oem_name") return row.oemName;
+  if (columnId === "oem_part_number") return row.oemPartNumber;
+  if (columnId === "unit") return row.unit;
   if (columnId === "condition") return row.condition;
   if (columnId === "condition_note") return row.conditionNote;
   if (columnId === "eccn") return row.eccn;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.0
+
+- Every item has an OEM name, an OEM part number, and a unit. OEM fields are optional text. Unit is required, starts as Piece, and is picked from the `units` list. Piece and Lbs are seeded. Add a row to offer another unit. Existing items are Piece.
+- Those fields are on the item form, the items table (including inline edit), export, and search. `create_item` and `update_item` take the three values as optional arguments at the end. Leaving them out keeps the deployed app working: a new item gets a blank OEM and Piece, and an update does not change stored OEM or unit. The new app sends an empty string to clear OEM.
+- Taxonomy CBL is named Cable. Motherboard (MBD), Heatsink (SNK), and Unsorted (UNS) are in the list.
+
 ## 0.20.0
 
 - Admin > Settings has a Label template choice. Barcode (current) stays the default, so labels print as they do today until an admin switches it. QR code is the other choice. The value is `label_template` in `app_settings`. A missing or unknown value stays on the barcode.

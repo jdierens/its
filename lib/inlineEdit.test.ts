@@ -25,6 +25,9 @@ function row(patch: Partial<ItemListRow> = {}): ItemListRow {
     manufacturerName: null,
     model: "",
     partNumber: "",
+    oemName: "",
+    oemPartNumber: "",
+    unit: "Piece",
     condition: "Used",
     conditionNote: "pulled",
     eccn: "5A992.C",
@@ -45,6 +48,9 @@ test("sku and taxonomy stay read-only while trade and attribute cells edit", () 
   assert.equal(isEditableColumn("taxonomy"), false);
   assert.equal(isEditableColumn("name"), false);
   assert.equal(isEditableColumn("model"), true);
+  assert.equal(isEditableColumn("oem_name"), true);
+  assert.equal(isEditableColumn("oem_part_number"), true);
+  assert.equal(isEditableColumn("unit"), true);
   assert.equal(isEditableColumn("coo"), true);
   assert.equal(isEditableColumn("item_type"), true);
   assert.equal(isEditableColumn("ecommerce_price"), true);
@@ -78,6 +84,11 @@ test("cell checks match the item form", () => {
   assert.equal(priceError(""), null);
   assert.equal(validateCell({ columnId: "item_type", value: "Service", condition: "Used" }).error, null);
   assert.match(validateCell({ columnId: "item_type", value: "Bundle", condition: "Used" }).error ?? "", /Item type/);
+  assert.equal(validateCell({ columnId: "oem_name", value: "  Dell  ", condition: "Used" }).value, "Dell");
+  assert.equal(validateCell({ columnId: "unit", value: "", condition: "Used" }).value, "Piece");
+  assert.equal(validateCell({ columnId: "unit", value: "lbs", condition: "Used" }).value, "Lbs");
+  assert.match(validateCell({ columnId: "unit", value: "Box", condition: "Used" }).error ?? "", /units list/);
+  assert.equal(validateCell({ columnId: "unit", value: "each", condition: "Used", units: ["Each", "Piece"] }).value, "Each");
 });
 
 test("a stale row is recognized from the server message", () => {
@@ -94,6 +105,12 @@ test("changing condition clears a note that no longer fits", () => {
 test("item type edits stay on the allowed list", () => {
   assert.equal(patchRow(row(), "item_type", "Kit/Package").itemType, "Kit/Package");
   assert.equal(patchRow(row(), "item_type", "nope").itemType, "Product");
+});
+
+test("oem and unit edits update the row", () => {
+  assert.equal(patchRow(row(), "oem_name", "Dell").oemName, "Dell");
+  assert.equal(patchRow(row(), "oem_part_number", "0H").oemPartNumber, "0H");
+  assert.equal(patchRow(row(), "unit", "Lbs").unit, "Lbs");
 });
 
 test("the edited time is shown in Pacific time", () => {
