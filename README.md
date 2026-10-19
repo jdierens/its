@@ -21,7 +21,7 @@ Create an item from **New item**. **Main** and **Trade compliance** sit above th
 
 **Admin > Manufacturers** lists those names. Rename one, add or remove aliases, or merge two. Merge moves the items and keeps the other name as an alias. Lookup trims the text, ignores case, and collapses spaces, so `SK Hynix` and `SK hynix` are the same name. `Hynix` is a separate alias.
 
-The items table adds Manufacturer, Model, Part number, and Condition after the name. Search matches the manufacturer name and its aliases. The 90×29 mm label is unchanged. It already holds the name, description, barcode, quantity, short code, and date, so there is no spare line for a part number. There is no CSV export.
+The items table puts Taxonomy between the photo and the SKU. Manufacturer, Model, Part number, and Condition follow the name. Search matches the manufacturer name and its aliases. The 90×29 mm label is unchanged. It already holds the name, description, barcode, quantity, short code, and date, so there is no spare line for a part number. There is no CSV export.
 
 The taxonomy field lists existing taxonomies in `sort_order` and accepts a new name. A new name is created when you save, matched without regard to case, and needs a long code (like `CRD/NIC`) and a 3-character short code (like `NIC`). Both are uppercased as you type and stored in uppercase. The new taxonomy is placed at the end of the order. On the selected taxonomy you can add an attribute (name, integer/decimal/text, optional unit, and whether it uses an allowed-value list).
 

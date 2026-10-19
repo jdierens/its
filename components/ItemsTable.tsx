@@ -12,13 +12,13 @@ type ActiveCell = { row: number; col: number };
 
 const BASE_COLUMNS = [
   { id: "photo", label: "Photo" },
+  { id: "taxonomy", label: "Taxonomy" },
   { id: "sku", label: "SKU" },
   { id: "name", label: "Name" },
   { id: "manufacturer", label: "Manufacturer" },
   { id: "model", label: "Model" },
   { id: "part_number", label: "Part number" },
   { id: "condition", label: "Condition" },
-  { id: "taxonomy", label: "Taxonomy" },
   { id: "quantity", label: "Quantity" },
 ] as const;
 
