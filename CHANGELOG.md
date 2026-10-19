@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.0
+
+- Warehouse > Bin labels prints pallet, crate, and box labels. A reference is one shared number plus a type letter, such as 20000-P, 20001-B, and 20002-C. The number starts at 20000 because existing physical labels are in the 1xxxx range.
+- Print next reserves the next quantity and prints one label each. Print a sequence prints a from-to range and moves the counter past the range when the range reaches it. Reprint prints an existing reference, including a typed 1xxxx label, and does not move the counter. Setting the next number at or below the highest issued number is refused.
+- Each bin type has its own 90 × 29 mm layout in Admin > Settings: big reference plus a Code 128 barcode, or big reference plus a QR code of that reference. Pallet uses the bolder layout. The recent bins list shows created time, created by, and location. Created by and location stay blank until sign-in and locations exist.
+- `bins.created_by` and `bins.current_location_id` are nullable and have no foreign key yet. `bin_events` records created, printed, reprinted, and moved, with a timestamp and actor, so a location move can be logged later. The counter row is locked for the whole reserve so two people printing at once cannot take the same number.
+
 ## 0.20.0
 
 - Admin > Settings has a Label template choice. Barcode (current) stays the default, so labels print as they do today until an admin switches it. QR code is the other choice. The value is `label_template` in `app_settings`. A missing or unknown value stays on the barcode.

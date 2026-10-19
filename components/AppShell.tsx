@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BadgeDollarSign,
+  Boxes,
   Building,
   ClipboardList,
   Contact,
@@ -46,6 +47,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/purchasing/orders": ClipboardList,
   "/warehouse/pick": PackageCheck,
   "/warehouse/receiving": PackagePlus,
+  "/warehouse/bins": Boxes,
   "/pricing": BadgeDollarSign,
   "/admin/users": Users,
   "/admin/settings": Settings,

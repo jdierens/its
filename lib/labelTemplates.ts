@@ -26,6 +26,28 @@ export function labelTemplateLabel(id: LabelTemplateId): string {
   return LABEL_TEMPLATES.find((template) => template.id === id)?.label ?? LABEL_TEMPLATES[0].label;
 }
 
+export const BIN_LABEL_TEMPLATES = [
+  { id: "barcode", label: "Big reference + barcode" },
+  { id: "qr", label: "Big reference + QR" },
+] as const;
+
+export const BIN_TEMPLATE_SETTINGS = [
+  { type: "P", key: "label_template_pallet", label: "Pallet" },
+  { type: "C", key: "label_template_crate", label: "Crate" },
+  { type: "B", key: "label_template_box", label: "Box" },
+] as const;
+
+export type BinTemplateType = (typeof BIN_TEMPLATE_SETTINGS)[number]["type"];
+export type BinLabelTemplates = Record<BinTemplateType, LabelTemplateId>;
+
+export function binLabelTemplateLabel(id: LabelTemplateId): string {
+  return BIN_LABEL_TEMPLATES.find((template) => template.id === id)?.label ?? BIN_LABEL_TEMPLATES[0].label;
+}
+
+export function emptyBinLabelTemplates(): BinLabelTemplates {
+  return { P: DEFAULT_LABEL_TEMPLATE, C: DEFAULT_LABEL_TEMPLATE, B: DEFAULT_LABEL_TEMPLATE };
+}
+
 // Side of the symbol including the quiet zone, in millimetres.
 export function qrSymbolMm(moduleCount: number): number {
   return (moduleCount + QR_QUIET_MODULES * 2) * QR_MODULE_MM;
@@ -58,5 +80,35 @@ export async function saveLabelTemplate(id: LabelTemplateId): Promise<void> {
     value: id,
     updated_at: new Date().toISOString(),
   });
+  if (error) throw new Error(errorText(error));
+}
+
+export async function fetchBinLabelTemplates(): Promise<BinLabelTemplates> {
+  const keys = BIN_TEMPLATE_SETTINGS.map((setting) => setting.key);
+  const { data, error } = await getSupabase()
+    .from("app_settings")
+    .select("key, value")
+    .in("key", keys);
+  if (error) throw new Error(errorText(error));
+  const stored = new Map((data ?? []).map((row) => [String(row.key), row.value]));
+  const templates = emptyBinLabelTemplates();
+  for (const setting of BIN_TEMPLATE_SETTINGS) {
+    const raw = stored.get(setting.key);
+    templates[setting.type] = labelTemplateOrDefault(typeof raw === "string" ? raw : null);
+  }
+  return templates;
+}
+
+export async function saveBinLabelTemplates(templates: BinLabelTemplates): Promise<void> {
+  const updatedAt = new Date().toISOString();
+  const { error } = await getSupabase()
+    .from("app_settings")
+    .upsert(
+      BIN_TEMPLATE_SETTINGS.map((setting) => ({
+        key: setting.key,
+        value: templates[setting.type],
+        updated_at: updatedAt,
+      })),
+    );
   if (error) throw new Error(errorText(error));
 }
