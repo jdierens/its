@@ -1,13 +1,13 @@
 {
   "name": "its",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --import ./test/register.mjs --test lib/qbo/*.test.ts lib/ebay/*.test.ts lib/itemFields.test.ts lib/pricing/*.test.ts"
+    "test": "node --experimental-strip-types --import ./test/register.mjs --test lib/qbo/*.test.ts lib/ebay/*.test.ts lib/itemFields.test.ts lib/imageOrder.test.ts lib/pricing/*.test.ts"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",

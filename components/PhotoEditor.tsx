@@ -116,7 +116,6 @@ export function PhotoEditor({ itemId, imageId }: PhotoEditorProps) {
   const [background, setBackground] = useState<BackgroundChoice>("white");
   const [progress, setProgress] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [makePrimary, setMakePrimary] = useState(false);
   const [sizeLabel, setSizeLabel] = useState("");
 
   useEffect(() => {
@@ -257,7 +256,6 @@ export function PhotoEditor({ itemId, imageId }: PhotoEditorProps) {
         itemId,
         sourceImageId: imageId,
         blob,
-        makePrimary,
       });
       router.push(`/items/${itemId}`);
     } catch (err) {
@@ -495,17 +493,10 @@ export function PhotoEditor({ itemId, imageId }: PhotoEditorProps) {
       </div>
 
       <div className="actions editor-save">
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={makePrimary}
-            onChange={(event) => setMakePrimary(event.target.checked)}
-          />
-          Make this the primary photo
-        </label>
         <button type="button" disabled={busy || showingBefore || !workingRef.current} onClick={() => void save()}>
           {busy && !progress ? "Saving…" : "Save as new photo"}
         </button>
+        <span className="hint">Saves a new photo just after this one. The first photo stays primary until you reorder.</span>
       </div>
     </main>
   );

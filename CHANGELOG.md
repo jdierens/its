@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0
+
+- Open a photo by clicking its thumbnail, or by pressing Enter when it is focused. Delete stays a corner icon and asks for confirmation.
+- Show Taxonomy as the second column on the items table, between the photo and the SKU. Arrow keys still move across the cells in that order.
+- Reorder photos by dragging, or with the left and right arrow keys. The order saves immediately. The first photo is the primary image. `is_primary` stays for the deployed app and is filled from that order until a later cleanup.
+- Add new photos at the end. Saving an edit adds the new photo just after the original.
+
 ## 0.14.0
 
 - Edit ecommerce, market, and MSRP prices on the item page. Each price keeps its own updated time.

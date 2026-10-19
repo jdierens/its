@@ -1,4 +1,5 @@
 import { errorText } from "@/lib/errors";
+import { primaryStoragePath } from "@/lib/imageOrder";
 import { ITEM_IMAGE_BUCKET, signedImageUrls } from "@/lib/images";
 import { DEFAULT_CONDITION, DEFAULT_ECCN, isItemCondition } from "@/lib/itemFields";
 import { getSupabase } from "@/lib/supabase";
@@ -73,7 +74,7 @@ type ItemRow = {
 
 type SummaryImage = {
   storage_path: string;
-  is_primary: boolean;
+  sort_order: number;
 };
 
 type ListTaxonomy = { name: string; short_code: string | null };
@@ -99,7 +100,7 @@ type ListRow = {
 };
 
 const LIST_COLUMNS =
-  "id, sku, name, quantity, manufacturer_id, model, part_number, condition, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, is_primary), item_attributes(value, attributes(name))";
+  "id, sku, name, quantity, manufacturer_id, model, part_number, condition, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
 
 const DATA_TYPES = new Set<DataType>(["integer", "text", "decimal"]);
 const UUID_PATTERN =
@@ -358,8 +359,7 @@ export async function fetchItemList(input: {
 }
 
 function primaryPath(images: SummaryImage[] | null): string | null {
-  if (!images || images.length === 0) return null;
-  return (images.find((image) => image.is_primary) ?? images[0]).storage_path;
+  return primaryStoragePath(images);
 }
 
 export async function fetchItem(id: string): Promise<ItemDetail | null> {

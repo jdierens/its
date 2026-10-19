@@ -91,7 +91,6 @@ export type ItemImage = {
   id: string;
   itemId: string;
   storagePath: string;
-  isPrimary: boolean;
   sortOrder: number;
   sourceImageId: string | null;
   url: string | null;
