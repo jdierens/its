@@ -1,13 +1,13 @@
 {
   "name": "its",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/qbo/*.test.ts"
+    "test": "node --experimental-strip-types --test lib/qbo/*.test.ts lib/ebay/*.test.ts"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",
