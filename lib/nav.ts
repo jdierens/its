@@ -116,6 +116,17 @@ export function isNavActive(href: string, pathname: string): boolean {
 }
 
 export function pageMetaFor(pathname: string): PageMeta {
+  if (pathname === "/export-setup") {
+    return {
+      title: "Export setup",
+      crumbs: [
+        { label: "Inventory" },
+        { label: "Items", href: "/items" },
+        { label: "Export setup" },
+      ],
+    };
+  }
+
   if (pathname === "/items/new") {
     return {
       title: "New item",

@@ -30,13 +30,14 @@ export function CountrySelect({
   }, [countries, query]);
 
   return (
-    <label className="combo">
-      Country of origin
+    <label className="combo" title="Country of origin">
+      COO
       <input
         role="combobox"
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
+        title="Country of origin"
         value={open ? query : selected ? countryLabel(selected.alpha3, selected.name) : ""}
         placeholder="Search countries"
         autoComplete="off"

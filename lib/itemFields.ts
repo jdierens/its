@@ -1,9 +1,12 @@
 export const DEFAULT_ECCN = "5A992.C";
 export const DEFAULT_CONDITION = "Used" as const;
 export const NEW_CONDITION_NOTES = ["Factory Sealed", "New Open Box"] as const;
+export const ITEM_TYPES = ["Product", "Kit/Package", "Service", "Non-inventory"] as const;
+export const DEFAULT_ITEM_TYPE = "Product" as const;
 
 export type ItemCondition = "New" | "Used";
 export type NewConditionNote = (typeof NEW_CONDITION_NOTES)[number];
+export type ItemType = (typeof ITEM_TYPES)[number];
 
 export function collapseLabel(value: string): string {
   return value.trim().replace(/\s+/g, " ");
@@ -38,4 +41,29 @@ export function conditionNoteAfterChange(condition: ItemCondition, note: string)
 
 export function isItemCondition(value: string): value is ItemCondition {
   return value === "New" || value === "Used";
+}
+
+export function isItemType(value: string): value is ItemType {
+  return (ITEM_TYPES as readonly string[]).includes(value);
+}
+
+export function itemTypeOrDefault(value: string | null | undefined): ItemType {
+  return value && isItemType(value) ? value : DEFAULT_ITEM_TYPE;
+}
+
+export function attributeValueError(
+  dataType: "integer" | "text" | "decimal",
+  value: string,
+): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (dataType === "integer") {
+    if (!/^-?\d+$/.test(trimmed)) return "Enter a whole number.";
+    return null;
+  }
+  if (dataType === "decimal") {
+    if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return "Enter a decimal number.";
+    return null;
+  }
+  return null;
 }

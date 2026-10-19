@@ -2,29 +2,36 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ScanBarcode, Shapes, Trash2 } from "lucide-react";
 import {
   AttributeValueField,
   attributeValueError,
   canonicalValue,
 } from "@/components/AttributeValueField";
 import { usePageMeta } from "@/components/AppShell";
+import { ChangeTaxonomyDialog } from "@/components/ChangeTaxonomyDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CountrySelect } from "@/components/CountrySelect";
 import { ItemGallery, type PendingImage } from "@/components/ItemGallery";
 import { ManufacturerSelect } from "@/components/ManufacturerSelect";
+import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
 import { fetchCountries, type Country } from "@/lib/countries";
 import { errorText } from "@/lib/errors";
+import { isDirty, SAVE_BEFORE_LABEL, SAVE_BEFORE_TAXONOMY } from "@/lib/formDirty";
 import { uploadItemImages } from "@/lib/images";
 import {
   DEFAULT_CONDITION,
   DEFAULT_ECCN,
   NEW_CONDITION_NOTES,
   conditionNoteAfterChange,
+  DEFAULT_ITEM_TYPE,
+  ITEM_TYPES,
   htsError,
   type ItemCondition,
+  type ItemType,
 } from "@/lib/itemFields";
-import { createItem, deleteItem, fetchItem, fetchTaxonomies, updateItem } from "@/lib/items";
+import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 
 type ItemFormProps = {
@@ -42,6 +49,64 @@ type DraftAttribute = {
 
 const DATA_TYPE_OPTIONS: DataType[] = ["integer", "decimal", "text"];
 
+type ItemSnapshot = {
+  sku: string;
+  name: string;
+  description: string;
+  quantity: string;
+  taxonomyName: string;
+  longCode: string;
+  shortCode: string;
+  manufacturerId: string | null;
+  manufacturerName: string;
+  model: string;
+  partNumber: string;
+  itemType: ItemType;
+  condition: ItemCondition;
+  conditionNote: string;
+  eccn: string;
+  usHts: string;
+  ccats: string;
+  coo: string;
+  notes: string;
+  attributeValues: Record<string, string>;
+  drafts: DraftAttribute[];
+  pendingCount: number;
+  draftName: string;
+  draftType: DataType;
+  draftUnit: string;
+  draftUsesList: boolean;
+};
+
+const EMPTY_ITEM: ItemSnapshot = {
+  sku: "",
+  name: "",
+  description: "",
+  quantity: "",
+  taxonomyName: "",
+  longCode: "",
+  shortCode: "",
+  manufacturerId: null,
+  manufacturerName: "",
+  model: "",
+  partNumber: "",
+  itemType: DEFAULT_ITEM_TYPE,
+  condition: DEFAULT_CONDITION,
+  conditionNote: "",
+  eccn: DEFAULT_ECCN,
+  usHts: "",
+  ccats: "",
+  coo: "",
+  notes: "",
+  attributeValues: {},
+  drafts: [],
+  pendingCount: 0,
+  draftName: "",
+  draftType: "text",
+  draftUnit: "",
+  draftUsesList: true,
+};
+
 export function ItemForm({ mode, itemId }: ItemFormProps) {
   const router = useRouter();
   const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
@@ -58,12 +123,17 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [manufacturerUnresolved, setManufacturerUnresolved] = useState(false);
   const [model, setModel] = useState("");
   const [partNumber, setPartNumber] = useState("");
+  const [itemType, setItemType] = useState<ItemType>(DEFAULT_ITEM_TYPE);
   const [condition, setCondition] = useState<ItemCondition>(DEFAULT_CONDITION);
   const [conditionNote, setConditionNote] = useState("");
   const [eccn, setEccn] = useState(DEFAULT_ECCN);
   const [usHts, setUsHts] = useState("");
   const [ccats, setCcats] = useState("");
   const [coo, setCoo] = useState("");
+  const [notes, setNotes] = useState("");
+  const [attributeLinks, setAttributeLinks] = useState<{ id: string; name: string; value: string }[]>([]);
+  const [changeTaxonomy, setChangeTaxonomy] = useState(false);
+  const [changingTaxonomy, setChangingTaxonomy] = useState(false);
   const [attributeValues, setAttributeValues] = useState<Record<string, string>>({});
   const [loadedAttributes, setLoadedAttributes] = useState<Record<string, string>>({});
   const [loadedTaxonomyName, setLoadedTaxonomyName] = useState<string | null>(null);
@@ -82,6 +152,8 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [saved, setSaved] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [baseline, setBaseline] = useState<ItemSnapshot>(EMPTY_ITEM);
+  const savingRef = useRef(false);
 
   usePageMeta({
     title: mode === "create" ? "New item" : name.trim() || "Edit item",
@@ -132,12 +204,43 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           setManufacturerName(item.manufacturerName);
           setModel(item.model);
           setPartNumber(item.partNumber);
+          setItemType(item.itemType);
           setCondition(item.condition);
           setConditionNote(item.conditionNote);
           setEccn(item.eccn || DEFAULT_ECCN);
           setUsHts(item.usHts);
           setCcats(item.ccats);
           setCoo(item.coo);
+          setNotes(item.notes);
+          setAttributeLinks(item.attributeLinks);
+          setBaseline({
+            sku: item.sku,
+            name: item.name,
+            description: item.description,
+            quantity: item.quantity === null ? "" : String(item.quantity),
+            taxonomyName: taxonomy?.name ?? "",
+            longCode: "",
+            shortCode: "",
+            manufacturerId: item.manufacturerId,
+            manufacturerName: item.manufacturerName,
+            model: item.model,
+            partNumber: item.partNumber,
+            itemType: item.itemType,
+            condition: item.condition,
+            conditionNote: item.conditionNote,
+            eccn: item.eccn || DEFAULT_ECCN,
+            usHts: item.usHts,
+            ccats: item.ccats,
+            coo: item.coo,
+            notes: item.notes,
+            attributeValues: values,
+            drafts: [],
+            pendingCount: 0,
+            draftName: "",
+            draftType: "text",
+            draftUnit: "",
+            draftUsesList: true,
+          });
         }
       } catch (error) {
         if (!cancelled) setLoadError(errorText(error));
@@ -206,34 +309,65 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     setSaved(false);
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const snapshot: ItemSnapshot = {
+    sku,
+    name,
+    description,
+    quantity,
+    taxonomyName,
+    longCode,
+    shortCode,
+    manufacturerId,
+    manufacturerName,
+    model,
+    partNumber,
+    itemType,
+    condition,
+    conditionNote,
+    eccn,
+    usHts,
+    ccats,
+    coo,
+    notes,
+    attributeValues,
+    drafts,
+    pendingCount: pendingImages.length,
+    draftName,
+    draftType,
+    draftUnit,
+    draftUsesList,
+  };
+  const dirty = isDirty(snapshot, baseline) || manufacturerUnresolved;
+
+  async function save(): Promise<boolean> {
+    if (savingRef.current) return false;
+    savingRef.current = true;
     setSaveError(null);
     setSaved(false);
-
+    try {
     const trimmedName = name.trim();
     const trimmedSku = sku.trim();
     const trimmedTaxonomy = taxonomy?.name ?? taxonomyName.trim();
     if (!trimmedName) {
       setSaveError("Name is required.");
-      return;
+      return false;
     }
     if (!trimmedSku) {
       setSaveError("SKU is required.");
-      return;
+      return false;
     }
     if (mode === "create" && !trimmedTaxonomy) {
       setSaveError("Choose a taxonomy.");
-      return;
+      return false;
     }
     if (manufacturerUnresolved) {
       setSaveError("Choose a manufacturer from the list, or add the new name.");
-      return;
+      return false;
     }
     const htsProblem = htsError(usHts);
     if (htsProblem) {
       setSaveError(`US HTS: ${htsProblem}`);
-      return;
+      return false;
     }
 
     const creatingTaxonomy = trimmedTaxonomy !== "" && !taxonomy;
@@ -244,11 +378,11 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       shortCodeValue = shortCode.trim().toUpperCase();
       if (!/^[A-Z0-9]+(?:\/[A-Z0-9]+)*$/.test(longCodeValue)) {
         setSaveError("Long code must be uppercase letters, digits, and slashes, like CRD/NIC.");
-        return;
+        return false;
       }
       if (!/^[A-Z0-9]{3}$/.test(shortCodeValue)) {
         setSaveError("Short code must be exactly 3 letters or digits.");
-        return;
+        return false;
       }
     }
 
@@ -256,7 +390,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     const parsedQuantity = quantityText === "" ? null : Number(quantityText);
     if (parsedQuantity !== null && (!Number.isFinite(parsedQuantity) || !Number.isInteger(parsedQuantity))) {
       setSaveError("Quantity must be a whole number.");
-      return;
+      return false;
     }
 
     const attributes: Record<string, string> = {};
@@ -266,7 +400,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       const problem = attributeValueError(attribute.data_type, value);
       if (problem) {
         setSaveError(`${attribute.name}: ${problem}`);
-        return;
+        return false;
       }
       attributes[attribute.name] = value;
     }
@@ -278,7 +412,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
         const problem = attributeValueError(draft.data_type, value);
         if (problem) {
           setSaveError(`${draft.name}: ${problem}`);
-          return;
+          return false;
         }
         attributes[draft.name] = value;
       }
@@ -303,6 +437,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       manufacturerId,
       model,
       partNumber,
+      itemType,
       condition,
       conditionNote,
       eccn,
@@ -312,10 +447,10 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     };
 
     setSaving(true);
-    try {
       if (mode === "create") {
         const id = createdId ?? (await createItem(input));
         setCreatedId(id);
+        if (notes.trim()) await saveItemNotes(id, notes);
         if (pendingImages.length > 0) {
           await uploadItemImages(
             id,
@@ -323,24 +458,73 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           );
         }
         router.push(`/items/${id}`);
-        return;
+        return true;
       }
       if (!itemId) throw new Error("Missing item id.");
       await updateItem(itemId, input);
+      await saveItemNotes(itemId, notes);
       const refreshed = await fetchTaxonomies();
       setTaxonomies(refreshed);
       const match = refreshed.find((row) => row.name.toLowerCase() === trimmedTaxonomy.toLowerCase());
-      setTaxonomyName(match?.name ?? trimmedTaxonomy);
+      const nextTaxonomyName = match?.name ?? trimmedTaxonomy;
+      setTaxonomyName(nextTaxonomyName);
       setLoadedTaxonomyName(match?.name ?? (trimmedTaxonomy || null));
       setLoadedAttributes(attributes);
       setAttributeValues(attributes);
       setDrafts([]);
+      setBaseline({
+        ...snapshot,
+        taxonomyName: nextTaxonomyName,
+        attributeValues: attributes,
+        drafts: [],
+      });
       setSaved(true);
+      return true;
     } catch (error) {
       setSaveError(errorText(error));
+      return false;
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!dirty || savingRef.current) return;
+    await save();
+  }
+
+  const labelHref = sku.trim()
+    ? `/labels?sku=${encodeURIComponent(sku.trim())}`
+    : itemId
+      ? `/labels?id=${itemId}`
+      : "/labels";
+
+  async function onPrint() {
+    if (dirty) {
+      if (!window.confirm(SAVE_BEFORE_LABEL)) return;
+      const ok = await save();
+      if (!ok) return;
+    }
+    router.push(labelHref);
+  }
+
+  async function onChangeTaxonomy() {
+    if (!itemId) return;
+    if (dirty) {
+      if (!window.confirm(SAVE_BEFORE_TAXONOMY)) return;
+      const ok = await save();
+      if (!ok) return;
+    }
+    try {
+      const item = await fetchItem(itemId);
+      if (item) setAttributeLinks(item.attributeLinks);
+    } catch (error) {
+      setSaveError(errorText(error));
+      return;
+    }
+    setChangeTaxonomy(true);
   }
 
   async function onDelete() {
@@ -384,29 +568,38 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     );
   }
 
-  const labelHref = sku.trim()
-    ? `/labels?sku=${encodeURIComponent(sku.trim())}`
-    : itemId
-      ? `/labels?id=${itemId}`
-      : "/labels";
-
   return (
     <main className="page">
-      {mode === "edit" && itemId ? (
-        <div className="page-head">
-          <Link className="button secondary" href={labelHref}>
-            Print label
-          </Link>
-        </div>
-      ) : null}
+      <PageToolbar
+        dirty={dirty}
+        saving={saving}
+        saved={saved}
+        onSave={() => void save()}
+        listen={!confirmDelete && !changeTaxonomy}
+      >
+        {mode === "edit" && itemId ? (
+          <>
+            <ToolbarButton icon={ScanBarcode} label="Print label" onClick={() => void onPrint()} disabled={saving || deleting} />
+            <ToolbarButton
+              icon={Shapes}
+              label="Change taxonomy"
+              onClick={() => void onChangeTaxonomy()}
+              disabled={saving || deleting || changingTaxonomy}
+            />
+            <ToolbarSeparator />
+            <ToolbarButton
+              icon={Trash2}
+              label="Delete item"
+              danger
+              disabled={saving || deleting}
+              onClick={() => setConfirmDelete(true)}
+            />
+          </>
+        ) : null}
+      </PageToolbar>
       {saveError ? (
         <p className="banner error" role="alert">
           {saveError}
-        </p>
-      ) : null}
-      {saved ? (
-        <p className="banner ok" role="status">
-          Saved.
         </p>
       ) : null}
       {createdId && saveError ? (
@@ -464,25 +657,54 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           />
         </label>
         <label>
-          Taxonomy
-          <input
-            list="taxonomy-names"
-            value={taxonomyName}
-            placeholder="Select or type a taxonomy"
-            autoComplete="off"
-            onChange={(event) => onTaxonomyChange(event.target.value)}
+          Notes
+          <textarea
+            value={notes}
+            onChange={(event) => {
+              setNotes(event.target.value);
+              setSaved(false);
+            }}
           />
-          <datalist id="taxonomy-names">
-            {taxonomies.map((row) => (
-              <option key={row.id} value={row.name} />
-            ))}
-          </datalist>
-          {isNewTaxonomy ? (
-            <span className="hint">
-              New taxonomy. Enter its codes, then save. It is added at the end of the list.
-            </span>
-          ) : null}
+          <span className="hint">Optional. A taxonomy change can append removed field values here.</span>
         </label>
+        {mode === "edit" ? (
+          <div className="taxonomy-lock">
+            <label>
+              Taxonomy
+              <input
+                value={
+                  taxonomy
+                    ? taxonomy.shortCode
+                      ? `${taxonomy.shortCode} — ${taxonomy.name}`
+                      : taxonomy.name
+                    : "No taxonomy"
+                }
+                readOnly
+              />
+            </label>
+            </div>
+        ) : (
+          <label>
+            Taxonomy
+            <input
+              list="taxonomy-names"
+              value={taxonomyName}
+              placeholder="Select or type a taxonomy"
+              autoComplete="off"
+              onChange={(event) => onTaxonomyChange(event.target.value)}
+            />
+            <datalist id="taxonomy-names">
+              {taxonomies.map((row) => (
+                <option key={row.id} value={row.name} />
+              ))}
+            </datalist>
+            {isNewTaxonomy ? (
+              <span className="hint">
+                New taxonomy. Enter its codes, then save. It is added at the end of the list.
+              </span>
+            ) : null}
+          </label>
+        )}
         {isNewTaxonomy ? (
           <div className="grid">
             <label>
@@ -520,6 +742,24 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
         <fieldset>
           <legend>Main</legend>
           <div className="grid">
+            <label>
+              Item type
+              <select
+                aria-label="Item type"
+                value={itemType}
+                onChange={(event) => {
+                  const next = ITEM_TYPES.find((type) => type === event.target.value) ?? DEFAULT_ITEM_TYPE;
+                  setItemType(next);
+                  setSaved(false);
+                }}
+              >
+                {ITEM_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
             <ManufacturerSelect
               manufacturerId={manufacturerId}
               manufacturerName={manufacturerName}
@@ -682,6 +922,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                     data_type: draft.data_type,
                     unit: draft.unit || null,
                     uses_list: draft.uses_list,
+                    required: false,
                     sortOrder: 0,
                     allowedValues: [],
                     values: [],
@@ -743,23 +984,74 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           pending={pendingImages}
           onPendingChange={setPendingImages}
         />
-        <div className="actions">
-          <button type="submit" disabled={saving}>
-            {saving ? "Saving…" : mode === "create" ? "Create item" : "Save changes"}
-          </button>
-        </div>
       </form>
-      {mode === "edit" && itemId ? (
-        <section className="danger-zone">
-          <h2>Delete item</h2>
-          <p>
-            Removes this item, its attribute values, and its photos. The photo files are deleted
-            from storage as well.
-          </p>
-          <button type="button" className="danger" onClick={() => setConfirmDelete(true)} disabled={deleting}>
-            Delete item
-          </button>
-        </section>
+      {changeTaxonomy && mode === "edit" && itemId ? (
+        <ChangeTaxonomyDialog
+          taxonomies={taxonomies}
+          current={taxonomy}
+          values={attributeLinks}
+          sku={sku}
+          busy={changingTaxonomy}
+          onCancel={() => {
+            if (!changingTaxonomy) setChangeTaxonomy(false);
+          }}
+          onConfirm={(choice) => {
+            setChangingTaxonomy(true);
+            setSaveError(null);
+            changeItemTaxonomy({ id: itemId, ...choice })
+              .then(async (result) => {
+                const [refreshed, item] = await Promise.all([fetchTaxonomies(), fetchItem(itemId)]);
+                setTaxonomies(refreshed);
+                if (!item) return;
+                const match = refreshed.find((row) => row.id === item.taxonomyId) ?? null;
+                const values: Record<string, string> = {};
+                for (const link of item.attributeLinks) {
+                  const attribute = match?.attributes.find((row) => row.id === link.id);
+                  values[attribute?.name ?? link.name] = attribute ? canonicalValue(attribute, link.value) : link.value;
+                }
+                setSku(result.sku || item.sku);
+                setNotes(result.notes);
+                setTaxonomyName(match?.name ?? "");
+                setLoadedTaxonomyName(match?.name ?? null);
+                setLoadedAttributes(values);
+                setAttributeValues(values);
+                setAttributeLinks(item.attributeLinks);
+                setDrafts([]);
+                setSaved(true);
+                setBaseline({
+                  sku: result.sku || item.sku,
+                  name,
+                  description,
+                  quantity,
+                  taxonomyName: match?.name ?? "",
+                  longCode,
+                  shortCode,
+                  manufacturerId,
+                  manufacturerName,
+                  model,
+                  partNumber,
+                  itemType,
+                  condition,
+                  conditionNote,
+                  eccn,
+                  usHts,
+                  ccats,
+                  coo,
+                  notes: result.notes,
+                  attributeValues: values,
+                  drafts: [],
+                  pendingCount: pendingImages.length,
+                  draftName,
+                  draftType,
+                  draftUnit,
+                  draftUsesList,
+                });
+                setChangeTaxonomy(false);
+              })
+              .catch((error: unknown) => setSaveError(errorText(error)))
+              .finally(() => setChangingTaxonomy(false));
+          }}
+        />
       ) : null}
       {confirmDelete ? (
         <ConfirmDialog

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.19.0
+
+- Edit pages keep Save and the other actions in a sticky toolbar: item create and edit, customers, vendors, taxonomy fields, manufacturers, and Admin > Integrations.
+- Save is an icon. It stays grey until the form differs from the loaded values, and it turns grey again if those edits are undone. A dot marks unsaved changes, a spinner shows while saving, and a check shows briefly after a save. Ctrl or Cmd+S saves.
+- Print label is a barcode icon. Unsaved item changes ask you to save first so the label matches. Delete is a trash icon and still asks before removing the item. Change taxonomy sits in the same toolbar.
+- Leaving a page with unsaved changes asks you to confirm, in the browser and when following a link in the app.
+- The country of origin field is labeled COO on the item form, the items table, and the export. Hovering it shows Country of origin.
+- Items have an item type: Product, Kit/Package, Service, or Non-inventory. Existing items are Product. It shows in the Main section, as an items-table column with a filter, and in inline edit, bulk edit, and export. `create_item` and `update_item` take an optional item type; leaving it out creates a Product and does not change the stored type on update. Service and Non-inventory items should not track stock or need labels later. A kit may gain components later. QuickBooks mapping (Inventory, Group/Bundle, Service, NonInventory) comes later.
+
+## 0.18.0
+
+- Change an item's taxonomy from the item page. The confirmation lists shared fields that keep their values, saved values that will be removed, and fields the new taxonomy adds. Required fields are marked.
+- The confirm button names how many values will be removed. Lost values can be copied into item notes. If the SKU contains the current short code, keep it or replace that code. The default is to keep the SKU.
+- The move is one database change. Removed values are logged in `item_taxonomy_changes`.
+
+## 0.17.0
+
+- Edit cells in the items table. Enter, double-click, or typing starts the edit. Enter and Tab save and move. Esc cancels. SKU and taxonomy stay read-only.
+- Manufacturer, condition, country, and new-item condition notes use the same lists as the item form. Taxonomy attribute columns follow the field type and pick list.
+- Each cell saves on its own, with a saving, saved, or error mark. A changed `updated_at` reloads that row instead of overwriting it. The Edited column shows when the row last changed.
+- Select several rows and set condition, country of origin, or ECCN on all of them after a confirmation.
+
+## 0.16.0
+
+- Export items from the items page to a new Google Sheet or a CSV download. Current view follows the taxonomy filter and search, and includes every matching item. All items ignores those filters.
+- The sheet is named `ITS items export YYYY-MM-DD HH:mm` in Pacific time, created in a shared Drive folder, with the header row frozen. CSV still downloads when Google is not configured.
+- Include pricing columns when those fields exist. Attribute columns are one per attribute name across the exported taxonomies.
+
 ## 0.15.0
 
 - Open a photo by clicking its thumbnail, or by pressing Enter when it is focused. Delete stays a corner icon and asks for confirmation.

@@ -2,6 +2,9 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { Building, Cable, Contact, Plug, RefreshCw, Unplug } from "lucide-react";
+import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
+import { isDirty } from "@/lib/formDirty";
 import { RECONNECT_MESSAGE as EBAY_RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import {
@@ -79,6 +82,12 @@ export function IntegrationsPage() {
   const [full, setFull] = useState(false);
   const [results, setResults] = useState<string[]>([]);
   const [choiceReady, setChoiceReady] = useState(false);
+  const [baseline, setBaseline] = useState<{
+    entities: SyncEntity[];
+    direction: SyncDirection;
+    full: boolean;
+  } | null>(null);
+  const [choiceSaved, setChoiceSaved] = useState(false);
 
   const load = useCallback(async () => {
     const [qboResponse, ebayResponse] = await Promise.all([
@@ -110,18 +119,30 @@ export function IntegrationsPage() {
     setEntities(choice.entities);
     setDirection(choice.direction);
     setFull(choice.full);
+    setBaseline(choice);
     setChoiceReady(true);
   }, []);
 
-  useEffect(() => {
-    if (!choiceReady) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ entities, direction, full }));
-  }, [choiceReady, direction, entities, full]);
+  function choiceSnapshot(value: { entities: SyncEntity[]; direction: SyncDirection; full: boolean }) {
+    return { entities: [...value.entities].sort(), direction: value.direction, full: value.full };
+  }
+
+  const choiceDirty =
+    baseline !== null &&
+    isDirty(choiceSnapshot({ entities, direction, full }), choiceSnapshot(baseline));
 
   function toggleEntity(entity: SyncEntity) {
+    setChoiceSaved(false);
     setEntities((current) =>
       current.includes(entity) ? current.filter((item) => item !== entity) : [...current, entity],
     );
+  }
+
+  function saveChoices() {
+    const next = { entities, direction, full };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    setBaseline(next);
+    setChoiceSaved(true);
   }
 
   async function run(selected: SyncEntity[], source: "sync" | SyncEntity) {
@@ -213,8 +234,84 @@ export function IntegrationsPage() {
   const ebayConnected = ebay?.connected === true;
   const ebayNeedsReconnect = ebay?.needsReconnect === true;
 
+  const qboConnectLabel = needsReconnect ? "Reconnect QuickBooks" : "Connect QuickBooks";
+  const ebayConnectLabel = ebayNeedsReconnect ? "Reconnect eBay" : "Connect eBay";
+  const canSync = (connected || needsReconnect) && busy === null;
+  const qboConnectHref = configured && (needsReconnect || !connected) ? "/api/qbo/connect" : undefined;
+  const ebayConnectHref = ebayConfigured && (ebayNeedsReconnect || !ebayConnected) ? "/api/ebay/connect" : undefined;
+
+  function runSync(selected: SyncEntity[], source: "sync" | SyncEntity) {
+    if (choiceDirty) {
+      if (!window.confirm("Save sync choices first?")) return;
+      saveChoices();
+    }
+    void run(selected, source);
+  }
+
   return (
     <main className="page">
+      <PageToolbar
+        dirty={choiceDirty}
+        saving={false}
+        saved={choiceSaved}
+        disabled={!choiceReady}
+        onSave={saveChoices}
+      >
+        <ToolbarButton
+          icon={RefreshCw}
+          label="Start sync"
+          busy={busy === "sync"}
+          disabled={entities.length === 0 || !canSync}
+          onClick={() => runSync(entities, "sync")}
+        />
+        <ToolbarButton
+          icon={Contact}
+          label="Sync customers"
+          busy={busy === "customer"}
+          disabled={!canSync}
+          onClick={() => runSync(["customer"], "customer")}
+        />
+        <ToolbarButton
+          icon={Building}
+          label="Sync vendors"
+          busy={busy === "vendor"}
+          disabled={!canSync}
+          onClick={() => runSync(["vendor"], "vendor")}
+        />
+        <ToolbarSeparator />
+        <ToolbarButton icon={Plug} label={qboConnectLabel} href={qboConnectHref} disabled={!qboConnectHref || busy !== null} />
+        <ToolbarButton
+          icon={Unplug}
+          label="Disconnect QuickBooks"
+          danger
+          busy={busy === "disconnect"}
+          disabled={!connected || busy !== null}
+          onClick={() => {
+            if (!window.confirm("Disconnect QuickBooks?")) return;
+            void disconnect();
+          }}
+        />
+        <ToolbarSeparator />
+        <ToolbarButton icon={Plug} label={ebayConnectLabel} href={ebayConnectHref} disabled={!ebayConnectHref || busy !== null} />
+        <ToolbarButton
+          icon={Cable}
+          label="Test eBay connection"
+          busy={busy === "ebay-test"}
+          disabled={!ebayConnected || busy !== null}
+          onClick={() => void testEbay()}
+        />
+        <ToolbarButton
+          icon={Unplug}
+          label="Disconnect eBay"
+          danger
+          busy={busy === "ebay-disconnect"}
+          disabled={(!ebayConnected && !ebayNeedsReconnect) || busy !== null}
+          onClick={() => {
+            if (!window.confirm("Disconnect eBay?")) return;
+            void disconnectEbay();
+          }}
+        />
+      </PageToolbar>
       {queryError ? <p className="banner error">{queryError}</p> : null}
       {ebayQueryError ? <p className="banner error">{ebayQueryError}</p> : null}
       {connectedFlash && connected ? <p className="banner ok">QuickBooks connected.</p> : null}
@@ -265,29 +362,7 @@ export function IntegrationsPage() {
                 Register this redirect URI in the Intuit app:{" "}
                 <code>{status.redirectUri || LOCAL_REDIRECT}</code>
               </p>
-              <div className="actions">
-                {configured && needsReconnect ? (
-                  <a className="button" href="/api/qbo/connect">
-                    Reconnect
-                  </a>
-                ) : configured && !connected ? (
-                  <a className="button" href="/api/qbo/connect">
-                    Connect
-                  </a>
-                ) : (
-                  <button type="button" disabled>
-                    Connect
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={disconnect}
-                  disabled={!connected || busy !== null}
-                >
-                  {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
-                </button>
-              </div>
+              <p className="hint">Connect, reconnect, and disconnect are in the toolbar.</p>
             </>
           ) : null}
         </section>
@@ -337,32 +412,7 @@ export function IntegrationsPage() {
                   OAuth redirect uses RuName <code>{ebay.ruName}</code>, not the URL above.
                 </p>
               ) : null}
-              <div className="actions">
-                {ebayConfigured && ebayNeedsReconnect ? (
-                  <a className="button" href="/api/ebay/connect">
-                    Reconnect
-                  </a>
-                ) : ebayConfigured && !ebayConnected ? (
-                  <a className="button" href="/api/ebay/connect">
-                    Connect
-                  </a>
-                ) : (
-                  <button type="button" disabled>
-                    Connect
-                  </button>
-                )}
-                <button type="button" onClick={testEbay} disabled={!ebayConnected || busy !== null}>
-                  {busy === "ebay-test" ? "Testing…" : "Test connection"}
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={disconnectEbay}
-                  disabled={(!ebayConnected && !ebayNeedsReconnect) || busy !== null}
-                >
-                  {busy === "ebay-disconnect" ? "Disconnecting…" : "Disconnect"}
-                </button>
-              </div>
+              <p className="hint">Connect, test, and disconnect are in the toolbar.</p>
               <h3>Recent log</h3>
               {ebay.logs.length > 0 ? (
                 <table className="log-table">
@@ -417,7 +467,10 @@ export function IntegrationsPage() {
               type="radio"
               name="qbo-direction"
               checked={direction === "pull"}
-              onChange={() => setDirection("pull")}
+              onChange={() => {
+              setChoiceSaved(false);
+              setDirection("pull");
+            }}
             />
             Pull from QuickBooks
           </label>
@@ -426,7 +479,10 @@ export function IntegrationsPage() {
               type="radio"
               name="qbo-direction"
               checked={direction === "push"}
-              onChange={() => setDirection("push")}
+              onChange={() => {
+              setChoiceSaved(false);
+              setDirection("push");
+            }}
             />
             Push ITS changes
           </label>
@@ -435,44 +491,30 @@ export function IntegrationsPage() {
               type="radio"
               name="qbo-direction"
               checked={direction === "both"}
-              onChange={() => setDirection("both")}
+              onChange={() => {
+              setChoiceSaved(false);
+              setDirection("both");
+            }}
             />
             Both
           </label>
         </fieldset>
         <label className="check">
-          <input type="checkbox" checked={full} onChange={(event) => setFull(event.target.checked)} />
+          <input
+          type="checkbox"
+          checked={full}
+          onChange={(event) => {
+            setChoiceSaved(false);
+            setFull(event.target.checked);
+          }}
+        />
           Full resync
         </label>
         <p className="hint">
           Full resync ignores that entity&apos;s change cursor and reads every record. The other
-          entity&apos;s cursor stays put. Leave it off for an incremental pull.
+          entity&apos;s cursor stays put. Leave it off for an incremental pull. Save in the toolbar
+          remembers this choice. Start sync, Sync customers, and Sync vendors are toolbar icons.
         </p>
-        <div className="actions">
-          <button
-            type="button"
-            onClick={() => void run(entities, "sync")}
-            disabled={entities.length === 0 || (!connected && !needsReconnect) || busy !== null}
-          >
-            {busy === "sync" ? "Syncing…" : "Start sync"}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => void run(["customer"], "customer")}
-            disabled={(!connected && !needsReconnect) || busy !== null}
-          >
-            {busy === "customer" ? "Syncing…" : "Sync customers"}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => void run(["vendor"], "vendor")}
-            disabled={(!connected && !needsReconnect) || busy !== null}
-          >
-            {busy === "vendor" ? "Syncing…" : "Sync vendors"}
-          </button>
-        </div>
         {results.length > 0 ? (
           <ul className="sync-results">
             {results.map((line) => (

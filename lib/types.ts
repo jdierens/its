@@ -13,6 +13,7 @@ export type Attribute = {
   data_type: DataType;
   unit: string | null;
   uses_list: boolean;
+  required: boolean;
   sortOrder: number;
   allowedValues: string[];
   values: ListedValue[];
@@ -37,12 +38,16 @@ export type Taxonomy = {
 export type ItemListColumn = {
   name: string;
   unit: string | null;
+  dataType: DataType;
+  usesList: boolean;
+  allowedValues: string[];
 };
 
 export type ItemListRow = {
   id: string;
   sku: string;
   name: string;
+  itemType: "Product" | "Kit/Package" | "Service" | "Non-inventory";
   quantity: number | null;
   taxonomyName: string | null;
   shortCode: string | null;
@@ -52,6 +57,15 @@ export type ItemListRow = {
   model: string;
   partNumber: string;
   condition: string;
+  conditionNote: string;
+  eccn: string;
+  usHts: string;
+  ccats: string;
+  coo: string;
+  ecommercePrice: string | null;
+  marketPrice: string | null;
+  msrp: string | null;
+  updatedAt: string;
   fields: Record<string, string>;
 };
 
@@ -59,6 +73,7 @@ export type ItemList = {
   rows: ItemListRow[];
   total: number;
   columns: ItemListColumn[];
+  pricing: boolean;
   unknownTax: boolean;
 };
 
@@ -72,6 +87,7 @@ export type ItemDetail = {
   sku: string;
   name: string;
   description: string;
+  itemType: "Product" | "Kit/Package" | "Service" | "Non-inventory";
   quantity: number | null;
   taxonomyId: string | null;
   manufacturerId: string | null;
@@ -84,7 +100,9 @@ export type ItemDetail = {
   usHts: string;
   ccats: string;
   coo: string;
+  notes: string;
   attributes: Record<string, string>;
+  attributeLinks: { id: string; name: string; value: string }[];
 };
 
 export type ItemImage = {
