@@ -5,7 +5,14 @@ let nextAllowedAt = 0;
 
 export type QboResult<T> =
   | { ok: true; status: number; data: T; intuitTid: string | null }
-  | { ok: false; status: number; message: string; code: string | null; intuitTid: string | null };
+  | {
+      ok: false;
+      status: number;
+      message: string;
+      code: string | null;
+      intuitTid: string | null;
+      refreshed: boolean;
+    };
 
 export async function qboRequest<T>(options: {
   method: "GET" | "POST";
@@ -41,7 +48,7 @@ export async function qboRequest<T>(options: {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "QuickBooks request failed.";
-      last = { ok: false, status: 0, message, code: null, intuitTid: null };
+      last = { ok: false, status: 0, message, code: null, intuitTid: null, refreshed: authRetried };
       if (attempt < MAX_ATTEMPTS) {
         await sleep(500 * attempt);
         continue;
@@ -73,15 +80,25 @@ export async function qboRequest<T>(options: {
       return {
         ok: false,
         status: response.status,
-        message: fault.message || `QuickBooks request failed (${response.status}).`,
+        message: fault.message,
         code: fault.code,
         intuitTid,
+        refreshed: authRetried,
       };
     }
     return { ok: true, status: response.status, data: data as T, intuitTid };
   }
 
-  return last ?? { ok: false, status: 429, message: "QuickBooks rate limit persisted.", code: "429", intuitTid: null };
+  return (
+    last ?? {
+      ok: false,
+      status: 429,
+      message: "QuickBooks rate limit persisted.",
+      code: "429",
+      intuitTid: null,
+      refreshed: false,
+    }
+  );
 }
 
 export function readFault(body: unknown): { message: string; code: string | null } {
@@ -90,19 +107,33 @@ export function readFault(body: unknown): { message: string; code: string | null
   }
   const record = body as {
     Fault?: { Error?: unknown };
+    fault?: { error?: unknown; Error?: unknown };
     error_description?: unknown;
     error?: unknown;
   };
-  const errors = record.Fault?.Error;
+  const fault = record.Fault ?? record.fault;
+  const errors =
+    fault && typeof fault === "object"
+      ? ((fault as { Error?: unknown; error?: unknown }).Error ??
+        (fault as { error?: unknown }).error)
+      : undefined;
   const first = Array.isArray(errors) ? errors[0] : errors;
   if (first && typeof first === "object") {
-    const error = first as { Message?: unknown; Detail?: unknown; code?: unknown };
-    const message = [error.Message, error.Detail]
+    const error = first as {
+      Message?: unknown;
+      message?: unknown;
+      Detail?: unknown;
+      detail?: unknown;
+      code?: unknown;
+      Code?: unknown;
+    };
+    const message = [error.Message ?? error.message, error.Detail ?? error.detail]
       .filter((part): part is string => typeof part === "string" && part.length > 0)
       .join(" ");
+    const code = error.code ?? error.Code;
     return {
       message: message || "QuickBooks request failed.",
-      code: typeof error.code === "string" ? error.code : null,
+      code: typeof code === "string" ? code : null,
     };
   }
   if (typeof record.error_description === "string") {

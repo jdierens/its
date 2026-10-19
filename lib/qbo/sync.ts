@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ReconnectError, TokenRequestError } from "@/lib/qbo/auth";
 import { companyUrl, type QboConfig } from "@/lib/qbo/config";
+import { formatQboError } from "@/lib/qbo/failure";
 import { isStaleSyncToken, qboRequest, type QboResult } from "@/lib/qbo/http";
 import { writeSyncLog } from "@/lib/qbo/log";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
@@ -18,6 +19,7 @@ import {
   type SyncStatus,
 } from "@/lib/qbo/map";
 import { forceRefreshAccessToken, validAccessToken } from "@/lib/qbo/oauth";
+import { emptyCounts, formatEntityResult, type EntityCounts, type SyncOptions } from "@/lib/qbo/syncOptions";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
 
 const PAGE_SIZE = 100;
@@ -26,11 +28,10 @@ const OVERLAP_MS = 2 * 60 * 1000;
 
 type ContactRecord = ContactFields & { id: string; sync_status: SyncStatus };
 
+export type EntityResult = EntityCounts & { entity: ContactKind };
+
 export type SyncReport = {
-  pushed: number;
-  pulled: number;
-  conflicts: number;
-  errors: number;
+  entities: EntityResult[];
   message: string;
 };
 
@@ -55,42 +56,71 @@ async function authed<T>(box: TokenBox, method: "GET" | "POST", url: string, bod
   });
 }
 
-export async function runSync(): Promise<SyncReport> {
+export async function runSync(options: SyncOptions): Promise<SyncReport> {
   if (syncing) throw new Error("A QuickBooks sync is already running.");
   syncing = true;
   const startedAt = new Date().toISOString();
-  const report: SyncReport = { pushed: 0, pulled: 0, conflicts: 0, errors: 0, message: "" };
+  const results: EntityResult[] = [];
   try {
     const admin = getServiceSupabase();
     if (!admin) throw new Error("Set SUPABASE_SERVICE_ROLE_KEY on the server.");
-    const { config, connection } = await validAccessToken();
-    const box: TokenBox = { token: connection.access_token };
-    await pushKind(admin, config, connection.realm_id, box, "customer", report);
-    const refreshed = await validAccessToken();
-    box.token = refreshed.connection.access_token;
-    await pushKind(admin, refreshed.config, refreshed.connection.realm_id, box, "vendor", report);
-    const pullAuth = await validAccessToken();
-    box.token = pullAuth.connection.access_token;
-    await pullChanges(admin, pullAuth.config, pullAuth.connection.realm_id, box, startedAt, report);
-    report.message = `Pushed ${report.pushed}, pulled ${report.pulled}, conflicts ${report.conflicts}, errors ${report.errors}.`;
-    await writeSyncLog({
-      entity: "sync",
-      direction: "pull",
-      status: "ok",
-      message: report.message,
-      startedAt,
-      detail: {
-        pushed: report.pushed,
-        pulled: report.pulled,
-        conflicts: report.conflicts,
-        errors: report.errors,
-      },
-    });
-    return report;
+    const initial = await validAccessToken();
+    const box: TokenBox = { token: initial.connection.access_token };
+    for (const kind of options.entities) {
+      const counts = emptyCounts();
+      try {
+        if (options.direction !== "pull") {
+          const auth = await validAccessToken();
+          box.token = auth.connection.access_token;
+          await pushKind(admin, auth.config, auth.connection.realm_id, box, kind, counts);
+          await touchLastSync(admin, kind, startedAt);
+        }
+        if (options.direction !== "push") {
+          const auth = await validAccessToken();
+          box.token = auth.connection.access_token;
+          const complete = await pullKind(
+            admin,
+            auth.config,
+            auth.connection.realm_id,
+            box,
+            kind,
+            options.full,
+            startedAt,
+            counts,
+          );
+          if (complete) await saveCursor(admin, kind, startedAt);
+          else await touchLastSync(admin, kind, startedAt);
+        }
+      } catch (error) {
+        if (error instanceof ReconnectError || error instanceof TokenRequestError) throw error;
+        counts.errors += 1;
+        await writeSyncLog({
+          entity: kind,
+          direction: options.direction === "push" ? "push" : "pull",
+          status: "error",
+          message: error instanceof Error ? error.message : "QuickBooks sync failed.",
+          startedAt,
+          detail: callDetail(error),
+        });
+      }
+      results.push({ entity: kind, ...counts });
+      await writeSyncLog({
+        entity: kind,
+        direction: options.direction === "push" ? "push" : "pull",
+        status: counts.errors > 0 ? "error" : "ok",
+        message: formatEntityResult(kind, counts),
+        startedAt,
+        detail: {
+          created: counts.created,
+          updated: counts.updated,
+          conflicts: counts.conflicts,
+          errors: counts.errors,
+        },
+      });
+    }
+    return { entities: results, message: results.map((result) => formatEntityResult(result.entity, result)).join(" ") };
   } catch (error) {
     const message = error instanceof Error ? error.message : "QuickBooks sync failed.";
-    report.errors += 1;
-    report.message = message === RECONNECT_MESSAGE ? RECONNECT_MESSAGE : message;
     const intuitTid =
       error instanceof ReconnectError || error instanceof TokenRequestError
         ? error.intuitTid
@@ -99,16 +129,30 @@ export async function runSync(): Promise<SyncReport> {
           : null;
     await writeSyncLog({
       entity: "sync",
-      direction: "pull",
+      direction: options.direction === "push" ? "push" : "pull",
       status: "error",
-      message: report.message,
+      message: message === RECONNECT_MESSAGE ? RECONNECT_MESSAGE : message,
       startedAt,
-      detail: { intuitTid },
+      detail: { intuitTid, ...callDetail(error) },
     });
-    return report;
+    return {
+      entities: results,
+      message: message === RECONNECT_MESSAGE ? RECONNECT_MESSAGE : message,
+    };
   } finally {
     syncing = false;
   }
+}
+
+function callDetail(error: unknown): Record<string, string | number | null> {
+  if (!error || typeof error !== "object") return {};
+  const record = error as { httpStatus?: unknown; code?: unknown; intuitTid?: unknown; request?: unknown };
+  return {
+    httpStatus: typeof record.httpStatus === "number" ? record.httpStatus : null,
+    code: typeof record.code === "string" ? record.code : null,
+    intuitTid: typeof record.intuitTid === "string" ? record.intuitTid : null,
+    request: typeof record.request === "string" ? record.request : null,
+  };
 }
 
 async function pushKind(
@@ -117,7 +161,7 @@ async function pushKind(
   realmId: string,
   box: TokenBox,
   kind: ContactKind,
-  report: SyncReport,
+  counts: EntityCounts,
 ) {
   const { data, error } = await admin
     .from(tableFor(kind))
@@ -125,7 +169,7 @@ async function pushKind(
     .in("sync_status", ["local", "pending", "error"]);
   if (error) throw new Error(error.message);
   for (const row of (data ?? []) as ContactRecord[]) {
-    await pushOne(admin, config, realmId, box, kind, row, report);
+    await pushOne(admin, config, realmId, box, kind, row, counts);
   }
 }
 
@@ -136,13 +180,13 @@ async function pushOne(
   box: TokenBox,
   kind: ContactKind,
   row: ContactRecord,
-  report: SyncReport,
+  counts: EntityCounts,
 ) {
   const name = qboEntityName(kind);
   const path = qboEntityPath(kind);
   const mode = row.qbo_id ? "update" : "create";
   if (mode === "update" && !row.qbo_sync_token) {
-    await markError(admin, kind, row, report, "QuickBooks SyncToken is missing, so the update was not sent.");
+    await markError(admin, config, kind, row, counts, "QuickBooks SyncToken is missing, so the update was not sent.");
     return;
   }
 
@@ -155,29 +199,37 @@ async function pushOne(
 
   if (!result.ok && result.message === RECONNECT_MESSAGE) throw new ReconnectError(result.intuitTid);
   if (!result.ok && isStaleSyncToken(result.code, result.message) && row.qbo_id) {
-    await resolveStale(admin, config, realmId, box, kind, row, report, result.message, result.intuitTid);
+    await resolveStale(admin, config, realmId, box, kind, row, counts, result.message, result.intuitTid);
     return;
   }
   if (!result.ok) {
-    await markError(admin, kind, row, report, result.message, result.code, result.status, result.intuitTid);
+    await markError(admin, config, kind, row, counts, result.message, {
+      request: mode,
+      code: result.code,
+      status: result.status,
+      intuitTid: result.intuitTid,
+      refreshed: result.refreshed,
+    });
     return;
   }
 
   const entity = unwrapEntity(result.data, name);
   if (!entity) {
-    await markError(admin, kind, row, report, "QuickBooks did not return the saved record.");
+    await markError(admin, config, kind, row, counts, "QuickBooks did not return the saved record.");
     return;
   }
   try {
     const incoming = preserveVendorLocalFields(kind, fromQbo(kind, entity), row);
     await writeFields(admin, kind, row.id, incoming, "synced");
-    report.pushed += 1;
+    if (mode === "create") counts.created += 1;
+    else counts.updated += 1;
   } catch (error) {
     await markError(
       admin,
+      config,
       kind,
       row,
-      report,
+      counts,
       error instanceof Error ? error.message : "The QuickBooks response could not be saved.",
     );
   }
@@ -190,7 +242,7 @@ async function resolveStale(
   box: TokenBox,
   kind: ContactKind,
   row: ContactRecord,
-  report: SyncReport,
+  counts: EntityCounts,
   message: string,
   intuitTid: string | null,
 ) {
@@ -203,25 +255,30 @@ async function resolveStale(
   if (!fetched.ok) {
     await markError(
       admin,
+      config,
       kind,
       row,
-      report,
+      counts,
       `${message} Refetch failed: ${fetched.message}`,
-      fetched.code,
-      fetched.status,
-      fetched.intuitTid ?? intuitTid,
+      {
+        request: "refetch",
+        code: fetched.code,
+        status: fetched.status,
+        intuitTid: fetched.intuitTid ?? intuitTid,
+        refreshed: fetched.refreshed,
+      },
     );
     return;
   }
   const entity = unwrapEntity(fetched.data, qboEntityName(kind));
   if (!entity) {
-    await markError(admin, kind, row, report, `${message} QuickBooks did not return the current record.`);
+    await markError(admin, config, kind, row, counts, `${message} QuickBooks did not return the current record.`);
     return;
   }
   try {
     const incoming = preserveVendorLocalFields(kind, fromQbo(kind, entity), row);
     await writeFields(admin, kind, row.id, incoming, "conflict");
-    report.conflicts += 1;
+    counts.conflicts += 1;
     await writeSyncLog({
       entity: kind,
       direction: "push",
@@ -232,63 +289,62 @@ async function resolveStale(
   } catch (error) {
     await markError(
       admin,
+      config,
       kind,
       row,
-      report,
+      counts,
       error instanceof Error ? error.message : "The refetched QuickBooks record could not be saved.",
     );
   }
 }
 
-async function pullChanges(
+async function pullKind(
   admin: SupabaseClient,
   config: QboConfig,
   realmId: string,
   box: TokenBox,
+  kind: ContactKind,
+  full: boolean,
   startedAt: string,
-  report: SyncReport,
-) {
-  const watermark = await lastFullPull(admin);
+  counts: EntityCounts,
+): Promise<boolean> {
+  const watermark = full ? null : await entityCursor(admin, kind);
   if (!watermark) {
-    await pullQuery(admin, config, realmId, box, "customer", report);
-    await pullQuery(admin, config, realmId, box, "vendor", report);
-    return;
+    await pullQuery(admin, config, realmId, box, kind, counts);
+    return true;
   }
   const changedSince = formatQboTime(new Date(Date.parse(watermark) - OVERLAP_MS));
   let cursor = changedSince;
+  const name = qboEntityName(kind);
   for (let page = 0; page < 20; page += 1) {
     const result = await authed<Record<string, unknown>>(
       box,
       "GET",
       companyUrl(config, realmId, "cdc", {
-        entities: "Customer,Vendor",
+        entities: name,
         changedSince: cursor,
       }),
     );
-    if (!result.ok) throw httpFailure(result);
-    const customers = cdcEntities(result.data, "Customer");
-    const vendors = cdcEntities(result.data, "Vendor");
+    if (!result.ok) throw httpFailure(config, kind, "CDC", result);
+    const entities = cdcEntities(result.data, name);
     let latest = Date.parse(cursor);
-    for (const entity of customers) {
-      latest = Math.max(latest, await applyIncoming(admin, "customer", entity, report));
+    for (const entity of entities) {
+      latest = Math.max(latest, await applyIncoming(admin, kind, entity, counts));
     }
-    for (const entity of vendors) {
-      latest = Math.max(latest, await applyIncoming(admin, "vendor", entity, report));
-    }
-    const hitCap = customers.length >= CDC_PAGE || vendors.length >= CDC_PAGE;
-    if (!hitCap) return;
+    if (entities.length < CDC_PAGE) return true;
     const next = formatQboTime(new Date(latest + 1000));
-    if (next === cursor) return;
+    if (next === cursor) return true;
     cursor = next;
   }
+  counts.errors += 1;
   await writeSyncLog({
-    entity: "sync",
+    entity: kind,
     direction: "pull",
     status: "error",
-    message: "CDC stopped after 20 pages. Run sync again to continue.",
+    message: `${qboEntityName(kind)} CDC stopped after 20 pages. Run sync again to continue. The change cursor was left where it was.`,
     startedAt,
   });
-  report.errors += 1;
+  return false;
 }
 
 async function pullQuery(
@@ -297,7 +353,7 @@ async function pullQuery(
   realmId: string,
   box: TokenBox,
   kind: ContactKind,
-  report: SyncReport,
+  counts: EntityCounts,
 ) {
   const name = qboEntityName(kind);
   let start = 1;
@@ -309,9 +365,9 @@ async function pullQuery(
         query: `select * from ${name} where Active in (true, false) startposition ${start} maxresults ${PAGE_SIZE}`,
       }),
     );
-    if (!result.ok) throw httpFailure(result);
+    if (!result.ok) throw httpFailure(config, kind, "query", result);
     const entities = queryEntities(result.data, name);
-    for (const entity of entities) await applyIncoming(admin, kind, entity, report);
+    for (const entity of entities) await applyIncoming(admin, kind, entity, counts);
     if (entities.length < PAGE_SIZE) return;
     start += entities.length;
   }
@@ -321,7 +377,7 @@ async function applyIncoming(
   admin: SupabaseClient,
   kind: ContactKind,
   value: unknown,
-  report: SyncReport,
+  counts: EntityCounts,
 ): Promise<number> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
   const entity = value as Record<string, unknown>;
@@ -337,7 +393,7 @@ async function applyIncoming(
       .update({ active: false, sync_status: status })
       .eq("id", existing.id);
     if (error) {
-      report.errors += 1;
+      counts.errors += 1;
       await writeSyncLog({
         entity: kind,
         direction: "pull",
@@ -347,8 +403,8 @@ async function applyIncoming(
       });
       return 0;
     }
-    if (status === "conflict") report.conflicts += 1;
-    else report.pulled += 1;
+    if (status === "conflict") counts.conflicts += 1;
+    else counts.updated += 1;
     await writeSyncLog({
       entity: kind,
       direction: "pull",
@@ -366,7 +422,7 @@ async function applyIncoming(
   try {
     incoming = preserveVendorLocalFields(kind, fromQbo(kind, entity), existing);
   } catch (error) {
-    report.errors += 1;
+    counts.errors += 1;
     await writeSyncLog({
       entity: kind,
       direction: "pull",
@@ -381,7 +437,7 @@ async function applyIncoming(
   if (!existing) {
     const inserted = await admin.from(tableFor(kind)).insert(dbFields(incoming, "synced"));
     if (inserted.error) {
-      report.errors += 1;
+      counts.errors += 1;
       await writeSyncLog({
         entity: kind,
         direction: "pull",
@@ -390,7 +446,7 @@ async function applyIncoming(
         detail: { qboId },
       });
     } else {
-      report.pulled += 1;
+      counts.created += 1;
     }
     return Number.isNaN(incomingTime) ? 0 : incomingTime;
   }
@@ -415,7 +471,7 @@ async function applyIncoming(
 
   const written = await writeFields(admin, kind, existing.id, incoming, status);
   if (!written.ok) {
-    report.errors += 1;
+    counts.errors += 1;
     await writeSyncLog({
       entity: kind,
       direction: "pull",
@@ -426,7 +482,7 @@ async function applyIncoming(
     return Number.isNaN(incomingTime) ? 0 : incomingTime;
   }
   if (status === "conflict") {
-    report.conflicts += 1;
+    counts.conflicts += 1;
     await writeSyncLog({
       entity: kind,
       direction: "pull",
@@ -435,41 +491,85 @@ async function applyIncoming(
       detail: { qboId },
     });
   } else {
-    report.pulled += 1;
+    counts.updated += 1;
   }
   return Number.isNaN(incomingTime) ? 0 : incomingTime;
 }
 
+type FailureMeta = {
+  request: string;
+  code: string | null;
+  status: number;
+  intuitTid: string | null;
+  refreshed: boolean;
+};
+
 async function markError(
   admin: SupabaseClient,
+  config: QboConfig,
   kind: ContactKind,
   row: ContactRecord,
-  report: SyncReport,
+  counts: EntityCounts,
   message: string,
-  code?: string | null,
-  httpStatus?: number,
-  intuitTid?: string | null,
+  failure?: FailureMeta,
 ) {
-  report.errors += 1;
+  counts.errors += 1;
+  const text = failure
+    ? formatQboError({
+        subject: `${qboEntityName(kind)} ${failure.request} for ${row.display_name}`,
+        status: failure.status,
+        code: failure.code,
+        message,
+        intuitTid: failure.intuitTid,
+        environment: config.environment,
+        refreshed: failure.refreshed,
+      })
+    : `${row.display_name}: ${message}`;
   await admin.from(tableFor(kind)).update({ sync_status: "error" }).eq("id", row.id);
   await writeSyncLog({
     entity: kind,
     direction: "push",
     status: "error",
-    message: `${row.display_name}: ${message}`,
+    message: text,
     detail: {
       qboId: row.qbo_id,
-      code: code ?? null,
-      httpStatus: httpStatus ?? null,
-      intuitTid: intuitTid ?? null,
+      code: failure?.code ?? null,
+      httpStatus: failure?.status ?? null,
+      intuitTid: failure?.intuitTid ?? null,
+      request: failure?.request ?? null,
     },
   });
 }
 
-function httpFailure(result: { ok: false; message: string; intuitTid: string | null }): Error {
+function httpFailure(
+  config: QboConfig,
+  kind: ContactKind,
+  request: string,
+  result: {
+    ok: false;
+    status: number;
+    message: string;
+    code: string | null;
+    intuitTid: string | null;
+    refreshed: boolean;
+  },
+): Error {
   if (result.message === RECONNECT_MESSAGE) return new ReconnectError(result.intuitTid);
-  const error = new Error(result.message) as Error & { intuitTid?: string | null };
+  const error = new Error(
+    formatQboError({
+      subject: `${qboEntityName(kind)} ${request}`,
+      status: result.status,
+      code: result.code,
+      message: result.message,
+      intuitTid: result.intuitTid,
+      environment: config.environment,
+      refreshed: result.refreshed,
+    }),
+  ) as Error & { intuitTid?: string | null; httpStatus?: number; code?: string | null; request?: string };
   error.intuitTid = result.intuitTid;
+  error.httpStatus = result.status;
+  error.code = result.code;
+  error.request = request;
   return error;
 }
 
@@ -519,7 +619,21 @@ async function findByQboId(
   return (data as ContactRecord | null) ?? null;
 }
 
-async function lastFullPull(admin: SupabaseClient): Promise<string | null> {
+async function entityCursor(admin: SupabaseClient, kind: ContactKind): Promise<string | null> {
+  const { data, error } = await admin
+    .from("qbo_sync_cursor")
+    .select("cdc_since")
+    .eq("entity", kind)
+    .maybeSingle();
+  if (error) {
+    if (missingCursorTable(error.message)) return legacyCursor(admin);
+    throw new Error(error.message);
+  }
+  if (data) return (data.cdc_since as string | null) ?? null;
+  return legacyCursor(admin);
+}
+
+async function legacyCursor(admin: SupabaseClient): Promise<string | null> {
   const { data, error } = await admin
     .from("qbo_sync_log")
     .select("started_at")
@@ -531,6 +645,36 @@ async function lastFullPull(admin: SupabaseClient): Promise<string | null> {
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data?.started_at ?? null;
+}
+
+async function saveCursor(admin: SupabaseClient, kind: ContactKind, startedAt: string): Promise<void> {
+  const { error } = await admin.from("qbo_sync_cursor").upsert(
+    { entity: kind, cdc_since: startedAt, last_sync_at: startedAt, updated_at: startedAt },
+    { onConflict: "entity" },
+  );
+  if (error) throw new Error(error.message);
+}
+
+async function touchLastSync(admin: SupabaseClient, kind: ContactKind, startedAt: string): Promise<void> {
+  const existing = await admin.from("qbo_sync_cursor").select("cdc_since").eq("entity", kind).maybeSingle();
+  if (existing.error) {
+    if (missingCursorTable(existing.error.message)) return;
+    throw new Error(existing.error.message);
+  }
+  const { error } = await admin.from("qbo_sync_cursor").upsert(
+    {
+      entity: kind,
+      cdc_since: (existing.data?.cdc_since as string | null | undefined) ?? null,
+      last_sync_at: startedAt,
+      updated_at: startedAt,
+    },
+    { onConflict: "entity" },
+  );
+  if (error) throw new Error(error.message);
+}
+
+function missingCursorTable(message: string): boolean {
+  return /qbo_sync_cursor/i.test(message) && /does not exist|schema cache|could not find/i.test(message);
 }
 
 function isNewer(incoming: string | null, stored: string | null): boolean {

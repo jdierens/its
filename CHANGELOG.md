@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0
+
+- Choose customers, vendors, and direction on Admin > Integrations, with a full resync option. Sync customers and Sync vendors run one entity. The last choice is remembered in the browser.
+- Keep a separate last-sync time and change cursor for customers and vendors. Syncing one does not move the other. An existing shared cursor is copied onto both.
+- Name the QuickBooks request, HTTP status, Intuit fault, and intuit_tid in sync errors. A sandbox/production mismatch says which environment to set.
+
 ## 0.9.0
 
 - #1 Show taxonomy attributes on the item form.

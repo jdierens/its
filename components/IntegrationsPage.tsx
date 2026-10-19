@@ -3,6 +3,12 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
+import {
+  formatEntityResult,
+  type EntityCounts,
+  type SyncDirection,
+  type SyncEntity,
+} from "@/lib/qbo/syncOptions";
 
 type LogEntry = {
   id: string;
@@ -24,9 +30,18 @@ type StatusResponse = {
   realmId: string | null;
   expiresAt: string | null;
   lastSyncAt: string | null;
+  lastSync?: { customer: string | null; vendor: string | null };
   message: string | null;
   logs: LogEntry[];
 };
+
+type SyncResponse = {
+  entities?: Array<EntityCounts & { entity: SyncEntity }>;
+  message?: string;
+};
+
+const STORAGE_KEY = "its.qbo.sync";
+const DEFAULT_ENTITIES: SyncEntity[] = ["customer", "vendor"];
 
 const LOCAL_REDIRECT = "http://localhost:3000/api/qbo/callback";
 
@@ -35,8 +50,13 @@ export function IntegrationsPage() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"sync" | "disconnect" | null>(null);
+  const [busy, setBusy] = useState<"sync" | "customer" | "vendor" | "disconnect" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [entities, setEntities] = useState<SyncEntity[]>(DEFAULT_ENTITIES);
+  const [direction, setDirection] = useState<SyncDirection>("both");
+  const [full, setFull] = useState(false);
+  const [results, setResults] = useState<string[]>([]);
+  const [choiceReady, setChoiceReady] = useState(false);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/qbo/status", { cache: "no-store" });
@@ -58,17 +78,45 @@ export function IntegrationsPage() {
     };
   }, [load]);
 
-  async function syncNow() {
-    setBusy("sync");
+  useEffect(() => {
+    const choice = loadChoice();
+    setEntities(choice.entities);
+    setDirection(choice.direction);
+    setFull(choice.full);
+    setChoiceReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!choiceReady) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ entities, direction, full }));
+  }, [choiceReady, direction, entities, full]);
+
+  function toggleEntity(entity: SyncEntity) {
+    setEntities((current) =>
+      current.includes(entity) ? current.filter((item) => item !== entity) : [...current, entity],
+    );
+  }
+
+  async function run(selected: SyncEntity[], source: "sync" | SyncEntity) {
+    setBusy(source);
     setNotice(null);
     setError(null);
+    setResults(selected.map((entity) => (entity === "customer" ? "Customers: syncing…" : "Vendors: syncing…")));
     try {
-      const response = await fetch("/api/qbo/sync", { method: "POST" });
-      const body = (await response.json()) as { message?: string };
+      const response = await fetch("/api/qbo/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entities: selected, direction, full }),
+      });
+      const body = (await response.json()) as SyncResponse;
+      const lines = (body.entities ?? []).map((result) => formatEntityResult(result.entity, result));
+      setResults(lines);
       if (body.message === RECONNECT_MESSAGE) setError(RECONNECT_MESSAGE);
-      else setNotice(body.message || (response.ok ? "Sync finished." : "Sync failed."));
+      else if (!response.ok) setError(body.message || "Sync failed.");
+      else setNotice(lines.join(" ") || body.message || "Sync finished.");
       await load();
     } catch (err) {
+      setResults([]);
       setError(err instanceof Error ? err.message : "Sync failed.");
     } finally {
       setBusy(null);
@@ -125,8 +173,12 @@ export function IntegrationsPage() {
                 <dd>{status.expiresAt ? formatWhen(status.expiresAt) : "—"}</dd>
               </div>
               <div>
-                <dt>Last sync</dt>
-                <dd>{status.lastSyncAt ? formatWhen(status.lastSyncAt) : "Never"}</dd>
+                <dt>Customers last sync</dt>
+                <dd>{status.lastSync?.customer ? formatWhen(status.lastSync.customer) : "Never"}</dd>
+              </div>
+              <div>
+                <dt>Vendors last sync</dt>
+                <dd>{status.lastSync?.vendor ? formatWhen(status.lastSync.vendor) : "Never"}</dd>
               </div>
             </dl>
             {needsReconnect ? <p className="banner error">{RECONNECT_MESSAGE}</p> : null}
@@ -155,9 +207,6 @@ export function IntegrationsPage() {
                   Connect
                 </button>
               )}
-              <button type="button" onClick={syncNow} disabled={(!connected && !needsReconnect) || busy !== null}>
-                {busy === "sync" ? "Syncing…" : "Sync now"}
-              </button>
               <button
                 type="button"
                 className="secondary"
@@ -168,6 +217,97 @@ export function IntegrationsPage() {
               </button>
             </div>
           </>
+        ) : null}
+      </section>
+      <section className="card integration-card">
+        <h2>Sync</h2>
+        <div className="sync-choices">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={entities.includes("customer")}
+              onChange={() => toggleEntity("customer")}
+            />
+            Customers
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={entities.includes("vendor")}
+              onChange={() => toggleEntity("vendor")}
+            />
+            Vendors
+          </label>
+        </div>
+        <fieldset className="sync-direction">
+          <legend>Direction</legend>
+          <label className="check">
+            <input
+              type="radio"
+              name="qbo-direction"
+              checked={direction === "pull"}
+              onChange={() => setDirection("pull")}
+            />
+            Pull from QuickBooks
+          </label>
+          <label className="check">
+            <input
+              type="radio"
+              name="qbo-direction"
+              checked={direction === "push"}
+              onChange={() => setDirection("push")}
+            />
+            Push ITS changes
+          </label>
+          <label className="check">
+            <input
+              type="radio"
+              name="qbo-direction"
+              checked={direction === "both"}
+              onChange={() => setDirection("both")}
+            />
+            Both
+          </label>
+        </fieldset>
+        <label className="check">
+          <input type="checkbox" checked={full} onChange={(event) => setFull(event.target.checked)} />
+          Full resync
+        </label>
+        <p className="hint">
+          Full resync ignores that entity&apos;s change cursor and reads every record. The other
+          entity&apos;s cursor stays put. Leave it off for an incremental pull.
+        </p>
+        <div className="actions">
+          <button
+            type="button"
+            onClick={() => void run(entities, "sync")}
+            disabled={entities.length === 0 || (!connected && !needsReconnect) || busy !== null}
+          >
+            {busy === "sync" ? "Syncing…" : "Start sync"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void run(["customer"], "customer")}
+            disabled={(!connected && !needsReconnect) || busy !== null}
+          >
+            {busy === "customer" ? "Syncing…" : "Sync customers"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void run(["vendor"], "vendor")}
+            disabled={(!connected && !needsReconnect) || busy !== null}
+          >
+            {busy === "vendor" ? "Syncing…" : "Sync vendors"}
+          </button>
+        </div>
+        {results.length > 0 ? (
+          <ul className="sync-results">
+            {results.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
         ) : null}
       </section>
       <section className="card integration-card">
@@ -201,6 +341,28 @@ export function IntegrationsPage() {
       </section>
     </main>
   );
+}
+
+function loadChoice(): { entities: SyncEntity[]; direction: SyncDirection; full: boolean } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { entities: DEFAULT_ENTITIES, direction: "both", full: false };
+    const parsed = JSON.parse(raw) as { entities?: unknown; direction?: unknown; full?: unknown };
+    const selected = Array.isArray(parsed.entities)
+      ? parsed.entities.filter((entry): entry is SyncEntity => entry === "customer" || entry === "vendor")
+      : [];
+    const direction =
+      parsed.direction === "pull" || parsed.direction === "push" || parsed.direction === "both"
+        ? parsed.direction
+        : "both";
+    return {
+      entities: selected.length > 0 ? selected : DEFAULT_ENTITIES,
+      direction,
+      full: parsed.full === true,
+    };
+  } catch {
+    return { entities: DEFAULT_ENTITIES, direction: "both", full: false };
+  }
 }
 
 function formatWhen(value: string): string {
