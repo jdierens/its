@@ -1,6 +1,7 @@
 export const FIXED_HEADERS = [
   "SKU",
   "Taxonomy",
+  "Item type",
   "Manufacturer",
   "Model",
   "Part number",
@@ -32,6 +33,7 @@ export type ExportAttribute = {
 export type ExportItem = {
   sku: string;
   taxonomy: string;
+  itemType: string;
   manufacturer: string;
   model: string;
   partNumber: string;
@@ -126,6 +128,7 @@ export function buildExportTable(items: readonly ExportItem[], pricingKeys: read
   const rows = items.map((item) => [
     item.sku,
     item.taxonomy,
+    item.itemType,
     item.manufacturer,
     item.model,
     item.partNumber,

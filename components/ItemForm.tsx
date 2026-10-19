@@ -25,8 +25,11 @@ import {
   DEFAULT_ECCN,
   NEW_CONDITION_NOTES,
   conditionNoteAfterChange,
+  DEFAULT_ITEM_TYPE,
+  ITEM_TYPES,
   htsError,
   type ItemCondition,
+  type ItemType,
 } from "@/lib/itemFields";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
@@ -58,6 +61,7 @@ type ItemSnapshot = {
   manufacturerName: string;
   model: string;
   partNumber: string;
+  itemType: ItemType;
   condition: ItemCondition;
   conditionNote: string;
   eccn: string;
@@ -86,6 +90,7 @@ const EMPTY_ITEM: ItemSnapshot = {
   manufacturerName: "",
   model: "",
   partNumber: "",
+  itemType: DEFAULT_ITEM_TYPE,
   condition: DEFAULT_CONDITION,
   conditionNote: "",
   eccn: DEFAULT_ECCN,
@@ -118,6 +123,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [manufacturerUnresolved, setManufacturerUnresolved] = useState(false);
   const [model, setModel] = useState("");
   const [partNumber, setPartNumber] = useState("");
+  const [itemType, setItemType] = useState<ItemType>(DEFAULT_ITEM_TYPE);
   const [condition, setCondition] = useState<ItemCondition>(DEFAULT_CONDITION);
   const [conditionNote, setConditionNote] = useState("");
   const [eccn, setEccn] = useState(DEFAULT_ECCN);
@@ -198,6 +204,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           setManufacturerName(item.manufacturerName);
           setModel(item.model);
           setPartNumber(item.partNumber);
+          setItemType(item.itemType);
           setCondition(item.condition);
           setConditionNote(item.conditionNote);
           setEccn(item.eccn || DEFAULT_ECCN);
@@ -218,6 +225,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             manufacturerName: item.manufacturerName,
             model: item.model,
             partNumber: item.partNumber,
+            itemType: item.itemType,
             condition: item.condition,
             conditionNote: item.conditionNote,
             eccn: item.eccn || DEFAULT_ECCN,
@@ -313,6 +321,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     manufacturerName,
     model,
     partNumber,
+    itemType,
     condition,
     conditionNote,
     eccn,
@@ -428,6 +437,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       manufacturerId,
       model,
       partNumber,
+      itemType,
       condition,
       conditionNote,
       eccn,
@@ -732,6 +742,24 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
         <fieldset>
           <legend>Main</legend>
           <div className="grid">
+            <label>
+              Item type
+              <select
+                aria-label="Item type"
+                value={itemType}
+                onChange={(event) => {
+                  const next = ITEM_TYPES.find((type) => type === event.target.value) ?? DEFAULT_ITEM_TYPE;
+                  setItemType(next);
+                  setSaved(false);
+                }}
+              >
+                {ITEM_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
             <ManufacturerSelect
               manufacturerId={manufacturerId}
               manufacturerName={manufacturerName}
@@ -1002,6 +1030,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                   manufacturerName,
                   model,
                   partNumber,
+                  itemType,
                   condition,
                   conditionNote,
                   eccn,

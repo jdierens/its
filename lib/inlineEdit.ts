@@ -5,6 +5,7 @@ import {
   conditionNoteAfterChange,
   htsError,
   isItemCondition,
+  isItemType,
 } from "@/lib/itemFields";
 import type { DataType, ItemListRow } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export function isEditableColumn(columnId: string): boolean {
     columnId === "us_hts" ||
     columnId === "ccats" ||
     columnId === "coo" ||
+    columnId === "item_type" ||
     PRICE_COLUMNS.has(columnId)
   );
 }
@@ -71,6 +73,12 @@ export function validateCell(input: {
   dataType?: DataType;
 }): CellCheck {
   const trimmed = input.value.trim();
+  if (input.columnId === "item_type") {
+    if (!isItemType(trimmed)) {
+      return { value: trimmed, error: "Item type must be Product, Kit/Package, Service, or Non-inventory." };
+    }
+    return { value: trimmed, error: null };
+  }
   if (input.columnId === "condition") {
     if (!isItemCondition(trimmed)) return { value: trimmed, error: "Condition must be New or Used." };
     return {
@@ -148,6 +156,7 @@ export function patchRow(row: ItemListRow, columnId: string, value: string): Ite
   if (columnId === "us_hts") return { ...row, usHts: value };
   if (columnId === "ccats") return { ...row, ccats: value };
   if (columnId === "coo") return { ...row, coo: value };
+  if (columnId === "item_type" && isItemType(value)) return { ...row, itemType: value };
   if (columnId === "ecommerce_price") return { ...row, ecommercePrice: value || null };
   if (columnId === "market_price") return { ...row, marketPrice: value || null };
   if (columnId === "msrp") return { ...row, msrp: value || null };
@@ -185,6 +194,7 @@ export function rawCellValue(row: ItemListRow, columnId: string): string {
   if (columnId === "us_hts") return row.usHts;
   if (columnId === "ccats") return row.ccats;
   if (columnId === "coo") return row.coo;
+  if (columnId === "item_type") return row.itemType;
   if (columnId === "ecommerce_price") return row.ecommercePrice ?? "";
   if (columnId === "market_price") return row.marketPrice ?? "";
   if (columnId === "msrp") return row.msrp ?? "";

@@ -1,7 +1,14 @@
 import { errorText } from "@/lib/errors";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { ITEM_IMAGE_BUCKET, signedImageUrls } from "@/lib/images";
-import { DEFAULT_CONDITION, DEFAULT_ECCN, isItemCondition } from "@/lib/itemFields";
+import {
+  DEFAULT_CONDITION,
+  DEFAULT_ECCN,
+  isItemCondition,
+  isItemType,
+  itemTypeOrDefault,
+  type ItemType,
+} from "@/lib/itemFields";
 import { getSupabase } from "@/lib/supabase";
 import type {
   Attribute,
@@ -72,6 +79,7 @@ type ItemRow = {
   us_hts: string | null;
   ccats: string | null;
   coo: string | null;
+  item_type: string | null;
   manufacturers: EmbeddedAttribute;
   item_attributes: ItemAttributeRow[] | null;
 };
@@ -102,6 +110,7 @@ type ListRow = {
   us_hts: string | null;
   ccats: string | null;
   coo: string | null;
+  item_type: string | null;
   updated_at: string | null;
   ecommerce_price?: unknown;
   market_price?: unknown;
@@ -113,7 +122,7 @@ type ListRow = {
 };
 
 const LIST_DETAIL =
-  "id, sku, name, quantity, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
+  "id, sku, name, item_type, quantity, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
 
 const PRICE_COLUMNS = ["ecommerce_price", "market_price", "msrp"] as const;
 
@@ -241,6 +250,7 @@ export type ResolvedItemQuery = {
   ids: string[] | null;
   condition: "" | "New" | "Used";
   manufacturerId: string | null;
+  itemType: "" | ItemType;
   unknownTax: boolean;
   empty: boolean;
 };
@@ -250,12 +260,15 @@ export async function resolveItemQuery(input: {
   q?: string | null;
   condition?: string | null;
   manufacturerId?: string | null;
+  itemType?: string | null;
 }): Promise<ResolvedItemQuery> {
   const supabase = getSupabase();
   const tax = input.tax?.trim().toUpperCase() ?? "";
   const q = input.q?.trim() ?? "";
   const condition = input.condition === "New" || input.condition === "Used" ? input.condition : "";
   const manufacturerId = input.manufacturerId?.trim() ?? "";
+  const rawItemType = input.itemType?.trim() ?? "";
+  const itemType = isItemType(rawItemType) ? rawItemType : "";
 
   let taxonomyId: string | null = null;
   let columns: ItemListColumn[] = [];
@@ -275,6 +288,7 @@ export async function resolveItemQuery(input: {
         ids: null,
         condition,
         manufacturerId: null,
+        itemType,
         unknownTax: true,
         empty: true,
       };
@@ -329,6 +343,7 @@ export async function resolveItemQuery(input: {
       ids: null,
       condition,
       manufacturerId: null,
+      itemType,
       unknownTax: false,
       empty: true,
     };
@@ -389,6 +404,7 @@ export async function resolveItemQuery(input: {
         ids,
         condition,
         manufacturerId: manufacturerId || null,
+        itemType,
         unknownTax: false,
         empty: true,
       };
@@ -401,6 +417,7 @@ export async function resolveItemQuery(input: {
     ids,
     condition,
     manufacturerId: manufacturerId || null,
+    itemType,
     unknownTax: false,
     empty: false,
   };
@@ -411,6 +428,7 @@ export async function fetchItemList(input: {
   q?: string | null;
   condition?: string | null;
   manufacturerId?: string | null;
+  itemType?: string | null;
 }): Promise<ItemList> {
   const supabase = getSupabase();
   const counted = await supabase.from("items").select("id", { count: "exact", head: true });
@@ -426,6 +444,7 @@ export async function fetchItemList(input: {
   if (resolved.taxonomyId) query = query.eq("taxonomy_id", resolved.taxonomyId);
   if (resolved.condition) query = query.eq("condition", resolved.condition);
   if (resolved.manufacturerId) query = query.eq("manufacturer_id", resolved.manufacturerId);
+  if (resolved.itemType) query = query.eq("item_type", resolved.itemType);
   if (resolved.ids) query = query.in("id", resolved.ids);
 
   const listed = await query;
@@ -482,6 +501,7 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
     manufacturerName: embeddedName(item.manufacturers),
     model: item.model ?? "",
     partNumber: item.part_number ?? "",
+    itemType: itemTypeOrDefault(item.item_type),
     condition: item.condition ?? DEFAULT_CONDITION,
     conditionNote: item.condition_note ?? "",
     eccn: item.eccn ?? DEFAULT_ECCN,
@@ -553,7 +573,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
   const { data, error } = await getSupabase()
     .from("items")
     .select(
-      "id, sku, name, description, notes, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
+      "id, sku, name, description, notes, item_type, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -579,6 +599,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     sku: item.sku,
     name: item.name,
     description: item.description ?? "",
+    itemType: itemTypeOrDefault(item.item_type),
     quantity: item.quantity,
     taxonomyId: item.taxonomy_id,
     manufacturerId: item.manufacturer_id,
@@ -662,6 +683,7 @@ export type ItemInput = {
   usHts: string;
   ccats: string;
   coo: string;
+  itemType: ItemType;
 };
 
 export type TaxonomyInput = {
@@ -681,6 +703,7 @@ function coreArgs(input: ItemInput) {
     p_us_hts: input.usHts.trim() || null,
     p_ccats: input.ccats.trim() || null,
     p_coo: input.coo.trim() || null,
+    p_item_type: input.itemType,
   };
 }
 

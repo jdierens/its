@@ -7,6 +7,7 @@
 - Print label is a barcode icon. Unsaved item changes ask you to save first so the label matches. Delete is a trash icon and still asks before removing the item. Change taxonomy sits in the same toolbar.
 - Leaving a page with unsaved changes asks you to confirm, in the browser and when following a link in the app.
 - The country of origin field is labeled COO on the item form, the items table, and the export. Hovering it shows Country of origin.
+- Items have an item type: Product, Kit/Package, Service, or Non-inventory. Existing items are Product. It shows in the Main section, as an items-table column with a filter, and in inline edit, bulk edit, and export. `create_item` and `update_item` take an optional item type; leaving it out creates a Product and does not change the stored type on update. Service and Non-inventory items should not track stock or need labels later. A kit may gain components later. QuickBooks mapping (Inventory, Group/Bundle, Service, NonInventory) comes later.
 
 ## 0.18.0
 

@@ -13,6 +13,7 @@ function item(patch: Partial<ExportItem> = {}): ExportItem {
   return {
     sku: "107075",
     taxonomy: "MEM",
+    itemType: "Product",
     manufacturer: "Samsung",
     model: "",
     partNumber: "M329R4GA0BB0-CQKEG",
@@ -47,7 +48,9 @@ test("pricing columns sit between COO and the primary image when those fields ex
     ["ecommerce_price", "market_price", "msrp", "pricing_checked_at"],
   );
 
-  assert.deepEqual(table.headers.slice(10, 18), [
+  assert.equal(table.headers[2], "Item type");
+  assert.equal(table.rows[0]?.[2], "Product");
+  assert.deepEqual(table.headers.slice(11, 19), [
     "COO",
     "Ecommerce price",
     "Market price",
@@ -58,15 +61,15 @@ test("pricing columns sit between COO and the primary image when those fields ex
     "Updated",
   ]);
   assert.equal(table.headers.at(-1), "speed");
-  assert.equal(table.rows[0]?.[11], "120.00");
-  assert.equal(table.rows[0]?.[15], "");
+  assert.equal(table.rows[0]?.[12], "120.00");
+  assert.equal(table.rows[0]?.[16], "");
   assert.equal(table.rows[0]?.at(-1), "4800");
 });
 
 test("pricing columns are left out when the database does not have them", () => {
   const table = buildExportTable([item()], []);
   assert.equal(table.headers.includes("Ecommerce price"), false);
-  assert.deepEqual(table.headers.slice(10, 14), ["COO", "Primary image URL", "Created", "Updated"]);
+  assert.deepEqual(table.headers.slice(11, 15), ["COO", "Primary image URL", "Created", "Updated"]);
   assert.equal(table.headers.at(-1), "speed");
 });
 

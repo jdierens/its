@@ -17,6 +17,7 @@ const ID_CHUNK = 150;
 const DETAIL_COLUMNS = [
   "id",
   "sku",
+  "item_type",
   "model",
   "part_number",
   "condition",
@@ -55,6 +56,7 @@ type ImageRow = {
 type ExportRow = {
   id: string;
   sku: string | null;
+  item_type: string | null;
   model: string | null;
   part_number: string | null;
   condition: string | null;
@@ -79,6 +81,7 @@ type ItemFilter = {
   taxonomyId: string | null;
   condition: "" | "New" | "Used";
   manufacturerId: string | null;
+  itemType: "" | "Product" | "Kit/Package" | "Service" | "Non-inventory";
   ids: string[] | null;
 };
 
@@ -114,6 +117,7 @@ async function selectRows(columns: string, filter: ItemFilter): Promise<ExportRo
       if (filter.taxonomyId) query = query.eq("taxonomy_id", filter.taxonomyId);
       if (filter.condition) query = query.eq("condition", filter.condition);
       if (filter.manufacturerId) query = query.eq("manufacturer_id", filter.manufacturerId);
+      if (filter.itemType) query = query.eq("item_type", filter.itemType);
       if (ids) query = query.in("id", ids);
       const listed = await query.range(from, from + PAGE - 1);
       if (listed.error) throw new Error(errorText(listed.error));
@@ -159,6 +163,7 @@ function toExportItem(row: ExportRow, pricingKeys: readonly PricingKey[], origin
   return {
     sku: text(row.sku),
     taxonomy: shortCode || text(taxonomy?.name),
+    itemType: text(row.item_type) || "Product",
     manufacturer: text(one(row.manufacturers)?.name),
     model: text(row.model),
     partNumber: text(row.part_number),
@@ -183,6 +188,7 @@ export async function loadExportItems(input: {
   q?: string;
   condition?: string;
   manufacturerId?: string;
+  itemType?: string;
   origin: string;
 }): Promise<{ items: ExportItem[]; pricingKeys: PricingKey[]; unknownTax: boolean }> {
   const pricingKeys = await presentPricingKeys();
@@ -194,6 +200,7 @@ export async function loadExportItems(input: {
       taxonomyId: null,
       condition: "",
       manufacturerId: null,
+      itemType: "",
       ids: null,
     });
     return { items: rows.map((row) => toExportItem(row, pricingKeys, origin)), pricingKeys, unknownTax: false };
@@ -208,6 +215,7 @@ export async function loadExportItems(input: {
     taxonomyId: resolved.taxonomyId,
     condition: resolved.condition,
     manufacturerId: resolved.manufacturerId,
+    itemType: resolved.itemType,
     ids: resolved.ids,
   });
   return { items: rows.map((row) => toExportItem(row, pricingKeys, origin)), pricingKeys, unknownTax: false };

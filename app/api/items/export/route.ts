@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
       q: text(record.q),
       condition: text(record.condition),
       manufacturerId: text(record.manufacturerId),
+      itemType: text(record.itemType),
       origin: publicOrigin(request),
     });
     if (loaded.unknownTax) {

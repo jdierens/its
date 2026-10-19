@@ -10,11 +10,13 @@ export function ItemExportMenu({
   q,
   condition,
   manufacturerId,
+  itemType,
 }: {
   tax: string;
   q: string;
   condition: string;
   manufacturerId: string;
+  itemType: string;
 }) {
   const [open, setOpen] = useState(false);
   const [scope, setScope] = useState<Scope>("view");
@@ -68,6 +70,7 @@ export function ItemExportMenu({
           q: scope === "view" ? q : "",
           condition: scope === "view" ? condition : "",
           manufacturerId: scope === "view" ? manufacturerId : "",
+          itemType: scope === "view" ? itemType : "",
         }),
       });
       if (!response.ok) {
@@ -135,7 +138,7 @@ export function ItemExportMenu({
             </label>
           </fieldset>
           <p className="export-note">
-            Current view uses the taxonomy filter and search, plus condition and manufacturer.
+            Current view uses the taxonomy filter and search, plus condition, manufacturer, and item type.
             Both choices include every matching item.
           </p>
           {google === null ? (

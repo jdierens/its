@@ -16,6 +16,7 @@ function row(patch: Partial<ItemListRow> = {}): ItemListRow {
     id: "1",
     sku: "107075",
     name: "Memory",
+    itemType: "Product",
     quantity: 1,
     taxonomyName: "memory",
     shortCode: "MEM",
@@ -45,6 +46,7 @@ test("sku and taxonomy stay read-only while trade and attribute cells edit", () 
   assert.equal(isEditableColumn("name"), false);
   assert.equal(isEditableColumn("model"), true);
   assert.equal(isEditableColumn("coo"), true);
+  assert.equal(isEditableColumn("item_type"), true);
   assert.equal(isEditableColumn("ecommerce_price"), true);
   assert.equal(isEditableColumn("attr:speed"), true);
 });
@@ -74,6 +76,8 @@ test("cell checks match the item form", () => {
   assert.equal(priceError("-1"), "Enter a price with up to 2 decimal places.");
   assert.equal(priceError("12.5"), null);
   assert.equal(priceError(""), null);
+  assert.equal(validateCell({ columnId: "item_type", value: "Service", condition: "Used" }).error, null);
+  assert.match(validateCell({ columnId: "item_type", value: "Bundle", condition: "Used" }).error ?? "", /Item type/);
 });
 
 test("a stale row is recognized from the server message", () => {
@@ -85,6 +89,11 @@ test("changing condition clears a note that no longer fits", () => {
   const next = patchRow(row(), "condition", "New");
   assert.equal(next.condition, "New");
   assert.equal(next.conditionNote, "");
+});
+
+test("item type edits stay on the allowed list", () => {
+  assert.equal(patchRow(row(), "item_type", "Kit/Package").itemType, "Kit/Package");
+  assert.equal(patchRow(row(), "item_type", "nope").itemType, "Product");
 });
 
 test("the edited time is shown in Pacific time", () => {

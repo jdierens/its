@@ -47,6 +47,7 @@ export type ItemListRow = {
   id: string;
   sku: string;
   name: string;
+  itemType: "Product" | "Kit/Package" | "Service" | "Non-inventory";
   quantity: number | null;
   taxonomyName: string | null;
   shortCode: string | null;
@@ -86,6 +87,7 @@ export type ItemDetail = {
   sku: string;
   name: string;
   description: string;
+  itemType: "Product" | "Kit/Package" | "Service" | "Non-inventory";
   quantity: number | null;
   taxonomyId: string | null;
   manufacturerId: string | null;

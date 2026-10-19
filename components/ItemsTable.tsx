@@ -19,7 +19,7 @@ import {
   validateCell,
 } from "@/lib/inlineEdit";
 import { fetchCountries, type Country } from "@/lib/countries";
-import { countryLabel, NEW_CONDITION_NOTES } from "@/lib/itemFields";
+import { ITEM_TYPES, countryLabel, isItemType, NEW_CONDITION_NOTES } from "@/lib/itemFields";
 import { fetchItemList, fetchListedItem, fetchTaxonomyChoices, saveItemCell } from "@/lib/items";
 import { fetchManufacturerChoices } from "@/lib/manufacturers";
 import type { DataType, ItemListColumn, ItemListRow, TaxonomyChoice } from "@/lib/types";
@@ -40,6 +40,7 @@ const LEADING = [
   { id: "taxonomy", label: "Taxonomy" },
   { id: "sku", label: "SKU" },
   { id: "name", label: "Name" },
+  { id: "item_type", label: "Item type" },
   { id: "manufacturer", label: "Manufacturer" },
   { id: "model", label: "Model" },
   { id: "part_number", label: "Part number" },
@@ -73,6 +74,7 @@ function columnLabel(column: ItemListColumn): string {
 function displayValue(item: ItemListRow, columnId: string, countries: Country[]): string {
   if (columnId === "sku") return item.sku || "—";
   if (columnId === "name") return item.name || "Untitled";
+  if (columnId === "item_type") return item.itemType;
   if (columnId === "manufacturer") return item.manufacturerName || "—";
   if (columnId === "model") return item.model || "—";
   if (columnId === "part_number") return item.partNumber || "—";
@@ -114,6 +116,8 @@ export function ItemsTable() {
   const q = params.get("q") ?? "";
   const conditionParam = params.get("condition") ?? "";
   const condition = conditionParam === "New" || conditionParam === "Used" ? conditionParam : "";
+  const typeParam = params.get("type") ?? "";
+  const itemType = isItemType(typeParam) ? typeParam : "";
   const manufacturerId = params.get("mfr") ?? "";
   const [draft, setDraft] = useState(q);
   const [choices, setChoices] = useState<TaxonomyChoice[]>([]);
@@ -198,7 +202,7 @@ export function ItemsTable() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchItemList({ tax, q, condition, manufacturerId })
+    fetchItemList({ tax, q, condition, manufacturerId, itemType })
       .then((result) => {
         if (cancelled) return;
         setRows(result.rows);
@@ -222,7 +226,7 @@ export function ItemsTable() {
     return () => {
       cancelled = true;
     };
-  }, [tax, q, condition, manufacturerId]);
+  }, [tax, q, condition, manufacturerId, itemType]);
 
   useEffect(() => {
     if (!active || editing) return;
@@ -473,6 +477,18 @@ export function ItemsTable() {
           <option value="Used">Used</option>
         </select>
         <select
+          aria-label="Filter by item type"
+          value={itemType}
+          onChange={(event) => setParam("type", event.target.value)}
+        >
+          <option value="">All item types</option>
+          {ITEM_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
+        </select>
+        <select
           aria-label="Filter by manufacturer"
           value={manufacturers.some((maker) => maker.id === manufacturerId) ? manufacturerId : ""}
           onChange={(event) => setParam("mfr", event.target.value)}
@@ -504,7 +520,7 @@ export function ItemsTable() {
         <p className="items-count">
           {loading && rows.length === 0 ? "Loading items…" : `${rows.length} of ${total} items`}
         </p>
-        <ItemExportMenu tax={tax} q={q} condition={condition} manufacturerId={manufacturerId} />
+        <ItemExportMenu tax={tax} q={q} condition={condition} manufacturerId={manufacturerId} itemType={itemType} />
         <Link className="button" href="/items/new">
           New item
         </Link>
@@ -643,7 +659,9 @@ export function ItemsTable() {
                         ) : editing && editingCell ? (
                           <CellEditor
                             mode={
-                              column.id === "condition" || (column.id === "condition_note" && item.condition === "New")
+                              column.id === "condition" ||
+                              column.id === "item_type" ||
+                              (column.id === "condition_note" && item.condition === "New")
                                 ? "select"
                                 : column.id === "manufacturer"
                                   ? "manufacturer"
@@ -661,15 +679,17 @@ export function ItemsTable() {
                             display={editorDisplay(item, column.id, countries)}
                             seed={editing.seed}
                             options={
-                              column.id === "condition"
-                                ? [
-                                    { value: "Used", label: "Used" },
-                                    { value: "New", label: "New" },
-                                  ]
-                                : [
-                                    { value: "", label: "None" },
-                                    ...NEW_CONDITION_NOTES.map((note) => ({ value: note, label: note })),
-                                  ]
+                              column.id === "item_type"
+                                ? ITEM_TYPES.map((type) => ({ value: type, label: type }))
+                                : column.id === "condition"
+                                  ? [
+                                      { value: "Used", label: "Used" },
+                                      { value: "New", label: "New" },
+                                    ]
+                                  : [
+                                      { value: "", label: "None" },
+                                      ...NEW_CONDITION_NOTES.map((note) => ({ value: note, label: note })),
+                                    ]
                             }
                             countries={countries}
                             allowedValues={column.usesList ? column.allowedValues : undefined}
@@ -713,7 +733,7 @@ export function ItemsTable() {
       {pendingBulk ? (
         <ConfirmDialog
           title="Update selected items"
-          body={`Set ${pendingBulk.field === "coo" ? "COO" : pendingBulk.field === "eccn" ? "ECCN" : "Condition"} to ${pendingBulk.label} on ${selected.size} ${selected.size === 1 ? "item" : "items"}?`}
+          body={`Set ${pendingBulk.field === "coo" ? "COO" : pendingBulk.field === "eccn" ? "ECCN" : pendingBulk.field === "item_type" ? "Item type" : "Condition"} to ${pendingBulk.label} on ${selected.size} ${selected.size === 1 ? "item" : "items"}?`}
           confirmLabel="Update"
           busy={bulkBusy}
           onCancel={() => {
