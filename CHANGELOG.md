@@ -6,6 +6,7 @@
 - Save is an icon. It stays grey until the form differs from the loaded values, and it turns grey again if those edits are undone. A dot marks unsaved changes, a spinner shows while saving, and a check shows briefly after a save. Ctrl or Cmd+S saves.
 - Print label is a barcode icon. Unsaved item changes ask you to save first so the label matches. Delete is a trash icon and still asks before removing the item. Change taxonomy sits in the same toolbar.
 - Leaving a page with unsaved changes asks you to confirm, in the browser and when following a link in the app.
+- The country of origin field is labeled COO on the item form, the items table, and the export. Hovering it shows Country of origin.
 
 ## 0.18.0
 

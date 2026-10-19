@@ -543,7 +543,13 @@ export function ItemsTable() {
           <thead>
             <tr role="row" aria-rowindex={1}>
               {gridColumns.map((column, index) => (
-                <th key={column.id} role="columnheader" aria-colindex={index + 1} scope="col">
+                <th
+                  key={column.id}
+                  role="columnheader"
+                  aria-colindex={index + 1}
+                  scope="col"
+                  title={column.id === "coo" ? "Country of origin" : undefined}
+                >
                   {column.id === "photo" ? (
                     <>
                     <span className="sr-only">Photo</span>
