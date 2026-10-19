@@ -485,9 +485,11 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                   attribute={{
                     id: draft.key,
                     name: draft.name,
+                    label: null,
                     data_type: draft.data_type,
                     unit: draft.unit || null,
                     uses_list: draft.uses_list,
+                    sortOrder: 0,
                     allowedValues: [],
                     values: [],
                   }}

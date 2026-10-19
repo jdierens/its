@@ -25,7 +25,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Items", href: "/items", description: "Inventory items" },
       {
-        label: "Taxonomies & fields",
+        label: "Taxonomies & Fields",
         href: "/taxonomies",
         description: "Taxonomies, fields, and value lists",
       },
@@ -191,7 +191,7 @@ export function pageMetaFor(pathname: string): PageMeta {
       title: "Fields",
       crumbs: [
         { label: "Inventory" },
-        { label: "Taxonomies & fields", href: "/taxonomies" },
+        { label: "Taxonomies & Fields", href: "/taxonomies" },
         { label: "Fields" },
       ],
     };

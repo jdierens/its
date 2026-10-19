@@ -322,6 +322,126 @@ legend {
   background: #e8f1fa;
 }
 
+.taxonomy-table tr.row-dirty td {
+  background: #fff8e8;
+}
+
+.page-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.saved-flash {
+  color: var(--ok-ink);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.shared-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.field-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+}
+
+.field-order {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.field-order button {
+  padding: 0.35rem 0.5rem;
+}
+
+.dialog-wide {
+  width: min(640px, 100%);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+}
+
+form.dialog {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  border: 0;
+}
+
+.picker-list {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.picker-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.picker-list li:last-child {
+  border-bottom: 0;
+}
+
+.picker-list label {
+  display: flex;
+  flex: 1;
+  gap: 0.6rem;
+  align-items: flex-start;
+  margin: 0;
+  color: var(--ink);
+}
+
+.picker-list input {
+  width: auto;
+  margin-top: 0.2rem;
+}
+
+.picker-list .code-badge {
+  margin-left: 0.35rem;
+}
+
+.picker-used {
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.picker-source {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.picker-source label {
+  flex: 1;
+}
+
+.picker-source button {
+  margin-bottom: 0.05rem;
+}
+
 .code-input {
   font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
   letter-spacing: 0.04em;

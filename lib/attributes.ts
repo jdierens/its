@@ -20,21 +20,52 @@ export type AttributeInput = {
   dataType: DataType;
   unit: string | null;
   usesList: boolean;
+  label?: string | null;
 };
+
+export type FieldTaxonomyRef = {
+  id: string;
+  name: string;
+  shortCode: string | null;
+};
+
+export type FieldCatalogEntry = {
+  id: string;
+  name: string;
+  label: string | null;
+  dataType: DataType;
+  unit: string | null;
+  usesList: boolean;
+  taxonomies: FieldTaxonomyRef[];
+};
+
+const DATA_TYPES = new Set<DataType>(["integer", "text", "decimal"]);
+
+function asDataType(value: string): DataType {
+  return DATA_TYPES.has(value as DataType) ? (value as DataType) : "text";
+}
 
 function friendlyAttributeError(error: unknown): string {
   const text = errorText(error);
   if (
     text.includes("attributes_taxonomy_name_lower") ||
-    text.includes("attributes_taxonomy_id_name")
+    text.includes("attributes_taxonomy_id_name") ||
+    text.includes("already exists on this taxonomy") ||
+    text.includes("already has a field named")
   ) {
     return "A field with that name already exists on this taxonomy.";
+  }
+  if (text.includes("attributes_identity_uidx")) {
+    return "A field with that name, type, unit, and label already exists.";
   }
   if (text.includes("attribute_values_attribute_value_lower")) {
     return "That value is already on the list.";
   }
   if (text.includes("item_attributes_attribute_id_fkey")) {
     return "This field is still used on items, so it was not deleted.";
+  }
+  if (text.includes("Can't remove this field") || text.includes("Can''t remove this field")) {
+    return text.replace(/Can''t/g, "Can't");
   }
   return text;
 }
@@ -62,40 +93,169 @@ export async function fetchAttributeUsage(
   return usage;
 }
 
+type CatalogTaxonomy = {
+  id: string;
+  name: string;
+  short_code: string | null;
+};
+
+type CatalogLink = {
+  taxonomies: CatalogTaxonomy | CatalogTaxonomy[] | null;
+};
+
+type CatalogRow = {
+  id: string;
+  name: string;
+  label: string | null;
+  data_type: string;
+  unit: string | null;
+  uses_list: boolean | null;
+  taxonomy_attributes: CatalogLink[] | null;
+};
+
+function oneTaxonomy(value: CatalogTaxonomy | CatalogTaxonomy[] | null): CatalogTaxonomy | null {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+export async function fetchFieldCatalog(): Promise<FieldCatalogEntry[]> {
+  const { data, error } = await getSupabase()
+    .from("attributes")
+    .select(
+      "id, name, label, data_type, unit, uses_list, taxonomy_attributes(taxonomies(id, name, short_code))",
+    )
+    .order("name");
+
+  if (error) throw new Error(errorText(error));
+
+  return ((data ?? []) as CatalogRow[])
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      label: row.label,
+      dataType: asDataType(row.data_type),
+      unit: row.unit,
+      usesList: row.uses_list !== false,
+      taxonomies: (row.taxonomy_attributes ?? []).flatMap((link) => {
+        const taxonomy = oneTaxonomy(link.taxonomies);
+        if (!taxonomy) return [];
+        return [
+          {
+            id: taxonomy.id,
+            name: taxonomy.name,
+            shortCode: taxonomy.short_code,
+          },
+        ];
+      }),
+    }))
+    .sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) ||
+        (a.label ?? "").localeCompare(b.label ?? ""),
+    );
+}
+
+export async function fetchTaxonomyAttributeUsage(
+  taxonomyId: string,
+  attributeIds: string[],
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  if (attributeIds.length === 0) return counts;
+
+  const supabase = getSupabase();
+  const items = await supabase.from("items").select("id").eq("taxonomy_id", taxonomyId);
+  if (items.error) throw new Error(errorText(items.error));
+  const itemIds = (items.data ?? []).map((row) => row.id as string);
+  if (itemIds.length === 0) return counts;
+
+  const values = await supabase
+    .from("item_attributes")
+    .select("attribute_id")
+    .in("item_id", itemIds)
+    .in("attribute_id", attributeIds);
+  if (values.error) throw new Error(errorText(values.error));
+
+  for (const row of values.data ?? []) {
+    const id = row.attribute_id as string;
+    counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
+}
+
 export async function createAttribute(taxonomyId: string, input: AttributeInput): Promise<void> {
-  const { error } = await getSupabase().from("attributes").insert({
-    taxonomy_id: taxonomyId,
-    name: input.name.trim(),
-    data_type: input.dataType,
-    unit: input.unit,
-    uses_list: input.usesList,
+  const { error } = await getSupabase().rpc("create_field", {
+    p_taxonomy_id: taxonomyId,
+    p_name: input.name.trim(),
+    p_data_type: input.dataType,
+    p_unit: input.unit,
+    p_uses_list: input.usesList,
+    p_label: input.label?.trim() || null,
   });
   if (error) throw new Error(friendlyAttributeError(error));
 }
 
 export async function updateAttribute(id: string, input: AttributeInput): Promise<void> {
-  const { error } = await getSupabase()
-    .from("attributes")
-    .update({
-      name: input.name.trim(),
-      data_type: input.dataType,
-      unit: input.unit,
-      uses_list: input.usesList,
-    })
-    .eq("id", id);
+  const patch: {
+    name: string;
+    data_type: DataType;
+    unit: string | null;
+    uses_list: boolean;
+    label?: string | null;
+  } = {
+    name: input.name.trim(),
+    data_type: input.dataType,
+    unit: input.unit,
+    uses_list: input.usesList,
+  };
+  if (input.label !== undefined) patch.label = input.label?.trim() || null;
+
+  const { error } = await getSupabase().from("attributes").update(patch).eq("id", id);
   if (error) throw new Error(friendlyAttributeError(error));
 }
 
-export async function deleteAttribute(id: string): Promise<void> {
-  const usage = await fetchAttributeUsage([id]);
-  const count = usage[id]?.itemCount ?? 0;
-  if (count > 0) {
-    throw new Error(
-      `This field is used on ${count} ${count === 1 ? "item" : "items"}. Clear it on those items before deleting it.`,
-    );
-  }
-  const { error } = await getSupabase().from("attributes").delete().eq("id", id);
+export async function linkAttributes(taxonomyId: string, attributeIds: string[]): Promise<number> {
+  const { data, error } = await getSupabase().rpc("link_taxonomy_attributes", {
+    p_taxonomy_id: taxonomyId,
+    p_attribute_ids: attributeIds,
+  });
   if (error) throw new Error(friendlyAttributeError(error));
+  return typeof data === "number" ? data : 0;
+}
+
+export async function unlinkAttribute(taxonomyId: string, attributeId: string): Promise<void> {
+  const { error } = await getSupabase().rpc("unlink_taxonomy_attribute", {
+    p_taxonomy_id: taxonomyId,
+    p_attribute_id: attributeId,
+  });
+  if (error) throw new Error(friendlyAttributeError(error));
+}
+
+export async function deleteField(id: string): Promise<void> {
+  const { error } = await getSupabase().rpc("delete_field", { p_attribute_id: id });
+  if (error) throw new Error(friendlyAttributeError(error));
+}
+
+export async function mergeFields(keepId: string, dropId: string): Promise<void> {
+  const { error } = await getSupabase().rpc("merge_attributes", {
+    p_keep: keepId,
+    p_drop: dropId,
+  });
+  if (error) throw new Error(friendlyAttributeError(error));
+}
+
+export async function saveFieldOrder(taxonomyId: string, attributeIds: string[]): Promise<void> {
+  const supabase = getSupabase();
+  const results = await Promise.all(
+    attributeIds.map((attributeId, index) =>
+      supabase
+        .from("taxonomy_attributes")
+        .update({ sort_order: index + 1 })
+        .eq("taxonomy_id", taxonomyId)
+        .eq("attribute_id", attributeId),
+    ),
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw new Error(errorText(failed.error));
 }
 
 export async function addAttributeValue(attributeId: string, value: string): Promise<void> {
