@@ -43,7 +43,7 @@ const SEARCH_COLUMNS = [
 ] as const;
 
 export async function fetchContactList(kind: ContactKind, q: string): Promise<ContactList> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const table = tableFor(kind);
   const counted = await supabase.from(table).select("id", { count: "exact", head: true });
   if (counted.error) throw new Error(errorText(counted.error));
@@ -94,7 +94,7 @@ export async function fetchContactList(kind: ContactKind, q: string): Promise<Co
 }
 
 export async function fetchContact(kind: ContactKind, id: string): Promise<Contact | null> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from(tableFor(kind))
     .select(DETAIL_COLUMNS)
     .eq("id", id)
@@ -105,7 +105,7 @@ export async function fetchContact(kind: ContactKind, id: string): Promise<Conta
 }
 
 export async function createContact(kind: ContactKind, input: ContactInput): Promise<string> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from(tableFor(kind))
     .insert({ ...toRow(input), sync_status: "local" })
     .select("id")
@@ -120,7 +120,7 @@ export async function updateContact(
   input: ContactInput,
   qboId: string | null,
 ): Promise<void> {
-  const { error } = await getSupabase()
+  const { error } = await (await getSupabase())
     .from(tableFor(kind))
     .update({ ...toRow(input), sync_status: qboId ? "pending" : "local" })
     .eq("id", id);

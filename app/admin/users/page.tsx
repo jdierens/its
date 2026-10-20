@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/ComingSoon";
+import { UsersAdmin } from "@/components/UsersAdmin";
 
 export default function UsersPage() {
-  return <ComingSoon description="Manage who can sign in and what they can do." />;
+  return <UsersAdmin />;
 }

@@ -102,13 +102,13 @@ function text(value: string | null | undefined): string {
 
 async function presentPricingKeys(): Promise<PricingKey[]> {
   const keys = PRICING_FIELDS.map((field) => field.key);
-  const probe = await getSupabase().from("items").select(keys.join(",")).limit(1);
+  const probe = await (await getSupabase()).from("items").select(keys.join(",")).limit(1);
   if (probe.error) return [];
   return [...keys];
 }
 
 async function selectRows(columns: string, filter: ItemFilter): Promise<ExportRow[]> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const records: ExportRow[] = [];
   const groups = filter.ids && filter.ids.length > ID_CHUNK
     ? Array.from({ length: Math.ceil(filter.ids.length / ID_CHUNK) }, (_, index) =>

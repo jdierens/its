@@ -86,7 +86,7 @@ function latest(left: string | null, right: string | null): string | null {
 
 async function readLogs() {
   try {
-    const { data, error } = await getSupabase()
+    const { data, error } = await (await getSupabase())
       .from("qbo_sync_log")
       .select("id, started_at, finished_at, entity, direction, status, message")
       .order("created_at", { ascending: false })

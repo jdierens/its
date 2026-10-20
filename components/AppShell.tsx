@@ -34,6 +34,8 @@ import {
   type ReactNode,
 } from "react";
 import { AppRevision, revisionMini, revisionTooltip } from "@/components/AppRevision";
+import { SignedInUser } from "@/components/SignedInUser";
+import { fetchCurrentAppUser, type AppUser } from "@/lib/appUsers";
 import { isNavActive, NAV_GROUPS, pageMetaFor, type PageMeta } from "@/lib/nav";
 import { isPublicPath } from "@/lib/publicPaths";
 
@@ -79,6 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [override, setOverrideState] = useState<PageMeta | null>(null);
+  const [account, setAccount] = useState<AppUser | null>(null);
   const setOverride = useCallback((meta: PageMeta | null) => {
     setOverrideState(meta);
   }, []);
@@ -92,6 +95,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setDrawerOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (isPublicPath(pathname) || pathname === "/login" || pathname === "/waiting") return;
+    let cancelled = false;
+    fetchCurrentAppUser()
+      .then((user) => {
+        if (!cancelled) setAccount(user);
+      })
+      .catch(() => {
+        if (!cancelled) setAccount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -118,11 +136,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     });
   }
 
-  // Public legal pages render on their own. When Google sign-in is added, these
-  // paths must also stay outside the auth middleware. See lib/publicPaths.ts.
-  if (isPublicPath(pathname)) {
+  // Legal pages, OAuth returns, and the sign-in screens render without the shell.
+  if (isPublicPath(pathname) || pathname === "/login" || pathname === "/waiting") {
     return children;
   }
+
+  const groups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.href !== "/admin/users" || account?.role === "admin"),
+  })).filter((group) => group.items.length > 0);
 
   const shellClass = [
     "app-shell",
@@ -152,7 +174,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <AppRevision />
           </div>
           <nav className="sidebar-nav" aria-label="Main">
-            {NAV_GROUPS.map((group) => (
+            {groups.map((group) => (
               <div className="nav-group" key={group.label}>
                 <div className="nav-group-label">{group.label}</div>
                 {group.items.map((item) => {
@@ -195,6 +217,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             ))}
           </nav>
+          <SignedInUser label={account?.name || account?.email || ""} />
           <div className="sidebar-legal">
             <Link href="/privacy" title="Privacy Policy">
               Privacy
