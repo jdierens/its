@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DEFAULT_GEMINI_MODEL } from "./config.ts";
 import {
+  GEMINI_MAX_OUTPUT_TOKENS,
   GEMINI_TIMEOUT_MS,
   geminiDeveloperUrl,
   geminiHttpFailure,
   geminiProbeBody,
   geminiRequestBody,
+  geminiThinkingLevel,
   geminiThrownFailure,
   keyLast4,
   publicGeminiText,
@@ -17,12 +20,23 @@ test("Lens calls the Gemini Developer API, not Vertex", () => {
   assert.equal(url, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
   assert.equal(url.includes("aiplatform.googleapis.com"), false);
   const body = geminiRequestBody({
+    model: DEFAULT_GEMINI_MODEL,
     prompt: "read the label",
     images: [{ mimeType: "image/jpeg", data: "aaaa" }],
   });
-  const config = body.generationConfig as { thinkingConfig?: { thinkingLevel?: string } };
-  assert.equal(config.thinkingConfig?.thinkingLevel, "low");
-  assert.equal(GEMINI_TIMEOUT_MS > 25_000 && GEMINI_TIMEOUT_MS < 60_000, true);
+  const config = body.generationConfig as {
+    thinkingConfig?: { thinkingLevel?: string };
+    maxOutputTokens?: number;
+    responseJsonSchema?: unknown;
+  };
+  assert.equal(DEFAULT_GEMINI_MODEL, "gemini-3.5-flash-lite");
+  assert.equal(geminiThinkingLevel(DEFAULT_GEMINI_MODEL), "minimal");
+  assert.equal(geminiThinkingLevel("gemini-3.8-flash"), "low");
+  assert.equal(config.thinkingConfig?.thinkingLevel, "minimal");
+  assert.equal(config.maxOutputTokens, GEMINI_MAX_OUTPUT_TOKENS);
+  assert.equal(GEMINI_MAX_OUTPUT_TOKENS <= 1024, true);
+  assert.ok(config.responseJsonSchema);
+  assert.equal(GEMINI_TIMEOUT_MS <= 20_000, true);
 });
 
 test("a timeout is not reported as a network failure", () => {
@@ -53,7 +67,7 @@ test("Google errors name the cause and hide the key", () => {
 test("the probe reports only the last four characters and strips the key from Google's body", () => {
   assert.equal(keyLast4("AIzaSyEXAMPLEKEY1234abcd"), "abcd");
   assert.equal(keyLast4("short"), "");
-  const body = geminiProbeBody();
+  const body = geminiProbeBody(DEFAULT_GEMINI_MODEL);
   assert.equal(JSON.stringify(body).includes("inline_data"), false);
   const headers = publicProbeHeaders({
     get(name: string) {

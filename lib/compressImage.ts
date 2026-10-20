@@ -15,7 +15,12 @@ function jpegName(name: string): string {
 }
 
 /** Shrink a large photo to a JPEG before upload. GIFs stay as they are. */
-export async function compressImage(file: File, force = false, maxEdge = COMPRESS_MAX_EDGE): Promise<File> {
+export async function compressImage(
+  file: File,
+  force = false,
+  maxEdge = COMPRESS_MAX_EDGE,
+  quality = JPEG_QUALITY,
+): Promise<File> {
   if (!shouldCompress(file, force)) return file;
   if (typeof document === "undefined") return file;
 
@@ -39,7 +44,7 @@ export async function compressImage(file: File, force = false, maxEdge = COMPRES
   context.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
 
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
   if (!blob) return file;
   return new File([blob], jpegName(file.name || "photo.jpg"), { type: "image/jpeg", lastModified: Date.now() });
 }

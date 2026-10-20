@@ -1,13 +1,20 @@
 import { lensResponseSchema } from "@/lib/lens/parse";
 import type { LensImage } from "@/lib/lens/images";
 
-export const GEMINI_TIMEOUT_MS = 50_000;
+export const GEMINI_TIMEOUT_MS = 20_000;
+export const GEMINI_MAX_OUTPUT_TOKENS = 1024;
+
+export function geminiThinkingLevel(model: string): "minimal" | "low" {
+  const name = model.toLowerCase();
+  if (name.includes("3.8") || name.includes("gemini-4")) return "low";
+  return "minimal";
+}
 
 export function geminiDeveloperUrl(model: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 }
 
-export function geminiRequestBody(input: { prompt: string; images: LensImage[] }): Record<string, unknown> {
+export function geminiRequestBody(input: { model: string; prompt: string; images: LensImage[] }): Record<string, unknown> {
   return {
     contents: [
       {
@@ -21,7 +28,8 @@ export function geminiRequestBody(input: { prompt: string; images: LensImage[] }
       },
     ],
     generationConfig: {
-      thinkingConfig: { thinkingLevel: "low" },
+      thinkingConfig: { thinkingLevel: geminiThinkingLevel(input.model) },
+      maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
       responseMimeType: "application/json",
       responseJsonSchema: lensResponseSchema(),
     },
@@ -55,10 +63,10 @@ export function publicProbeHeaders(headers: { get(name: string): string | null }
   return out;
 }
 
-export function geminiProbeBody(): Record<string, unknown> {
+export function geminiProbeBody(model: string): Record<string, unknown> {
   return {
     contents: [{ role: "user", parts: [{ text: "Reply with the single word ok." }] }],
-    generationConfig: { thinkingConfig: { thinkingLevel: "low" }, maxOutputTokens: 16 },
+    generationConfig: { thinkingConfig: { thinkingLevel: geminiThinkingLevel(model) }, maxOutputTokens: 16 },
   };
 }
 
@@ -82,7 +90,7 @@ export async function probeGemini(input: { apiKey: string; model: string }): Pro
         "content-type": "application/json",
         "x-goog-api-key": input.apiKey,
       },
-      body: JSON.stringify(geminiProbeBody()),
+      body: JSON.stringify(geminiProbeBody(input.model)),
       signal: AbortSignal.timeout(20_000),
     });
     const bodyText = await response.text();
@@ -165,7 +173,7 @@ export async function identifyWithGemini(input: {
         "content-type": "application/json",
         "x-goog-api-key": input.apiKey,
       },
-      body: JSON.stringify(geminiRequestBody({ prompt: input.prompt, images: input.images })),
+      body: JSON.stringify(geminiRequestBody({ model: input.model, prompt: input.prompt, images: input.images })),
       signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
     });
   } catch (error) {
