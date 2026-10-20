@@ -22,6 +22,7 @@ import {
   capturedPhrase,
   exactPacificTime,
   formatMoney,
+  moneyInput,
   parseMoney,
   salesStats,
   type PriceQuoteSource,
@@ -542,7 +543,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
             </label>
             <label>
               Price
-              <input value={quotePrice} inputMode="decimal" autoComplete="off" onChange={(event) => setQuotePrice(event.target.value)} />
+              <MoneyInput value={quotePrice} onChange={setQuotePrice} />
             </label>
             <label>
               Currency
@@ -679,7 +680,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
             </label>
             <label>
               Unit price
-              <input value={txnUnit} inputMode="decimal" autoComplete="off" onChange={(event) => setTxnUnit(event.target.value)} />
+              <MoneyInput value={txnUnit} onChange={setTxnUnit} />
             </label>
             {txnType === "sell" ? (
               <label>
@@ -764,9 +765,20 @@ function PriceField({
   return (
     <label>
       {label}
-      <input value={value} inputMode="decimal" autoComplete="off" onChange={(event) => onChange(event.target.value)} />
+      <MoneyInput value={value} onChange={onChange} />
       <span className="hint">{updatedAt ? `Updated ${exactPacificTime(updatedAt)}` : "Not set"}</span>
     </label>
+  );
+}
+
+function MoneyInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <span className="money-input">
+      <span className="money-prefix" aria-hidden="true">
+        $
+      </span>
+      <input value={value} inputMode="decimal" autoComplete="off" onChange={(event) => onChange(event.target.value)} />
+    </span>
   );
 }
 
@@ -802,7 +814,7 @@ function SortHeader({
 }
 
 function moneyField(amount: number | null): string {
-  return amount == null ? "" : amount.toFixed(2);
+  return moneyInput(amount);
 }
 
 function formatQty(qty: number | null): string {

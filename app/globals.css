@@ -2381,3 +2381,50 @@ p.error {
   gap: 0.5rem 0.8rem;
   align-items: baseline;
 }
+
+.money-input {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 0.6rem;
+}
+
+.money-input input {
+  border: 0;
+  padding: 0.5rem 0;
+  background: transparent;
+}
+
+.money-prefix {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.cell-combo:has(.money-prefix) {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  height: 24px;
+  min-width: 7.5rem;
+  padding-left: 0.35rem;
+  border: 1px solid #0b3f6e;
+  border-radius: 3px;
+  background: #fff;
+}
+
+.cell-combo:has(.money-prefix) .cell-input {
+  min-width: 0;
+  height: 22px;
+  padding: 0 0.35rem 0 0;
+  border: 0;
+  background: transparent;
+}
+
+.cell-combo .money-prefix {
+  color: #243246;
+  font-size: 0.85em;
+}

@@ -4,7 +4,9 @@ import {
   capturedPhrase,
   exactPacificTime,
   flagOutliers,
+  formatMoney,
   median,
+  moneyInput,
   parseMoney,
   parseWindowDays,
   quotesFromBrowse,
@@ -15,8 +17,18 @@ import {
 test("money accepts dollars and cents and rejects the rest", () => {
   assert.deepEqual(parseMoney(""), { ok: true, amount: null });
   assert.deepEqual(parseMoney("12.50"), { ok: true, amount: 12.5 });
+  assert.deepEqual(parseMoney("$1,234.56"), { ok: true, amount: 1234.56 });
+  assert.deepEqual(parseMoney("1,234.56"), { ok: true, amount: 1234.56 });
+  assert.deepEqual(parseMoney("$1234.56"), { ok: true, amount: 1234.56 });
+  assert.deepEqual(parseMoney("$"), { ok: true, amount: null });
   assert.equal(parseMoney("12.505").ok, false);
   assert.equal(parseMoney("-1").ok, false);
+  assert.equal(parseMoney("USD 12").ok, false);
+  assert.equal(parseMoney("10,000,000,000").ok, false);
+  assert.equal(formatMoney(1234.5), "$1,234.50");
+  assert.equal(formatMoney(null), "—");
+  assert.equal(moneyInput(1234.5), "1,234.50");
+  assert.equal(moneyInput(null), "");
 });
 
 test("median and outlier flags use 30 percent and 300 percent", () => {
