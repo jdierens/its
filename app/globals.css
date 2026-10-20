@@ -2065,7 +2065,71 @@ tr.quote-latest td {
   color: var(--danger-ink);
 }
 
+.label-settings > div,
+.label-settings > .hint {
+  margin-top: 0.85rem;
+}
+
+.bin-desk {
+  display: grid;
+  gap: 1rem;
+}
+
+.bin-desk form {
+  margin: 0;
+}
+
+.bin-desk h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.bin-status {
+  display: flex;
+  gap: 2rem;
+  padding: 0.9rem 1rem;
+}
+
+.bin-status strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.bin-types {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.bin-types button {
+  flex: 1;
+  min-height: 3.4rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.bin-types button[aria-pressed="false"] {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--line);
+}
+
+.bin-go {
+  min-height: 3.2rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.bin-desk table button {
+  width: auto;
+}
+
 @media (max-width: 700px) {
+  .bin-types {
+    flex-direction: column;
+  }
+
   .integration-facts {
     grid-template-columns: 1fr;
   }
