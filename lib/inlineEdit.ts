@@ -1,3 +1,4 @@
+import { parseMoney } from "@/lib/pricing/quotes";
 import { productUrlError } from "@/lib/productUrl";
 import {
   DEFAULT_ECCN,
@@ -47,10 +48,13 @@ export function isEditableColumn(columnId: string): boolean {
 }
 
 export function priceError(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return "Enter a price with up to 2 decimal places.";
-  if (Number(trimmed) >= 10_000_000_000) return "Price is too large.";
+  const parsed = parseMoney(value);
+  if (!parsed.ok) {
+    return parsed.message === "That amount is too large."
+      ? "Price is too large."
+      : "Enter a price with up to 2 decimal places.";
+  }
+  if (parsed.amount != null && parsed.amount >= 10_000_000_000) return "Price is too large.";
   return null;
 }
 
@@ -122,7 +126,10 @@ export function validateCell(input: {
     return { value: code, error: null };
   }
   if (PRICE_COLUMNS.has(input.columnId)) {
-    return { value: trimmed, error: priceError(trimmed) };
+    const parsed = parseMoney(input.value);
+    const error = priceError(input.value);
+    if (error || !parsed.ok) return { value: trimmed, error };
+    return { value: parsed.amount == null ? "" : parsed.amount.toFixed(2), error: null };
   }
   if (input.columnId.startsWith("attr:")) {
     const problem = attributeValueError(input.dataType ?? "text", trimmed);

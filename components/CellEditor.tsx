@@ -17,6 +17,7 @@ export function CellEditor({
   countries,
   allowedValues,
   inputMode,
+  prefix,
   onCommit,
   onCancel,
   onInvalid,
@@ -29,6 +30,7 @@ export function CellEditor({
   countries?: Country[];
   allowedValues?: string[];
   inputMode?: "decimal" | "numeric";
+  prefix?: string;
   onCommit: (value: string, move: Move) => void;
   onCancel: () => void;
   onInvalid: (message: string) => void;
@@ -38,7 +40,9 @@ export function CellEditor({
   const done = useRef(false);
   const invalidRef = useRef(onInvalid);
   invalidRef.current = onInvalid;
-  const [text, setText] = useState(seed ?? (mode === "manufacturer" || mode === "country" ? display : value));
+  const [text, setText] = useState(
+    seed ?? (mode === "manufacturer" || mode === "country" || prefix ? display : value),
+  );
   const [open, setOpen] = useState(mode === "manufacturer" || mode === "country");
   const [suggestions, setSuggestions] = useState<ManufacturerSuggestion[]>([]);
   const [highlight, setHighlight] = useState(0);
@@ -218,6 +222,11 @@ export function CellEditor({
 
   return (
     <span className="cell-combo">
+      {prefix ? (
+        <span className="money-prefix" aria-hidden="true">
+          {prefix}
+        </span>
+      ) : null}
       <input
         ref={inputRef as RefObject<HTMLInputElement>}
         className="cell-input"

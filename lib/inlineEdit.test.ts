@@ -84,6 +84,14 @@ test("cell checks match the item form", () => {
   assert.equal(priceError("-1"), "Enter a price with up to 2 decimal places.");
   assert.equal(priceError("12.5"), null);
   assert.equal(priceError(""), null);
+  assert.equal(priceError("$1,234.56"), null);
+  assert.equal(priceError("1,234.56"), null);
+  assert.equal(priceError("10,000,000,000"), "Price is too large.");
+  assert.equal(validateCell({ columnId: "ecommerce_price", value: "$1,234.56", condition: "Used" }).value, "1234.56");
+  assert.equal(validateCell({ columnId: "msrp", value: "1,234.56", condition: "Used" }).value, "1234.56");
+  assert.equal(validateCell({ columnId: "market_price", value: "$1234.5", condition: "Used" }).value, "1234.50");
+  assert.equal(validateCell({ columnId: "ecommerce_price", value: "", condition: "Used" }).value, "");
+  assert.equal(validateCell({ columnId: "msrp", value: "12.505", condition: "Used" }).error, "Enter a price with up to 2 decimal places.");
   assert.equal(validateCell({ columnId: "item_type", value: "Service", condition: "Used" }).error, null);
   assert.match(validateCell({ columnId: "item_type", value: "Bundle", condition: "Used" }).error ?? "", /Item type/);
   assert.equal(validateCell({ columnId: "oem_name", value: "  Dell  ", condition: "Used" }).value, "Dell");

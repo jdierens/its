@@ -44,7 +44,7 @@ export function isQuoteSource(value: string): value is PriceQuoteSource {
 }
 
 export function parseMoney(value: string): { ok: true; amount: number | null } | { ok: false; message: string } {
-  const trimmed = value.trim();
+  const trimmed = value.trim().replaceAll("$", "").replaceAll(",", "").trim();
   if (!trimmed) return { ok: true, amount: null };
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
     return { ok: false, message: "Use a dollar amount with up to 2 decimals." };
@@ -69,6 +69,14 @@ export function formatMoney(amount: number | null, currency = "USD"): string {
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
+}
+
+export function moneyInput(amount: number | null): string {
+  if (amount == null) return "";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
 export function median(values: number[]): number | null {

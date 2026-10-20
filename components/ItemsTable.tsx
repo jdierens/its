@@ -22,6 +22,7 @@ import { fetchCountries, type Country } from "@/lib/countries";
 import { ITEM_TYPES, SEEDED_UNITS, countryLabel, isItemType, NEW_CONDITION_NOTES } from "@/lib/itemFields";
 import { fetchItemList, fetchListedItem, fetchTaxonomyChoices, saveItemCell } from "@/lib/items";
 import { productUrlHref } from "@/lib/productUrl";
+import { asMoney, formatMoney, moneyInput } from "@/lib/pricing/quotes";
 import { fetchManufacturerChoices } from "@/lib/manufacturers";
 import { fetchUnits } from "@/lib/units";
 import type { DataType, ItemListColumn, ItemListRow, TaxonomyChoice } from "@/lib/types";
@@ -100,12 +101,16 @@ function displayValue(item: ItemListRow, columnId: string, countries: Country[])
   }
   if (columnId === "quantity") return item.quantity === null ? "—" : String(item.quantity);
   if (columnId === "edited") return editedLabel(item.updatedAt) || "—";
-  if (columnId === "ecommerce_price") return item.ecommercePrice || "—";
-  if (columnId === "market_price") return item.marketPrice || "—";
-  if (columnId === "msrp") return item.msrp || "—";
+  if (columnId === "ecommerce_price") return formatMoney(asMoney(item.ecommercePrice));
+  if (columnId === "market_price") return formatMoney(asMoney(item.marketPrice));
+  if (columnId === "msrp") return formatMoney(asMoney(item.msrp));
   if (columnId === "fields") return fieldSummary(item.fields) || "—";
   if (columnId.startsWith("attr:")) return item.fields[columnId.slice(5)] || "—";
   return "";
+}
+
+function isPriceColumn(columnId: string): boolean {
+  return columnId === "ecommerce_price" || columnId === "market_price" || columnId === "msrp";
 }
 
 function editorDisplay(item: ItemListRow, columnId: string, countries: Country[]): string {
@@ -114,6 +119,7 @@ function editorDisplay(item: ItemListRow, columnId: string, countries: Country[]
     const country = countries.find((row) => row.alpha3 === item.coo);
     return country ? countryLabel(country.alpha3, country.name) : item.coo;
   }
+  if (isPriceColumn(columnId)) return moneyInput(asMoney(rawCellValue(item, columnId)));
   const raw = rawCellValue(item, columnId);
   return raw;
 }
@@ -715,8 +721,9 @@ export function ItemsTable() {
                             }
                             countries={countries}
                             allowedValues={column.usesList ? column.allowedValues : undefined}
+                            prefix={isPriceColumn(column.id) ? "$" : undefined}
                             inputMode={
-                              column.id === "ecommerce_price" || column.id === "market_price" || column.id === "msrp" || column.dataType === "decimal"
+                              isPriceColumn(column.id) || column.dataType === "decimal"
                                 ? "decimal"
                                 : column.dataType === "integer"
                                   ? "numeric"
