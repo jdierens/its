@@ -35,6 +35,7 @@ import {
   type ItemType,
 } from "@/lib/itemFields";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
+import { clearNewItemSku, reserveNewItemSku } from "@/lib/sku";
 import { fetchUnits } from "@/lib/units";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 
@@ -121,6 +122,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const router = useRouter();
   const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
   const [sku, setSku] = useState("");
+  const [skuLocked, setSkuLocked] = useState(mode === "create");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -183,11 +185,12 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     async function load() {
       try {
-        const [taxonomyRows, countryRows, unitRows, item] = await Promise.all([
+        const [taxonomyRows, countryRows, unitRows, item, reservedSku] = await Promise.all([
           fetchTaxonomies(),
           fetchCountries(),
           fetchUnits(),
           mode === "edit" && itemId ? fetchItem(itemId) : Promise.resolve(null),
+          mode === "create" ? reserveNewItemSku() : Promise.resolve(""),
         ]);
         if (cancelled) return;
         setTaxonomies(taxonomyRows);
@@ -233,6 +236,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           setCoo(item.coo);
           setNotes(item.notes);
           setAttributeLinks(item.attributeLinks);
+          setSkuLocked(false);
           setBaseline({
             sku: item.sku,
             name: item.name,
@@ -264,6 +268,10 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             draftUnit: "",
             draftUsesList: true,
           });
+        } else if (reservedSku) {
+          setSku(reservedSku);
+          setSkuLocked(true);
+          setBaseline((current) => ({ ...current, sku: reservedSku }));
         }
       } catch (error) {
         if (!cancelled) setLoadError(errorText(error));
@@ -492,6 +500,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             pendingImages.map((image) => image.file),
           );
         }
+        clearNewItemSku();
         router.push(`/items/${id}`);
         return true;
       }
@@ -653,8 +662,21 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                 setSaved(false);
               }}
               autoComplete="off"
+              readOnly={mode === "create" && skuLocked}
               required
             />
+            {mode === "create" ? (
+              skuLocked ? (
+                <>
+                  <span className="hint">Filled in automatically. The next number is reserved for this item.</span>
+                  <button type="button" className="secondary" onClick={() => setSkuLocked(false)}>
+                    Edit SKU
+                  </button>
+                </>
+              ) : (
+                <span className="hint">This SKU will be saved as typed.</span>
+              )
+            ) : null}
           </label>
           <label>
             Quantity
