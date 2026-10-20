@@ -251,7 +251,7 @@ export function LensPage() {
             Add images
             <input
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/*"
               multiple
               disabled={busy || shots.length >= MAX_SHOTS}
               onChange={(event) => {

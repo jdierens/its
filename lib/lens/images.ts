@@ -9,6 +9,12 @@ export type LensImage = {
   data: string;
 };
 
+export function decodedBase64Bytes(data: string): number {
+  const clean = data.replace(/\s/g, "");
+  if (!clean) return 0;
+  return Math.max(0, Math.floor((clean.length * 3) / 4) - (clean.endsWith("==") ? 2 : clean.endsWith("=") ? 1 : 0));
+}
+
 export function readLensImages(value: unknown): { ok: true; images: LensImage[] } | { ok: false; message: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, message: "Send 1 to 4 photos." };
@@ -25,7 +31,7 @@ export function readLensImages(value: unknown): { ok: true; images: LensImage[] 
     if (!MIME_TYPES.has(mimeType)) return { ok: false, message: "Use JPEG, PNG, or WebP photos." };
     const data = typeof record.data === "string" ? record.data.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").replace(/\s/g, "") : "";
     if (!data || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) return { ok: false, message: "A photo could not be read." };
-    const bytes = Math.floor((data.length * 3) / 4) - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
+    const bytes = decodedBase64Bytes(data);
     if (bytes > MAX_LENS_IMAGE_BYTES) return { ok: false, message: "A photo is too large. Take it again closer to the label." };
     total += bytes;
     if (total > MAX_LENS_TOTAL_BYTES) return { ok: false, message: "Those photos are too large together." };

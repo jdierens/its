@@ -9,7 +9,9 @@ import {
   geminiProbeBody,
   geminiRequestBody,
   geminiThinkingLevel,
+  geminiFailure,
   geminiThrownFailure,
+  geminiUsage,
   keyLast4,
   publicGeminiText,
   publicProbeHeaders,
@@ -27,7 +29,9 @@ test("Lens calls the Gemini Developer API, not Vertex", () => {
   const config = body.generationConfig as {
     thinkingConfig?: { thinkingLevel?: string };
     maxOutputTokens?: number;
+    responseMimeType?: unknown;
     responseJsonSchema?: unknown;
+    responseFormat?: { text?: { mimeType?: string; schema?: unknown } };
   };
   assert.equal(DEFAULT_GEMINI_MODEL, "gemini-3.5-flash-lite");
   assert.equal(geminiThinkingLevel(DEFAULT_GEMINI_MODEL), "minimal");
@@ -35,15 +39,60 @@ test("Lens calls the Gemini Developer API, not Vertex", () => {
   assert.equal(config.thinkingConfig?.thinkingLevel, "minimal");
   assert.equal(config.maxOutputTokens, GEMINI_MAX_OUTPUT_TOKENS);
   assert.equal(GEMINI_MAX_OUTPUT_TOKENS <= 1024, true);
-  assert.ok(config.responseJsonSchema);
-  assert.equal(GEMINI_TIMEOUT_MS <= 20_000, true);
+  assert.equal(config.responseFormat?.text?.mimeType, "APPLICATION_JSON");
+  assert.ok(config.responseFormat?.text?.schema);
+  assert.equal(config.responseJsonSchema, undefined);
+  assert.equal(config.responseMimeType, undefined);
+  assert.equal(GEMINI_TIMEOUT_MS, 50_000);
+  assert.equal(GEMINI_TIMEOUT_MS < 60_000, true);
 });
 
-test("a timeout is not reported as a network failure", () => {
+test("only the AbortSignal timeout is reported as waiting on Google", () => {
   const timeout = new Error("The operation was aborted due to timeout");
   timeout.name = "TimeoutError";
-  assert.equal(geminiThrownFailure(timeout), "Lens timed out waiting for Google.");
-  assert.equal(geminiThrownFailure(new TypeError("fetch failed")), "Lens could not reach Google: fetch failed");
+  const waiting = geminiThrownFailure(timeout, 20_012, 8123);
+  assert.match(waiting, /timed out waiting for Google/);
+  assert.match(waiting, /20012ms/);
+  assert.match(waiting, /TimeoutError/);
+  assert.match(waiting, /8123 image bytes/);
+
+  const connect = new TypeError("fetch failed", {
+    cause: Object.assign(new Error("Connect Timeout Error"), { name: "ConnectTimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" }),
+  });
+  const connectText = geminiThrownFailure(connect, 420, 8000);
+  assert.match(connectText, /could not connect to Google/);
+  assert.match(connectText, /420ms/);
+  assert.match(connectText, /ConnectTimeoutError/);
+  assert.match(connectText, /UND_ERR_CONNECT_TIMEOUT/);
+  assert.equal(/timed out waiting for Google/i.test(connectText), false);
+
+  const body = new TypeError("fetch failed", {
+    cause: Object.assign(new Error("terminated"), { name: "BodyTimeoutError", code: "UND_ERR_BODY_TIMEOUT" }),
+  });
+  const bodyText = geminiThrownFailure(body, 1100);
+  assert.match(bodyText, /lost Google's response/);
+  assert.equal(/timed out waiting for Google/i.test(bodyText), false);
+
+  const headers = new TypeError("fetch failed", {
+    cause: Object.assign(new Error("Headers Timeout Error"), { name: "HeadersTimeoutError", code: "UND_ERR_HEADERS_TIMEOUT" }),
+  });
+  assert.equal(/timed out waiting for Google/i.test(geminiThrownFailure(headers, 900)), false);
+
+  const other = geminiThrownFailure(new Error("upstream timeout from the proxy"), 50);
+  assert.equal(/timed out waiting for Google/i.test(other), false);
+  assert.match(other, /upstream timeout from the proxy/);
+  assert.match(other, /50ms/);
+
+  const failed = geminiThrownFailure(new TypeError("fetch failed"), 15);
+  assert.match(failed, /could not reach Google: fetch failed/);
+  assert.match(failed, /TypeError/);
+  assert.equal(/timed out waiting for Google/i.test(failed), false);
+  assert.equal(geminiFailure(connect).causeCode, "UND_ERR_CONNECT_TIMEOUT");
+  assert.deepEqual(geminiUsage({ usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 8, thoughtsTokenCount: 0 } }), {
+    promptTokens: 20,
+    outputTokens: 8,
+    thoughtTokens: 0,
+  });
 });
 
 test("Google errors name the cause and hide the key", () => {
