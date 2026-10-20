@@ -1,6 +1,8 @@
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { NextConfig } from "next";
+import { parseBump, releaseVersion } from "./lib/releaseVersion";
 
 function gitValue(command: string): string | null {
   try {
@@ -15,7 +17,12 @@ function gitValue(command: string): string | null {
 }
 
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { version?: string };
-const version = packageJson.version || "0.0.0";
+const baseline = packageJson.version || "0.0.0";
+const changesDir = join(process.cwd(), "changes");
+const fragments = readdirSync(changesDir)
+  .filter((name) => name.endsWith(".md") && name !== "README.md")
+  .map((name) => ({ name, bump: parseBump(readFileSync(join(changesDir, name), "utf8")) }));
+const version = releaseVersion(baseline, fragments);
 const sha = process.env.VERCEL_GIT_COMMIT_SHA || gitValue("git rev-parse HEAD") || "dev";
 const ref = process.env.VERCEL_GIT_COMMIT_REF || gitValue("git rev-parse --abbrev-ref HEAD") || "dev";
 
