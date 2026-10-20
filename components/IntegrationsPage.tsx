@@ -9,9 +9,8 @@ import { isDirty } from "@/lib/formDirty";
 import { RECONNECT_MESSAGE as EBAY_RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import { INTEGRATIONS, integrationReturnHref } from "@/lib/integrations";
+import { runSyncRequests, type SyncChunk } from "@/lib/qbo/pull";
 import {
-  formatEntityResult,
-  type EntityCounts,
   type SyncDirection,
   type SyncEntity,
 } from "@/lib/qbo/syncOptions";
@@ -43,10 +42,6 @@ type StatusResponse = {
   logs: LogEntry[];
 };
 
-type SyncResponse = {
-  entities?: Array<EntityCounts & { entity: SyncEntity }>;
-  message?: string;
-};
 
 type EbayStatus = {
   configured: boolean;
@@ -162,19 +157,25 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
     setBusy(source);
     setNotice(null);
     setError(null);
-    setResults(selected.map((entity) => (entity === "customer" ? "Customers: syncing…" : "Vendors: syncing…")));
+    setResults(selected.map((entity) => (entity === "customer" ? "Customers … / …" : "Vendors … / …")));
     try {
-      const response = await fetch("/api/qbo/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entities: selected, direction, full }),
+      const outcome = await runSyncRequests({
+        entities: selected,
+        direction,
+        full,
+        onProgress: setResults,
+        post: async (body) => {
+          const response = await fetch("/api/qbo/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const payload = (await response.json()) as { entities?: SyncChunk[]; message?: string };
+          return { ok: response.ok, status: response.status, body: payload };
+        },
       });
-      const body = (await response.json()) as SyncResponse;
-      const lines = (body.entities ?? []).map((result) => formatEntityResult(result.entity, result));
-      setResults(lines);
-      if (body.message === RECONNECT_MESSAGE) setError(RECONNECT_MESSAGE);
-      else if (!response.ok) setError(body.message || "Sync failed.");
-      else setNotice(lines.join(" ") || body.message || "Sync finished.");
+      if (!outcome.ok) setError(outcome.message);
+      else setNotice(outcome.lines.join(" ") || outcome.message || "Sync finished.");
       await load();
     } catch (err) {
       setResults([]);
@@ -576,9 +577,11 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
           Full resync
         </label>
         <p className="hint">
-          Full resync ignores that entity&apos;s change cursor and reads every record. The other
-          entity&apos;s cursor stays put. Leave it off for an incremental pull. Save in the toolbar
-          remembers this choice. Start sync, Sync customers, and Sync vendors are toolbar icons.
+          A long pull continues on its own. The line shows how many records are in, such as Customers
+          3,500 / 8,000. Leave this page open until it finishes. An interrupted pull continues from the
+          last saved page and does not create a second copy. Full resync reads every record when no
+          pull is already in progress. The other entity&apos;s cursor stays put. Save in the toolbar
+          remembers this choice.
         </p>
         {results.length > 0 ? (
           <ul className="sync-results">
