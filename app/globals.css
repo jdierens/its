@@ -2348,3 +2348,36 @@ p.error {
   padding-right: 0;
   padding-left: 0;
 }
+
+.lens-shots,
+.lens-results {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lens-shots {
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+}
+
+.lens-shots img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 0.4rem;
+}
+
+.lens-results li {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.lens-results li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.8rem;
+  align-items: baseline;
+}

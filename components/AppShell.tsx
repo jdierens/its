@@ -8,6 +8,7 @@ import {
   Building,
   ClipboardList,
   Contact,
+  Aperture,
   Menu,
   Package,
   Plug,
@@ -45,6 +46,7 @@ const STORAGE_KEY = "its.sidebar.collapsed";
 
 const ICONS: Record<string, LucideIcon> = {
   "/": Package,
+  "/lens": Aperture,
   "/customers": Contact,
   "/vendors": Building,
   "/taxonomies": Shapes,
