@@ -1,0 +1,26 @@
+.header {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.header:hover {
+  color: var(--accent);
+}
+
+.pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}

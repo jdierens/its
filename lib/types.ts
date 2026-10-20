@@ -76,6 +76,8 @@ export type ItemListRow = {
 export type ItemList = {
   rows: ItemListRow[];
   total: number;
+  matched: number;
+  page: number;
   columns: ItemListColumn[];
   pricing: boolean;
   unknownTax: boolean;

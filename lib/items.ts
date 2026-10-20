@@ -11,6 +11,7 @@ import {
   unitOrDefault,
   type ItemType,
 } from "@/lib/itemFields";
+import { ITEM_PAGE_SIZE, itemSortRequest, parseItemPage, parseItemSort } from "@/lib/itemSort";
 import { getSupabase } from "@/lib/supabase";
 import type {
   Attribute,
@@ -439,6 +440,9 @@ export async function fetchItemList(input: {
   condition?: string | null;
   manufacturerId?: string | null;
   itemType?: string | null;
+  sort?: string | null;
+  dir?: string | null;
+  page?: number | null;
 }): Promise<ItemList> {
   const supabase = await getSupabase();
   const counted = await supabase.from("items").select("id", { count: "exact", head: true });
@@ -446,21 +450,45 @@ export async function fetchItemList(input: {
   const total = counted.count ?? 0;
 
   const resolved = await resolveItemQuery(input);
-  if (resolved.unknownTax) return { rows: [], total, columns: [], pricing: false, unknownTax: true };
-  if (resolved.empty) return { rows: [], total, columns: resolved.columns, pricing: false, unknownTax: false };
+  if (resolved.unknownTax) return { rows: [], total, matched: 0, page: 1, columns: [], pricing: false, unknownTax: true };
+  if (resolved.empty) return { rows: [], total, matched: 0, page: 1, columns: resolved.columns, pricing: false, unknownTax: false };
 
   const pricing = await pricingAvailable(supabase);
-  let query = supabase.from("items").select(listColumns(pricing)).order("sku", { ascending: true });
-  if (resolved.taxonomyId) query = query.eq("taxonomy_id", resolved.taxonomyId);
-  if (resolved.condition) query = query.eq("condition", resolved.condition);
-  if (resolved.manufacturerId) query = query.eq("manufacturer_id", resolved.manufacturerId);
-  if (resolved.itemType) query = query.eq("item_type", resolved.itemType);
-  if (resolved.ids) query = query.in("id", resolved.ids);
+  const sort = parseItemSort(input.sort ?? null, input.dir ?? null);
+  const attribute = sort.column.startsWith("attr:")
+    ? resolved.columns.find((column) => column.name === sort.column.slice(5))
+    : undefined;
+  const request = itemSortRequest(sort, attribute?.dataType ?? null);
+  const requestedPage = parseItemPage(input.page == null ? null : String(input.page));
+  const listed = await listItemPage(supabase, {
+    ids: resolved.ids,
+    taxonomyId: resolved.taxonomyId,
+    condition: resolved.condition || null,
+    manufacturerId: resolved.manufacturerId,
+    itemType: resolved.itemType || null,
+    sort: request.sort,
+    ascending: request.ascending,
+    attribute: request.attribute,
+    attributeNumeric: request.numeric,
+    page: requestedPage,
+  });
 
-  const listed = await query;
-  if (listed.error) throw new Error(errorText(listed.error));
+  if (listed.ids.length === 0) {
+    return {
+      rows: [],
+      total,
+      matched: listed.count,
+      page: listed.page,
+      columns: resolved.columns,
+      pricing,
+      unknownTax: false,
+    };
+  }
 
-  const records = (listed.data ?? []) as unknown as ListRow[];
+  const fetched = await supabase.from("items").select(listColumns(pricing)).in("id", listed.ids);
+  if (fetched.error) throw new Error(errorText(fetched.error));
+  const byId = new Map(((fetched.data ?? []) as unknown as ListRow[]).map((item) => [item.id, item]));
+  const records = listed.ids.map((id) => byId.get(id)).filter((item): item is ListRow => Boolean(item));
   const paths = records.map((item) => primaryPath(item.item_images));
   const urls = await signedImageUrls(paths.filter((path): path is string => Boolean(path)));
 
@@ -469,10 +497,61 @@ export async function fetchItemList(input: {
       toListRow(item, paths[index] ? urls.get(paths[index] as string) ?? null : null),
     ),
     total,
+    matched: listed.count,
+    page: listed.page,
     columns: resolved.columns,
     pricing,
     unknownTax: false,
   };
+}
+
+async function listItemPage(
+  supabase: SupabaseClient,
+  input: {
+    ids: string[] | null;
+    taxonomyId: string | null;
+    condition: string | null;
+    manufacturerId: string | null;
+    itemType: string | null;
+    sort: string;
+    ascending: boolean;
+    attribute: string | null;
+    attributeNumeric: boolean;
+    page: number;
+  },
+): Promise<{ ids: string[]; count: number; page: number }> {
+  const load = (page: number) =>
+    supabase.rpc("item_list_page", {
+      p_ids: input.ids,
+      p_taxonomy_id: input.taxonomyId,
+      p_condition: input.condition,
+      p_manufacturer_id: input.manufacturerId,
+      p_item_type: input.itemType,
+      p_sort: input.sort,
+      p_ascending: input.ascending,
+      p_attribute: input.attribute,
+      p_attribute_numeric: input.attributeNumeric,
+      p_limit: ITEM_PAGE_SIZE,
+      p_offset: (page - 1) * ITEM_PAGE_SIZE,
+    });
+
+  const first = await load(input.page);
+  if (first.error) throw new Error(errorText(first.error));
+  const parsed = parseItemPageResult(first.data);
+  if (parsed.count === 0 || (input.page - 1) * ITEM_PAGE_SIZE < parsed.count) {
+    return { ...parsed, page: parsed.count === 0 ? 1 : input.page };
+  }
+  const lastPage = Math.max(1, Math.ceil(parsed.count / ITEM_PAGE_SIZE));
+  const second = await load(lastPage);
+  if (second.error) throw new Error(errorText(second.error));
+  return { ...parseItemPageResult(second.data), page: lastPage };
+}
+
+function parseItemPageResult(data: unknown): { ids: string[]; count: number } {
+  const body = data && typeof data === "object" ? (data as { count?: unknown; ids?: unknown }) : {};
+  const count = typeof body.count === "number" ? body.count : Number(body.count ?? 0);
+  const ids = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === "string") : [];
+  return { ids, count: Number.isFinite(count) ? count : 0 };
 }
 
 function listColumns(pricing: boolean): string {
