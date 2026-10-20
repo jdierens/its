@@ -1,0 +1,9 @@
+# Phone
+
+ITS installs as an app. Android Chrome uses the manifest at `/manifest.webmanifest` and the service worker at `/sw.js`. iOS Safari uses the same manifest plus the Apple touch icon. Add it from the browser share sheet. The service worker caches the shell: icons, the manifest, and the static files Next serves. A page load still asks the network. If the phone is offline, it shows a short notice and does not keep a copy of the inventory or a queue of writes.
+
+**Scan** is under Warehouse. Start camera reads an item QR code (`/items/<id>?sku=`), a Code 128 SKU, or a bin code such as `20000-P`. Chrome on Android can use BarcodeDetector. Other browsers, including iOS Safari, use ZXing on the same camera preview. The video element is `playsinline`, which is what iOS needs. A handheld scanner can type the same code and press Enter from any page, as long as the cursor is not in a text field.
+
+A bin code opens `/warehouse/bins/<reference>`. That page shows the number, type, and print count when the bins table is present. The print desk for pallet, crate, and box labels is a separate change.
+
+The items table scrolls sideways and the filters stack. The item form is one column. **Take photo** on the photo gallery uses `capture="environment"` and is not a multi-file picker, so the phone camera opens. **Add images** stays a file picker and does not set `capture`, so it does not open the camera. A photo larger than 1.5 MB, a HEIC photo, and every camera shot is reduced to a JPEG before upload. GIFs are left as they are. New photos stay after the ones already there, so the first photo remains primary. After a camera shot, **Edit the photo you just took** opens the editor. A new item has no id yet, so that link waits until the item is saved.

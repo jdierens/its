@@ -74,6 +74,11 @@ export const NAV_GROUPS: NavGroup[] = [
         description: "Receive purchase orders into inventory.",
       },
       {
+        label: "Scan",
+        href: "/scan",
+        description: "Scan an item QR code, a SKU barcode, or a bin code.",
+      },
+      {
         label: "Bin labels",
         href: "/warehouse/bins",
         description: "Print pallet, crate, and box labels.",
@@ -165,6 +170,18 @@ export function pageMetaFor(pathname: string): PageMeta {
         { label: "Items", href: "/items" },
         { label: "Item", href: `/items/${photo[1]}` },
         { label: "Edit photo" },
+      ],
+    };
+  }
+
+  const bin = pathname.match(/^\/warehouse\/bins\/([^/]+)$/);
+  if (bin) {
+    return {
+      title: decodeURIComponent(bin[1]),
+      crumbs: [
+        { label: "Warehouse" },
+        { label: "Scan", href: "/scan" },
+        { label: decodeURIComponent(bin[1]) },
       ],
     };
   }

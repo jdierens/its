@@ -2150,6 +2150,129 @@ tr.quote-latest td {
   }
 }
 
+.gallery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--accent-ink);
+  font-size: 0.92rem;
+}
+
+.file-button.secondary {
+  color: var(--accent);
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.scan-video {
+  width: 100%;
+  max-height: 52vh;
+  background: #101820;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.scan-page form {
+  margin-top: 0.4rem;
+}
+
+.bin-view .bin-reference {
+  margin: 0;
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.bin-facts {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.bin-facts div {
+  padding: 0.75rem 0.85rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.bin-facts dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.bin-facts dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.15rem;
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding: 0.85rem 0.75rem 2rem;
+  }
+
+  .page-toolbar {
+    margin-right: -0.75rem;
+    margin-left: -0.75rem;
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+  }
+
+  .items-page {
+    padding: 0.45rem 0.4rem 1rem;
+  }
+
+  .items-toolbar select,
+  .items-search,
+  .items-toolbar .button,
+  .items-count {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .shell-heading h1 {
+    font-size: 1.15rem;
+  }
+
+  .bin-status {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .bin-go,
+  .bin-types button {
+    width: 100%;
+  }
+
+  .bin-desk .card,
+  .label-preview,
+  .print-sheet {
+    overflow-x: auto;
+  }
+
+  .gallery-actions .file-button {
+    flex: 1 1 9rem;
+  }
+}
+
 .auth-screen {
   min-height: 100vh;
   display: grid;
@@ -2224,4 +2347,3 @@ p.error {
   justify-content: center;
   padding-right: 0;
   padding-left: 0;
-}
