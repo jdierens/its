@@ -15,7 +15,7 @@ function jpegName(name: string): string {
 }
 
 /** Shrink a large photo to a JPEG before upload. GIFs stay as they are. */
-export async function compressImage(file: File, force = false): Promise<File> {
+export async function compressImage(file: File, force = false, maxEdge = COMPRESS_MAX_EDGE): Promise<File> {
   if (!shouldCompress(file, force)) return file;
   if (typeof document === "undefined") return file;
 
@@ -24,7 +24,8 @@ export async function compressImage(file: File, force = false): Promise<File> {
     throw new Error(`${file.name} could not be read. Use a JPEG or PNG.`);
   }
 
-  const scale = Math.min(1, COMPRESS_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+  const edge = maxEdge > 0 ? maxEdge : COMPRESS_MAX_EDGE;
+  const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
   const width = Math.max(1, Math.round(bitmap.width * scale));
   const height = Math.max(1, Math.round(bitmap.height * scale));
   const canvas = document.createElement("canvas");

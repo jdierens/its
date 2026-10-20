@@ -25,6 +25,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Inventory",
     items: [
       { label: "Items", href: "/items", description: "Inventory items" },
+      { label: "Lens", href: "/lens", description: "Identify an item from photos." },
       {
         label: "Taxonomies & Fields",
         href: "/taxonomies",
