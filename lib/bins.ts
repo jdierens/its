@@ -138,7 +138,7 @@ const BIN_COLUMNS =
   "id, number, type, reference, notes, printed_count, last_printed_at, created_at, created_by, current_location_id";
 
 export async function fetchBinCounter(): Promise<BinCounter> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const [counter, highest] = await Promise.all([
     supabase.from("bin_counter").select("next_number").eq("id", true).single(),
     supabase.from("bins").select("number").order("number", { ascending: false }).limit(1).maybeSingle(),
@@ -156,7 +156,7 @@ export async function fetchBinCounter(): Promise<BinCounter> {
 }
 
 export async function fetchRecentBins(limit = 20): Promise<BinRecord[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("bins")
     .select(BIN_COLUMNS)
     .order("created_at", { ascending: false })
@@ -166,7 +166,7 @@ export async function fetchRecentBins(limit = 20): Promise<BinRecord[]> {
 }
 
 export async function saveBinNextNumber(nextNumber: number): Promise<number> {
-  const { data, error } = await getSupabase().rpc("set_bin_next_number", {
+  const { data, error } = await (await getSupabase()).rpc("set_bin_next_number", {
     p_next: nextNumber,
   });
   if (error) throw new Error(errorText(error));
@@ -176,7 +176,7 @@ export async function saveBinNextNumber(nextNumber: number): Promise<number> {
 }
 
 export async function reserveBins(type: BinType, count: number): Promise<BinRecord[]> {
-  const { data, error } = await getSupabase().rpc("reserve_bins", {
+  const { data, error } = await (await getSupabase()).rpc("reserve_bins", {
     p_type: type,
     p_count: count,
   });
@@ -189,7 +189,7 @@ export async function printBinRange(
   from: number,
   to: number,
 ): Promise<BinRecord[]> {
-  const { data, error } = await getSupabase().rpc("print_bin_range", {
+  const { data, error } = await (await getSupabase()).rpc("print_bin_range", {
     p_type: type,
     p_from: from,
     p_to: to,
@@ -199,7 +199,7 @@ export async function printBinRange(
 }
 
 export async function reprintBin(reference: string, copies: number): Promise<BinRecord> {
-  const { data, error } = await getSupabase().rpc("reprint_bin", {
+  const { data, error } = await (await getSupabase()).rpc("reprint_bin", {
     p_reference: reference,
     p_copies: copies,
   });

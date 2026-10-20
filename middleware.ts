@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { authRequired } from "@/lib/authRequired";
 import { gateRequest, isCompanyEmail, type AppRole, type AppStatus } from "@/lib/authDomain";
 import { isPublicPath } from "@/lib/publicPaths";
 
@@ -25,6 +26,7 @@ function redirectTo(request: NextRequest, path: string): NextResponse {
 
 export async function middleware(request: NextRequest) {
   if (isPublicPath(request.nextUrl.pathname)) return NextResponse.next();
+  if (!authRequired()) return NextResponse.next();
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

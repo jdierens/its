@@ -150,7 +150,7 @@ export async function saveLabelTemplate(id: LabelTemplateId): Promise<void> {
 
 export async function fetchBinLabelTemplates(): Promise<BinLabelTemplates> {
   const keys = BIN_TEMPLATE_SETTINGS.map((setting) => setting.key);
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("app_settings")
     .select("key, value")
     .in("key", keys);
@@ -166,7 +166,7 @@ export async function fetchBinLabelTemplates(): Promise<BinLabelTemplates> {
 
 export async function saveBinLabelTemplates(templates: BinLabelTemplates): Promise<void> {
   const updatedAt = new Date().toISOString();
-  const { error } = await getSupabase()
+  const { error } = await (await getSupabase())
     .from("app_settings")
     .upsert(
       BIN_TEMPLATE_SETTINGS.map((setting) => ({
