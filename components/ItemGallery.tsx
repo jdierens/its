@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type DragEvent, type KeyboardEvent } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { compressImage } from "@/lib/compressImage";
 import { errorText } from "@/lib/errors";
 import { moveItem } from "@/lib/imageOrder";
 import { deleteItemImage, fetchItemImages, imageFileError, reorderItemImages, uploadItemImages } from "@/lib/images";
@@ -37,6 +38,7 @@ export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryPro
   const [overKey, setOverKey] = useState<string | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
+  const [editorHref, setEditorHref] = useState<string | null>(null);
 
   useEffect(() => {
     if (!itemId) return;
@@ -74,15 +76,23 @@ export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryPro
         editHref: null,
       }));
 
-  async function addFiles(fileList: FileList | null) {
-    const files = [...(fileList ?? [])];
-    if (files.length === 0) return;
+  async function addFiles(fileList: FileList | null, fromCamera = false) {
+    const picked = [...(fileList ?? [])];
+    if (picked.length === 0) return;
+    setError(null);
+    setEditorHref(null);
+    let files: File[];
+    try {
+      files = await Promise.all(picked.map((file) => compressImage(file, fromCamera)));
+    } catch (err) {
+      setError(errorText(err));
+      return;
+    }
     const problem = files.map(imageFileError).find(Boolean);
     if (problem) {
       setError(problem);
       return;
     }
-    setError(null);
 
     if (!itemId) {
       onPendingChange([
@@ -97,9 +107,14 @@ export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryPro
     }
 
     setBusy(true);
+    const before = new Set(images.map((image) => image.id));
     try {
       await uploadItemImages(itemId, files);
-      setImages(await fetchItemImages(itemId));
+      const next = await fetchItemImages(itemId);
+      setImages(next);
+      const added = next.filter((image) => !before.has(image.id));
+      const newest = added[added.length - 1];
+      if (fromCamera && newest) setEditorHref(`/items/${itemId}/photos/${newest.id}`);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -179,21 +194,41 @@ export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryPro
   return (
     <fieldset>
       <legend>Photos</legend>
-      <label>
-        Add images
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          multiple
-          disabled={busy}
-          onChange={(event) => {
-            void addFiles(event.target.files);
-            event.target.value = "";
-          }}
-        />
-      </label>
+      <div className="gallery-actions">
+        <label className="button secondary file-button">
+          Add images
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            disabled={busy}
+            onChange={(event) => {
+              void addFiles(event.target.files);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        <label className="button file-button">
+          Take photo
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            disabled={busy}
+            onChange={(event) => {
+              void addFiles(event.target.files, true);
+              event.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+      {editorHref ? (
+        <p className="hint">
+          <Link href={editorHref}>Edit the photo you just took</Link>
+        </p>
+      ) : null}
       <p className="hint">
-        The first photo is the primary image. Drag to reorder, or focus a photo and press the left or right arrow.
+        Take photo opens the phone camera. Add images opens the file picker. The first photo is the primary image. Drag to reorder, or focus a photo and press the left or right arrow.
         {itemId ? " Enter opens the editor." : ""}
       </p>
       {error ? <p className="hint error-text">{error}</p> : null}

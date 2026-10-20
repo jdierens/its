@@ -12,6 +12,7 @@ import {
   Plug,
   PackageCheck,
   PackagePlus,
+  ScanLine,
   Landmark,
   PanelLeftClose,
   PanelLeftOpen,
@@ -33,6 +34,7 @@ import {
   type ReactNode,
 } from "react";
 import { AppRevision, revisionMini, revisionTooltip } from "@/components/AppRevision";
+import { ScanListener } from "@/components/ScanListener";
 import { isNavActive, NAV_GROUPS, pageMetaFor, type PageMeta } from "@/lib/nav";
 import { isPublicPath } from "@/lib/publicPaths";
 
@@ -48,6 +50,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/purchasing/orders": ClipboardList,
   "/warehouse/pick": PackageCheck,
   "/warehouse/receiving": PackagePlus,
+  "/scan": ScanLine,
   "/pricing": BadgeDollarSign,
   "/admin/users": Users,
   "/admin/settings": Settings,
@@ -132,6 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <ShellContext.Provider value={shellContext}>
+      <ScanListener />
       <div className={shellClass}>
         {drawerOpen ? (
           <button
