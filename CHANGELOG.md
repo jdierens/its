@@ -1,5 +1,7 @@
 # Changelog
 
+History through 0.21.0 is below. Anything newer is a file in `changes/`. Name it `changes/YYYYMMDDHHMMSS-short-name.md`, set `bump` to `minor` or `patch`, and write the note. The sidebar version is the `version` in `package.json` plus those bumps, computed when the app is built. Do not edit that version or this file for a feature.
+
 ## 0.21.0
 
 - Item labels keep the QTY caption and the date on a Brother QL-820NWB. The 29 mm tape only prints about 25.9 mm, so the old 1.5 mm bottom pad put those shorter lines on the unprintable edge. The taller SKU still marked. Both templates now sit above that edge, in solid black.
