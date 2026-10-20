@@ -1,5 +1,7 @@
 # Sign-in
 
+Sign-in is shipped and idle. It runs only when the server env `AUTH_REQUIRED` is exactly `true`. Leave that unset until the Google OAuth client and the Supabase Google provider are configured. With it unset, pages open with no session, nothing redirects to `/login`, and the app does not read `app_users`. `/privacy`, `/terms`, and the eBay and QuickBooks callbacks stay public either way. Set `AUTH_REQUIRED=true` on Vercel and redeploy when Google sign-in is ready. That same value is copied to the browser at build time so the users screen stays dormant until then.
+
 The app asks for a Google session on every page except `PUBLIC_PATHS` (`/privacy`, `/terms`, `/api/ebay/callback`, `/api/ebay/account-deletion`, `/api/qbo/callback`). `/login` and `/auth/callback` are open so sign-in can start. A signed-in person whose email is not `@deepdiscountservers.com` is signed out. Google's hosted-domain (`hd`) claim is checked on the callback, and the email domain is checked from the verified session after that.
 
 The first sign-in creates a pending row in `app_users`. Pending and disabled people see **Waiting for approval** and cannot open the rest of the app. `jan@deepdiscountservers.com` is seeded as an approved admin. The seed uses a placeholder id until that Google account signs in, then the row moves onto that account.

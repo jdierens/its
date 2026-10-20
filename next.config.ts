@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_GIT_REF: ref,
     NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
     NEXT_PUBLIC_APP_CHANNEL: process.env.VERCEL_ENV || "development",
+    NEXT_PUBLIC_AUTH_REQUIRED: process.env.AUTH_REQUIRED === "true" ? "true" : "",
   },
 };
 

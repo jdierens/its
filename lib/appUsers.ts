@@ -1,3 +1,4 @@
+import { authRequired } from "@/lib/authRequired";
 import { errorText } from "@/lib/errors";
 import type { AppRole, AppStatus } from "@/lib/authDomain";
 import { getSupabase } from "@/lib/supabase";
@@ -45,6 +46,7 @@ function toUser(row: AppUserRow): AppUser {
 }
 
 export async function fetchCurrentAppUser(): Promise<AppUser | null> {
+  if (!authRequired()) return null;
   const supabase = await getSupabase();
   const { data: claims, error: claimError } = await supabase.auth.getClaims();
   if (claimError || !claims?.claims?.sub) return null;
@@ -55,6 +57,7 @@ export async function fetchCurrentAppUser(): Promise<AppUser | null> {
 }
 
 export async function fetchAppUsers(): Promise<AppUser[]> {
+  if (!authRequired()) return [];
   const supabase = await getSupabase();
   const { data, error } = await supabase
     .from("app_users")
@@ -65,6 +68,7 @@ export async function fetchAppUsers(): Promise<AppUser[]> {
 }
 
 export async function setAppUser(id: string, role: AppRole, status: AppStatus): Promise<void> {
+  if (!authRequired()) throw new Error("Sign-in is turned off.");
   const supabase = await getSupabase();
   const { error } = await supabase.rpc("set_app_user", {
     p_id: id,

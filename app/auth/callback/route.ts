@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { authRequired } from "@/lib/authRequired";
 import { hostedDomain, isCompanyEmail, safeNextPath } from "@/lib/authDomain";
 import { getSupabase } from "@/lib/supabase";
 
@@ -13,6 +14,13 @@ function loginRedirect(request: NextRequest, error: string): NextResponse {
 }
 
 export async function GET(request: NextRequest) {
+  if (!authRequired()) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/items";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
   const code = request.nextUrl.searchParams.get("code");
   const next = safeNextPath(request.nextUrl.searchParams.get("next"));
   if (!code) return loginRedirect(request, "missing");
