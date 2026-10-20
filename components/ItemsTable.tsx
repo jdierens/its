@@ -21,6 +21,7 @@ import {
 import { fetchCountries, type Country } from "@/lib/countries";
 import { ITEM_TYPES, SEEDED_UNITS, countryLabel, isItemType, NEW_CONDITION_NOTES } from "@/lib/itemFields";
 import { fetchItemList, fetchListedItem, fetchTaxonomyChoices, saveItemCell } from "@/lib/items";
+import { productUrlHref } from "@/lib/productUrl";
 import { fetchManufacturerChoices } from "@/lib/manufacturers";
 import { fetchUnits } from "@/lib/units";
 import type { DataType, ItemListColumn, ItemListRow, TaxonomyChoice } from "@/lib/types";
@@ -47,6 +48,7 @@ const LEADING = [
   { id: "part_number", label: "Part number" },
   { id: "oem_name", label: "OEM name" },
   { id: "oem_part_number", label: "OEM part number" },
+  { id: "product_url", label: "Product page" },
   { id: "unit", label: "Unit" },
   { id: "condition", label: "Condition" },
 ] as const;
@@ -84,6 +86,7 @@ function displayValue(item: ItemListRow, columnId: string, countries: Country[])
   if (columnId === "part_number") return item.partNumber || "—";
   if (columnId === "oem_name") return item.oemName || "—";
   if (columnId === "oem_part_number") return item.oemPartNumber || "—";
+  if (columnId === "product_url") return item.productUrl || "—";
   if (columnId === "unit") return item.unit || "—";
   if (columnId === "condition") return item.condition || "—";
   if (columnId === "condition_note") return item.conditionNote || "—";
@@ -633,6 +636,7 @@ export function ItemsTable() {
                           column.id === "part_number" ||
                           column.id === "oem_name" ||
                           column.id === "oem_part_number" ||
+                          column.id === "product_url" ||
                           column.id === "condition_note"
                             ? "clip"
                             : "",
@@ -727,6 +731,16 @@ export function ItemsTable() {
                           />
                         ) : column.id === "taxonomy" ? (
                           item.shortCode ? <span className="code-badge">{item.shortCode}</span> : "—"
+                        ) : column.id === "product_url" && productUrlHref(item.productUrl) ? (
+                          <a
+                            href={productUrlHref(item.productUrl) ?? undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                          >
+                            {item.productUrl}
+                          </a>
                         ) : (
                           displayValue(item, column.id, countries)
                         )}

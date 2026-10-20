@@ -27,6 +27,7 @@ function row(patch: Partial<ItemListRow> = {}): ItemListRow {
     partNumber: "",
     oemName: "",
     oemPartNumber: "",
+    productUrl: "",
     unit: "Piece",
     condition: "Used",
     conditionNote: "pulled",
@@ -50,6 +51,7 @@ test("sku and taxonomy stay read-only while trade and attribute cells edit", () 
   assert.equal(isEditableColumn("model"), true);
   assert.equal(isEditableColumn("oem_name"), true);
   assert.equal(isEditableColumn("oem_part_number"), true);
+  assert.equal(isEditableColumn("product_url"), true);
   assert.equal(isEditableColumn("unit"), true);
   assert.equal(isEditableColumn("coo"), true);
   assert.equal(isEditableColumn("item_type"), true);
@@ -110,6 +112,8 @@ test("item type edits stay on the allowed list", () => {
 test("oem and unit edits update the row", () => {
   assert.equal(patchRow(row(), "oem_name", "Dell").oemName, "Dell");
   assert.equal(patchRow(row(), "oem_part_number", "0H").oemPartNumber, "0H");
+  assert.equal(validateCell({ columnId: "product_url", value: "https://example.com/a", condition: "Used" }).error, null);
+  assert.equal(patchRow(row(), "product_url", "https://example.com/a").productUrl, "https://example.com/a");
   assert.equal(patchRow(row(), "unit", "Lbs").unit, "Lbs");
 });
 

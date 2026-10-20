@@ -77,6 +77,7 @@ type ItemRow = {
   part_number: string | null;
   oem_name: string | null;
   oem_part_number: string | null;
+  product_url: string | null;
   unit: string | null;
   condition: string | null;
   condition_note: string | null;
@@ -111,6 +112,7 @@ type ListRow = {
   part_number: string | null;
   oem_name: string | null;
   oem_part_number: string | null;
+  product_url: string | null;
   unit: string | null;
   condition: string | null;
   condition_note: string | null;
@@ -130,7 +132,7 @@ type ListRow = {
 };
 
 const LIST_DETAIL =
-  "id, sku, name, item_type, quantity, manufacturer_id, model, part_number, oem_name, oem_part_number, unit, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
+  "id, sku, name, item_type, quantity, manufacturer_id, model, part_number, oem_name, oem_part_number, product_url, unit, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
 
 const PRICE_COLUMNS = ["ecommerce_price", "market_price", "msrp"] as const;
 
@@ -360,7 +362,7 @@ export async function resolveItemQuery(input: {
   let ids: string[] | null = null;
   if (q) {
     const pattern = likePattern(q);
-    const textQueries = (["sku", "name", "description", "model", "part_number", "oem_name", "oem_part_number"] as const).map((column) => {
+    const textQueries = (["sku", "name", "description", "model", "part_number", "oem_name", "oem_part_number", "product_url"] as const).map((column) => {
       let query = supabase.from("items").select("id").ilike(column, pattern);
       if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
       return query;
@@ -511,6 +513,7 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
     partNumber: item.part_number ?? "",
     oemName: item.oem_name ?? "",
     oemPartNumber: item.oem_part_number ?? "",
+    productUrl: item.product_url ?? "",
     unit: unitOrDefault(item.unit),
     itemType: itemTypeOrDefault(item.item_type),
     condition: item.condition ?? DEFAULT_CONDITION,
@@ -584,7 +587,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
   const { data, error } = await (await getSupabase())
     .from("items")
     .select(
-      "id, sku, name, description, notes, item_type, quantity, taxonomy_id, manufacturer_id, model, part_number, oem_name, oem_part_number, unit, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
+      "id, sku, name, description, notes, item_type, quantity, taxonomy_id, manufacturer_id, model, part_number, oem_name, oem_part_number, product_url, unit, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -619,6 +622,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     partNumber: item.part_number ?? "",
     oemName: item.oem_name ?? "",
     oemPartNumber: item.oem_part_number ?? "",
+    productUrl: item.product_url ?? "",
     unit: unitOrDefault(item.unit),
     condition,
     conditionNote: item.condition_note ?? "",
@@ -693,6 +697,7 @@ export type ItemInput = {
   partNumber: string;
   oemName: string;
   oemPartNumber: string;
+  productUrl: string;
   unit: string;
   condition: "New" | "Used";
   conditionNote: string;
@@ -724,6 +729,7 @@ function coreArgs(input: ItemInput) {
     p_oem_name: input.oemName.trim(),
     p_oem_part_number: input.oemPartNumber.trim(),
     p_unit: input.unit.trim(),
+    p_product_url: input.productUrl.trim(),
   };
 }
 

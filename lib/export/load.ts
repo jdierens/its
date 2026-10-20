@@ -22,6 +22,7 @@ const DETAIL_COLUMNS = [
   "part_number",
   "oem_name",
   "oem_part_number",
+  "product_url",
   "unit",
   "condition",
   "condition_note",
@@ -64,6 +65,7 @@ type ExportRow = {
   part_number: string | null;
   oem_name: string | null;
   oem_part_number: string | null;
+  product_url: string | null;
   unit: string | null;
   condition: string | null;
   condition_note: string | null;
@@ -175,6 +177,7 @@ function toExportItem(row: ExportRow, pricingKeys: readonly PricingKey[], origin
     partNumber: text(row.part_number),
     oemName: text(row.oem_name),
     oemPartNumber: text(row.oem_part_number),
+    productUrl: text(row.product_url),
     unit: text(row.unit) || "Piece",
     condition: text(row.condition),
     conditionNote: text(row.condition_note),
