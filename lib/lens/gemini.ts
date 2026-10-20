@@ -1,7 +1,7 @@
 import { decodedBase64Bytes, type LensImage } from "@/lib/lens/images";
 import { lensResponseSchema } from "@/lib/lens/parse";
 
-export const GEMINI_TIMEOUT_MS = 20_000;
+export const GEMINI_TIMEOUT_MS = 50_000;
 export const GEMINI_MAX_OUTPUT_TOKENS = 1024;
 
 export function geminiThinkingLevel(model: string): "minimal" | "low" {
@@ -214,12 +214,42 @@ export function geminiHttpFailure(status: number, body: unknown): string {
   return `Gemini returned ${status}.`;
 }
 
+export type GeminiUsage = {
+  promptTokens: number | null;
+  outputTokens: number | null;
+  thoughtTokens: number | null;
+};
+
+export type GeminiResult = {
+  raw: unknown;
+  elapsedMs: number;
+  promptChars: number;
+  thinkingLevel: string;
+  usage: GeminiUsage;
+};
+
+export class GeminiRequestError extends Error {
+  readonly elapsedMs: number;
+  readonly promptChars: number;
+  readonly thinkingLevel: string;
+  readonly usage: GeminiUsage;
+
+  constructor(message: string, meta: Omit<GeminiResult, "raw">) {
+    super(message);
+    this.name = "GeminiRequestError";
+    this.elapsedMs = meta.elapsedMs;
+    this.promptChars = meta.promptChars;
+    this.thinkingLevel = meta.thinkingLevel;
+    this.usage = meta.usage;
+  }
+}
+
 export async function identifyWithGemini(input: {
   apiKey: string;
   model: string;
   prompt: string;
   images: LensImage[];
-}): Promise<unknown> {
+}): Promise<GeminiResult> {
   const started = Date.now();
   const imageBytes = input.images.reduce((sum, image) => sum + decodedBase64Bytes(image.data), 0);
   let response: Response;
@@ -249,7 +279,12 @@ export async function identifyWithGemini(input: {
       causeCode: failure.causeCode,
       causeMessage: failure.causeMessage,
     });
-    throw new Error(geminiThrownFailure(error, elapsedMs, imageBytes));
+    throw new GeminiRequestError(geminiThrownFailure(error, elapsedMs, imageBytes), {
+      elapsedMs,
+      promptChars: input.prompt.length,
+      thinkingLevel: geminiThinkingLevel(input.model),
+      usage: { promptTokens: null, outputTokens: null, thoughtTokens: null },
+    });
   }
   let body: unknown;
   try {
@@ -270,9 +305,20 @@ export async function identifyWithGemini(input: {
       causeCode: failure.causeCode,
       causeMessage: failure.causeMessage,
     });
-    throw new Error(geminiThrownFailure(error, elapsedMs, imageBytes));
+    throw new GeminiRequestError(geminiThrownFailure(error, elapsedMs, imageBytes), {
+      elapsedMs,
+      promptChars: input.prompt.length,
+      thinkingLevel: geminiThinkingLevel(input.model),
+      usage: { promptTokens: null, outputTokens: null, thoughtTokens: null },
+    });
   }
   const usage = geminiUsage(body);
+  const meta = {
+    elapsedMs: Date.now() - started,
+    promptChars: input.prompt.length,
+    thinkingLevel: geminiThinkingLevel(input.model),
+    usage,
+  };
   if (!response.ok) {
     lensLog({
       event: "gemini",
@@ -288,7 +334,7 @@ export async function identifyWithGemini(input: {
       causeMessage: publicGeminiText(geminiHttpFailure(response.status, body), 180),
       ...usage,
     });
-    throw new Error(geminiHttpFailure(response.status, body));
+    throw new GeminiRequestError(geminiHttpFailure(response.status, body), meta);
   }
   const text = readingText(body);
   const reason = text ? "" : finishReason(body);
@@ -307,12 +353,12 @@ export async function identifyWithGemini(input: {
     ...usage,
   });
   if (!text) {
-    throw new Error(reason ? `Lens could not read those photos (${reason}).` : "Lens could not read those photos.");
+    throw new GeminiRequestError(reason ? `Lens could not read those photos (${reason}).` : "Lens could not read those photos.", meta);
   }
   try {
-    return JSON.parse(text) as unknown;
+    return { raw: JSON.parse(text) as unknown, ...meta };
   } catch {
-    throw new Error("Lens could not read those photos.");
+    throw new GeminiRequestError("Lens could not read those photos.", meta);
   }
 }
 
@@ -320,7 +366,7 @@ export function lensLog(fields: Record<string, string | number | null>): void {
   console.log(JSON.stringify({ source: "lens", ...fields }));
 }
 
-export function geminiUsage(payload: unknown): { promptTokens: number | null; outputTokens: number | null; thoughtTokens: number | null } {
+export function geminiUsage(payload: unknown): GeminiUsage {
   if (!payload || typeof payload !== "object") return { promptTokens: null, outputTokens: null, thoughtTokens: null };
   const usage = (payload as { usageMetadata?: unknown }).usageMetadata;
   if (!usage || typeof usage !== "object") return { promptTokens: null, outputTokens: null, thoughtTokens: null };

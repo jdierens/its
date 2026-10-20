@@ -43,7 +43,8 @@ test("Lens calls the Gemini Developer API, not Vertex", () => {
   assert.ok(config.responseFormat?.text?.schema);
   assert.equal(config.responseJsonSchema, undefined);
   assert.equal(config.responseMimeType, undefined);
-  assert.equal(GEMINI_TIMEOUT_MS <= 20_000, true);
+  assert.equal(GEMINI_TIMEOUT_MS, 50_000);
+  assert.equal(GEMINI_TIMEOUT_MS < 60_000, true);
 });
 
 test("only the AbortSignal timeout is reported as waiting on Google", () => {

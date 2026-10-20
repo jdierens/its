@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { geminiApiKey, geminiConfigured, geminiModel } from "@/lib/lens/config";
-import { identifyWithGemini, keyLast4, lensLog, probeGemini } from "@/lib/lens/gemini";
+import { GeminiRequestError, geminiThinkingLevel, identifyWithGemini, keyLast4, lensLog, probeGemini } from "@/lib/lens/gemini";
 import { decodedBase64Bytes, readLensImages } from "@/lib/lens/images";
 import { allowLensCaller } from "@/lib/lens/limit";
 import { lensPrompt, parseLensReading } from "@/lib/lens/parse";
@@ -60,27 +60,64 @@ export async function POST(request: Request) {
   });
   try {
     const taxonomies = await loadTaxonomyNames();
-    const raw = await identifyWithGemini({
+    const names = taxonomies.map((name) => name.trim()).filter(Boolean);
+    const prompt = lensPrompt(names);
+    const model = geminiModel();
+    const result = await identifyWithGemini({
       apiKey: key,
-      model: geminiModel(),
-      prompt: lensPrompt(taxonomies),
+      model,
+      prompt,
       images: images.images,
     });
-    const reading = parseLensReading(raw);
-    if (!reading) return NextResponse.json({ configured: true, message: "Lens could not read those photos." }, { status: 502 });
+    const reading = parseLensReading(result.raw);
+    const gemini = geminiFacts({
+      imageBytes,
+      taxonomyCount: names.length,
+      result,
+    });
+    if (!reading) return NextResponse.json({ configured: true, message: "Lens could not read those photos.", gemini }, { status: 502 });
     const matches = rankLensMatches(reading, await findLensCandidates(lensNeedles(reading)));
-    return NextResponse.json({ configured: true, model: geminiModel(), reading, matches });
+    return NextResponse.json({ configured: true, model, reading, matches, gemini });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Lens could not read those photos.";
+    const gemini = error instanceof GeminiRequestError
+      ? geminiFacts({
+          imageBytes,
+          taxonomyCount: null,
+          result: error,
+        })
+      : null;
     lensLog({
       event: "post-error",
       region: process.env.VERCEL_REGION || "",
       model: geminiModel(),
       imageCount: images.images.length,
       imageBytes,
-      elapsedMs: Date.now() - started,
+      elapsedMs: gemini?.elapsedMs ?? Date.now() - started,
+      promptChars: gemini?.promptChars ?? "",
+      thinkingLevel: gemini?.thinkingLevel ?? geminiThinkingLevel(geminiModel()),
+      thoughtTokens: gemini?.thoughtTokens ?? "",
+      promptTokens: gemini?.promptTokens ?? "",
+      outputTokens: gemini?.outputTokens ?? "",
       message,
     });
-    return NextResponse.json({ configured: true, message }, { status: 502 });
+    return NextResponse.json({ configured: true, message, gemini }, { status: 502 });
   }
+}
+
+function geminiFacts(input: {
+  imageBytes: number;
+  taxonomyCount: number | null;
+  result: { elapsedMs: number; promptChars: number; thinkingLevel: string; usage: { promptTokens: number | null; outputTokens: number | null; thoughtTokens: number | null } };
+}) {
+  return {
+    elapsedMs: input.result.elapsedMs,
+    imageBytes: input.imageBytes,
+    promptChars: input.result.promptChars,
+    taxonomyCount: input.taxonomyCount,
+    thinkingLevel: input.result.thinkingLevel,
+    promptTokens: input.result.usage.promptTokens,
+    outputTokens: input.result.usage.outputTokens,
+    thoughtTokens: input.result.usage.thoughtTokens,
+  };
 }
