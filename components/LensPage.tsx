@@ -15,6 +15,7 @@ import type { AttributeDefinition, Taxonomy } from "@/lib/types";
 
 const MAX_SHOTS = 4;
 const LENS_EDGE = 1280;
+const LENS_JPEG_QUALITY = 0.8;
 
 type Shot = { key: string; file: File; url: string };
 
@@ -43,6 +44,7 @@ export function LensPage() {
   const onUnresolved = useCallback((value: boolean) => setUnresolved(value), []);
   const shotsRef = useRef(shots);
   shotsRef.current = shots;
+  const inFlight = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +82,7 @@ export function LensPage() {
     try {
       for (const file of picked) {
         if (next.length >= MAX_SHOTS) break;
-        const compressed = await compressImage(file, true, LENS_EDGE);
+        const compressed = await compressImage(file, true, LENS_EDGE, LENS_JPEG_QUALITY);
         next.push({ key: crypto.randomUUID(), file: compressed, url: URL.createObjectURL(compressed) });
       }
     } catch (error) {
@@ -98,7 +100,8 @@ export function LensPage() {
   }
 
   async function identify() {
-    if (shots.length === 0) return;
+    if (inFlight.current || shots.length === 0) return;
+    inFlight.current = true;
     setBusy(true);
     setMessage(null);
     setReading(null);
@@ -132,6 +135,7 @@ export function LensPage() {
     } catch (error) {
       setMessage(errorText(error));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }

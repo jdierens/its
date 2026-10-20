@@ -7,11 +7,11 @@ Lens identifies an item from one to four photos. It is a page at `/lens`, in the
 Set these on the server. In Vercel they are Environment Variables for the ITS project. Do not prefix them with `NEXT_PUBLIC_`.
 
 - `GEMINI_API_KEY` — required. Without it, Lens shows “not configured” and does not call Google.
-- `GEMINI_MODEL` — optional. When it is empty, Lens uses `gemini-3.8-flash`.
+- `GEMINI_MODEL` — optional. When it is empty, Lens uses `gemini-3.5-flash-lite`. Set it to `gemini-3.8-flash` only when a harder photo is worth the higher price. That model does not accept `minimal` thinking, so Lens uses `low` for it.
 
 The key is sent only as the `x-goog-api-key` header to the Gemini Developer API (`generativelanguage.googleapis.com`). It is not a Vertex AI request. It is not written to logs and it is not returned to the browser. The status request returns whether a key is set and which model name will be used.
 
-Identify asks Gemini 3.8 Flash for a short answer and waits up to 50 seconds. The page shows the cause when Google rejects the call: invalid key, unknown model, quota or billing, a payload that is too large, or a timeout. The key itself is never included in that message.
+Each photo is resized in the browser to a 1280 pixel JPEG at quality 0.8 before it is uploaded. Identify calls Flash-Lite once, with `minimal` thinking, a JSON schema, and at most 1024 output tokens, and it waits up to 20 seconds. There is no retry. The Identify button stays disabled while that call is in flight. On the paid tier, one photo is about $0.002 and stays under about $0.003 even if the model uses the whole output cap. Four photos stay under about half a cent. Google bills thinking tokens even when the client gives up, which is why the old 3.8 Flash call could cost several cents after a timeout. A raw phone photo is not sent: the resized request stays under Vercel’s 4.5 MB body limit. The page shows the cause when Google rejects the call: invalid key, unknown model, quota or billing, a payload that is too large, or a timeout. The key itself is never included in that message.
 
 AI Studio does not keep `generateContent` requests in Logs unless logging is turned on. In AI Studio open Logs and datasets, select the project, and enable logging. Storage is only offered for a paid-tier project. Dashboard usage is separate from those logs and can show calls even when request logs are off. Logs can also lag.
 
