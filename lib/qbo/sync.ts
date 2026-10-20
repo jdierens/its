@@ -19,16 +19,28 @@ import {
   type SyncStatus,
 } from "@/lib/qbo/map";
 import { forceRefreshAccessToken, validAccessToken } from "@/lib/qbo/oauth";
+import {
+  addCounts,
+  CDC_PAGE,
+  countQuery,
+  formatPullProgress,
+  listQuery,
+  nextStart,
+  PAGES_PER_CHUNK,
+  pageCompletesList,
+  readPullCounts,
+  readTotalCount,
+  recordsReached,
+  type SyncChunk,
+} from "@/lib/qbo/pull";
 import { emptyCounts, formatEntityResult, type EntityCounts, type SyncOptions } from "@/lib/qbo/syncOptions";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
 
-const PAGE_SIZE = 100;
-const CDC_PAGE = 1000;
 const OVERLAP_MS = 2 * 60 * 1000;
 
 type ContactRecord = ContactFields & { id: string; sync_status: SyncStatus };
 
-export type EntityResult = EntityCounts & { entity: ContactKind };
+export type EntityResult = SyncChunk;
 
 export type SyncReport = {
   entities: EntityResult[];
@@ -68,6 +80,10 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
     const box: TokenBox = { token: initial.connection.access_token };
     for (const kind of options.entities) {
       const counts = emptyCounts();
+      let done = options.direction === "push";
+      let stopped = false;
+      let position: number | null = null;
+      let total: number | null = null;
       try {
         if (options.direction !== "pull") {
           const auth = await validAccessToken();
@@ -78,7 +94,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
         if (options.direction !== "push") {
           const auth = await validAccessToken();
           box.token = auth.connection.access_token;
-          const complete = await pullKind(
+          const outcome = await pullKind(
             admin,
             auth.config,
             auth.connection.realm_id,
@@ -86,35 +102,49 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
             kind,
             options.full,
             startedAt,
-            counts,
           );
-          if (complete) await saveCursor(admin, kind, startedAt);
-          else await touchLastSync(admin, kind, startedAt);
+          Object.assign(counts, addCounts(counts, outcome.counts));
+          done = outcome.done;
+          position = outcome.position;
+          total = outcome.total;
         }
       } catch (error) {
         if (error instanceof ReconnectError || error instanceof TokenRequestError) throw error;
+        stopped = true;
+        done = false;
         counts.errors += 1;
+        const progress = await readCursor(admin, kind).catch(() => null);
+        const where = progress?.start_position ? ` before position ${progress.start_position}` : "";
+        const reason = error instanceof Error ? error.message : "QuickBooks sync failed.";
         await writeSyncLog({
           entity: kind,
           direction: options.direction === "push" ? "push" : "pull",
           status: "error",
-          message: error instanceof Error ? error.message : "QuickBooks sync failed.",
+          message: `${qboEntityName(kind)} pull failed${where}. Run sync again to continue. ${reason}`.slice(0, 500),
           startedAt,
-          detail: callDetail(error),
+          detail: { ...callDetail(error), startPosition: progress?.start_position ?? null },
         });
       }
-      results.push({ entity: kind, ...counts });
+      results.push({ entity: kind, ...counts, done, stopped, position, total });
+      const progressLine =
+        position === null ? null : `${formatPullProgress(kind, position, total)}. Pull is still running.`;
       await writeSyncLog({
         entity: kind,
         direction: options.direction === "push" ? "push" : "pull",
-        status: counts.errors > 0 ? "error" : "ok",
-        message: formatEntityResult(kind, counts),
+        status: counts.errors > 0 || stopped ? "error" : "ok",
+        message: stopped
+          ? `${qboEntityName(kind)} pull stopped${position === null ? "" : ` at ${formatPullProgress(kind, position, total)}`}. Run sync again to continue.`
+          : done
+            ? formatEntityResult(kind, counts)
+            : progressLine ?? `${qboEntityName(kind)} pull is still running.`,
         startedAt,
         detail: {
           created: counts.created,
           updated: counts.updated,
           conflicts: counts.conflicts,
           errors: counts.errors,
+          position,
+          total,
         },
       });
     }
@@ -298,6 +328,13 @@ async function resolveStale(
   }
 }
 
+type PullOutcome = {
+  done: boolean;
+  position: number | null;
+  total: number | null;
+  counts: EntityCounts;
+};
+
 async function pullKind(
   admin: SupabaseClient,
   config: QboConfig,
@@ -306,71 +343,135 @@ async function pullKind(
   kind: ContactKind,
   full: boolean,
   startedAt: string,
-  counts: EntityCounts,
-): Promise<boolean> {
-  const watermark = full ? null : await entityCursor(admin, kind);
-  if (!watermark) {
-    await pullQuery(admin, config, realmId, box, kind, counts);
-    return true;
+): Promise<PullOutcome> {
+  const stored = await readCursor(admin, kind);
+  if (stored.start_position !== null || full || !stored.cdc_since) {
+    return pullQueryChunk(admin, config, realmId, box, kind, startedAt, stored);
   }
-  const changedSince = formatQboTime(new Date(Date.parse(watermark) - OVERLAP_MS));
-  let cursor = changedSince;
-  const name = qboEntityName(kind);
-  for (let page = 0; page < 20; page += 1) {
-    const result = await authed<Record<string, unknown>>(
-      box,
-      "GET",
-      companyUrl(config, realmId, "cdc", {
-        entities: name,
-        changedSince: cursor,
-      }),
-    );
-    if (!result.ok) throw httpFailure(config, kind, "CDC", result);
-    const entities = cdcEntities(result.data, name);
-    let latest = Date.parse(cursor);
-    for (const entity of entities) {
-      latest = Math.max(latest, await applyIncoming(admin, kind, entity, counts));
-    }
-    if (entities.length < CDC_PAGE) return true;
-    const next = formatQboTime(new Date(latest + 1000));
-    if (next === cursor) return true;
-    cursor = next;
-  }
-  counts.errors += 1;
-  await writeSyncLog({
-    entity: kind,
-    direction: "pull",
-    status: "error",
-    message: `${qboEntityName(kind)} CDC stopped after 20 pages. Run sync again to continue. The change cursor was left where it was.`,
-    startedAt,
-  });
-  return false;
+  return pullCdcChunk(admin, config, realmId, box, kind, startedAt, stored);
 }
 
-async function pullQuery(
+async function pullQueryChunk(
   admin: SupabaseClient,
   config: QboConfig,
   realmId: string,
   box: TokenBox,
   kind: ContactKind,
-  counts: EntityCounts,
-) {
+  startedAt: string,
+  stored: StoredCursor,
+): Promise<PullOutcome> {
   const name = qboEntityName(kind);
-  let start = 1;
-  for (;;) {
+  const startAt = stored.start_position ?? 1;
+  const previous = stored.start_position === null ? emptyCounts() : stored.pull_counts ?? emptyCounts();
+  const pullStarted = stored.start_position === null ? startedAt : stored.pull_started_at ?? startedAt;
+  let total = stored.query_total;
+  if (stored.start_position === null) {
+    total = await fetchCount(config, realmId, box, kind);
+    await saveProgress(admin, kind, stored, {
+      start_position: 1,
+      query_total: total,
+      resume_since: null,
+      pull_started_at: pullStarted,
+      pull_counts: emptyCounts(),
+    });
+  }
+  const counts = emptyCounts();
+  let start = startAt;
+  let position = Math.max(0, start - 1);
+  await writeSyncLog({
+    entity: kind,
+    direction: "pull",
+    status: "ok",
+    message: `${formatPullProgress(kind, position, total)}. Pull is still running.`,
+    startedAt,
+    detail: { position, total, startPosition: start },
+  });
+  for (let page = 0; page < PAGES_PER_CHUNK; page += 1) {
     const result = await authed<Record<string, unknown>>(
       box,
       "GET",
-      companyUrl(config, realmId, "query", {
-        query: `select * from ${name} where Active in (true, false) startposition ${start} maxresults ${PAGE_SIZE}`,
-      }),
+      companyUrl(config, realmId, "query", { query: listQuery(name, start) }),
     );
     if (!result.ok) throw httpFailure(config, kind, "query", result);
+    const reported = readTotalCount(result.data);
+    if (reported !== null) total = reported;
     const entities = queryEntities(result.data, name);
     for (const entity of entities) await applyIncoming(admin, kind, entity, counts);
-    if (entities.length < PAGE_SIZE) return;
-    start += entities.length;
+    position = recordsReached(start, entities.length);
+    const combined = addCounts(previous, counts);
+    if (pageCompletesList(entities.length)) {
+      await saveCursor(admin, kind, pullStarted, new Date().toISOString());
+      return { done: true, position, total, counts: combined };
+    }
+    start = nextStart(start, entities.length);
+    await saveProgress(admin, kind, stored, {
+      start_position: start,
+      query_total: total,
+      resume_since: null,
+      pull_started_at: pullStarted,
+      pull_counts: combined,
+    });
   }
+  return { done: false, position, total, counts: addCounts(previous, counts) };
+}
+
+async function fetchCount(
+  config: QboConfig,
+  realmId: string,
+  box: TokenBox,
+  kind: ContactKind,
+): Promise<number | null> {
+  const result = await authed<Record<string, unknown>>(
+    box,
+    "GET",
+    companyUrl(config, realmId, "query", { query: countQuery(qboEntityName(kind)) }),
+  );
+  if (!result.ok) throw httpFailure(config, kind, "count", result);
+  return readTotalCount(result.data);
+}
+
+async function pullCdcChunk(
+  admin: SupabaseClient,
+  config: QboConfig,
+  realmId: string,
+  box: TokenBox,
+  kind: ContactKind,
+  startedAt: string,
+  stored: StoredCursor,
+): Promise<PullOutcome> {
+  const watermark = stored.resume_since ?? stored.cdc_since;
+  if (!watermark) return pullQueryChunk(admin, config, realmId, box, kind, startedAt, stored);
+  const cursor = stored.resume_since ?? formatQboTime(new Date(Date.parse(watermark) - OVERLAP_MS));
+  const previous = stored.resume_since ? stored.pull_counts ?? emptyCounts() : emptyCounts();
+  const pullStarted = stored.resume_since ? stored.pull_started_at ?? startedAt : startedAt;
+  const counts = emptyCounts();
+  const name = qboEntityName(kind);
+  const result = await authed<Record<string, unknown>>(
+    box,
+    "GET",
+    companyUrl(config, realmId, "cdc", { entities: name, changedSince: cursor }),
+  );
+  if (!result.ok) throw httpFailure(config, kind, "CDC", result);
+  const entities = cdcEntities(result.data, name);
+  let latest = Date.parse(cursor);
+  for (const entity of entities) {
+    latest = Math.max(latest, await applyIncoming(admin, kind, entity, counts));
+  }
+  const combined = addCounts(previous, counts);
+  const finished = entities.length < CDC_PAGE;
+  const next = formatQboTime(new Date((Number.isNaN(latest) ? Date.parse(cursor) : latest) + 1000));
+  if (finished || next === cursor) {
+    await saveCursor(admin, kind, pullStarted, new Date().toISOString());
+    return { done: true, position: null, total: null, counts: combined };
+  }
+  await saveProgress(admin, kind, stored, {
+    start_position: null,
+    query_total: null,
+    resume_since: next,
+    pull_started_at: pullStarted,
+    pull_counts: combined,
+  });
+  return { done: false, position: null, total: null, counts: combined };
 }
 
 async function applyIncoming(
@@ -436,7 +537,33 @@ async function applyIncoming(
   const incomingTime = incoming.qbo_last_updated ? Date.parse(incoming.qbo_last_updated) : 0;
   if (!existing) {
     const inserted = await admin.from(tableFor(kind)).insert(dbFields(incoming, "synced"));
-    if (inserted.error) {
+    if (inserted.error?.code === "23505") {
+      const again = await findByQboId(admin, kind, qboId);
+      if (!again) {
+        counts.errors += 1;
+        await writeSyncLog({
+          entity: kind,
+          direction: "pull",
+          status: "error",
+          message: "QuickBooks id is already stored, but the row could not be read.",
+          detail: { qboId },
+        });
+      } else {
+        const written = await writeFields(admin, kind, again.id, incoming, again.sync_status === "conflict" ? "conflict" : "synced");
+        if (!written.ok) {
+          counts.errors += 1;
+          await writeSyncLog({
+            entity: kind,
+            direction: "pull",
+            status: "error",
+            message: written.message,
+            detail: { qboId },
+          });
+        } else {
+          counts.updated += 1;
+        }
+      }
+    } else if (inserted.error) {
       counts.errors += 1;
       await writeSyncLog({
         entity: kind,
@@ -619,18 +746,82 @@ async function findByQboId(
   return (data as ContactRecord | null) ?? null;
 }
 
-async function entityCursor(admin: SupabaseClient, kind: ContactKind): Promise<string | null> {
+type StoredCursor = {
+  cdc_since: string | null;
+  last_sync_at: string | null;
+  start_position: number | null;
+  query_total: number | null;
+  resume_since: string | null;
+  pull_started_at: string | null;
+  pull_counts: EntityCounts | null;
+};
+
+const EMPTY_STORED: StoredCursor = {
+  cdc_since: null,
+  last_sync_at: null,
+  start_position: null,
+  query_total: null,
+  resume_since: null,
+  pull_started_at: null,
+  pull_counts: null,
+};
+
+async function readCursor(admin: SupabaseClient, kind: ContactKind): Promise<StoredCursor> {
   const { data, error } = await admin
     .from("qbo_sync_cursor")
-    .select("cdc_since")
+    .select("cdc_since, last_sync_at, start_position, query_total, resume_since, pull_started_at, pull_counts")
     .eq("entity", kind)
     .maybeSingle();
   if (error) {
-    if (missingCursorTable(error.message)) return legacyCursor(admin);
+    if (missingCursorTable(error.message)) {
+      const legacy = await legacyCursor(admin);
+      return { ...EMPTY_STORED, cdc_since: legacy };
+    }
     throw new Error(error.message);
   }
-  if (data) return (data.cdc_since as string | null) ?? null;
-  return legacyCursor(admin);
+  if (!data) {
+    const legacy = await legacyCursor(admin);
+    return { ...EMPTY_STORED, cdc_since: legacy };
+  }
+  const row = data as Record<string, unknown>;
+  return {
+    cdc_since: typeof row.cdc_since === "string" ? row.cdc_since : null,
+    last_sync_at: typeof row.last_sync_at === "string" ? row.last_sync_at : null,
+    start_position: typeof row.start_position === "number" && row.start_position >= 1 ? row.start_position : null,
+    query_total: typeof row.query_total === "number" && row.query_total >= 0 ? row.query_total : null,
+    resume_since: typeof row.resume_since === "string" ? row.resume_since : null,
+    pull_started_at: typeof row.pull_started_at === "string" ? row.pull_started_at : null,
+    pull_counts: readPullCounts(row.pull_counts),
+  };
+}
+
+async function saveProgress(
+  admin: SupabaseClient,
+  kind: ContactKind,
+  stored: StoredCursor,
+  progress: {
+    start_position: number | null;
+    query_total: number | null;
+    resume_since: string | null;
+    pull_started_at: string;
+    pull_counts: EntityCounts;
+  },
+): Promise<void> {
+  const { error } = await admin.from("qbo_sync_cursor").upsert(
+    {
+      entity: kind,
+      cdc_since: stored.cdc_since,
+      last_sync_at: stored.last_sync_at,
+      start_position: progress.start_position,
+      query_total: progress.query_total,
+      resume_since: progress.resume_since,
+      pull_started_at: progress.pull_started_at,
+      pull_counts: progress.pull_counts,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "entity" },
+  );
+  if (error) throw new Error(error.message);
 }
 
 async function legacyCursor(admin: SupabaseClient): Promise<string | null> {
@@ -647,9 +838,19 @@ async function legacyCursor(admin: SupabaseClient): Promise<string | null> {
   return data?.started_at ?? null;
 }
 
-async function saveCursor(admin: SupabaseClient, kind: ContactKind, startedAt: string): Promise<void> {
+async function saveCursor(admin: SupabaseClient, kind: ContactKind, pullStartedAt: string, finishedAt: string): Promise<void> {
   const { error } = await admin.from("qbo_sync_cursor").upsert(
-    { entity: kind, cdc_since: startedAt, last_sync_at: startedAt, updated_at: startedAt },
+    {
+      entity: kind,
+      cdc_since: pullStartedAt,
+      last_sync_at: finishedAt,
+      updated_at: finishedAt,
+      start_position: null,
+      query_total: null,
+      resume_since: null,
+      pull_started_at: null,
+      pull_counts: null,
+    },
     { onConflict: "entity" },
   );
   if (error) throw new Error(error.message);
