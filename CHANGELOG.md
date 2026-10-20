@@ -1,12 +1,12 @@
 # Changelog
 
+History through 0.21.0 is below. Anything newer is a file in `changes/`. Name it `changes/YYYYMMDDHHMMSS-short-name.md`, set `bump` to `minor` or `patch`, and write the note. The sidebar version is the `version` in `package.json` plus those bumps, computed when the app is built. Do not edit that version or this file for a feature.
+
 ## 0.21.0
 
-- Sign in with Google, limited to @deepdiscountservers.com. The hosted-domain claim is checked when Google returns, and the email domain is checked from the session on every request.
-- A first sign-in creates a pending user. Pending and disabled accounts see a waiting page. jan@deepdiscountservers.com is an approved admin.
-- Admin > Users can approve someone, change admin / staff / read only, or disable the account. Read only is stored now and does not block edits until row policies are turned on.
-- Items, taxonomy changes, price quotes, and transactions record the signed-in user when that session is present. The deployed app still writes with the anon key, so those fields stay empty until this release is in use.
-- Privacy, terms, the eBay callback, the eBay account-deletion endpoint, and the QuickBooks callback stay reachable with no session.
+- Item labels keep the QTY caption and the date on a Brother QL-820NWB. The 29 mm tape only prints about 25.9 mm, so the old 1.5 mm bottom pad put those shorter lines on the unprintable edge. The taller SKU still marked. Both templates now sit above that edge, in solid black.
+- Admin > Settings has a Labels section. Item can be Barcode (current) or QR code. Pallet, Crate, Box, and Rack location are listed for later. `label_template_item` stores the item choice. The older `label_template` key is still read and still written.
+- Admin > Integrations lists QuickBooks and eBay in the sidebar, each on its own page. `/admin/integrations` stays the overview, which is where an eBay auth decline returns. Connect and OAuth land on the matching page. Google and BrokerBin can be added the same way.
 
 ## 0.20.0
 

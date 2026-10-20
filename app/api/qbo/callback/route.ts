@@ -51,7 +51,7 @@ function fail(request: NextRequest, message: string) {
 }
 
 function integrationsUrl(request: NextRequest, query: Record<string, string>): URL {
-  const url = new URL("/admin/integrations", request.url);
+  const url = new URL("/admin/integrations/quickbooks", request.url);
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   return url;
 }

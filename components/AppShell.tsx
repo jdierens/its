@@ -12,11 +12,13 @@ import {
   Plug,
   PackageCheck,
   PackagePlus,
+  Landmark,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
   Shapes,
   ShoppingCart,
+  Store,
   Tag,
   Users,
   type LucideIcon,
@@ -52,6 +54,8 @@ const ICONS: Record<string, LucideIcon> = {
   "/admin/users": Users,
   "/admin/settings": Settings,
   "/admin/integrations": Plug,
+  "/admin/integrations/quickbooks": Landmark,
+  "/admin/integrations/ebay": Store,
 };
 
 type ShellContextValue = {
@@ -173,19 +177,39 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className="nav-group-label">{group.label}</div>
                 {group.items.map((item) => {
                   const Icon = ICONS[item.href] ?? Package;
-                  const active = isNavActive(item.href, pathname);
+                  const childActive = item.children?.some((child) => isNavActive(child.href, pathname)) ?? false;
+                  const active = isNavActive(item.href, pathname) || childActive;
+                  const current = pathname === item.href;
                   return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={active ? "nav-link active" : "nav-link"}
-                      aria-current={active ? "page" : undefined}
-                      title={item.label}
-                      onClick={() => setDrawerOpen(false)}
-                    >
-                      <Icon size={18} strokeWidth={1.75} aria-hidden />
-                      <span className="nav-label">{item.label}</span>
-                    </Link>
+                    <div key={item.href}>
+                      <Link
+                        href={item.href}
+                        className={active ? "nav-link active" : "nav-link"}
+                        aria-current={current ? "page" : undefined}
+                        title={item.label}
+                        onClick={() => setDrawerOpen(false)}
+                      >
+                        <Icon size={18} strokeWidth={1.75} aria-hidden />
+                        <span className="nav-label">{item.label}</span>
+                      </Link>
+                      {item.children?.map((child) => {
+                        const ChildIcon = ICONS[child.href] ?? Package;
+                        const onChild = isNavActive(child.href, pathname);
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={onChild ? "nav-link nav-child active" : "nav-link nav-child"}
+                            aria-current={onChild ? "page" : undefined}
+                            title={child.label}
+                            onClick={() => setDrawerOpen(false)}
+                          >
+                            <ChildIcon size={16} strokeWidth={1.75} aria-hidden />
+                            <span className="nav-label">{child.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
                   );
                 })}
               </div>
