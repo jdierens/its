@@ -193,6 +193,7 @@ export function LensPage() {
         partNumber: partNumber.trim(),
         oemName: "",
         oemPartNumber: oemPartNumber.trim(),
+        productUrl: "",
         unit: DEFAULT_UNIT,
         condition,
         conditionNote: "",
