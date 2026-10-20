@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { geminiApiKey, geminiConfigured, geminiModel } from "@/lib/lens/config";
-import { identifyWithGemini, keyLast4, probeGemini } from "@/lib/lens/gemini";
-import { readLensImages } from "@/lib/lens/images";
+import { identifyWithGemini, keyLast4, lensLog, probeGemini } from "@/lib/lens/gemini";
+import { decodedBase64Bytes, readLensImages } from "@/lib/lens/images";
 import { allowLensCaller } from "@/lib/lens/limit";
 import { lensPrompt, parseLensReading } from "@/lib/lens/parse";
 import { lensNeedles, rankLensMatches } from "@/lib/lens/rank";
@@ -48,6 +48,16 @@ export async function POST(request: Request) {
   if (!images.ok) return NextResponse.json({ configured: true, message: images.message }, { status: 400 });
   const key = geminiApiKey();
   if (!key) return NextResponse.json({ configured: false, model: geminiModel(), reading: null, matches: [] });
+  const started = Date.now();
+  const imageBytes = images.images.reduce((sum, image) => sum + decodedBase64Bytes(image.data), 0);
+  lensLog({
+    event: "post",
+    region: process.env.VERCEL_REGION || "",
+    model: geminiModel(),
+    imageCount: images.images.length,
+    imageBytes,
+    contentLength: request.headers.get("content-length") || "",
+  });
   try {
     const taxonomies = await loadTaxonomyNames();
     const raw = await identifyWithGemini({
@@ -62,6 +72,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ configured: true, model: geminiModel(), reading, matches });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Lens could not read those photos.";
+    lensLog({
+      event: "post-error",
+      region: process.env.VERCEL_REGION || "",
+      model: geminiModel(),
+      imageCount: images.images.length,
+      imageBytes,
+      elapsedMs: Date.now() - started,
+      message,
+    });
     return NextResponse.json({ configured: true, message }, { status: 502 });
   }
 }
