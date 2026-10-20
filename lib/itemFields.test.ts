@@ -6,6 +6,7 @@ import {
   htsError,
   isItemType,
   itemTypeOrDefault,
+  unitOrDefault,
   normalizeLabel,
 } from "./itemFields.ts";
 
@@ -34,6 +35,13 @@ test("item type accepts the four names and treats anything else as Product", () 
   assert.equal(isItemType("Inventory"), false);
   assert.equal(itemTypeOrDefault(null), "Product");
   assert.equal(itemTypeOrDefault("Service"), "Service");
+});
+
+test("unit defaults to Piece and keeps a known name", () => {
+  assert.equal(unitOrDefault(null), "Piece");
+  assert.equal(unitOrDefault("lbs"), "Lbs");
+  assert.equal(unitOrDefault("Box"), "Piece");
+  assert.equal(unitOrDefault("Each", ["Each", "Piece"]), "Each");
 });
 
 test("country option shows the alpha-3 code and the name", () => {

@@ -56,6 +56,9 @@ export type ItemListRow = {
   manufacturerName: string | null;
   model: string;
   partNumber: string;
+  oemName: string;
+  oemPartNumber: string;
+  unit: string;
   condition: string;
   conditionNote: string;
   eccn: string;
@@ -94,6 +97,9 @@ export type ItemDetail = {
   manufacturerName: string;
   model: string;
   partNumber: string;
+  oemName: string;
+  oemPartNumber: string;
+  unit: string;
   condition: "New" | "Used";
   conditionNote: string;
   eccn: string;

@@ -24,24 +24,24 @@ export function BinView({ reference }: { reference: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    const supabase = getSupabase();
-    supabase
-      .from("bins")
-      .select("number, type, reference, created_at, printed_count, last_printed_at, notes")
-      .eq("reference", reference)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          setMessage(errorText(error));
-          return;
-        }
-        if (!data) {
-          setMissing(true);
-          return;
-        }
-        setRow(data as BinRow);
-      });
+    void (async () => {
+      const supabase = await getSupabase();
+      const { data, error } = await supabase
+        .from("bins")
+        .select("number, type, reference, created_at, printed_count, last_printed_at, notes")
+        .eq("reference", reference)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setMessage(errorText(error));
+        return;
+      }
+      if (!data) {
+        setMissing(true);
+        return;
+      }
+      setRow(data as BinRow);
+    })();
     return () => {
       cancelled = true;
     };

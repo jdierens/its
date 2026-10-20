@@ -78,6 +78,11 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/scan",
         description: "Scan an item QR code, a SKU barcode, or a bin code.",
       },
+      {
+        label: "Bin labels",
+        href: "/warehouse/bins",
+        description: "Print pallet, crate, and box labels.",
+      },
     ],
   },
   {
@@ -106,7 +111,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         label: "Settings",
         href: "/admin/settings",
-        description: "Pricing window, label template, and other app settings.",
+        description: "Pricing window, labels, bin numbers, and other app settings.",
       },
       {
         label: "Integrations",

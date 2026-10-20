@@ -8,7 +8,7 @@ export async function openScan(raw: string): Promise<string> {
   if (parsed.kind === "item") return `/items/${parsed.id}`;
   if (parsed.kind === "bin") return binPath(parsed.reference);
 
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const sku = parsed.sku;
   const query = supabase.from("items").select("id").limit(2);
   const listed =

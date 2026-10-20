@@ -47,7 +47,7 @@ export async function signedImageUrls(paths: string[]): Promise<Map<string, stri
   const unique = [...new Set(paths.filter(Boolean))];
   if (unique.length === 0) return urls;
 
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const { data, error } = await supabase.storage
     .from(ITEM_IMAGE_BUCKET)
     .createSignedUrls(unique, SIGNED_URL_SECONDS);
@@ -83,7 +83,7 @@ function toItemImage(row: ImageRow, url: string | null): ItemImage {
 }
 
 export async function fetchItemImages(itemId: string): Promise<ItemImage[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("item_images")
     .select("id, item_id, storage_path, sort_order, source_image_id")
     .eq("item_id", itemId)
@@ -100,7 +100,7 @@ export async function fetchItemImages(itemId: string): Promise<ItemImage[]> {
 export async function uploadItemImages(itemId: string, files: File[]): Promise<void> {
   if (files.length === 0) return;
 
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const existing = await supabase
     .from("item_images")
     .select("sort_order")
@@ -139,7 +139,7 @@ export async function uploadItemImages(itemId: string, files: File[]): Promise<v
 }
 
 export async function reorderItemImages(itemId: string, orderedIds: string[]): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const results = await Promise.all(
     orderedIds.map((id, sortOrder) =>
       supabase.from("item_images").update({ sort_order: sortOrder }).eq("id", id).eq("item_id", itemId),
@@ -150,7 +150,7 @@ export async function reorderItemImages(itemId: string, orderedIds: string[]): P
 }
 
 export async function deleteItemImage(image: ItemImage): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const removed = await supabase.storage.from(ITEM_IMAGE_BUCKET).remove([image.storagePath]);
   if (removed.error) throw new Error(errorText(removed.error));
   const { error } = await supabase.from("item_images").delete().eq("id", image.id);
@@ -162,7 +162,7 @@ export async function saveEditedImage(input: {
   sourceImageId: string;
   blob: Blob;
 }): Promise<string> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const id = crypto.randomUUID();
   const extension = input.blob.type === "image/png" ? "png" : "jpg";
   const path = `${input.itemId}/${id}.${extension}`;
@@ -207,7 +207,7 @@ export async function saveEditedImage(input: {
 }
 
 export async function downloadItemImage(storagePath: string): Promise<Blob> {
-  const downloaded = await getSupabase().storage.from(ITEM_IMAGE_BUCKET).download(storagePath);
+  const downloaded = await (await getSupabase()).storage.from(ITEM_IMAGE_BUCKET).download(storagePath);
   if (downloaded.error || !downloaded.data) {
     throw new Error(downloaded.error ? errorText(downloaded.error) : "Could not download the photo.");
   }

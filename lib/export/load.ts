@@ -20,6 +20,9 @@ const DETAIL_COLUMNS = [
   "item_type",
   "model",
   "part_number",
+  "oem_name",
+  "oem_part_number",
+  "unit",
   "condition",
   "condition_note",
   "eccn",
@@ -59,6 +62,9 @@ type ExportRow = {
   item_type: string | null;
   model: string | null;
   part_number: string | null;
+  oem_name: string | null;
+  oem_part_number: string | null;
+  unit: string | null;
   condition: string | null;
   condition_note: string | null;
   eccn: string | null;
@@ -96,13 +102,13 @@ function text(value: string | null | undefined): string {
 
 async function presentPricingKeys(): Promise<PricingKey[]> {
   const keys = PRICING_FIELDS.map((field) => field.key);
-  const probe = await getSupabase().from("items").select(keys.join(",")).limit(1);
+  const probe = await (await getSupabase()).from("items").select(keys.join(",")).limit(1);
   if (probe.error) return [];
   return [...keys];
 }
 
 async function selectRows(columns: string, filter: ItemFilter): Promise<ExportRow[]> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const records: ExportRow[] = [];
   const groups = filter.ids && filter.ids.length > ID_CHUNK
     ? Array.from({ length: Math.ceil(filter.ids.length / ID_CHUNK) }, (_, index) =>
@@ -167,6 +173,9 @@ function toExportItem(row: ExportRow, pricingKeys: readonly PricingKey[], origin
     manufacturer: text(one(row.manufacturers)?.name),
     model: text(row.model),
     partNumber: text(row.part_number),
+    oemName: text(row.oem_name),
+    oemPartNumber: text(row.oem_part_number),
+    unit: text(row.unit) || "Piece",
     condition: text(row.condition),
     conditionNote: text(row.condition_note),
     eccn: text(row.eccn),

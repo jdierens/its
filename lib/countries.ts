@@ -8,7 +8,7 @@ export type Country = {
 };
 
 export async function fetchCountries(): Promise<Country[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("countries")
     .select("alpha3, alpha2, name")
     .order("name");

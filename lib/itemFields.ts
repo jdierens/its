@@ -3,6 +3,8 @@ export const DEFAULT_CONDITION = "Used" as const;
 export const NEW_CONDITION_NOTES = ["Factory Sealed", "New Open Box"] as const;
 export const ITEM_TYPES = ["Product", "Kit/Package", "Service", "Non-inventory"] as const;
 export const DEFAULT_ITEM_TYPE = "Product" as const;
+export const DEFAULT_UNIT = "Piece";
+export const SEEDED_UNITS = ["Piece", "Lbs"] as const;
 
 export type ItemCondition = "New" | "Used";
 export type NewConditionNote = (typeof NEW_CONDITION_NOTES)[number];
@@ -49,6 +51,15 @@ export function isItemType(value: string): value is ItemType {
 
 export function itemTypeOrDefault(value: string | null | undefined): ItemType {
   return value && isItemType(value) ? value : DEFAULT_ITEM_TYPE;
+}
+
+export function unitOrDefault(
+  value: string | null | undefined,
+  choices: readonly string[] = SEEDED_UNITS,
+): string {
+  const trimmed = value?.trim() ?? "";
+  const found = choices.find((unit) => unit.toLowerCase() === trimmed.toLowerCase());
+  return found ?? DEFAULT_UNIT;
 }
 
 export function attributeValueError(
