@@ -6,10 +6,13 @@ import {
   BIN_TEMPLATE_SETTINGS,
   DEFAULT_LABEL_TEMPLATE,
   LABEL_TEMPLATES,
+  LABEL_TYPES,
   QR_ERROR_CORRECTION,
   QR_MODULE_MM,
   QR_QUIET_MODULES,
+  TEMPLATES_BY_LABEL_TYPE,
   emptyBinLabelTemplates,
+  itemTemplateFromSettings,
   labelTemplateOrDefault,
   qrLabelPayload,
   qrSymbolMm,
@@ -41,6 +44,24 @@ test("bin label templates default to the big reference barcode", () => {
   );
   assert.deepEqual(emptyBinLabelTemplates(), { P: "barcode", C: "barcode", B: "barcode" });
   assert.equal(labelTemplateOrDefault("qr"), "qr");
+});
+
+test("item template prefers the new key and still reads the legacy key", () => {
+  assert.equal(itemTemplateFromSettings("qr", "barcode"), "qr");
+  assert.equal(itemTemplateFromSettings(null, "qr"), "qr");
+  assert.equal(itemTemplateFromSettings("", "barcode"), "barcode");
+  assert.equal(itemTemplateFromSettings("poster", "qr"), "qr");
+  assert.equal(itemTemplateFromSettings("poster", null), "barcode");
+  assert.deepEqual(
+    LABEL_TYPES.map((type) => type.label),
+    ["Item", "Pallet", "Crate", "Box", "Rack location"],
+  );
+  assert.equal(LABEL_TYPES.filter((type) => type.ready).length, 1);
+  assert.deepEqual(
+    TEMPLATES_BY_LABEL_TYPE.item.map((template) => template.id),
+    ["barcode", "qr"],
+  );
+  assert.deepEqual(TEMPLATES_BY_LABEL_TYPE.pallet, []);
 });
 
 test("qr payload uses the public origin and keeps a blank sku off the query", () => {

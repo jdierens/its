@@ -12,6 +12,7 @@ export type NavItem = {
   label: string;
   href: string;
   description: string;
+  children?: NavItem[];
 };
 
 export type NavGroup = {
@@ -110,7 +111,19 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         label: "Integrations",
         href: "/admin/integrations",
-        description: "Connect QuickBooks and sync customers and vendors.",
+        description: "QuickBooks, eBay, and other connections.",
+        children: [
+          {
+            label: "QuickBooks",
+            href: "/admin/integrations/quickbooks",
+            description: "Sync customers and vendors.",
+          },
+          {
+            label: "eBay",
+            href: "/admin/integrations/ebay",
+            description: "Seller connection for listings later.",
+          },
+        ],
       },
     ],
   },
@@ -224,12 +237,24 @@ export function pageMetaFor(pathname: string): PageMeta {
   }
 
   for (const group of NAV_GROUPS) {
-    const item = group.items.find((entry) => entry.href === pathname);
-    if (item) {
-      return {
-        title: item.label,
-        crumbs: [{ label: group.label }, { label: item.label }],
-      };
+    for (const item of group.items) {
+      const child = item.children?.find((entry) => entry.href === pathname);
+      if (child) {
+        return {
+          title: child.label,
+          crumbs: [
+            { label: group.label },
+            { label: item.label, href: item.href },
+            { label: child.label },
+          ],
+        };
+      }
+      if (item.href === pathname) {
+        return {
+          title: item.label,
+          crumbs: [{ label: group.label }, { label: item.label }],
+        };
+      }
     }
   }
 

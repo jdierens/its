@@ -169,6 +169,12 @@ export function SettingsPage() {
             Big reference + QR encodes the bin reference, such as 20000-P. Pallet uses the bolder
             layout.
           </span>
+          <div>
+            <label htmlFor="label-template-location">Rack location</label>
+            <p className="muted" id="label-template-location">
+              Coming soon
+            </p>
+          </div>
         </fieldset>
         <label htmlFor="bin-next-number">Next bin number</label>
         <input
