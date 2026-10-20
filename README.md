@@ -2,7 +2,7 @@
 
 Inventory app for the ITS Supabase project. A sidebar groups Inventory, Sales, Purchasing, Warehouse, Pricing, and Admin. The item list at `/items` is a dense table. Filter by taxonomy short code, condition, and manufacturer, and search SKU, name, description, manufacturer, aliases, model, part number, and attribute values on the server (`ilike`). The address keeps `?tax=`, `?q=`, `?condition=`, and `?mfr=`. Arrow keys move the cell and Enter opens the item. Create and edit use taxonomies, allowed attribute values, and photos.
 
-Under the ITS title, the sidebar shows the version from `package.json` and a short git commit, for example `v0.20.0 · a1b2c3d`. Hover that line for the full commit, branch, and Pacific build time. A collapsed sidebar keeps a tiny version under the logo. Local builds add a `-dev` suffix and a dev badge. Vercel preview builds show a preview badge; production does not. Those values are `NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_GIT_SHA`, and `NEXT_PUBLIC_BUILD_TIME` (plus the branch and channel), set in `next.config.ts`. They are not secrets. Bump the version on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+Under the ITS title, the sidebar shows the version from `package.json` and a short git commit, for example `v0.21.0 · a1b2c3d`. Hover that line for the full commit, branch, and Pacific build time. A collapsed sidebar keeps a tiny version under the logo. Local builds add a `-dev` suffix and a dev badge. Vercel preview builds show a preview badge; production does not. Those values are `NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_GIT_SHA`, and `NEXT_PUBLIC_BUILD_TIME` (plus the branch and channel), set in `next.config.ts`. They are not secrets. Bump the version on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Privacy and terms
 
@@ -43,9 +43,9 @@ The editor adjusts brightness, contrast, white balance, and sharpness, with a be
 
 **Print labels** opens `/labels`. Look up an item by SKU or uuid, enter the quantity to print and how many copies (default 1), then print. The quantity is only printed on the label. It does not change the item's stock. The item toolbar has a barcode icon, **Print label**, that opens this page with the item filled in. If the item has unsaved changes, it asks you to save first.
 
-The label is one 90 mm × 29 mm landscape page, for a Brother QL-820NWB with DK-1201 (29 × 90 mm) die-cut labels. The item name stays on one line. Names longer than 60 characters are cut to 60 and end with an ellipsis. The font shrinks so a name of up to 60 characters fits the label width. The barcode is Code 128 from [JsBarcode](https://github.com/lindell/JsBarcode), encoding the SKU, or the item id when the SKU is empty. That same value is printed in bold under the bars, about 3 to 4 mm cap height when the code is short. Bars stay at least 8 mm tall and a whole number of 300 dpi dots (4 dots wide, or 3 if the code is long). The quantity number in the middle is about 8.4 mm and bold, with a small QTY caption under it. That caption, the item ID, and the print date share one baseline. The barcode, quantity number, and taxonomy short code share one top line. The short code stays large and bold, and the date is spaced to the same width so their edges line up. An item with no taxonomy leaves that spot empty.
+The label is one 90 mm × 29 mm landscape page, for a Brother QL-820NWB with DK-1201 (29 × 90 mm) die-cut labels. The item name stays on one line. Names longer than 60 characters are cut to 60 and end with an ellipsis. The font shrinks so a name of up to 60 characters fits the label width. The barcode is Code 128 from [JsBarcode](https://github.com/lindell/JsBarcode), encoding the SKU, or the item id when the SKU is empty. That same value is printed in bold under the bars, about 3 to 4 mm cap height when the code is short. Bars stay at least 8 mm tall and a whole number of 300 dpi dots (4 dots wide, or 3 if the code is long). The quantity number in the middle is about 8.4 mm and bold, with a small QTY caption under it. That caption, the item ID, and the print date share one baseline. The barcode, quantity number, and taxonomy short code share one top line. The short code stays large and bold, and the date is spaced to the same width so their edges line up. An item with no taxonomy leaves that spot empty. The QL-820NWB prints about 25.9 mm of the 29 mm tape, so the label keeps the QTY caption and the date above that edge. Every line is solid black.
 
-**Admin > Settings** chooses the label template. **Barcode (current)** is the default above. **QR code** prints the same 90 mm × 29 mm page. The symbol sits on the left with the SKU centered under it. The name wraps onto two lines. Quantity and the taxonomy short code are large, with QTY and the date underneath, and a gap between those captions and the numbers. The description is not printed. The QR code opens the item page on the address of the app you are printing from (`/items/<id>?sku=<sku>`). Error correction is M, each module is 0.423 mm, and the quiet zone stays intact. The version is chosen from that address, so it is not fixed. Print label on the item stays one icon; it does not pick a template of its own.
+**Admin > Settings** has a **Labels** section. **Item** chooses the template. **Barcode (current)** is the default. **QR code** prints the same 90 mm × 29 mm page. Pallet, Crate, Box, and Rack location are listed there for later. The symbol sits on the left with the SKU centered under it. The name wraps onto two lines. Quantity and the taxonomy short code are large, with QTY and the date underneath, and a gap between those captions and the numbers. The description is not printed. The QR code opens the item page on the address of the app you are printing from (`/items/<id>?sku=<sku>`). Error correction is M, each module is 0.423 mm, and the quiet zone stays intact. The version is chosen from that address, so it is not fixed. Print label on the item stays one icon; it does not pick a template of its own.
 
 Seeded codes, in display order:
 
@@ -71,7 +71,7 @@ From a Mac browser, use these print-dialog settings:
 
 ## QuickBooks customers and vendors
 
-**Contacts** in the sidebar lists customers and vendors. **Admin > Integrations** connects QuickBooks Online. The app has no Intuit credentials until you add them. Lists and forms work before that. Sync runs after the connection is saved.
+**Contacts** in the sidebar lists customers and vendors. **Admin > Integrations** opens an overview. **QuickBooks** and **eBay** are sidebar pages under it. The app has no Intuit credentials until you add them. Lists and forms work before that. Sync runs after the connection is saved. Google and BrokerBin can be added as further pages. `/admin/integrations` stays in place, including as the eBay auth-declined address.
 
 Copy these into `.env.local`. They are server-only. Do not prefix them with `NEXT_PUBLIC_` and do not commit the file.
 
@@ -97,7 +97,7 @@ Access tokens are refreshed when they are close to expiry. If a QuickBooks call 
 
 Disconnect calls Intuit's revoke endpoint and deletes the local row.
 
-**Sync** on Admin > Integrations chooses customers, vendors, or both, and Pull from QuickBooks, Push ITS changes, or Both. Both is the default. **Start sync** uses that choice. **Sync customers** and **Sync vendors** run one entity with the same direction. **Full resync** ignores that entity's change cursor and reads every active and inactive record. The toolbar Save remembers the checkboxes, direction, and full-resync choice in `localStorage`. Connect, disconnect, test, and sync are icons in that same toolbar.
+**Sync** on Admin > Integrations > QuickBooks chooses customers, vendors, or both, and Pull from QuickBooks, Push ITS changes, or Both. Both is the default. **Start sync** uses that choice. **Sync customers** and **Sync vendors** run one entity with the same direction. **Full resync** ignores that entity's change cursor and reads every active and inactive record. The toolbar Save remembers the checkboxes, direction, and full-resync choice in `localStorage`. Connect, disconnect, test, and sync are icons in that same toolbar.
 
 Customers and vendors each have a last-sync time and a CDC cursor in `qbo_sync_cursor`. Syncing one does not move the other. The first migration copies the previous shared cursor onto both. A push updates the last-sync time and leaves the cursor. A finished pull sets the cursor to the time that pull started, with a two-minute overlap on the next incremental pull. `POST /api/qbo/sync` requires `{ entities: ["customer" and/or "vendor"], direction: "pull" | "push" | "both", full: boolean }`.
 
@@ -107,7 +107,7 @@ Customer tax id is `ResaleNum`. Vendor tax id is `TaxIdentifier`. Vendor notes a
 
 ## eBay seller connection
 
-**Admin > Integrations** has an eBay card next to QuickBooks. This step stores the seller connection only. Later steps will create listings from items, sync quantity, import orders into sales orders, and push tracking. Nothing in this step lists an item or reads orders.
+**Admin > Integrations > eBay** stores the seller connection only. Later steps will create listings from items, sync quantity, import orders into sales orders, and push tracking. Nothing in this step lists an item or reads orders.
 
 Copy these into `.env.local`. They are server-only. Do not prefix them with `NEXT_PUBLIC_` and do not commit the file.
 
@@ -175,9 +175,9 @@ The page lists which providers ran, how many quotes they returned, and any error
 
 **Transactions** lists buys and sells. Filter by type and by date. **Add transaction** records a manual row. The total is quantity times unit price, rounded to cents in the database. A sell can name a customer. A buy can name a vendor. A later QuickBooks or eBay import can insert rows the same way. The same source, reference, and item cannot be inserted twice.
 
-**Admin > Settings** has **Pricing/sales window (days)** and **Label template**. The window starts at 90. Last sold price and last bought price are the newest transaction of that type. Quantity sold, revenue, average sell price, quantity bought, and spend count transactions inside the window. The label template starts as Barcode (current). QR code is the other choice. A missing setting stays on the barcode.
+**Admin > Settings** has **Pricing/sales window (days)** and a **Labels** section. The window starts at 90. Last sold price and last bought price are the newest transaction of that type. Quantity sold, revenue, average sell price, quantity bought, and spend count transactions inside the window. The item label starts as Barcode (current) unless a template was already saved. QR code is the other item choice. Pallet, Crate, Box, and Rack location show as coming soon. A missing or unknown item template stays on the barcode.
 
-`price_quotes`, `item_transactions`, and `app_settings` hold prices, the sales window, and the label template (`label_template` is `barcode` or `qr`). They are not credentials. Row level security stays off on them, matching `items`.
+`price_quotes`, `item_transactions`, and `app_settings` hold prices, the sales window, and the label templates. `label_template_item` is the item template. `label_template` is the older key and is still read when the new one is missing. They are not credentials. Row level security stays off on them, matching `items`.
 
 ## Database
 

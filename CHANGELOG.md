@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.0
+
+- Item labels keep the QTY caption and the date on a Brother QL-820NWB. The 29 mm tape only prints about 25.9 mm, so the old 1.5 mm bottom pad put those shorter lines on the unprintable edge. The taller SKU still marked. Both templates now sit above that edge, in solid black.
+- Admin > Settings has a Labels section. Item can be Barcode (current) or QR code. Pallet, Crate, Box, and Rack location are listed for later. `label_template_item` stores the item choice. The older `label_template` key is still read and still written.
+- Admin > Integrations lists QuickBooks and eBay in the sidebar, each on its own page. `/admin/integrations` stays the overview, which is where an eBay auth decline returns. Connect and OAuth land on the matching page. Google and BrokerBin can be added the same way.
+
 ## 0.20.0
 
 - Admin > Settings has a Label template choice. Barcode (current) stays the default, so labels print as they do today until an admin switches it. QR code is the other choice. The value is `label_template` in `app_settings`. A missing or unknown value stays on the barcode.

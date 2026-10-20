@@ -19,6 +19,7 @@ export function PageToolbar({
   onSave,
   disabled = false,
   listen = true,
+  showSave = true,
   leaveMessage = LEAVE_WITHOUT_SAVING,
   children,
 }: {
@@ -28,6 +29,7 @@ export function PageToolbar({
   onSave: () => void;
   disabled?: boolean;
   listen?: boolean;
+  showSave?: boolean;
   leaveMessage?: string;
   children?: ReactNode;
 }) {
@@ -103,7 +105,7 @@ export function PageToolbar({
   return (
     <div className="page-toolbar no-print">
       <div className="toolbar-cluster">
-        <button
+        {showSave ? <button
           type="button"
           className={`icon-button toolbar-save${saving ? " saving" : ""}${showSaved ? " saved" : ""}`}
           title={SAVE_LABEL}
@@ -119,7 +121,7 @@ export function PageToolbar({
             <Save size={18} strokeWidth={1.75} aria-hidden />
           )}
           {dirty && !saving ? <span className="unsaved-dot" aria-hidden /> : null}
-        </button>
+        </button> : null}
         <span className="sr-only" role="status">
           {status}
         </span>

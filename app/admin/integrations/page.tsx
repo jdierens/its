@@ -10,7 +10,7 @@ export default function AdminIntegrationsPage() {
         </main>
       }
     >
-      <IntegrationsPage />
+      <IntegrationsPage focus="overview" />
     </Suspense>
   );
 }

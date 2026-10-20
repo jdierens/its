@@ -1,18 +1,22 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Building, Cable, Contact, Plug, RefreshCw, Unplug } from "lucide-react";
 import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
 import { isDirty } from "@/lib/formDirty";
 import { RECONNECT_MESSAGE as EBAY_RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
+import { INTEGRATIONS, integrationReturnHref } from "@/lib/integrations";
 import {
   formatEntityResult,
   type EntityCounts,
   type SyncDirection,
   type SyncEntity,
 } from "@/lib/qbo/syncOptions";
+
+type IntegrationFocus = "overview" | "quickbooks" | "ebay";
 
 type LogEntry = {
   id: string;
@@ -65,8 +69,9 @@ const DEFAULT_ENTITIES: SyncEntity[] = ["customer", "vendor"];
 
 const LOCAL_REDIRECT = "http://localhost:3000/api/qbo/callback";
 
-export function IntegrationsPage() {
+export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFocus }) {
   const params = useSearchParams();
+  const router = useRouter();
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [ebay, setEbay] = useState<EbayStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,6 +118,14 @@ export function IntegrationsPage() {
       cancelled = true;
     };
   }, [load]);
+
+  useEffect(() => {
+    if (focus !== "overview") return;
+    const target = integrationReturnHref(params);
+    if (!target) return;
+    const query = params.toString();
+    router.replace(query ? `${target}?${query}` : target);
+  }, [focus, params, router]);
 
   useEffect(() => {
     const choice = loadChoice();
@@ -240,6 +253,51 @@ export function IntegrationsPage() {
   const qboConnectHref = configured && (needsReconnect || !connected) ? "/api/qbo/connect" : undefined;
   const ebayConnectHref = ebayConfigured && (ebayNeedsReconnect || !ebayConnected) ? "/api/ebay/connect" : undefined;
 
+  if (focus === "overview") {
+    const declined = params.get("error_description") || params.get("error");
+    return (
+      <main className="page">
+        <p className="page-note">
+          Each connection has its own page. Google and BrokerBin can be added the same way.
+        </p>
+        {declined ? (
+          <p className="banner error" role="alert">
+            {declined}
+          </p>
+        ) : null}
+        <div className="integration-list">
+          {INTEGRATIONS.map((entry) => (
+            <section className="card integration-card" key={entry.id}>
+              <h2>{entry.label}</h2>
+              <p className="hint">{entry.description}</p>
+              {entry.id === "quickbooks" && status ? (
+                <p className="integration-status">
+                  <span className={`sync-pill ${connected ? "synced" : "local"}`}>
+                    {connected ? "Connected" : "Not connected"}
+                  </span>
+                </p>
+              ) : null}
+              {entry.id === "ebay" && ebay ? (
+                <p className="integration-status">
+                  <span className={`sync-pill ${ebayConnected ? "synced" : "local"}`}>
+                    {ebayConnected ? "Connected" : "Not connected"}
+                  </span>
+                </p>
+              ) : null}
+              {entry.href ? (
+                <p>
+                  <Link href={entry.href}>Open {entry.label}</Link>
+                </p>
+              ) : (
+                <p className="muted">Coming soon</p>
+              )}
+            </section>
+          ))}
+        </div>
+      </main>
+    );
+  }
+
   function runSync(selected: SyncEntity[], source: "sync" | SyncEntity) {
     if (choiceDirty) {
       if (!window.confirm("Save sync choices first?")) return;
@@ -251,48 +309,55 @@ export function IntegrationsPage() {
   return (
     <main className="page">
       <PageToolbar
-        dirty={choiceDirty}
+        dirty={focus === "quickbooks" && choiceDirty}
         saving={false}
         saved={choiceSaved}
         disabled={!choiceReady}
+        listen={focus === "quickbooks"}
+        showSave={focus === "quickbooks"}
         onSave={saveChoices}
       >
-        <ToolbarButton
-          icon={RefreshCw}
-          label="Start sync"
-          busy={busy === "sync"}
-          disabled={entities.length === 0 || !canSync}
-          onClick={() => runSync(entities, "sync")}
-        />
-        <ToolbarButton
-          icon={Contact}
-          label="Sync customers"
-          busy={busy === "customer"}
-          disabled={!canSync}
-          onClick={() => runSync(["customer"], "customer")}
-        />
-        <ToolbarButton
-          icon={Building}
-          label="Sync vendors"
-          busy={busy === "vendor"}
-          disabled={!canSync}
-          onClick={() => runSync(["vendor"], "vendor")}
-        />
-        <ToolbarSeparator />
-        <ToolbarButton icon={Plug} label={qboConnectLabel} href={qboConnectHref} disabled={!qboConnectHref || busy !== null} />
-        <ToolbarButton
-          icon={Unplug}
-          label="Disconnect QuickBooks"
-          danger
-          busy={busy === "disconnect"}
-          disabled={!connected || busy !== null}
-          onClick={() => {
-            if (!window.confirm("Disconnect QuickBooks?")) return;
-            void disconnect();
-          }}
-        />
-        <ToolbarSeparator />
-        <ToolbarButton icon={Plug} label={ebayConnectLabel} href={ebayConnectHref} disabled={!ebayConnectHref || busy !== null} />
+        {focus === "quickbooks" ? (
+          <>
+            <ToolbarButton
+              icon={RefreshCw}
+              label="Start sync"
+              busy={busy === "sync"}
+              disabled={entities.length === 0 || !canSync}
+              onClick={() => runSync(entities, "sync")}
+            />
+            <ToolbarButton
+              icon={Contact}
+              label="Sync customers"
+              busy={busy === "customer"}
+              disabled={!canSync}
+              onClick={() => runSync(["customer"], "customer")}
+            />
+            <ToolbarButton
+              icon={Building}
+              label="Sync vendors"
+              busy={busy === "vendor"}
+              disabled={!canSync}
+              onClick={() => runSync(["vendor"], "vendor")}
+            />
+            <ToolbarSeparator />
+            <ToolbarButton icon={Plug} label={qboConnectLabel} href={qboConnectHref} disabled={!qboConnectHref || busy !== null} />
+            <ToolbarButton
+              icon={Unplug}
+              label="Disconnect QuickBooks"
+              danger
+              busy={busy === "disconnect"}
+              disabled={!connected || busy !== null}
+              onClick={() => {
+                if (!window.confirm("Disconnect QuickBooks?")) return;
+                void disconnect();
+              }}
+            />
+          </>
+        ) : null}
+        {focus === "ebay" ? (
+          <ToolbarButton icon={Plug} label={ebayConnectLabel} href={ebayConnectHref} disabled={!ebayConnectHref || busy !== null} />
+        ) : null}
         <ToolbarButton
           icon={Cable}
           label="Test eBay connection"
@@ -312,16 +377,16 @@ export function IntegrationsPage() {
           }}
         />
       </PageToolbar>
-      {queryError ? <p className="banner error">{queryError}</p> : null}
-      {ebayQueryError ? <p className="banner error">{ebayQueryError}</p> : null}
-      {connectedFlash && connected ? <p className="banner ok">QuickBooks connected.</p> : null}
-      {ebayConnectedFlash && ebayConnected ? <p className="banner ok">eBay connected.</p> : null}
-      {error ? <p className="banner error">{error}</p> : null}
-      {ebayError ? <p className="banner error">{ebayError}</p> : null}
-      {notice ? <p className="banner ok">{notice}</p> : null}
-      {ebayNotice ? <p className="banner ok">{ebayNotice}</p> : null}
+      {focus === "quickbooks" && queryError ? <p className="banner error">{queryError}</p> : null}
+      {focus === "ebay" && ebayQueryError ? <p className="banner error">{ebayQueryError}</p> : null}
+      {focus === "quickbooks" && connectedFlash && connected ? <p className="banner ok">QuickBooks connected.</p> : null}
+      {focus === "ebay" && ebayConnectedFlash && ebayConnected ? <p className="banner ok">eBay connected.</p> : null}
+      {focus === "quickbooks" && error ? <p className="banner error">{error}</p> : null}
+      {focus === "ebay" && ebayError ? <p className="banner error">{ebayError}</p> : null}
+      {focus === "quickbooks" && notice ? <p className="banner ok">{notice}</p> : null}
+      {focus === "ebay" && ebayNotice ? <p className="banner ok">{ebayNotice}</p> : null}
       <div className="integration-grid">
-        <section className="card integration-card">
+        {focus === "quickbooks" ? <section className="card integration-card">
           <h2>QuickBooks Online</h2>
           {loading ? <p className="muted">Loading connection…</p> : null}
           {status ? (
@@ -365,8 +430,8 @@ export function IntegrationsPage() {
               <p className="hint">Connect, reconnect, and disconnect are in the toolbar.</p>
             </>
           ) : null}
-        </section>
-        <section className="card integration-card">
+        </section> : null}
+        {focus === "ebay" ? <section className="card integration-card">
           <h2>eBay</h2>
           {loading ? <p className="muted">Loading connection…</p> : null}
           {ebay ? (
@@ -438,9 +503,9 @@ export function IntegrationsPage() {
               )}
             </>
           ) : null}
-        </section>
+        </section> : null}
       </div>
-      <section className="card integration-card">
+      {focus === "quickbooks" ? <section className="card integration-card">
         <h2>Sync</h2>
         <div className="sync-choices">
           <label className="check">
@@ -522,8 +587,8 @@ export function IntegrationsPage() {
             ))}
           </ul>
         ) : null}
-      </section>
-      <section className="card integration-card">
+      </section> : null}
+      {focus === "quickbooks" ? <section className="card integration-card">
         <h2>Recent sync log</h2>
         {status && status.logs.length > 0 ? (
           <table className="log-table">
@@ -551,7 +616,7 @@ export function IntegrationsPage() {
         ) : (
           <p className="muted">No sync activity yet.</p>
         )}
-      </section>
+      </section> : null}
     </main>
   );
 }
