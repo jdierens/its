@@ -20,11 +20,20 @@ import {
 } from "@/lib/inlineEdit";
 import { fetchCountries, type Country } from "@/lib/countries";
 import { ITEM_TYPES, SEEDED_UNITS, countryLabel, isItemType, NEW_CONDITION_NOTES } from "@/lib/itemFields";
+import {
+  ITEM_PAGE_SIZE,
+  isSortableColumn,
+  parseItemPage,
+  parseItemSort,
+  toggleItemSort,
+  writeItemSort,
+} from "@/lib/itemSort";
 import { fetchItemList, fetchListedItem, fetchTaxonomyChoices, saveItemCell } from "@/lib/items";
 import { productUrlHref } from "@/lib/productUrl";
 import { fetchManufacturerChoices } from "@/lib/manufacturers";
 import { fetchUnits } from "@/lib/units";
 import type { DataType, ItemListColumn, ItemListRow, TaxonomyChoice } from "@/lib/types";
+import styles from "./itemSort.module.css";
 
 type ActiveCell = { row: number; col: number };
 type Editing = { row: number; col: number; seed: string | null };
@@ -66,6 +75,13 @@ const PRICES = [
   { id: "market_price", label: "Market price" },
   { id: "msrp", label: "MSRP" },
 ] as const;
+
+function itemRange(page: number, matched: number, total: number): string {
+  if (matched === 0) return `0 of ${total} items`;
+  const from = (page - 1) * ITEM_PAGE_SIZE + 1;
+  const to = Math.min(page * ITEM_PAGE_SIZE, matched);
+  return `${from}–${to} of ${matched}`;
+}
 
 function fieldSummary(fields: Record<string, string>): string {
   return Object.entries(fields)
@@ -129,6 +145,8 @@ export function ItemsTable() {
   const typeParam = params.get("type") ?? "";
   const itemType = isItemType(typeParam) ? typeParam : "";
   const manufacturerId = params.get("mfr") ?? "";
+  const sort = parseItemSort(params.get("sort"), params.get("dir"));
+  const page = parseItemPage(params.get("page"));
   const [draft, setDraft] = useState(q);
   const [choices, setChoices] = useState<TaxonomyChoice[]>([]);
   const [manufacturers, setManufacturers] = useState<{ id: string; name: string }[]>([]);
@@ -138,6 +156,8 @@ export function ItemsTable() {
   const [columns, setColumns] = useState<ItemListColumn[]>([]);
   const [pricing, setPricing] = useState(false);
   const [total, setTotal] = useState(0);
+  const [matched, setMatched] = useState(0);
+  const [listPage, setListPage] = useState(page);
   const [unknownTax, setUnknownTax] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -205,6 +225,7 @@ export function ItemsTable() {
       const next = new URLSearchParams(params.toString());
       if (trimmed) next.set("q", trimmed);
       else next.delete("q");
+      next.delete("page");
       const query = next.toString();
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     }, 250);
@@ -214,20 +235,26 @@ export function ItemsTable() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchItemList({ tax, q, condition, manufacturerId, itemType })
+    fetchItemList({ tax, q, condition, manufacturerId, itemType, sort: sort.column, dir: sort.ascending ? "asc" : "desc", page })
       .then((result) => {
         if (cancelled) return;
         setRows(result.rows);
         setColumns(result.columns);
         setPricing(result.pricing);
         setTotal(result.total);
+        setMatched(result.matched);
+        setListPage(result.page);
         setUnknownTax(result.unknownTax);
         setError(null);
-        setActive((current) => {
-          if (!current) return null;
-          if (current.row >= result.rows.length) return null;
-          return current;
-        });
+        setActive(null);
+        setEditing(null);
+        if (result.page !== page) {
+          const next = new URLSearchParams(params.toString());
+          if (result.page <= 1) next.delete("page");
+          else next.set("page", String(result.page));
+          const query = next.toString();
+          router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(errorText(err));
@@ -238,7 +265,7 @@ export function ItemsTable() {
     return () => {
       cancelled = true;
     };
-  }, [tax, q, condition, manufacturerId, itemType]);
+  }, [tax, q, condition, manufacturerId, itemType, sort.column, sort.ascending, page, params, pathname, router]);
 
   useEffect(() => {
     if (!active || editing) return;
@@ -267,12 +294,30 @@ export function ItemsTable() {
     return () => window.removeEventListener("keydown", onSlash);
   }, []);
 
+  function replaceQuery(next: URLSearchParams) {
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(params.toString());
     if (value) next.set(key, value);
     else next.delete(key);
-    const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    if (key !== "page") next.delete("page");
+    replaceQuery(next);
+  }
+
+  function applySort(columnId: string) {
+    const next = new URLSearchParams(params.toString());
+    writeItemSort(next, toggleItemSort(sort, columnId));
+    replaceQuery(next);
+  }
+
+  function setPage(nextPage: number) {
+    const next = new URLSearchParams(params.toString());
+    if (nextPage <= 1) next.delete("page");
+    else next.set("page", String(nextPage));
+    replaceQuery(next);
   }
 
   function move(row: number, col: number) {
@@ -531,8 +576,21 @@ export function ItemsTable() {
           }}
         />
         <p className="items-count">
-          {loading && rows.length === 0 ? "Loading items…" : `${rows.length} of ${total} items`}
+          {loading && rows.length === 0 ? "Loading items…" : itemRange(listPage, matched, total)}
         </p>
+        <div className={styles.pager}>
+          <button type="button" className="secondary" disabled={listPage <= 1 || loading} onClick={() => setPage(listPage - 1)}>
+            Previous
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={loading || listPage * ITEM_PAGE_SIZE >= matched}
+            onClick={() => setPage(listPage + 1)}
+          >
+            Next
+          </button>
+        </div>
         <ItemExportMenu tax={tax} q={q} condition={condition} manufacturerId={manufacturerId} itemType={itemType} />
         <Link className="button" href="/items/new">
           New item
@@ -540,7 +598,7 @@ export function ItemsTable() {
       </div>
       <p id="items-help" className="hint items-help">
         Arrow keys move the cell. Enter or typing edits it. Enter and Tab save and move, Esc cancels.
-        Enter on the SKU or name opens the item. / focuses search.
+        Enter on the SKU or name opens the item. / focuses search. Click a column heading to sort the whole list.
       </p>
       {selected.size > 0 ? (
         <BulkEditBar
@@ -571,11 +629,15 @@ export function ItemsTable() {
         >
           <thead>
             <tr role="row" aria-rowindex={1}>
-              {gridColumns.map((column, index) => (
+              {gridColumns.map((column, index) => {
+                const sortable = isSortableColumn(column.id);
+                const activeSort = sortable && sort.column === column.id;
+                return (
                 <th
                   key={column.id}
                   role="columnheader"
                   aria-colindex={index + 1}
+                  aria-sort={activeSort ? (sort.ascending ? "ascending" : "descending") : sortable ? "none" : undefined}
                   scope="col"
                   title={column.id === "coo" ? "Country of origin" : undefined}
                 >
@@ -600,11 +662,17 @@ export function ItemsTable() {
                       }}
                     />
                     </>
+                  ) : sortable ? (
+                    <button type="button" className={styles.header} onClick={() => applySort(column.id)}>
+                      {column.label}
+                      {activeSort ? <span aria-hidden="true">{sort.ascending ? " ↑" : " ↓"}</span> : null}
+                    </button>
                   ) : (
                     column.label
                   )}
                 </th>
-              ))}
+                );
+              })}
             </tr>
           </thead>
           <tbody>
