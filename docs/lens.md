@@ -9,7 +9,9 @@ Set these on the server. In Vercel they are Environment Variables for the ITS pr
 - `GEMINI_API_KEY` — required. Without it, Lens shows “not configured” and does not call Google.
 - `GEMINI_MODEL` — optional. When it is empty, Lens uses `gemini-3.8-flash`.
 
-The key is sent only as the `x-goog-api-key` header. It is not written to logs and it is not returned to the browser. The status request returns whether a key is set and which model name will be used.
+The key is sent only as the `x-goog-api-key` header to the Gemini Developer API (`generativelanguage.googleapis.com`). It is not a Vertex AI request. It is not written to logs and it is not returned to the browser. The status request returns whether a key is set and which model name will be used.
+
+Identify asks Gemini 3.8 Flash for a short answer and waits up to 50 seconds. The page shows the cause when Google rejects the call: invalid key, unknown model, quota or billing, a payload that is too large, or a timeout. The key itself is never included in that message.
 
 ## What the reading contains
 
