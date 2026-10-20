@@ -26,12 +26,16 @@ import {
   NEW_CONDITION_NOTES,
   conditionNoteAfterChange,
   DEFAULT_ITEM_TYPE,
+  DEFAULT_UNIT,
   ITEM_TYPES,
+  SEEDED_UNITS,
   htsError,
+  unitOrDefault,
   type ItemCondition,
   type ItemType,
 } from "@/lib/itemFields";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
+import { fetchUnits } from "@/lib/units";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 
 type ItemFormProps = {
@@ -61,6 +65,9 @@ type ItemSnapshot = {
   manufacturerName: string;
   model: string;
   partNumber: string;
+  oemName: string;
+  oemPartNumber: string;
+  unit: string;
   itemType: ItemType;
   condition: ItemCondition;
   conditionNote: string;
@@ -90,6 +97,9 @@ const EMPTY_ITEM: ItemSnapshot = {
   manufacturerName: "",
   model: "",
   partNumber: "",
+  oemName: "",
+  oemPartNumber: "",
+  unit: DEFAULT_UNIT,
   itemType: DEFAULT_ITEM_TYPE,
   condition: DEFAULT_CONDITION,
   conditionNote: "",
@@ -123,6 +133,10 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [manufacturerUnresolved, setManufacturerUnresolved] = useState(false);
   const [model, setModel] = useState("");
   const [partNumber, setPartNumber] = useState("");
+  const [oemName, setOemName] = useState("");
+  const [oemPartNumber, setOemPartNumber] = useState("");
+  const [unit, setUnit] = useState(DEFAULT_UNIT);
+  const [units, setUnits] = useState<string[]>([...SEEDED_UNITS]);
   const [itemType, setItemType] = useState<ItemType>(DEFAULT_ITEM_TYPE);
   const [condition, setCondition] = useState<ItemCondition>(DEFAULT_CONDITION);
   const [conditionNote, setConditionNote] = useState("");
@@ -169,14 +183,16 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     async function load() {
       try {
-        const [taxonomyRows, countryRows, item] = await Promise.all([
+        const [taxonomyRows, countryRows, unitRows, item] = await Promise.all([
           fetchTaxonomies(),
           fetchCountries(),
+          fetchUnits(),
           mode === "edit" && itemId ? fetchItem(itemId) : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setTaxonomies(taxonomyRows);
         setCountries(countryRows);
+        setUnits(unitRows);
         if (mode === "edit") {
           if (!item) {
             setMissing(true);
@@ -202,8 +218,12 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           setAttributeValues(values);
           setManufacturerId(item.manufacturerId);
           setManufacturerName(item.manufacturerName);
+          const nextUnit = unitOrDefault(item.unit, unitRows);
           setModel(item.model);
           setPartNumber(item.partNumber);
+          setOemName(item.oemName);
+          setOemPartNumber(item.oemPartNumber);
+          setUnit(nextUnit);
           setItemType(item.itemType);
           setCondition(item.condition);
           setConditionNote(item.conditionNote);
@@ -225,6 +245,9 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             manufacturerName: item.manufacturerName,
             model: item.model,
             partNumber: item.partNumber,
+            oemName: item.oemName,
+            oemPartNumber: item.oemPartNumber,
+            unit: nextUnit,
             itemType: item.itemType,
             condition: item.condition,
             conditionNote: item.conditionNote,
@@ -309,6 +332,12 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     setSaved(false);
   }
 
+  const unitChoices = useMemo(() => {
+    const names = units.length > 0 ? [...units] : [...SEEDED_UNITS];
+    if (unit && !names.some((name) => name.toLowerCase() === unit.toLowerCase())) names.push(unit);
+    return names;
+  }, [units, unit]);
+
   const snapshot: ItemSnapshot = {
     sku,
     name,
@@ -321,6 +350,9 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     manufacturerName,
     model,
     partNumber,
+    oemName,
+    oemPartNumber,
+    unit,
     itemType,
     condition,
     conditionNote,
@@ -437,6 +469,9 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       manufacturerId,
       model,
       partNumber,
+      oemName,
+      oemPartNumber,
+      unit,
       itemType,
       condition,
       conditionNote,
@@ -793,6 +828,45 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
               />
             </label>
             <label>
+              OEM name
+              <input
+                value={oemName}
+                autoComplete="off"
+                onChange={(event) => {
+                  setOemName(event.target.value);
+                  setSaved(false);
+                }}
+              />
+            </label>
+            <label>
+              OEM part number
+              <input
+                value={oemPartNumber}
+                autoComplete="off"
+                onChange={(event) => {
+                  setOemPartNumber(event.target.value);
+                  setSaved(false);
+                }}
+              />
+            </label>
+            <label>
+              Unit
+              <select
+                aria-label="Unit"
+                value={unit}
+                onChange={(event) => {
+                  setUnit(event.target.value);
+                  setSaved(false);
+                }}
+              >
+                {unitChoices.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
               Condition
               <select
                 value={condition}
@@ -1030,6 +1104,9 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                   manufacturerName,
                   model,
                   partNumber,
+                  oemName,
+                  oemPartNumber,
+                  unit,
                   itemType,
                   condition,
                   conditionNote,

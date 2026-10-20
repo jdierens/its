@@ -19,9 +19,10 @@ import {
   validateCell,
 } from "@/lib/inlineEdit";
 import { fetchCountries, type Country } from "@/lib/countries";
-import { ITEM_TYPES, countryLabel, isItemType, NEW_CONDITION_NOTES } from "@/lib/itemFields";
+import { ITEM_TYPES, SEEDED_UNITS, countryLabel, isItemType, NEW_CONDITION_NOTES } from "@/lib/itemFields";
 import { fetchItemList, fetchListedItem, fetchTaxonomyChoices, saveItemCell } from "@/lib/items";
 import { fetchManufacturerChoices } from "@/lib/manufacturers";
+import { fetchUnits } from "@/lib/units";
 import type { DataType, ItemListColumn, ItemListRow, TaxonomyChoice } from "@/lib/types";
 
 type ActiveCell = { row: number; col: number };
@@ -44,6 +45,9 @@ const LEADING = [
   { id: "manufacturer", label: "Manufacturer" },
   { id: "model", label: "Model" },
   { id: "part_number", label: "Part number" },
+  { id: "oem_name", label: "OEM name" },
+  { id: "oem_part_number", label: "OEM part number" },
+  { id: "unit", label: "Unit" },
   { id: "condition", label: "Condition" },
 ] as const;
 
@@ -78,6 +82,9 @@ function displayValue(item: ItemListRow, columnId: string, countries: Country[])
   if (columnId === "manufacturer") return item.manufacturerName || "—";
   if (columnId === "model") return item.model || "—";
   if (columnId === "part_number") return item.partNumber || "—";
+  if (columnId === "oem_name") return item.oemName || "—";
+  if (columnId === "oem_part_number") return item.oemPartNumber || "—";
+  if (columnId === "unit") return item.unit || "—";
   if (columnId === "condition") return item.condition || "—";
   if (columnId === "condition_note") return item.conditionNote || "—";
   if (columnId === "eccn") return item.eccn || "—";
@@ -123,6 +130,7 @@ export function ItemsTable() {
   const [choices, setChoices] = useState<TaxonomyChoice[]>([]);
   const [manufacturers, setManufacturers] = useState<{ id: string; name: string }[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
+  const [units, setUnits] = useState<string[]>([...SEEDED_UNITS]);
   const [rows, setRows] = useState<ItemListRow[]>([]);
   const [columns, setColumns] = useState<ItemListColumn[]>([]);
   const [pricing, setPricing] = useState(false);
@@ -171,12 +179,13 @@ export function ItemsTable() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchTaxonomyChoices(), fetchManufacturerChoices(), fetchCountries()])
-      .then(([nextChoices, nextMakers, nextCountries]) => {
+    Promise.all([fetchTaxonomyChoices(), fetchManufacturerChoices(), fetchCountries(), fetchUnits()])
+      .then(([nextChoices, nextMakers, nextCountries, nextUnits]) => {
         if (cancelled) return;
         setChoices(nextChoices);
         setManufacturers(nextMakers);
         setCountries(nextCountries);
+        setUnits(nextUnits);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(errorText(err));
@@ -344,6 +353,7 @@ export function ItemsTable() {
       condition: item.condition,
       conditionNote: item.conditionNote,
       dataType: column.dataType,
+      units,
     });
     setEditing(null);
     if (checked.error) {
@@ -621,6 +631,8 @@ export function ItemsTable() {
                           column.id === "manufacturer" ||
                           column.id === "model" ||
                           column.id === "part_number" ||
+                          column.id === "oem_name" ||
+                          column.id === "oem_part_number" ||
                           column.id === "condition_note"
                             ? "clip"
                             : "",
@@ -661,6 +673,7 @@ export function ItemsTable() {
                             mode={
                               column.id === "condition" ||
                               column.id === "item_type" ||
+                              column.id === "unit" ||
                               (column.id === "condition_note" && item.condition === "New")
                                 ? "select"
                                 : column.id === "manufacturer"
@@ -679,7 +692,12 @@ export function ItemsTable() {
                             display={editorDisplay(item, column.id, countries)}
                             seed={editing.seed}
                             options={
-                              column.id === "item_type"
+                              column.id === "unit"
+                                ? [...new Set([...(units.length > 0 ? units : [...SEEDED_UNITS]), item.unit || "Piece"])].map((name) => ({
+                                    value: name,
+                                    label: name,
+                                  }))
+                                : column.id === "item_type"
                                 ? ITEM_TYPES.map((type) => ({ value: type, label: type }))
                                 : column.id === "condition"
                                   ? [
