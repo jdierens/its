@@ -54,7 +54,7 @@ const PRICE_COLUMNS =
   "ecommerce_price, ecommerce_price_updated_at, market_price, market_price_updated_at, msrp, msrp_updated_at, pricing_checked_at, part_number, model";
 
 export async function fetchItemPrices(itemId: string): Promise<ItemPrices | null> {
-  const { data, error } = await getSupabase().from("items").select(PRICE_COLUMNS).eq("id", itemId).maybeSingle();
+  const { data, error } = await (await getSupabase()).from("items").select(PRICE_COLUMNS).eq("id", itemId).maybeSingle();
   if (error) throw new Error(errorText(error));
   if (!data) return null;
   return {
@@ -74,7 +74,7 @@ export async function saveItemPrices(
   itemId: string,
   prices: { ecommercePrice: number | null; marketPrice: number | null; msrp: number | null },
 ): Promise<void> {
-  const { error } = await getSupabase()
+  const { error } = await (await getSupabase())
     .from("items")
     .update({
       ecommerce_price: prices.ecommercePrice,
@@ -103,7 +103,7 @@ type QuoteRow = {
 };
 
 export async function fetchPriceQuotes(itemId: string): Promise<PriceQuote[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("price_quotes")
     .select("id, source, price, currency, qty, condition, vendor_id, seller_name, url, notes, captured_at, captured_by, outlier, vendors(display_name)")
     .eq("item_id", itemId)
@@ -141,7 +141,7 @@ export type QuoteInput = {
 };
 
 export async function addPriceQuote(itemId: string, input: QuoteInput): Promise<void> {
-  const { error } = await getSupabase().from("price_quotes").insert({
+  const { error } = await (await getSupabase()).from("price_quotes").insert({
     item_id: itemId,
     source: input.source,
     price: input.price,
@@ -175,7 +175,7 @@ type TxnRow = {
 };
 
 export async function fetchItemTransactions(itemId: string): Promise<ItemTransaction[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("item_transactions")
     .select(
       "id, type, txn_date, qty, unit_price, total, customer_id, vendor_id, reference, source, notes, created_at, customers(display_name), vendors(display_name)",
@@ -215,7 +215,7 @@ export type TransactionInput = {
 };
 
 export async function addItemTransaction(itemId: string, input: TransactionInput): Promise<void> {
-  const { error } = await getSupabase().from("item_transactions").insert({
+  const { error } = await (await getSupabase()).from("item_transactions").insert({
     item_id: itemId,
     type: input.type,
     txn_date: input.txnDate,
@@ -231,13 +231,13 @@ export async function addItemTransaction(itemId: string, input: TransactionInput
 }
 
 export async function fetchPartyChoices(table: "customers" | "vendors"): Promise<PartyChoice[]> {
-  const { data, error } = await getSupabase().from(table).select("id, display_name").order("display_name");
+  const { data, error } = await (await getSupabase()).from(table).select("id, display_name").order("display_name");
   if (error) throw new Error(errorText(error));
   return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.display_name ?? "") }));
 }
 
 export async function fetchSalesWindowDays(): Promise<number> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("app_settings")
     .select("value")
     .eq("key", SALES_WINDOW_KEY)
@@ -248,7 +248,7 @@ export async function fetchSalesWindowDays(): Promise<number> {
 }
 
 export async function saveSalesWindowDays(days: number): Promise<void> {
-  const { error } = await getSupabase().from("app_settings").upsert({
+  const { error } = await (await getSupabase()).from("app_settings").upsert({
     key: SALES_WINDOW_KEY,
     value: String(days),
     updated_at: new Date().toISOString(),

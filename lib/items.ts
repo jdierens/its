@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { errorText } from "@/lib/errors";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { ITEM_IMAGE_BUCKET, signedImageUrls } from "@/lib/images";
@@ -7,6 +8,7 @@ import {
   isItemCondition,
   isItemType,
   itemTypeOrDefault,
+  unitOrDefault,
   type ItemType,
 } from "@/lib/itemFields";
 import { getSupabase } from "@/lib/supabase";
@@ -73,6 +75,9 @@ type ItemRow = {
   manufacturer_id: string | null;
   model: string | null;
   part_number: string | null;
+  oem_name: string | null;
+  oem_part_number: string | null;
+  unit: string | null;
   condition: string | null;
   condition_note: string | null;
   eccn: string | null;
@@ -104,6 +109,9 @@ type ListRow = {
   manufacturer_id: string | null;
   model: string | null;
   part_number: string | null;
+  oem_name: string | null;
+  oem_part_number: string | null;
+  unit: string | null;
   condition: string | null;
   condition_note: string | null;
   eccn: string | null;
@@ -122,7 +130,7 @@ type ListRow = {
 };
 
 const LIST_DETAIL =
-  "id, sku, name, item_type, quantity, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
+  "id, sku, name, item_type, quantity, manufacturer_id, model, part_number, oem_name, oem_part_number, unit, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
 
 const PRICE_COLUMNS = ["ecommerce_price", "market_price", "msrp"] as const;
 
@@ -195,7 +203,7 @@ function toTaxonomy(taxonomy: TaxonomyRow): Taxonomy {
 }
 
 export async function fetchTaxonomy(id: string): Promise<Taxonomy | null> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .select(TAXONOMY_COLUMNS)
     .eq("id", id)
@@ -207,7 +215,7 @@ export async function fetchTaxonomy(id: string): Promise<Taxonomy | null> {
 }
 
 export async function fetchTaxonomies(): Promise<Taxonomy[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .select(TAXONOMY_COLUMNS)
     .order("sort_order")
@@ -228,7 +236,7 @@ function likePattern(raw: string): string {
 }
 
 export async function fetchTaxonomyChoices(): Promise<TaxonomyChoice[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .select("name, short_code")
     .order("sort_order")
@@ -262,7 +270,7 @@ export async function resolveItemQuery(input: {
   manufacturerId?: string | null;
   itemType?: string | null;
 }): Promise<ResolvedItemQuery> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const tax = input.tax?.trim().toUpperCase() ?? "";
   const q = input.q?.trim() ?? "";
   const condition = input.condition === "New" || input.condition === "Used" ? input.condition : "";
@@ -352,7 +360,7 @@ export async function resolveItemQuery(input: {
   let ids: string[] | null = null;
   if (q) {
     const pattern = likePattern(q);
-    const textQueries = (["sku", "name", "description", "model", "part_number"] as const).map((column) => {
+    const textQueries = (["sku", "name", "description", "model", "part_number", "oem_name", "oem_part_number"] as const).map((column) => {
       let query = supabase.from("items").select("id").ilike(column, pattern);
       if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
       return query;
@@ -430,7 +438,7 @@ export async function fetchItemList(input: {
   manufacturerId?: string | null;
   itemType?: string | null;
 }): Promise<ItemList> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const counted = await supabase.from("items").select("id", { count: "exact", head: true });
   if (counted.error) throw new Error(errorText(counted.error));
   const total = counted.count ?? 0;
@@ -470,7 +478,7 @@ function listColumns(pricing: boolean): string {
   return `${LIST_DETAIL}, ${PRICE_COLUMNS.join(", ")}`;
 }
 
-async function pricingAvailable(supabase: ReturnType<typeof getSupabase>): Promise<boolean> {
+async function pricingAvailable(supabase: SupabaseClient): Promise<boolean> {
   const probe = await supabase.from("items").select(PRICE_COLUMNS.join(",")).limit(1);
   return !probe.error;
 }
@@ -501,6 +509,9 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
     manufacturerName: embeddedName(item.manufacturers),
     model: item.model ?? "",
     partNumber: item.part_number ?? "",
+    oemName: item.oem_name ?? "",
+    oemPartNumber: item.oem_part_number ?? "",
+    unit: unitOrDefault(item.unit),
     itemType: itemTypeOrDefault(item.item_type),
     condition: item.condition ?? DEFAULT_CONDITION,
     conditionNote: item.condition_note ?? "",
@@ -517,7 +528,7 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
 }
 
 export async function fetchListedItem(id: string): Promise<ItemListRow | null> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const pricing = await pricingAvailable(supabase);
   const listed = await supabase.from("items").select(listColumns(pricing)).eq("id", id).maybeSingle();
   if (listed.error) throw new Error(errorText(listed.error));
@@ -542,7 +553,7 @@ export async function saveItemCell(input: {
   value: string;
   expectedUpdatedAt: string;
 }): Promise<CellSave> {
-  const { data, error } = await getSupabase().rpc("update_item_cell", {
+  const { data, error } = await (await getSupabase()).rpc("update_item_cell", {
     p_id: input.id,
     p_field: input.field,
     p_value: input.value,
@@ -570,10 +581,10 @@ function primaryPath(images: SummaryImage[] | null): string | null {
 }
 
 export async function fetchItem(id: string): Promise<ItemDetail | null> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("items")
     .select(
-      "id, sku, name, description, notes, item_type, quantity, taxonomy_id, manufacturer_id, model, part_number, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
+      "id, sku, name, description, notes, item_type, quantity, taxonomy_id, manufacturer_id, model, part_number, oem_name, oem_part_number, unit, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -606,6 +617,9 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     manufacturerName: embeddedName(item.manufacturers) ?? "",
     model: item.model ?? "",
     partNumber: item.part_number ?? "",
+    oemName: item.oem_name ?? "",
+    oemPartNumber: item.oem_part_number ?? "",
+    unit: unitOrDefault(item.unit),
     condition,
     conditionNote: item.condition_note ?? "",
     eccn: item.eccn ?? DEFAULT_ECCN,
@@ -622,7 +636,7 @@ export async function findItemForLabel(identifier: string): Promise<LabelItem | 
   const query = identifier.trim();
   if (!query) return null;
 
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const columns = "id, sku, name, description, taxonomies(short_code)";
 
   if (UUID_PATTERN.test(query)) {
@@ -677,6 +691,9 @@ export type ItemInput = {
   manufacturerId: string | null;
   model: string;
   partNumber: string;
+  oemName: string;
+  oemPartNumber: string;
+  unit: string;
   condition: "New" | "Used";
   conditionNote: string;
   eccn: string;
@@ -704,11 +721,14 @@ function coreArgs(input: ItemInput) {
     p_ccats: input.ccats.trim() || null,
     p_coo: input.coo.trim() || null,
     p_item_type: input.itemType,
+    p_oem_name: input.oemName.trim(),
+    p_oem_part_number: input.oemPartNumber.trim(),
+    p_unit: input.unit.trim(),
   };
 }
 
 export async function createItem(input: ItemInput): Promise<string> {
-  const { data, error } = await getSupabase().rpc("create_item", {
+  const { data, error } = await (await getSupabase()).rpc("create_item", {
     p_name: input.name,
     p_taxonomy: input.taxonomyName,
     p_attributes: input.attributes,
@@ -727,7 +747,7 @@ export async function createItem(input: ItemInput): Promise<string> {
 }
 
 export async function deleteItem(id: string): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const images = await supabase.from("item_images").select("storage_path").eq("item_id", id);
   if (images.error) throw new Error(errorText(images.error));
 
@@ -747,7 +767,7 @@ export async function deleteItem(id: string): Promise<void> {
 }
 
 export async function updateItem(id: string, input: ItemInput): Promise<void> {
-  const { error } = await getSupabase().rpc("update_item", {
+  const { error } = await (await getSupabase()).rpc("update_item", {
     p_id: id,
     p_name: input.name,
     p_taxonomy: input.taxonomyName,
@@ -765,7 +785,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
 }
 
 export async function saveItemNotes(id: string, notes: string): Promise<void> {
-  const { error } = await getSupabase().from("items").update({ notes: notes.trim() || null }).eq("id", id);
+  const { error } = await (await getSupabase()).from("items").update({ notes: notes.trim() || null }).eq("id", id);
   if (error) throw new Error(errorText(error));
 }
 
@@ -781,7 +801,7 @@ export async function changeItemTaxonomy(input: {
   copyNotes: boolean;
   regenerateSku: boolean;
 }): Promise<TaxonomyChangeResult> {
-  const { data, error } = await getSupabase().rpc("change_item_taxonomy", {
+  const { data, error } = await (await getSupabase()).rpc("change_item_taxonomy", {
     p_id: input.id,
     p_taxonomy_id: input.taxonomyId,
     p_copy_notes: input.copyNotes,
@@ -811,7 +831,7 @@ function friendlyTaxonomyError(error: unknown): string {
 }
 
 export async function createTaxonomy(input: TaxonomyInput): Promise<string> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .insert({
       name: input.name.trim(),
@@ -825,7 +845,7 @@ export async function createTaxonomy(input: TaxonomyInput): Promise<string> {
 }
 
 export async function countTaxonomyItems(id: string): Promise<number> {
-  const { count, error } = await getSupabase()
+  const { count, error } = await (await getSupabase())
     .from("items")
     .select("id", { count: "exact", head: true })
     .eq("taxonomy_id", id);
@@ -842,13 +862,13 @@ export async function deleteTaxonomy(id: string): Promise<void> {
         : `Can't delete this taxonomy. ${count} items use it.`,
     );
   }
-  const deleted = await getSupabase().from("taxonomies").delete().eq("id", id).select("id");
+  const deleted = await (await getSupabase()).from("taxonomies").delete().eq("id", id).select("id");
   if (deleted.error) throw new Error(friendlyTaxonomyError(deleted.error));
   if (!deleted.data || deleted.data.length === 0) throw new Error("That taxonomy is already gone.");
 }
 
 export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<void> {
-  const { error } = await getSupabase()
+  const { error } = await (await getSupabase())
     .from("taxonomies")
     .update({
       name: input.name,
@@ -861,7 +881,7 @@ export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<
 }
 
 export async function saveTaxonomyOrder(ids: string[]): Promise<void> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const results = await Promise.all(
     ids.map((id, index) =>
       supabase.from("taxonomies").update({ sort_order: index + 1 }).eq("id", id),

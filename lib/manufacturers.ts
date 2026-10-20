@@ -28,13 +28,13 @@ type MakerRow = {
 };
 
 export async function fetchManufacturerChoices(): Promise<{ id: string; name: string }[]> {
-  const { data, error } = await getSupabase().from("manufacturers").select("id, name").order("name");
+  const { data, error } = await (await getSupabase()).from("manufacturers").select("id, name").order("name");
   if (error) throw new Error(errorText(error));
   return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.name) }));
 }
 
 export async function fetchManufacturers(): Promise<ManufacturerRecord[]> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const [listed, counted] = await Promise.all([
     supabase
       .from("manufacturers")
@@ -64,7 +64,7 @@ export async function fetchManufacturers(): Promise<ManufacturerRecord[]> {
 
 export async function suggestManufacturers(query: string): Promise<ManufacturerSuggestion[]> {
   const trimmed = query.trim();
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   if (!trimmed) {
     const { data, error } = await supabase.from("manufacturers").select("id, name").order("name").limit(8);
     if (error) throw new Error(errorText(error));
@@ -87,7 +87,7 @@ export async function suggestManufacturers(query: string): Promise<ManufacturerS
 }
 
 export async function createManufacturer(name: string): Promise<{ id: string; name: string }> {
-  const supabase = getSupabase();
+  const supabase = await getSupabase();
   const created = await supabase.rpc("create_manufacturer", { p_name: name });
   if (created.error) throw new Error(errorText(created.error));
   if (typeof created.data !== "string") throw new Error("Manufacturer was not saved.");
@@ -97,12 +97,12 @@ export async function createManufacturer(name: string): Promise<{ id: string; na
 }
 
 export async function renameManufacturer(id: string, name: string): Promise<void> {
-  const { error } = await getSupabase().rpc("rename_manufacturer", { p_id: id, p_name: name });
+  const { error } = await (await getSupabase()).rpc("rename_manufacturer", { p_id: id, p_name: name });
   if (error) throw new Error(errorText(error));
 }
 
 export async function addManufacturerAlias(manufacturerId: string, alias: string): Promise<void> {
-  const { error } = await getSupabase().rpc("add_manufacturer_alias", {
+  const { error } = await (await getSupabase()).rpc("add_manufacturer_alias", {
     p_manufacturer_id: manufacturerId,
     p_alias: alias,
   });
@@ -110,11 +110,11 @@ export async function addManufacturerAlias(manufacturerId: string, alias: string
 }
 
 export async function removeManufacturerAlias(id: string): Promise<void> {
-  const { error } = await getSupabase().rpc("remove_manufacturer_alias", { p_id: id });
+  const { error } = await (await getSupabase()).rpc("remove_manufacturer_alias", { p_id: id });
   if (error) throw new Error(errorText(error));
 }
 
 export async function mergeManufacturers(keepId: string, dropId: string): Promise<void> {
-  const { error } = await getSupabase().rpc("merge_manufacturers", { p_keep: keepId, p_drop: dropId });
+  const { error } = await (await getSupabase()).rpc("merge_manufacturers", { p_keep: keepId, p_drop: dropId });
   if (error) throw new Error(errorText(error));
 }

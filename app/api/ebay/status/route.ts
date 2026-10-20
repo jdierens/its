@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
 
 async function readLogs() {
   try {
-    const { data, error } = await getSupabase()
+    const { data, error } = await (await getSupabase())
       .from("ebay_sync_log")
       .select("id, started_at, finished_at, entity, direction, status, message")
       .order("created_at", { ascending: false })

@@ -32,8 +32,8 @@ Production keysets must answer marketplace account deletion notifications. The e
 
 Set the same URL and `EBAY_DEPLETION_VERIFICATION_TOKEN` in the eBay developer portal. A GET with `challenge_code` responds with `{ "challengeResponse": "<sha256 hex>" }`, where the hash is `challengeCode + verificationToken + endpoint` with no separator. A POST notification is acknowledged with HTTP 200 and a log line. ITS does not store the buyer username, user id, or eias token from that notification.
 
-`/api/ebay/callback` and `/api/ebay/account-deletion` are in `PUBLIC_PATHS`. When Google sign-in is added, leave both out of the auth check. eBay's servers call the deletion endpoint with no session.
+`/api/ebay/callback` and `/api/ebay/account-deletion` are in `PUBLIC_PATHS`. `/api/qbo/callback` is too. Those routes stay outside the session check. eBay's servers call the deletion endpoint with no session.
 
-Vercel Deployment Protection blocks those calls. eBay will not send a Vercel bypass header, so a protected deployment returns a login wall instead of the challenge JSON and eBay rejects the endpoint. Two options: turn Deployment Protection off for this deployment, or use Vercel's Protection Bypass for Automation only if the request can actually carry the bypass (eBay's notification call cannot). Once Google sign-in exists, Deployment Protection can stay off and the app can require a session everywhere except `PUBLIC_PATHS`.
+Vercel Deployment Protection still has to stay on. Sign-in does not lock the database: the anon key can still write the existing tables until the phase 2 policies in [sign-in](sign-in.md) are applied. eBay will not send a Vercel bypass header, so a protected deployment returns a login wall instead of the challenge JSON. That is unchanged. Turn Deployment Protection off only after phase 2 is deployed.
 
 The Integrations card shows the accept URL and the deletion URL for the origin you are browsing. On production that is the two URLs above.
