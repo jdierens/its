@@ -1,10 +1,12 @@
 # Changelog
 
+History through 0.21.0 is below. Anything newer is a file in `changes/`. Name it `changes/YYYYMMDDHHMMSS-short-name.md`, set `bump` to `minor` or `patch`, and write the note. The sidebar version is the `version` in `package.json` plus those bumps, computed when the app is built. Do not edit that version or this file for a feature.
+
 ## 0.21.0
 
-- Every item has an OEM name, an OEM part number, and a unit. OEM fields are optional text. Unit is required, starts as Piece, and is picked from the `units` list. Piece and Lbs are seeded. Add a row to offer another unit. Existing items are Piece.
-- Those fields are on the item form, the items table (including inline edit), export, and search. `create_item` and `update_item` take the three values as optional arguments at the end. Leaving them out keeps the deployed app working: a new item gets a blank OEM and Piece, and an update does not change stored OEM or unit. The new app sends an empty string to clear OEM.
-- Taxonomy CBL is named Cable. Motherboard (MBD), Heatsink (SNK), and Unsorted (UNS) are in the list.
+- Item labels keep the QTY caption and the date on a Brother QL-820NWB. The 29 mm tape only prints about 25.9 mm, so the old 1.5 mm bottom pad put those shorter lines on the unprintable edge. The taller SKU still marked. Both templates now sit above that edge, in solid black.
+- Admin > Settings has a Labels section. Item can be Barcode (current) or QR code. Pallet, Crate, Box, and Rack location are listed for later. `label_template_item` stores the item choice. The older `label_template` key is still read and still written.
+- Admin > Integrations lists QuickBooks and eBay in the sidebar, each on its own page. `/admin/integrations` stays the overview, which is where an eBay auth decline returns. Connect and OAuth land on the matching page. Google and BrokerBin can be added the same way.
 
 ## 0.20.0
 

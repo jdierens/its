@@ -94,13 +94,13 @@ function fitCaptionToWidth(
 ): { fontPx: number; letterSpacingPx: number } {
   let fontPx = (2.6 * 96) / 25.4;
   if (targetWidth <= 0) return { fontPx, letterSpacingPx: 0 };
-  let natural = measuredWidth(text, fontPx, 400);
+  let natural = measuredWidth(text, fontPx, 700);
   if (natural > targetWidth) {
     let low = 4;
     let high = fontPx;
     for (let step = 0; step < 14; step += 1) {
       const mid = (low + high) / 2;
-      if (measuredWidth(text, mid, 400) <= targetWidth) {
+      if (measuredWidth(text, mid, 700) <= targetWidth) {
         fontPx = mid;
         low = mid;
       } else {
@@ -108,11 +108,11 @@ function fitCaptionToWidth(
         fontPx = mid;
       }
     }
-    natural = measuredWidth(text, fontPx, 400);
+    natural = measuredWidth(text, fontPx, 700);
   }
   const gaps = Math.max(text.length - 1, 1);
   let letterSpacingPx = Math.max(0, targetWidth - natural) / gaps;
-  const spaced = widthWithSpacing(text, fontPx, 400, letterSpacingPx);
+  const spaced = widthWithSpacing(text, fontPx, 700, letterSpacingPx);
   if (spaced > natural && Math.abs(spaced - targetWidth) > 0.4) {
     letterSpacingPx *= (targetWidth - natural) / (spaced - natural);
   }
@@ -365,13 +365,19 @@ export const LABEL_PRINT_CSS = `
   width: 90mm;
   height: 29mm;
   box-sizing: border-box;
-  padding: 1.5mm;
+  /* DK-1201 on the QL-820NWB prints 25.92 mm of the 29 mm tape. The other
+     ~1.5 mm on each tape edge is outside the print head. Those edges are the
+     top and bottom of this landscape page. The bottom pad keeps the QTY
+     caption and the date above that dead zone. The SKU is taller, so it used
+     to survive while those shorter lines did not. */
+  padding: 1.8mm 1.5mm 2.6mm;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
   background: #fff;
   color: #000;
+  opacity: 1;
   font-family: Helvetica, Arial, sans-serif;
 }
 
@@ -461,8 +467,10 @@ export const LABEL_PRINT_CSS = `
 .item-label-caption,
 .item-label-date {
   font-size: 2.6mm;
-  font-weight: 400;
+  font-weight: 700;
   line-height: 1;
+  color: #000;
+  opacity: 1;
 }
 
 .label-frame {
@@ -552,9 +560,11 @@ export const LABEL_PRINT_CSS = `
 .qr-cap,
 .qr-date {
   font-size: 3.8mm;
-  font-weight: 400;
+  font-weight: 700;
   line-height: 1;
   white-space: nowrap;
+  color: #000;
+  opacity: 1;
 }
 
 .qr-fact-qty .qr-big,
@@ -618,6 +628,26 @@ export const LABEL_PRINT_CSS = `
     page-break-after: always;
     break-inside: avoid;
     page-break-inside: avoid;
+    padding: 1.8mm 1.5mm 2.6mm;
+    color: #000 !important;
+    opacity: 1 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .item-label-caption,
+  .item-label-date,
+  .item-label-code,
+  .qr-cap,
+  .qr-date,
+  .qr-sku,
+  .qr-name,
+  .qr-big,
+  .item-label-name,
+  .item-label-qty,
+  .item-label-short {
+    color: #000 !important;
+    opacity: 1 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }

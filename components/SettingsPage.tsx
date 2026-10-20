@@ -6,8 +6,9 @@ import { errorText } from "@/lib/errors";
 import {
   DEFAULT_LABEL_TEMPLATE,
   fetchLabelTemplate,
-  LABEL_TEMPLATES,
+  LABEL_TYPES,
   saveLabelTemplate,
+  TEMPLATES_BY_LABEL_TYPE,
   type LabelTemplateId,
 } from "@/lib/labelTemplates";
 import { parseWindowDays } from "@/lib/pricing/quotes";
@@ -87,27 +88,43 @@ export function SettingsPage() {
         <span className="hint">
           Item sales totals count buys and sells in this many days. The default is 90.
         </span>
-        <label htmlFor="label-template">Label template</label>
-        <select
-          id="label-template"
-          aria-label="Label template"
-          value={template}
-          disabled={loading}
-          onChange={(event) => {
-            setTemplate(event.target.value as LabelTemplateId);
-            setSaved(false);
-          }}
-        >
-          {LABEL_TEMPLATES.map((choice) => (
-            <option key={choice.id} value={choice.id}>
-              {choice.label}
-            </option>
-          ))}
-        </select>
+        <h2>Labels</h2>
         <span className="hint">
-          Barcode (current) is the default 90 × 29 mm Code 128 label. QR code is the same size,
-          with the SKU under the symbol. Print label on an item uses this choice.
+          Each label type has its own template. Item labels print today. Pallet, crate, box, and
+          rack location are next.
         </span>
+        <div className="label-types">
+          {LABEL_TYPES.map((type) => {
+            const choices = TEMPLATES_BY_LABEL_TYPE[type.id];
+            return (
+              <div className="label-type" key={type.id}>
+                <label htmlFor={`label-template-${type.id}`}>{type.label}</label>
+                {type.ready ? (
+                  <select
+                    id={`label-template-${type.id}`}
+                    aria-label={`${type.label} label template`}
+                    value={template}
+                    disabled={loading}
+                    onChange={(event) => {
+                      setTemplate(event.target.value as LabelTemplateId);
+                      setSaved(false);
+                    }}
+                  >
+                    {choices.map((choice) => (
+                      <option key={choice.id} value={choice.id}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="muted" id={`label-template-${type.id}`}>
+                    Coming soon
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
         {error ? (
           <p className="banner error" role="alert">
             {error}

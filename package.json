@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --import ./test/register.mjs --test lib/qbo/*.test.ts lib/ebay/*.test.ts lib/itemFields.test.ts lib/imageOrder.test.ts lib/export/*.test.ts lib/google/*.test.ts lib/inlineEdit.test.ts lib/taxonomyChange.test.ts lib/formDirty.test.ts lib/pricing/*.test.ts lib/labelTemplates.test.ts"
+    "test": "node --experimental-strip-types --import ./test/register.mjs --test lib/qbo/*.test.ts lib/ebay/*.test.ts lib/itemFields.test.ts lib/imageOrder.test.ts lib/export/*.test.ts lib/google/*.test.ts lib/inlineEdit.test.ts lib/taxonomyChange.test.ts lib/formDirty.test.ts lib/pricing/*.test.ts lib/labelTemplates.test.ts lib/integrations.test.ts lib/releaseVersion.test.ts"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",
