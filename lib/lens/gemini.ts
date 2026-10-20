@@ -28,13 +28,90 @@ export function geminiRequestBody(input: { prompt: string; images: LensImage[] }
   };
 }
 
-export function publicGeminiText(value: string): string {
+export function publicGeminiText(value: string, limit = 240): string {
   return value
     .replace(/AIza[0-9A-Za-z_-]{10,}/g, "[key]")
     .replace(/([?&]key=)[^&\s]+/gi, "$1[redacted]")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 240);
+    .slice(0, limit);
+}
+
+export function keyLast4(apiKey: string): string {
+  const trimmed = apiKey.trim();
+  if (trimmed.length < 8) return "";
+  return trimmed.slice(-4);
+}
+
+const PROBE_HEADER_NAMES = ["content-type", "date", "server", "via", "x-goog-request-id", "x-request-id", "alt-svc"];
+
+export function publicProbeHeaders(headers: { get(name: string): string | null }): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of PROBE_HEADER_NAMES) {
+    const value = headers.get(name);
+    if (!value) continue;
+    out[name] = publicGeminiText(value, 160);
+  }
+  return out;
+}
+
+export function geminiProbeBody(): Record<string, unknown> {
+  return {
+    contents: [{ role: "user", parts: [{ text: "Reply with the single word ok." }] }],
+    generationConfig: { thinkingConfig: { thinkingLevel: "low" }, maxOutputTokens: 16 },
+  };
+}
+
+export type GeminiProbe = {
+  host: string;
+  googleStatus: number | null;
+  latencyMs: number;
+  errorName: string | null;
+  message: string;
+  headers: Record<string, string>;
+  body: string;
+};
+
+export async function probeGemini(input: { apiKey: string; model: string }): Promise<GeminiProbe> {
+  const started = Date.now();
+  const url = geminiDeveloperUrl(input.model);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": input.apiKey,
+      },
+      body: JSON.stringify(geminiProbeBody()),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const bodyText = await response.text();
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(bodyText) as unknown;
+    } catch {
+      parsed = null;
+    }
+    return {
+      host: new URL(url).host,
+      googleStatus: response.status,
+      latencyMs: Date.now() - started,
+      errorName: null,
+      message: response.ok ? "Google answered." : geminiHttpFailure(response.status, parsed),
+      headers: publicProbeHeaders(response.headers),
+      body: publicGeminiText(bodyText, 500),
+    };
+  } catch (error) {
+    return {
+      host: new URL(url).host,
+      googleStatus: null,
+      latencyMs: Date.now() - started,
+      errorName: error instanceof Error ? error.name : "Error",
+      message: geminiThrownFailure(error),
+      headers: {},
+      body: "",
+    };
+  }
 }
 
 export function geminiThrownFailure(error: unknown): string {

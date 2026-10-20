@@ -4,9 +4,12 @@ import {
   GEMINI_TIMEOUT_MS,
   geminiDeveloperUrl,
   geminiHttpFailure,
+  geminiProbeBody,
   geminiRequestBody,
   geminiThrownFailure,
+  keyLast4,
   publicGeminiText,
+  publicProbeHeaders,
 } from "./gemini.ts";
 
 test("Lens calls the Gemini Developer API, not Vertex", () => {
@@ -45,4 +48,25 @@ test("Google errors name the cause and hide the key", () => {
   );
   assert.equal(geminiHttpFailure(413, { error: { message: "Request payload too large" } }), "Those photos are too large for Google.");
   assert.equal(publicGeminiText("bad key AIzaSyDUMMYKEYVALUE1234567890"), "bad key [key]");
+});
+
+test("the probe reports only the last four characters and strips the key from Google's body", () => {
+  assert.equal(keyLast4("AIzaSyEXAMPLEKEY1234abcd"), "abcd");
+  assert.equal(keyLast4("short"), "");
+  const body = geminiProbeBody();
+  assert.equal(JSON.stringify(body).includes("inline_data"), false);
+  const headers = publicProbeHeaders({
+    get(name: string) {
+      if (name === "content-type") return "application/json; charset=UTF-8";
+      if (name === "server") return "ESF";
+      if (name === "x-goog-request-id") return "req-1";
+      return null;
+    },
+  });
+  assert.deepEqual(headers, {
+    "content-type": "application/json; charset=UTF-8",
+    server: "ESF",
+    "x-goog-request-id": "req-1",
+  });
+  assert.equal(publicGeminiText('{"error":{"message":"bad AIzaSyEXAMPLEKEY1234abcd"}}', 500).includes("AIza"), false);
 });

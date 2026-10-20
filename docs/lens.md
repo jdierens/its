@@ -13,6 +13,10 @@ The key is sent only as the `x-goog-api-key` header to the Gemini Developer API 
 
 Identify asks Gemini 3.8 Flash for a short answer and waits up to 50 seconds. The page shows the cause when Google rejects the call: invalid key, unknown model, quota or billing, a payload that is too large, or a timeout. The key itself is never included in that message.
 
+AI Studio does not keep `generateContent` requests in Logs unless logging is turned on. In AI Studio open Logs and datasets, select the project, and enable logging. Storage is only offered for a paid-tier project. Dashboard usage is separate from those logs and can show calls even when request logs are off. Logs can also lag.
+
+Preview deployments accept `GET /api/lens?probe=1`. That makes one short text call and returns Google's status, latency, selected response headers, and the error text. It returns the last four characters of the key and never the key. Production does not serve the probe.
+
 ## What the reading contains
 
 Google returns structured JSON: manufacturer, every visible part number (including FRU, OPN, and S-spec strings), model, item type, a taxonomy name chosen from the current ITS taxonomy list, key specs, condition hints, the text that was read, and a confidence from 0 to 1.

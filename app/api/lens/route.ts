@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { geminiApiKey, geminiConfigured, geminiModel } from "@/lib/lens/config";
-import { identifyWithGemini } from "@/lib/lens/gemini";
+import { identifyWithGemini, keyLast4, probeGemini } from "@/lib/lens/gemini";
 import { readLensImages } from "@/lib/lens/images";
 import { allowLensCaller } from "@/lib/lens/limit";
 import { lensPrompt, parseLensReading } from "@/lib/lens/parse";
@@ -11,11 +11,23 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export async function GET() {
-  return NextResponse.json(
-    { configured: geminiConfigured(), model: geminiModel() },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+export async function GET(request: Request) {
+  const headers = { "Cache-Control": "no-store" };
+  if (new URL(request.url).searchParams.get("probe") === "1") {
+    if (process.env.VERCEL_ENV === "production") {
+      return NextResponse.json({ probe: false }, { status: 404, headers });
+    }
+    const caller = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+    if (!allowLensCaller(`probe:${caller}`)) {
+      return NextResponse.json({ probe: true, message: "Probe is busy. Wait a few minutes and try again." }, { status: 429, headers });
+    }
+    const key = geminiApiKey();
+    const model = geminiModel();
+    if (!key) return NextResponse.json({ probe: true, configured: false, model, keyLast4: null }, { headers });
+    const result = await probeGemini({ apiKey: key, model });
+    return NextResponse.json({ probe: true, configured: true, model, keyLast4: keyLast4(key), ...result }, { headers });
+  }
+  return NextResponse.json({ configured: geminiConfigured(), model: geminiModel() }, { headers });
 }
 
 export async function POST(request: Request) {
