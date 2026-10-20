@@ -35,6 +35,7 @@ import {
   type ItemType,
 } from "@/lib/itemFields";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
+import { productUrlError, productUrlHref } from "@/lib/productUrl";
 import { clearNewItemSku, reserveNewItemSku } from "@/lib/sku";
 import { fetchUnits } from "@/lib/units";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
@@ -68,6 +69,7 @@ type ItemSnapshot = {
   partNumber: string;
   oemName: string;
   oemPartNumber: string;
+  productUrl: string;
   unit: string;
   itemType: ItemType;
   condition: ItemCondition;
@@ -100,6 +102,7 @@ const EMPTY_ITEM: ItemSnapshot = {
   partNumber: "",
   oemName: "",
   oemPartNumber: "",
+  productUrl: "",
   unit: DEFAULT_UNIT,
   itemType: DEFAULT_ITEM_TYPE,
   condition: DEFAULT_CONDITION,
@@ -137,6 +140,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [partNumber, setPartNumber] = useState("");
   const [oemName, setOemName] = useState("");
   const [oemPartNumber, setOemPartNumber] = useState("");
+  const [productUrl, setProductUrl] = useState("");
   const [unit, setUnit] = useState(DEFAULT_UNIT);
   const [units, setUnits] = useState<string[]>([...SEEDED_UNITS]);
   const [itemType, setItemType] = useState<ItemType>(DEFAULT_ITEM_TYPE);
@@ -226,6 +230,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           setPartNumber(item.partNumber);
           setOemName(item.oemName);
           setOemPartNumber(item.oemPartNumber);
+          setProductUrl(item.productUrl);
           setUnit(nextUnit);
           setItemType(item.itemType);
           setCondition(item.condition);
@@ -251,6 +256,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             partNumber: item.partNumber,
             oemName: item.oemName,
             oemPartNumber: item.oemPartNumber,
+            productUrl: item.productUrl,
             unit: nextUnit,
             itemType: item.itemType,
             condition: item.condition,
@@ -360,6 +366,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     partNumber,
     oemName,
     oemPartNumber,
+    productUrl,
     unit,
     itemType,
     condition,
@@ -407,6 +414,11 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     const htsProblem = htsError(usHts);
     if (htsProblem) {
       setSaveError(`US HTS: ${htsProblem}`);
+      return false;
+    }
+    const urlProblem = productUrlError(productUrl);
+    if (urlProblem) {
+      setSaveError(urlProblem);
       return false;
     }
 
@@ -479,6 +491,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       partNumber,
       oemName,
       oemPartNumber,
+      productUrl,
       unit,
       itemType,
       condition,
@@ -872,6 +885,30 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
               />
             </label>
             <label>
+              Product page
+              <input
+                type="url"
+                inputMode="url"
+                value={productUrl}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="https://"
+                onChange={(event) => {
+                  setProductUrl(event.target.value);
+                  setSaved(false);
+                }}
+              />
+              {productUrl.trim() && productUrlError(productUrl) ? (
+                <span className="error-text">{productUrlError(productUrl)}</span>
+              ) : productUrlHref(productUrl) ? (
+                <a href={productUrlHref(productUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
+                  Open product page
+                </a>
+              ) : (
+                <span className="hint">Optional http or https address.</span>
+              )}
+            </label>
+            <label>
               Unit
               <select
                 aria-label="Unit"
@@ -1128,6 +1165,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                   partNumber,
                   oemName,
                   oemPartNumber,
+                  productUrl,
                   unit,
                   itemType,
                   condition,

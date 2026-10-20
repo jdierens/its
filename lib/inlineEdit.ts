@@ -1,3 +1,4 @@
+import { productUrlError } from "@/lib/productUrl";
 import {
   DEFAULT_ECCN,
   DEFAULT_UNIT,
@@ -32,6 +33,7 @@ export function isEditableColumn(columnId: string): boolean {
     columnId === "part_number" ||
     columnId === "oem_name" ||
     columnId === "oem_part_number" ||
+    columnId === "product_url" ||
     columnId === "unit" ||
     columnId === "condition" ||
     columnId === "condition_note" ||
@@ -126,6 +128,9 @@ export function validateCell(input: {
     const problem = attributeValueError(input.dataType ?? "text", trimmed);
     return { value: trimmed, error: problem };
   }
+  if (input.columnId === "product_url") {
+    return { value: trimmed, error: productUrlError(trimmed) };
+  }
   if (input.columnId === "manufacturer") {
     if (trimmed && !/^[0-9a-f-]{36}$/i.test(trimmed)) {
       return { value: trimmed, error: "Choose a manufacturer from the list, or add the new name." };
@@ -158,6 +163,7 @@ export function patchRow(row: ItemListRow, columnId: string, value: string): Ite
   if (columnId === "part_number") return { ...row, partNumber: value };
   if (columnId === "oem_name") return { ...row, oemName: value };
   if (columnId === "oem_part_number") return { ...row, oemPartNumber: value };
+  if (columnId === "product_url") return { ...row, productUrl: value };
   if (columnId === "unit") return { ...row, unit: value };
   if (columnId === "condition") {
     const next = value === "New" ? "New" : "Used";
@@ -206,6 +212,7 @@ export function rawCellValue(row: ItemListRow, columnId: string): string {
   if (columnId === "part_number") return row.partNumber;
   if (columnId === "oem_name") return row.oemName;
   if (columnId === "oem_part_number") return row.oemPartNumber;
+  if (columnId === "product_url") return row.productUrl;
   if (columnId === "unit") return row.unit;
   if (columnId === "condition") return row.condition;
   if (columnId === "condition_note") return row.conditionNote;
