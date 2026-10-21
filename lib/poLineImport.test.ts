@@ -38,6 +38,7 @@ test("a known item keeps its id and name", () => {
   assert.equal(finished.itemSku, "DDR4");
   assert.equal(finished.itemName, "32GB DIMM");
   assert.equal(finished.description, "Registered ECC");
+  assert.notEqual(finished.description, finished.itemName);
 });
 
 test("mismatched prices are a row error", () => {

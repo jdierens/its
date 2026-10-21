@@ -2430,24 +2430,114 @@ p.error {
 }
 
 .po-page {
-  max-width: 1240px;
+  max-width: 1180px;
+}
+
+.po-page form {
+  gap: 1rem;
+  padding: 1rem 1.05rem 1.15rem;
+}
+
+.po-page .po-head > label,
+.po-page .po-head-2 > label,
+.po-page .po-field,
+.po-page .po-notes > label,
+.po-page .po-line-actions > label,
+.po-page .po-file-add > label {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.po-page input,
+.po-page select,
+.po-page textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.po-page input,
+.po-page select {
+  height: 2.25rem;
+  padding: 0 0.6rem;
+}
+
+.po-page textarea {
+  height: auto;
+  min-height: 5.25rem;
+  padding: 0.55rem 0.6rem;
+  line-height: 1.4;
+}
+
+.po-page .hint {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.po-page input[type="file"] {
+  height: auto;
+  padding: 0.35rem 0;
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.po-page input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.po-page button {
+  height: 2.25rem;
+  padding: 0 0.8rem;
+  font-size: 0.88rem;
+  line-height: 1;
+}
+
+.po-page button.combo-option {
+  height: auto;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .po-head,
 .po-head-2,
 .po-notes {
   display: grid;
-  gap: 0.75rem;
-  margin-bottom: 0.85rem;
+  gap: 0.75rem 0.85rem;
+  align-items: start;
+  margin: 0;
 }
 
 .po-head {
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.9fr) 10.2rem 10.2rem;
+  grid-template-columns: minmax(12rem, 1.7fr) minmax(8.5rem, 0.85fr) 10.5rem 10.5rem;
 }
 
 .po-head-2 {
   grid-template-columns: 11rem minmax(0, 1fr);
-  align-items: flex-start;
 }
 
 .po-head-2-single,
@@ -2455,81 +2545,180 @@ p.error {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.po-head > label,
-.po-head-2 > label,
-.po-notes > label {
-  min-width: 0;
-  margin: 0;
+.po-notes {
+  grid-template-columns: 1fr 1fr;
 }
 
 .po-label {
   display: block;
-  margin-bottom: 0.3rem;
-  font-size: 0.86rem;
-  color: var(--muted);
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
 }
 
 .po-track-row {
   display: grid;
-  grid-template-columns: 8.5rem minmax(0, 1fr) auto;
-  gap: 0.4rem;
-  align-items: flex-start;
-  margin-bottom: 0.4rem;
+  grid-template-columns: 8.75rem minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.po-track-row + .po-track-row,
+.po-track-row + button {
+  margin-top: 0.45rem;
 }
 
 .po-lines {
+  margin: 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .po-lines table {
-  min-width: 920px;
+  width: 100%;
+  min-width: 52rem;
+  table-layout: fixed;
+}
+
+.po-col-check { width: 2.25rem; }
+.po-col-item { width: 16.5rem; }
+.po-col-qty { width: 5.25rem; }
+.po-col-unit { width: 5.75rem; }
+.po-col-price { width: 7.25rem; }
+.po-col-ext { width: 8.25rem; }
+
+.po-lines th,
+.po-lines td {
+  padding: 0.45rem 0.4rem;
+  vertical-align: middle;
+}
+
+.po-lines th {
+  white-space: nowrap;
 }
 
 .po-lines input,
-.po-lines select,
-.po-track-row input,
-.po-track-row select {
-  min-width: 0;
-  padding: 0.35rem 0.45rem;
-}
-
-.po-lines input[type="checkbox"] {
-  width: auto;
-}
-
-.po-item {
-  min-width: 14rem;
+.po-lines select {
+  height: 2rem;
+  padding: 0 0.45rem;
 }
 
 .po-item-id {
+  margin-bottom: 0.35rem;
+  font-size: 0.86rem;
   font-weight: 600;
-  margin-bottom: 0.25rem;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-transform: none;
+  word-break: break-word;
 }
 
-.po-num {
-  width: 6.5rem;
+.po-find {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
 }
 
-.po-unit,
-.po-condition {
-  width: 5.5rem;
+.po-find > input {
+  flex: 1 1 7.5rem;
+  width: auto;
+}
+
+.po-find > button {
+  flex: 0 0 auto;
+  width: auto;
+  height: 2rem;
+  padding: 0 0.6rem;
+}
+
+.po-find .combo-menu {
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  right: 0;
+  left: 0;
+}
+
+.po-num,
+.po-lines th.po-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.po-num input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.po-lines tfoot td {
+  background: #f7f8fa;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.po-total-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: right;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.po-total-label label {
+  display: block;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-align: right;
+  text-transform: inherit;
+}
+
+.po-total-label .hint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.po-total-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.po-lines tfoot tr.po-grand td {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.po-lines tfoot tr.po-grand .po-total-label {
+  color: var(--ink);
 }
 
 .po-line-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: 0.65rem 0.75rem;
   align-items: flex-end;
-  margin-top: 0.7rem;
+  margin-top: 0.75rem;
 }
 
-.po-line-actions label {
-  width: 8.5rem;
-  margin: 0;
+.po-line-actions > label {
+  flex: 0 1 8.5rem;
 }
 
-.po-line-actions label:last-of-type {
-  width: 16rem;
+.po-line-actions > label:last-of-type {
+  flex: 1 1 16rem;
 }
 
 .po-line-actions button {
@@ -2537,66 +2726,108 @@ p.error {
 }
 
 .po-preview {
-  margin-top: 0.7rem;
+  margin-top: 0.75rem;
+}
+
+.po-preview td.po-num,
+.po-preview th.po-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .po-row-error td {
   color: var(--danger-ink);
 }
 
-.po-totals {
-  display: grid;
-  grid-template-columns: 12rem minmax(0, 11rem);
-  gap: 0.35rem 0.75rem;
-  align-items: center;
-  max-width: 26rem;
-  margin: 0.9rem 0 0.4rem;
-}
-
-.po-totals .hint {
-  grid-column: 1 / -1;
-  margin: 0;
-}
-
-.po-notes textarea {
-  min-height: 4.5rem;
-}
-
 .po-files {
-  margin-top: 1rem;
+  margin: 0;
 }
 
 .po-file-list {
   list-style: none;
-  margin: 0 0 0.7rem;
+  margin: 0.35rem 0 0.75rem;
   padding: 0;
 }
 
 .po-file-list li {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: 0.55rem 0.75rem;
   align-items: center;
-  margin-bottom: 0.35rem;
+  min-height: 2.25rem;
+  margin: 0;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .po-file-add {
   display: grid;
   grid-template-columns: 14rem minmax(0, 18rem);
   gap: 0.75rem;
-  align-items: flex-end;
-}
-
-.po-file-add label {
-  margin: 0;
+  align-items: end;
 }
 
 @media (max-width: 800px) {
+  .po-page {
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+  }
+
+  .po-page form {
+    padding: 0.85rem 0.7rem 1rem;
+  }
+
   .po-head,
   .po-head-2,
   .po-notes,
   .po-file-add,
   .po-track-row {
     grid-template-columns: 1fr;
+  }
+
+  .po-page input,
+  .po-page select,
+  .po-page textarea {
+    font-size: 16px;
+  }
+
+  .po-line-actions {
+    align-items: stretch;
+  }
+
+  .po-line-actions > label,
+  .po-line-actions > label:last-of-type,
+  .po-line-actions button,
+  .po-track-row button {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .po-lines {
+    margin-right: -0.7rem;
+    margin-left: -0.7rem;
+    padding-right: 0.7rem;
+    padding-left: 0.7rem;
+  }
+
+  .po-lines th:last-child,
+  .po-lines td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: #fff;
+    box-shadow: -8px 0 10px rgba(16, 24, 32, 0.06);
+  }
+
+  .po-lines thead th:last-child {
+    z-index: 2;
+  }
+
+  .po-lines tfoot td:last-child {
+    background: #f7f8fa;
+  }
+
+  .po-col-item {
+    width: 12rem;
   }
 }

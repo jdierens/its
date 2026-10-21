@@ -18,7 +18,7 @@ import {
   syncLinePrices,
   type PriceEdit,
 } from "@/lib/poLineMoney";
-import { purchaseOrderStatusLabel } from "@/lib/purchaseOrderDraft";
+import { descriptionFromPickedItem, purchaseOrderStatusLabel } from "@/lib/purchaseOrderDraft";
 import {
   cancelPurchaseOrder,
   savePurchaseOrder,
@@ -43,7 +43,7 @@ const EMPTY_LINE: LineState = {
   qty: "",
   unitCost: "",
   extPrice: "",
-  condition: "Used",
+  condition: "",
   unit: "Piece",
   query: "",
   hits: [],
@@ -352,7 +352,7 @@ export function PurchaseOrderForm({
               )}
             </label>
           ) : null}
-          <div>
+          <div className="po-field">
             <span className="po-label">Tracking</span>
             {shipments.length === 0 && !chargesEditable ? <p className="muted">No tracking numbers yet.</p> : null}
             {shipments.map((shipment, index) => {
@@ -432,6 +432,15 @@ export function PurchaseOrderForm({
 
         <div className="po-lines">
           <table className="dense">
+            <colgroup>
+              {editable ? <col className="po-col-check" /> : null}
+              <col className="po-col-item" />
+              <col className="po-col-desc" />
+              <col className="po-col-qty" />
+              <col className="po-col-unit" />
+              {showMoney ? <col className="po-col-price" /> : null}
+              {showMoney ? <col className="po-col-ext" /> : null}
+            </colgroup>
             <thead>
               <tr>
                 {editable ? (
@@ -448,11 +457,10 @@ export function PurchaseOrderForm({
                 ) : null}
                 <th>Item</th>
                 <th>Description</th>
-                <th>Qty</th>
+                <th className="po-num">Qty</th>
                 <th>Unit</th>
-                {showMoney ? <th>Unit price</th> : null}
-                {showMoney ? <th>Ext price</th> : null}
-                <th>Condition</th>
+                {showMoney ? <th className="po-num">Unit price</th> : null}
+                {showMoney ? <th className="po-num">Ext price</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -475,7 +483,7 @@ export function PurchaseOrderForm({
                       </div>
                     ) : null}
                     {editable ? (
-                      <div className="combo">
+                      <div className="combo po-find">
                         <input
                           value={line.query}
                           onChange={(event) => updateLine(index, { query: event.target.value })}
@@ -483,20 +491,18 @@ export function PurchaseOrderForm({
                           autoComplete="off"
                           aria-label={`Find item for line ${index + 1}`}
                         />
-                        <span className="actions">
-                          <button type="button" className="secondary" onClick={() => void findItem(index)}>
-                            Find
+                        <button type="button" className="secondary" onClick={() => void findItem(index)}>
+                          Find
+                        </button>
+                        {line.itemId ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => updateLine(index, { itemId: "", itemSku: "", itemName: "", hits: [] })}
+                          >
+                            Clear
                           </button>
-                          {line.itemId ? (
-                            <button
-                              type="button"
-                              className="secondary"
-                              onClick={() => updateLine(index, { itemId: "", itemSku: "", itemName: "", hits: [] })}
-                            >
-                              Clear
-                            </button>
-                          ) : null}
-                        </span>
+                        ) : null}
                         {line.hits.length > 0 ? (
                           <div className="combo-menu">
                             {line.hits.map((hit) => (
@@ -509,7 +515,7 @@ export function PurchaseOrderForm({
                                     itemId: hit.id,
                                     itemSku: hit.sku,
                                     itemName: hit.name,
-                                    description: line.description || hit.description,
+                                    description: descriptionFromPickedItem(hit.description),
                                     hits: [],
                                     query: "",
                                   })
@@ -526,10 +532,11 @@ export function PurchaseOrderForm({
                       </div>
                     ) : null}
                   </td>
-                  <td>
+                  <td className="po-desc">
                     <input
                       aria-label={`Description for line ${index + 1}`}
                       value={line.description}
+                      placeholder="Item description"
                       onChange={(event) => updateLine(index, { description: event.target.value })}
                       readOnly={!editable}
                     />
@@ -575,23 +582,18 @@ export function PurchaseOrderForm({
                       />
                     </td>
                   ) : null}
-                  <td className="po-condition">
-                    {editable ? (
-                      <select
-                        aria-label={`Condition for line ${index + 1}`}
-                        value={line.condition}
-                        onChange={(event) => updateLine(index, { condition: event.target.value })}
-                      >
-                        <option value="Used">Used</option>
-                        <option value="New">New</option>
-                      </select>
-                    ) : (
-                      <input value={line.condition} readOnly aria-label={`Condition for line ${index + 1}`} />
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
+            {showMoney ? (
+              <OrderTotals
+                lines={lines}
+                freightIn={freightIn}
+                editable={chargesEditable}
+                labelSpan={(editable ? 1 : 0) + 5}
+                onFreight={setFreightIn}
+              />
+            ) : null}
           </table>
         </div>
         {editable ? (
@@ -641,9 +643,9 @@ export function PurchaseOrderForm({
                   <tr>
                     <th>Row</th>
                     <th>Item</th>
-                    <th>Qty</th>
-                    {showMoney ? <th>Unit price</th> : null}
-                    {showMoney ? <th>Ext</th> : null}
+                    <th className="po-num">Qty</th>
+                    {showMoney ? <th className="po-num">Unit price</th> : null}
+                    {showMoney ? <th className="po-num">Ext</th> : null}
                     <th></th>
                   </tr>
                 </thead>
@@ -652,9 +654,9 @@ export function PurchaseOrderForm({
                     <tr key={row.rowNumber} className={row.level === "error" ? "po-row-error" : undefined}>
                       <td>{row.rowNumber}</td>
                       <td>{row.itemId ? `${row.itemSku} - ${row.itemName}` : row.description}</td>
-                      <td>{row.qty}</td>
-                      {showMoney ? <td>{row.unitCost}</td> : null}
-                      {showMoney ? <td>{row.extPrice}</td> : null}
+                      <td className="po-num">{row.qty}</td>
+                      {showMoney ? <td className="po-num">{row.unitCost}</td> : null}
+                      {showMoney ? <td className="po-num">{row.extPrice}</td> : null}
                       <td>{row.message ?? ""}</td>
                     </tr>
                   ))}
@@ -668,8 +670,6 @@ export function PurchaseOrderForm({
             ) : null}
           </div>
         ) : null}
-
-        {showMoney ? <OrderTotals lines={lines} freightIn={freightIn} editable={chargesEditable} onFreight={setFreightIn} /> : null}
 
         <div className={showMoney ? "po-notes" : "po-notes po-notes-single"}>
           <label>
@@ -727,11 +727,13 @@ function OrderTotals({
   lines,
   freightIn,
   editable,
+  labelSpan,
   onFreight,
 }: {
   lines: LineState[];
   freightIn: string;
   editable: boolean;
+  labelSpan: number;
   onFreight: (value: string) => void;
 }) {
   let cents = 0;
@@ -753,22 +755,39 @@ function OrderTotals({
   const freightAmount = freight === "invalid" ? null : freight;
   const total = subtotal == null || freight === "invalid" ? null : subtotal + (freightAmount ?? 0);
   return (
-    <div className="po-totals">
-      <span>Subtotal</span>
-      <strong>{formatMoney(subtotal)}</strong>
-      <label htmlFor="po-freight">Shipping / Freight in</label>
-      <input
-        id="po-freight"
-        value={freightIn}
-        onChange={(event) => onFreight(event.target.value)}
-        readOnly={!editable}
-        inputMode="decimal"
-        placeholder="0.00"
-      />
-      <span>Total</span>
-      <strong>{formatMoney(total)}</strong>
-      <p className="hint">USD. Optional. Often entered after the order is sent.</p>
-    </div>
+    <tfoot>
+      <tr>
+        <td className="po-total-label" colSpan={labelSpan}>
+          Subtotal
+        </td>
+        <td className="po-num po-total-value">{formatMoney(subtotal)}</td>
+      </tr>
+      <tr>
+        <td className="po-total-label" colSpan={labelSpan}>
+          <label htmlFor="po-freight">
+            Shipping / Freight-in
+            <span className="hint">USD. Optional. Often entered after the order is sent.</span>
+          </label>
+        </td>
+        <td className="po-num">
+          <input
+            id="po-freight"
+            aria-label="Shipping / Freight-in"
+            value={freightIn}
+            onChange={(event) => onFreight(event.target.value)}
+            readOnly={!editable}
+            inputMode="decimal"
+            placeholder="0.00"
+          />
+        </td>
+      </tr>
+      <tr className="po-grand">
+        <td className="po-total-label" colSpan={labelSpan}>
+          Total
+        </td>
+        <td className="po-num po-total-value">{formatMoney(total)}</td>
+      </tr>
+    </tfoot>
   );
 }
 

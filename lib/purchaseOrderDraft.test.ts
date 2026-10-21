@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hidePurchaseMoney, normalizePurchaseOrderDraft, purchaseOrderTotal, type PoDraftInput } from "./purchaseOrderDraft.ts";
+import {
+  descriptionFromPickedItem,
+  hidePurchaseMoney,
+  normalizePurchaseOrderDraft,
+  purchaseOrderTotal,
+  type PoDraftInput,
+} from "./purchaseOrderDraft.ts";
 
 const vendorId = "11111111-1111-4111-8111-111111111111";
 
@@ -92,6 +98,28 @@ test("terms must be one of the fixed values", () => {
   assert.equal(normalizePurchaseOrderDraft(draft({ terms: "Net 30" })).ok, false);
   assert.equal(normalizePurchaseOrderDraft(draft({ terms: "" })).ok, false);
   assert.equal(normalizePurchaseOrderDraft(draft({ terms: "Net15" })).ok, true);
+});
+
+test("picking an item copies items.description and leaves the name out of the line", () => {
+  const name = "Samsung PM893 3.84TB";
+  const description = "2.5 inch SATA SSD, 3.84TB, mixed use, used pull";
+  assert.equal(descriptionFromPickedItem(description), description);
+  assert.notEqual(descriptionFromPickedItem(description), name);
+  assert.equal(descriptionFromPickedItem(""), "");
+  assert.equal(descriptionFromPickedItem(null), "");
+  assert.equal(descriptionFromPickedItem("  " + description + "  "), description);
+});
+
+test("a line can omit condition", () => {
+  const saved = normalizePurchaseOrderDraft(
+    draft({
+      lines: [{ itemId: "", description: "CPU", qty: "1", unitCost: "10", extPrice: "", condition: "", unit: "Piece" }],
+    }),
+  );
+  assert.equal(saved.ok, true);
+  if (!saved.ok) return;
+  assert.equal(saved.value.lines[0]?.condition, null);
+  assert.equal(normalizePurchaseOrderDraft(draft({ lines: [{ ...draft().lines[0]!, condition: "Refurbished" }] })).ok, false);
 });
 
 test("a blank extra line is ignored", () => {

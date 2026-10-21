@@ -39,9 +39,14 @@ export type NormalizedPoLine = {
   qty: number;
   unitCost: number;
   extPrice: number;
-  condition: "New" | "Used";
+  condition: "New" | "Used" | null;
   unit: string;
 };
+
+/** The purchase-order line stores items.description. The item name stays in the picker. */
+export function descriptionFromPickedItem(description: string | null | undefined): string {
+  return String(description ?? "").trim().slice(0, 500);
+}
 
 export type NormalizedPoDraft = {
   vendorId: string;
@@ -107,8 +112,9 @@ export function normalizePurchaseOrderDraft(input: PoDraftInput): { ok: true; va
     const priced = linePrices(line.unitCost, line.extPrice, qty);
     if (priced.ok === false) return priced;
 
-    const condition = line.condition === "New" || line.condition === "Used" ? line.condition : null;
-    if (!condition) return { ok: false, error: "Condition is New or Used." };
+    const conditionText = line.condition.trim();
+    const condition = conditionText === "" ? null : conditionText === "New" || conditionText === "Used" ? conditionText : null;
+    if (conditionText && !condition) return { ok: false, error: "Condition is New or Used." };
 
     const unit = line.unit.trim() || "Piece";
     if (unit.length > 40) return { ok: false, error: "Unit is too long." };
