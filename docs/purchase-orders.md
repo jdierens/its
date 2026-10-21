@@ -76,7 +76,10 @@ Warehouse screens show the code, the type, the consignor name, and pipeline coun
 | `direction` | `in` or `out` |
 | `qty` | numeric, greater than 0 |
 | `ownership` | `owned` or `consigned`. Copied from the project basis. Known PO receipts are `owned` |
-| `ref_type` | `project`, `purchase_receipt`, `putaway`, `sales_order`, `rma`, `vendor_return`, `adjustment`, `cycle_count`, `opening_balance`, `scrap`, `internal_use` |
+| `stock_status` | `available`, `damaged`, `quarantine`, or `hold`. Default `available`. The balance of an item in a bin is split by this status |
+| `transfer_id` | shared by the two rows of a putaway or a status change |
+| `ref_type` | `project`, `purchase_receipt`, `putaway`, `status_change`, `sales_order`, `rma`, `vendor_return`, `adjustment`, `cycle_count`, `opening_balance`, `scrap`, `internal_use` |
+| `reason` | required on a status change |
 | `ref_id` | uuid, nullable. Polymorphic. No foreign key |
 | `ref_label` | project code, PO number, or sheet reference |
 | `source_movement_id` | the layer an `out` consumed |
@@ -88,7 +91,9 @@ Warehouse screens show the code, the type, the consignor name, and pipeline coun
 
 Project intake uses `ref_type = project` and `ref_id` of the project. That reference stays. Settlement does not rewrite it. The chain after settlement is unit → project → settlement PO line.
 
-A putaway is two rows that share one transfer id: `out` of the holding balance and `in` to the destination bin. Both keep the same project, ownership, and item. Item quantity does not change. A known-line receipt of warehouse goods is one `in` with `bin_id` null until putaway. Relocating that bin is a bin event, not another pair of item rows. See Bins and locations.
+A putaway is two rows that share one `transfer_id`: `out` of the holding balance and `in` to the destination bin. Both keep the same project, ownership, item, and `stock_status`. Item quantity does not change. A known-line receipt of warehouse goods is one `in` with `bin_id` null until putaway. Relocating that bin is a bin event, not another pair of item rows. See Bins and locations.
+
+`items.quantity` is every status. Available to sell, and picking, count only `stock_status = available`. Damaged, quarantine, and hold stay in the bin and stay off the pick list. The `stock_status` column ships with the first ledger migration. The screen that changes it comes later.
 
 Cost is not a ledger column. Unit cost lives on the PO line, the allocation, and the buy transaction.
 
@@ -170,7 +175,7 @@ Serialized and non-serialized goods share intake and the ledger. A serial is the
 
 `taxonomies.serialized` defaults false. `items.serialized` null inherits the taxonomy. A serialized Piece unit has one serial before it can reach `graded`. Weight units are an open question.
 
-`serials`: `item_id` nullable until identified, `unit_id`, `project_id`, `serial` trimmed, `ownership`, `status` (`in_stock`, `sold`, `rma_returned`, `returned_to_vendor`). A partial unique index on `serial` where `status = in_stock` rejects a second in-stock copy anywhere in the company. An RMA moves the existing row.
+`serials`: `item_id` nullable until identified, `unit_id`, `project_id`, `serial` trimmed, `ownership`, `status` (`in_stock`, `sold`, `rma_returned`, `returned_to_vendor`), and `stock_status` (`available`, `damaged`, `quarantine`, `hold`) while the unit is in stock. A partial unique index on `serial` where `status = in_stock` rejects a second in-stock copy anywhere in the company. An RMA moves the existing row.
 
 `serial_events` store `serial_id`, the new status, `movement_id` when a ledger row exists, `ref_type`, `ref_id`, `ref_label`, `operator_id`, `occurred_at`, and `created_at`. The phone accepts a barcode scan or a typed serial. The server enforces the unique index.
 
@@ -207,7 +212,7 @@ Test results hang off the serial (the unit), not off the SKU. A later listing ro
 | Price | `unit_cost` | `total_cost` for the whole lot. `unit_cost` null |
 | Expectation | condition, condition note, grade, unit | none until processing |
 
-A purchase can mix known lines and one lot line. A lot line requires a project. `qty_received` on a known line is the sum of accepted receipt quantities. It is not typed.
+A purchase can mix known lines and one lot line. A lot line requires a project. `qty_received` on a known line is the sum of receipt quantities whose disposition is `accepted` or `damaged`. A `wrong_item` line is left out. It is not typed.
 
 `po_line_units` links a settlement or buy-out line to the units it pays for (`po_line_id`, `unit_id`). A unit sits on at most one non-cancelled settlement line. The unit still points at its project.
 
@@ -215,11 +220,11 @@ A purchase can mix known lines and one lot line. A lot line requires a project. 
 
 `receipts` are one delivery against a purchase PO: `purchase_order_id`, operator, timestamps, notes. `receipt_lines` store `po_line_id` nullable (null means not on the PO), `item_id`, `qty`, `disposition` (`accepted`, `damaged`, `wrong_item`), the condition and grade that arrived, and `unit_cost` copied from an owned accepted line.
 
-Over-receipt is allowed. Damaged and wrong-item rows do not increase `items.quantity` and do not count against `qty_ordered`. A kept wrong item becomes its own accepted line with `po_line_id` null. One known line can split into several receipt lines when condition or grade differs.
+Over-receipt is allowed. Damaged units count as received. A damaged receipt line's quantity is the damaged quantity kept for a vendor claim or a return to the vendor. A delivery that is only partly damaged is split into an available line and a damaged line. Posting the damaged line inserts a ledger `in` with `stock_status = damaged` and increases `items.quantity`. It does not increase available-to-sell. A wrong item does not increase `items.quantity` and does not count against `qty_ordered`. A kept wrong item becomes its own accepted line with `po_line_id` null. One known line can split into several receipt lines when condition or grade differs.
 
-Posting an accepted warehouse line with an item:
+Posting a received warehouse line with an item (`accepted` or `damaged`):
 
-1. Insert the ledger `in` (`ref_type = purchase_receipt`, `bin_id` null) with the server operator and timestamps. `project_id` copies from the PO when the PO has one.
+1. Insert the ledger `in` (`ref_type = purchase_receipt`, `bin_id` null, `stock_status` `available` or `damaged`) with the server operator and timestamps. `project_id` copies from the PO when the PO has one.
 2. Set `items.quantity` to that item's identified ledger sum.
 3. Insert `item_transactions` type `buy`, `source` `po`, vendor from the PO, `unit_price` from the line, reference of the PO number plus the receipt id. The source check gains `po`.
 4. If the item is serialized, require the serials and write `serials` plus `serial_events` on those units.
@@ -288,6 +293,12 @@ A lot still in `processing` does not hold the PO at `partially_received`. The ve
 
 **Credits and cost corrections.** They store the previous `unit_price` and update the buy. Quantity stays. Warehouse payloads omit them.
 
+**Damaged, quarantine, and hold.** Today's Inventory sheet flags damaged on a stock entry. In ITS that flag is `stock_status` on the ledger balance and, when the piece has a serial, on that serial. A status change is two ledger rows with one `transfer_id`: `out` of the old status and `in` of the new one, same item, bin, ownership, and quantity, with a reason. The server sets the operator and both timestamps. On-hand quantity does not change. Picking and available-to-sell ignore every status other than `available`.
+
+**Write-down.** Someone with `can_edit_financials` can lower the carrying cost of damaged units. The adjustment stores the previous unit cost and updates the buy. Quantity and `stock_status` stay as they are. Warehouse responses omit the adjustment.
+
+**Vendor claim.** Damaged stock can leave through an `out` with `ref_type = vendor_return`. The claim records the receipt line, the quantity, and the reason. Serials on those units become `returned_to_vendor`. The credit memo is money and stays off the warehouse payload.
+
 **Drop-ship.** `fulfillment = drop_ship` on a known purchase. No ledger row and no putaway.
 
 ## Grading and drive wipes
@@ -334,7 +345,7 @@ One-time imports, then the sheets stop.
 
 **Transactions sheet.** Open purchase orders become purchase POs and known lines. A reference shaped like a project code becomes a project, and the PO links to it when both exist. Match the vendor on QuickBooks id, then on display name. Match a line to an item on SKU when the cell is a SKU. Otherwise keep the description, part, or model on an intake line. Store the sheet reference in `ref_label` and in `qbo_doc_number` when the cell is a QuickBooks number.
 
-**Inventory sheet.** One `opening_balance` movement per item and container. Match the item on SKU or the sheet's item id. Match a bin reference to `bins.reference`. A place name that is not a bin stays on the note with `bin_id` null, as in Bins and locations. Direction comes from IN or OUT. `occurred_at` and `operator_label` come from the sheet. `operator_id` is set only when the name matches one `app_users` row.
+**Inventory sheet.** One `opening_balance` movement per item and container. Match the item on SKU or the sheet's item id. Match a bin reference to `bins.reference`. A place name that is not a bin stays on the note with `bin_id` null, as in Bins and locations. A damaged flag on the row sets `stock_status = damaged`. Other rows stay `available`. Direction comes from IN or OUT. `occurred_at` and `operator_label` come from the sheet. `operator_id` is set only when the name matches one `app_users` row.
 
 **Serial sheet.** Match item ID, transaction reference, serial, operator, and timestamp onto `serials` and one `serial_events` row. Link `ref_label` to that reference and to a project when the code matches. Status defaults to `sold`, because this sheet tracks sold units. Duplicate in-stock serials are reported and left unmerged.
 
@@ -362,7 +373,7 @@ Owed, paid, and any cost figures require `can_view_financials`. Warehouse report
 Each phase is a small pull request. The first usable known-line slice is phases 1–3: create a PO, receive it, and put it away into a bin. Placing that bin at a location is phase 12, after the location codes exist. Projects come next and do not block that slice. The first ledger migration already includes nullable `project_id`, nullable `item_id`, and `ownership`, so later phases add rows to the same log.
 
 1. **Ledger and known PO.** `inventory_movements`, `purchase_orders`, `po_lines`. Admin and staff create, edit, and send a known-line PO. Warehouse roles do not get that screen. No receipt yet.
-2. **Receive known lines.** Receipts, the `po` transaction source, the ledger `in`, and the quantity cache. Warehouse screens are quantities only. Existing items only.
+2. **Receive known lines.** Receipts, the `po` transaction source, the ledger `in`, and the quantity cache. Damaged quantity counts as received and posts with `stock_status = damaged`. Warehouse screens are quantities only. Existing items only.
 3. **Putaway into a bin.** Scan an existing reference (`20000-P`). The two-row item transfer. Unlocated quantity is visible. The same migration adds empty `locations`, the parent columns, the one-parent check, and cycle prevention. The screen does not ask where the bin sits.
 4. **Projects and unidentified intake.** Projects, intake lines, units through `identified`, match suggestions, Lens, photos, bin, quantity, and serial before a SKU exists.
 5. **Grading and wipes.** Visual grade, SysOps import, pipeline to `graded`. Depends on a sample export.
@@ -384,7 +395,7 @@ Each phase is a small pull request. The first usable known-line slice is phases 
 6. Which taxonomies are serialized, and is a serial required for every piece before grading can finish?
 7. Does freight or other landed cost join the lot pool, or stay outside item cost?
 8. Confirm the clerk still cannot create the SKU, so a new item found during intake waits for a warehouse manager.
-9. Should a damaged unit count as received against a known PO line?
+9. Answered. Damaged units count as received on the PO line. They stay in stock with status damaged, so picking skips them. A cost write-down is a separate financial adjustment.
 10. Is the serial sheet only sold units, or does it also contain serials still in stock?
 11. Which allocation method should an owned lot default to: manual, market price weight, ecommerce price weight, equal per unit, or by category?
 12. May units from a lot be sold while their cost is still provisional?
