@@ -282,11 +282,13 @@ The same file hash is refused as a duplicate import. A new file that repeats a s
 
 ## Roles
 
-PO unit cost, lot totals, allocation, remainder, disposal cost, terms, share percent, deductions, payable, settlement amounts, buy rows, credits, and `vendors.tax_id` are money. Editing them requires `can_edit_financials`. Reading them requires `can_view_financials`.
+Jan confirmed who may create, enter, and send a purchase order: admin and staff. That is `can_edit_financials`. There is no separate approver. Warehouse manager and warehouse clerk cannot create, enter, or send. Their receiving screens use `can_receive` and the server returns quantities only.
+
+PO unit cost, lot totals, allocation, remainder, disposal cost, terms, share percent, deductions, payable, settlement amounts, buy rows, credits, and `vendors.tax_id` are money. Editing them requires `can_edit_financials`. Reading them requires `can_view_financials`. Approving a settlement or buy-out PO is the same capability, so warehouse roles cannot approve one either.
 
 Receiving, identifying descriptions, photos, visual grade, wipe upload, and putaway use `can_receive`, `can_add_photos`, and `can_move_bins`. Those responses omit money on the server. Matching an existing item or creating a SKU is `can_edit_items`. The clerk proposal can do the warehouse steps and cannot create the SKU, so an unidentified line waits for a warehouse manager.
 
-`read_only` can see prices and cannot post a project, a PO, a receipt, a movement, a grade, or a serial event. That write block is the roles design. It is not enforced yet.
+`read_only` can see a purchase order, including prices, and cannot create or send one. That role also cannot post a project, a receipt, a movement, a grade, or a serial event. That write block is the roles design. It is not enforced yet.
 
 ## QuickBooks
 
@@ -335,7 +337,7 @@ Owed, paid, and any cost figures require `can_view_financials`. Warehouse report
 
 Each phase is a small pull request. The first usable known-line slice is phases 1–3: create a PO, receive it, put it away. Projects come next and do not block that slice. The first ledger migration already includes nullable `project_id`, nullable `item_id`, and `ownership`, so later phases add rows to the same log.
 
-1. **Ledger and known PO.** `inventory_movements`, `purchase_orders`, `po_lines`. Create, edit, and send a known-line PO. Unit cost for `can_edit_financials`. No receipt yet.
+1. **Ledger and known PO.** `inventory_movements`, `purchase_orders`, `po_lines`. Admin and staff create, edit, and send a known-line PO. Warehouse roles do not get that screen. No receipt yet.
 2. **Receive known lines.** Receipts, the `po` transaction source, the ledger `in`, and the quantity cache. Warehouse screens are quantities only. Existing items only.
 3. **Putaway.** Scan a bin that already exists. The two-row transfer. Unlocated quantity is visible.
 4. **Projects and unidentified intake.** Projects, intake lines, units through `identified`, match suggestions, Lens, photos, bin, quantity, and serial before a SKU exists.
@@ -351,7 +353,7 @@ Each phase is a small pull request. The first usable known-line slice is phases 
 
 1. Please send a header row, and a few sample rows, from the Transactions sheet, the Inventory sheet, and the serial sheet.
 2. Where do new known-SKU purchase orders start: typed into ITS, or still born on the Transactions sheet until import day?
-3. Who is allowed to send a purchase PO? Any staff person, or an approver?
+3. Answered. Admin and staff can create, enter, and send purchase orders. Warehouse roles cannot. They see quantities only.
 4. Which deductions define net (marketplace fees, shipping, payment fees, refurb costs)? Is settlement per sale, periodic, or a negotiated batch, and is there one settlement PO per sale or one per period?
 5. Is a bin label (`20000-P`) the storage location on the Inventory sheet, or is location a shelf or a room?
 6. Which taxonomies are serialized, and is a serial required for every piece before grading can finish?
