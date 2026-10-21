@@ -1,22 +1,22 @@
 "use server";
 
-import { readAppUser } from "@/lib/appUserRecord";
-import { authRequired } from "@/lib/authRequired";
 import { errorText } from "@/lib/errors";
-import { purchaseAccessForRole, type PurchaseAccess } from "@/lib/purchaseAccess";
+import { type PurchaseAccess } from "@/lib/purchaseAccess";
 import { normalizeShipments, parseFreightIn, type ShipmentInput } from "@/lib/poCharges";
+import { formatExtension, formatUnitPrice } from "@/lib/poLineMoney";
+import { loadPoAttachments, type PoAttachmentView } from "@/lib/poAttachments";
 import {
   hidePurchaseMoney,
   normalizePurchaseOrderDraft,
   purchaseOrderTotal,
   type PoDraftInput,
 } from "@/lib/purchaseOrderDraft";
-import { sessionUser } from "@/lib/sessionUser";
+import { purchaseOperatorId, purchasePageAccess } from "@/lib/purchaseSession";
 import { getSupabase } from "@/lib/supabase";
 
 export type PurchaseVendor = { id: string; name: string };
 
-export type PurchaseItemHit = { id: string; sku: string; name: string };
+export type PurchaseItemHit = { id: string; sku: string; name: string; description: string };
 
 export type PurchaseOrderListItem = {
   id: string;
@@ -32,9 +32,11 @@ export type PurchaseOrderListItem = {
 export type PurchaseOrderLineView = {
   itemId: string;
   itemSku: string;
+  itemName: string;
   description: string;
   qty: string;
   unitCost: string;
+  extPrice: string;
   condition: string;
   unit: string;
 };
@@ -55,10 +57,12 @@ export type PurchaseOrderView = {
   terms: string | null;
   orderedOn: string;
   expectedOn: string;
-  notes: string;
+  vendorNotes: string;
+  internalNotes: string | null;
   sentAt: string | null;
   lines: PurchaseOrderLineView[];
   shipments: PurchaseShipmentView[];
+  attachments: PoAttachmentView[];
   subtotal: number | null;
   freightIn: string | null;
   total: number | null;
@@ -70,15 +74,6 @@ export type PoSaveInput = PoDraftInput & {
 };
 
 const EDIT_DENIED = "You cannot change a purchase order.";
-
-export async function purchasePageAccess(): Promise<PurchaseAccess> {
-  if (!authRequired()) return purchaseAccessForRole(null, false);
-  const session = await sessionUser();
-  if (!session) return purchaseAccessForRole(null, true);
-  const user = await readAppUser(session.id);
-  if (!user || user.status !== "approved") return purchaseAccessForRole(null, true);
-  return purchaseAccessForRole(user.role, true);
-}
 
 export async function listPurchaseVendors(): Promise<PurchaseVendor[]> {
   const { data, error } = await (await getSupabase())
@@ -96,8 +91,8 @@ export async function searchPurchaseItems(query: string): Promise<PurchaseItemHi
   const pattern = `%${needle}%`;
   const { data, error } = await (await getSupabase())
     .from("items")
-    .select("id, sku, name")
-    .or(`sku.ilike.${pattern},name.ilike.${pattern}`)
+    .select("id, sku, name, description")
+    .or(`sku.ilike.${pattern},name.ilike.${pattern},description.ilike.${pattern}`)
     .order("sku")
     .limit(8);
   if (error) throw new Error(errorText(error));
@@ -105,6 +100,7 @@ export async function searchPurchaseItems(query: string): Promise<PurchaseItemHi
     id: String(row.id),
     sku: String(row.sku ?? ""),
     name: String(row.name ?? ""),
+    description: String(row.description ?? "").slice(0, 500),
   }));
 }
 
@@ -113,7 +109,7 @@ export async function listPurchaseOrders(): Promise<PurchaseOrderListItem[]> {
   const supabase = await getSupabase();
   const { data, error } = await supabase
     .from("purchase_orders")
-    .select("id, number, status, ordered_on, expected_on, fulfillment, freight_in, vendors(display_name), po_lines(qty_ordered, unit_cost)")
+    .select("id, number, status, ordered_on, expected_on, fulfillment, freight_in, vendors(display_name), po_lines(ext_price)")
     .eq("purpose", "purchase")
     .order("created_at", { ascending: false });
   if (error) throw new Error(errorText(error));
@@ -121,11 +117,8 @@ export async function listPurchaseOrders(): Promise<PurchaseOrderListItem[]> {
   return (data ?? []).map((row) => {
     const vendor = firstRelation(row.vendors);
     const lines = Array.isArray(row.po_lines) ? row.po_lines : [];
-    const priced = lines.map((line) => ({
-      qty: numberValue(line.qty_ordered),
-      unitCost: numberValue(line.unit_cost),
-    }));
-    const subtotal = purchaseOrderTotal(priced.map((line) => ({ qty: line.qty, unitCost: line.unitCost ?? 0 })));
+    const priced = lines.map((line) => ({ extPrice: moneyOrNull(line.ext_price) ?? 0 }));
+    const subtotal = purchaseOrderTotal(priced);
     const freight = moneyOrNull(row.freight_in);
     const total = subtotal + (freight ?? 0);
     const item = hidePurchaseMoney(
@@ -151,7 +144,7 @@ export async function loadPurchaseOrder(id: string): Promise<PurchaseOrderView |
   const { data, error } = await supabase
     .from("purchase_orders")
     .select(
-      "id, number, status, vendor_id, fulfillment, currency, terms, freight_in, ordered_on, expected_on, notes, sent_at, vendors(display_name), po_lines(line_no, item_id, description, qty_ordered, unit_cost, condition, unit, items(sku)), po_shipments(carrier, tracking_number, created_at)",
+      "id, number, status, vendor_id, fulfillment, currency, terms, freight_in, ordered_on, expected_on, vendor_notes, internal_notes, sent_at, vendors(display_name), po_lines(line_no, item_id, description, qty_ordered, unit_cost, ext_price, condition, unit, items(sku, name)), po_shipments(carrier, tracking_number, created_at)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -164,22 +157,24 @@ export async function loadPurchaseOrder(id: string): Promise<PurchaseOrderView |
     .sort((a, b) => Number(a.line_no) - Number(b.line_no))
     .map((line) => {
       const item = firstRelation(line.items);
-      const unitCost = numberValue(line.unit_cost);
-      const visible = hidePurchaseMoney({ unitCost }, access);
+      const unitCost = moneyOrNull(line.unit_cost);
+      const extPrice = moneyOrNull(line.ext_price);
+      const visible = hidePurchaseMoney({ unitCost, extPrice }, access);
       return {
         itemId: line.item_id ? String(line.item_id) : "",
         itemSku: String(item?.sku ?? ""),
+        itemName: String(item?.name ?? ""),
         description: String(line.description ?? ""),
         qty: formatQty(line.qty_ordered),
-        unitCost: visible.unitCost == null ? "" : formatQty(visible.unitCost),
+        unitCost: visible.unitCost == null ? "" : formatUnitPrice(visible.unitCost),
+        extPrice: visible.extPrice == null ? "" : formatExtension(visible.extPrice),
         condition: String(line.condition ?? "Used"),
         unit: String(line.unit ?? "Piece"),
       };
     });
 
   const priced = (Array.isArray(data.po_lines) ? data.po_lines : []).map((line) => ({
-    qty: numberValue(line.qty_ordered),
-    unitCost: numberValue(line.unit_cost) ?? 0,
+    extPrice: moneyOrNull(line.ext_price) ?? 0,
   }));
   const subtotal = purchaseOrderTotal(priced);
   const freight = moneyOrNull(data.freight_in);
@@ -202,10 +197,12 @@ export async function loadPurchaseOrder(id: string): Promise<PurchaseOrderView |
       terms: data.terms ? String(data.terms) : "",
       orderedOn: dateValue(data.ordered_on) ?? "",
       expectedOn: dateValue(data.expected_on) ?? "",
-      notes: data.notes ? String(data.notes) : "",
+      vendorNotes: data.vendor_notes ? String(data.vendor_notes) : "",
+      internalNotes: data.internal_notes ? String(data.internal_notes) : "",
       sentAt: data.sent_at ? String(data.sent_at) : null,
       lines,
       shipments,
+      attachments: await loadPoAttachments(String(data.id)),
       subtotal,
       freightIn: freight == null ? "" : formatQty(freight),
       total: subtotal + (freight ?? 0),
@@ -217,6 +214,8 @@ export async function loadPurchaseOrder(id: string): Promise<PurchaseOrderView |
     terms: shown.terms,
     lines,
     shipments,
+    attachments: shown.attachments,
+    internalNotes: shown.internalNotes,
     freightIn: shown.freightIn == null ? null : String(shown.freightIn),
   };
 }
@@ -236,6 +235,8 @@ export async function savePurchaseOrder(id: string | null, input: PoSaveInput): 
     if ((data ?? []).length !== new Set(itemIds).size) throw new Error("Choose an item from the list.");
   }
 
+  const internalNotes = access.canViewMoney ? normalized.value.internalNotes : id ? await readInternalNotes(id) : null;
+
   const { data, error } = await supabase.rpc("write_known_purchase_order", {
     p_id: id,
     p_vendor_id: normalized.value.vendorId,
@@ -243,8 +244,9 @@ export async function savePurchaseOrder(id: string | null, input: PoSaveInput): 
     p_terms: normalized.value.terms,
     p_ordered_on: normalized.value.orderedOn,
     p_expected_on: normalized.value.expectedOn,
-    p_notes: normalized.value.notes,
-    p_operator_id: await operatorId(),
+    p_internal_notes: internalNotes,
+    p_vendor_notes: normalized.value.vendorNotes,
+    p_operator_id: await purchaseOperatorId(),
     p_lines: normalized.value.lines,
   });
   if (error) throw new Error(friendlyPurchaseError(error));
@@ -255,7 +257,7 @@ export async function savePurchaseOrder(id: string | null, input: PoSaveInput): 
 
 export async function savePurchaseOrderCharges(
   id: string,
-  input: { freightIn: string; shipments: ShipmentInput[] },
+  input: { freightIn: string; shipments: ShipmentInput[]; vendorNotes: string; internalNotes: string },
 ): Promise<void> {
   const access = await purchasePageAccess();
   if (!access.canEdit) throw new Error(EDIT_DENIED);
@@ -295,41 +297,56 @@ export async function cancelPurchaseOrder(id: string): Promise<void> {
   if (!data || data.length !== 1) throw new Error("Only a draft purchase order can be cancelled.");
 }
 
-async function operatorId(): Promise<string | null> {
-  if (!authRequired()) return null;
-  const session = await sessionUser();
-  if (!session) throw new Error("Sign in required.");
-  return session.id;
+async function readInternalNotes(id: string): Promise<string | null> {
+  const { data, error } = await (await getSupabase())
+    .from("purchase_orders")
+    .select("internal_notes")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(errorText(error));
+  return data?.internal_notes ? String(data.internal_notes) : null;
 }
 
 function normalizeCharges(
-  input: { freightIn: string; shipments: ShipmentInput[] },
+  input: { freightIn: string; shipments: ShipmentInput[]; vendorNotes: string; internalNotes: string },
   access: PurchaseAccess,
-): { freightIn: number | null; shipments: { carrier: string; trackingNumber: string }[] } {
+): { freightIn: number | null; vendorNotes: string | null; internalNotes: string | null; shipments: { carrier: string; trackingNumber: string }[] } {
   const shipments = normalizeShipments(input.shipments);
   if (!shipments.ok) throw new Error(shipments.error);
-  if (!access.canViewMoney) return { freightIn: null, shipments: shipments.value };
+  const vendorNotes = noteOrNull(input.vendorNotes, "Vendor notes");
+  if (!access.canViewMoney) return { freightIn: null, vendorNotes, internalNotes: null, shipments: shipments.value };
   const freightIn = parseFreightIn(input.freightIn);
   if (freightIn === "invalid") throw new Error("Freight in must be a USD amount, zero or more.");
-  return { freightIn, shipments: shipments.value };
+  return { freightIn, vendorNotes, internalNotes: noteOrNull(input.internalNotes, "Internal notes"), shipments: shipments.value };
 }
 
 async function persistCharges(
   orderId: string,
-  charges: { freightIn: number | null; shipments: { carrier: string; trackingNumber: string }[] },
+  charges: { freightIn: number | null; vendorNotes: string | null; internalNotes: string | null; shipments: { carrier: string; trackingNumber: string }[] },
   access: PurchaseAccess,
 ): Promise<void> {
   const supabase = await getSupabase();
+  const patch: { vendor_notes: string | null; freight_in?: number | null; internal_notes?: string | null } = {
+    vendor_notes: charges.vendorNotes,
+  };
   if (access.canViewMoney) {
-    const { error } = await supabase.from("purchase_orders").update({ freight_in: charges.freightIn }).eq("id", orderId);
-    if (error) throw new Error(friendlyPurchaseError(error));
+    patch.freight_in = charges.freightIn;
+    patch.internal_notes = charges.internalNotes;
   }
+  const updated = await supabase.from("purchase_orders").update(patch).eq("id", orderId);
+  if (updated.error) throw new Error(friendlyPurchaseError(updated.error));
   const { error } = await supabase.rpc("replace_po_shipments", {
     p_order_id: orderId,
-    p_operator_id: await operatorId(),
+    p_operator_id: await purchaseOperatorId(),
     p_rows: charges.shipments,
   });
   if (error) throw new Error(friendlyPurchaseError(error));
+}
+
+function noteOrNull(value: string, label: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length > 4000) throw new Error(`${label} are too long.`);
+  return trimmed || null;
 }
 
 function friendlyPurchaseError(error: { message?: string }): string {
@@ -340,6 +357,7 @@ function friendlyPurchaseError(error: { message?: string }): string {
   if (text.includes("po_lines_item_id_fkey")) return "Choose an item from the list.";
   if (text.includes("purchase_orders_terms_check")) return "Choose terms.";
   if (text.includes("purchase_orders_freight_in_check")) return "Freight in must be a USD amount, zero or more.";
+  if (text.includes("po_lines_known_check")) return "Quantity, unit price, and extension do not match.";
   if (text.includes("po_shipments_order_tracking_unique")) return "That tracking number is already on this order.";
   if (text.includes("po_shipments_carrier_check")) return "Choose a carrier.";
   return text;
