@@ -1,5 +1,57 @@
-import { ComingSoon } from "@/components/ComingSoon";
+import Link from "next/link";
+import { listPurchaseOrders, purchasePageAccess } from "@/lib/purchaseOrders";
+import { purchaseOrderStatusLabel } from "@/lib/purchaseOrderDraft";
+import { formatMoney } from "@/lib/pricing/quotes";
 
-export default function PurchaseOrdersPage() {
-  return <ComingSoon description="Order stock from suppliers." />;
+export const dynamic = "force-dynamic";
+
+export default async function PurchaseOrdersPage() {
+  const [access, orders] = await Promise.all([purchasePageAccess(), listPurchaseOrders()]);
+
+  return (
+    <main className="page">
+      <p className="page-note">Create a purchase order and send it to a vendor. Receiving into inventory comes later.</p>
+      {access.canEdit ? (
+        <p>
+          <Link className="button" href="/purchasing/orders/new">
+            New purchase order
+          </Link>
+        </p>
+      ) : (
+        <p className="muted">You can view purchase orders. Creating and sending is limited to admin and staff.</p>
+      )}
+      {orders.length === 0 ? (
+        <p className="muted">No purchase orders yet.</p>
+      ) : (
+        <div className="card">
+          <table>
+            <thead>
+              <tr>
+                <th>Number</th>
+                <th>Vendor</th>
+                <th>Status</th>
+                <th>Ordered</th>
+                <th>Expected</th>
+                {access.canViewMoney ? <th>Total</th> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((order) => (
+                <tr key={order.id}>
+                  <td className="sku">
+                    <Link href={`/purchasing/orders/${order.id}`}>{order.number}</Link>
+                  </td>
+                  <td>{order.vendorName}</td>
+                  <td>{purchaseOrderStatusLabel(order.status)}</td>
+                  <td>{order.orderedOn ?? ""}</td>
+                  <td>{order.expectedOn ?? ""}</td>
+                  {access.canViewMoney ? <td>{formatMoney(order.total, "USD")}</td> : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </main>
+  );
 }
