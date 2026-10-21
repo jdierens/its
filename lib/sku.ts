@@ -1,5 +1,4 @@
-import { errorText } from "@/lib/errors";
-import { getSupabase } from "@/lib/supabase";
+import { fetchReservedSku } from "@/lib/skuServer";
 
 // React strict mode runs the new-item effect twice. Reuse one reservation
 // for that second call. A later visit starts a new reservation.
@@ -18,15 +17,6 @@ export function cachedReservation<T>(
   if (slot && now - slot.at < reuseMs) return { slot, value: slot.value };
   const value = create();
   return { slot: { at: now, value }, value };
-}
-
-export async function fetchReservedSku(): Promise<string> {
-  const { data, error } = await (await getSupabase()).rpc("reserve_item_sku");
-  if (error) throw new Error(errorText(error));
-  if (typeof data !== "string" || data.length === 0) {
-    throw new Error("Could not assign a SKU.");
-  }
-  return data;
 }
 
 export function reserveNewItemSku(now = Date.now()): Promise<string> {

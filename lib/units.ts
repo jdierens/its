@@ -1,3 +1,5 @@
+"use server";
+
 import { errorText } from "@/lib/errors";
 import { SEEDED_UNITS } from "@/lib/itemFields";
 import { getSupabase } from "@/lib/supabase";

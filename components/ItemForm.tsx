@@ -19,7 +19,7 @@ import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageT
 import { fetchCountries, type Country } from "@/lib/countries";
 import { errorText } from "@/lib/errors";
 import { isDirty, SAVE_BEFORE_LABEL, SAVE_BEFORE_TAXONOMY } from "@/lib/formDirty";
-import { uploadItemImages } from "@/lib/images";
+import { uploadItemImages } from "@/lib/imageUpload";
 import {
   DEFAULT_CONDITION,
   DEFAULT_ECCN,

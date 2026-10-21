@@ -1,29 +1,24 @@
-import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
-
-let browser: SupabaseClient | null = null;
-
-function env(): { url: string; key: string } {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) {
-    throw new Error("Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-  }
-  return { url, key };
-}
-
-function browserClient(): SupabaseClient {
-  const { url, key } = env();
-  if (!browser) browser = createBrowserClient(url, key);
-  return browser;
-}
+import { authRequired } from "@/lib/authRequired";
+import { readAppUser } from "@/lib/appUserRecord";
+import { requireServiceSupabase } from "@/lib/supabaseAdmin";
 
 /**
- * Browser calls use the anon key plus the signed-in session cookie.
- * Server calls read that cookie so auth.uid() is the person, not the anon role.
+ * Server-side data client. It uses the service role, which bypasses row level
+ * security. The browser must not call it. When AUTH_REQUIRED is true, the
+ * signed-in person must be an approved app_users row. Sign-in itself uses
+ * lib/supabaseBrowser.ts and the publishable key.
  */
 export async function getSupabase(): Promise<SupabaseClient> {
-  if (typeof window !== "undefined") return browserClient();
-  const { getServerSupabase } = await import("@/lib/supabase.server");
-  return getServerSupabase();
+  if (typeof window !== "undefined") {
+    throw new Error("Database calls run on the server.");
+  }
+  if (authRequired()) {
+    const { sessionUser } = await import("@/lib/sessionUser");
+    const session = await sessionUser();
+    if (!session) throw new Error("Sign in required.");
+    const user = await readAppUser(session.id);
+    if (!user || user.status !== "approved") throw new Error("This account cannot change data.");
+  }
+  return requireServiceSupabase();
 }

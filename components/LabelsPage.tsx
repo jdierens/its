@@ -6,8 +6,8 @@ import { PrintedLabel } from "@/components/labelRenderers";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { errorText } from "@/lib/errors";
 import { findItemForLabel } from "@/lib/items";
+import { fetchLabelTemplate } from "@/lib/labelActions";
 import {
-  fetchLabelTemplate,
   labelTemplateLabel,
   labelTemplateOrDefault,
   qrLabelPayload,

@@ -1,4 +1,4 @@
-import { MAX_IMAGE_BYTES } from "@/lib/images";
+import { MAX_IMAGE_BYTES } from "@/lib/imageFiles";
 
 export const JPEG_QUALITY = 0.92;
 export const LISTING_LONG_SIDE = 1600;

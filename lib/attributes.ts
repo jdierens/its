@@ -1,3 +1,5 @@
+"use server";
+
 import { errorText } from "@/lib/errors";
 import { getSupabase } from "@/lib/supabase";
 import type { DataType } from "@/lib/types";

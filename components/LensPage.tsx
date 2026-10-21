@@ -6,7 +6,7 @@ import { usePageMeta } from "@/components/AppShell";
 import { ManufacturerSelect } from "@/components/ManufacturerSelect";
 import { errorText } from "@/lib/errors";
 import { compressImage } from "@/lib/compressImage";
-import { uploadItemImages } from "@/lib/images";
+import { uploadItemImages } from "@/lib/imageUpload";
 import { DEFAULT_ECCN, DEFAULT_ITEM_TYPE, DEFAULT_UNIT, ITEM_TYPES, itemTypeOrDefault, type ItemType } from "@/lib/itemFields";
 import { createItem, fetchTaxonomies } from "@/lib/items";
 import { conditionFromHints, suggestedItemName, type LensHit, type LensReading } from "@/lib/lens/rank";

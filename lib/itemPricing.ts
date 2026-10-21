@@ -1,3 +1,5 @@
+"use server";
+
 import { errorText } from "@/lib/errors";
 import { asMoney, SALES_WINDOW_KEY, type PriceQuoteSource, type TransactionSource, type TransactionType } from "@/lib/pricing/quotes";
 import { getSupabase } from "@/lib/supabase";

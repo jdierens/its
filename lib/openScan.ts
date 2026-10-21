@@ -1,3 +1,5 @@
+"use server";
+
 import { errorText } from "@/lib/errors";
 import { binPath, parseScan } from "@/lib/scan";
 import { getSupabase } from "@/lib/supabase";

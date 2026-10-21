@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PointerEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { errorText } from "@/lib/errors";
-import { downloadItemImage, fetchItemImages, saveEditedImage } from "@/lib/images";
+import { fetchItemImages } from "@/lib/images";
+import { downloadItemImage, saveEditedImage } from "@/lib/imageUpload";
 import {
   autoImproveCanvas,
   canvasFromBlob,
