@@ -58,7 +58,7 @@ export function PurchaseOrderAttachments({
         <ul className="po-file-list">
           {attachments.map((attachment) => (
             <li key={attachment.id}>
-              <span>{attachmentKindLabel(attachment.kind)}</span>
+              <span className={`badge badge-file badge-file-${attachment.kind}`}>{attachmentKindLabel(attachment.kind)}</span>
               {attachment.url ? (
                 <a href={attachment.url} target="_blank" rel="noopener noreferrer">
                   {attachment.fileName}

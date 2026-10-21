@@ -48,9 +48,9 @@ body {
   margin: 0;
   background-color: var(--bg);
   background-image:
-    radial-gradient(900px 520px at -10% -10%, rgba(124, 92, 255, 0.42), transparent 60%),
-    radial-gradient(760px 480px at 110% -8%, rgba(34, 211, 238, 0.34), transparent 55%),
-    radial-gradient(680px 460px at 88% 110%, rgba(251, 113, 133, 0.26), transparent 50%);
+    radial-gradient(900px 520px at -10% -10%, rgba(124, 92, 255, 0.62), transparent 60%),
+    radial-gradient(760px 480px at 110% -8%, rgba(34, 211, 238, 0.5), transparent 55%),
+    radial-gradient(680px 460px at 88% 110%, rgba(251, 113, 133, 0.4), transparent 50%);
   color: var(--ink);
   font: 15px/1.45 var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
 }
@@ -83,7 +83,8 @@ button {
   appearance: none;
   border: 0;
   border-radius: 10px;
-  background: var(--accent);
+  background-color: #1d4ed8;
+  background-image: linear-gradient(135deg, #1d4ed8 0%, #4f46e5 52%, #6d28d9 100%);
   color: var(--accent-ink);
   padding: 0.5rem 0.85rem;
   font: inherit;
@@ -94,9 +95,10 @@ button {
 
 .button.secondary,
 button.secondary {
-  background: rgba(255, 255, 255, 0.88);
-  color: var(--accent);
-  border: 1px solid var(--accent);
+  background-color: rgba(255, 255, 255, 0.78);
+  background-image: none;
+  color: var(--ink);
+  border: 1px solid rgba(15, 23, 42, 0.16);
 }
 
 button:disabled {
@@ -816,6 +818,7 @@ form.dialog {
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: transparent;
 }
@@ -825,12 +828,14 @@ form.dialog {
   flex: none;
   display: flex;
   flex-direction: column;
+  align-self: stretch;
   background: var(--sidebar);
   color: var(--sidebar-ink);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
 }
 
 .brand {
@@ -1095,7 +1100,8 @@ form.dialog {
 }
 
 button.danger {
-  background: var(--danger-ink);
+  background-color: var(--danger-ink);
+  background-image: none;
   color: #fff;
 }
 
@@ -1311,8 +1317,13 @@ button.danger {
 
   .sidebar {
     position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
     z-index: 30;
     width: min(280px, calc(100vw - 3rem));
+    height: 100vh;
+    height: 100dvh;
     transform: translateX(-105%);
     transition: transform 180ms ease;
   }
@@ -2215,7 +2226,7 @@ tr.quote-latest td {
 }
 
 .file-button.secondary {
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .file-button input {
@@ -2831,6 +2842,17 @@ p.error {
     padding: 0.85rem 0.7rem 1rem;
   }
 
+  .po-page form > *,
+  .po-head > *,
+  .po-head-2 > *,
+  .po-notes > *,
+  .po-file-add > *,
+  .po-lines,
+  .po-lines table {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .po-head,
   .po-head-2,
   .po-notes,
@@ -2856,33 +2878,106 @@ p.error {
     flex-basis: 100%;
     width: 100%;
   }
+}
 
+@media (max-width: 767px) {
   .po-lines {
-    margin-right: -0.7rem;
-    margin-left: -0.7rem;
-    padding-right: 0.7rem;
-    padding-left: 0.7rem;
+    margin: 0;
+    overflow: visible;
   }
 
-  .po-lines th:last-child,
-  .po-lines td:last-child {
-    position: sticky;
-    right: 0;
-    z-index: 1;
-    background: #fff;
-    box-shadow: -8px 0 10px rgba(16, 24, 32, 0.06);
+  .po-lines table,
+  .po-lines tbody,
+  .po-lines tfoot {
+    display: block;
+    width: 100%;
+    min-width: 0;
   }
 
-  .po-lines thead th:last-child {
-    z-index: 2;
+  .po-lines colgroup,
+  .po-lines thead {
+    display: none;
   }
 
-  .po-lines tfoot td:last-child {
-    background: #f7f8fa;
+  .po-lines tbody tr {
+    display: grid;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.55rem 0.65rem;
+    margin: 0 0 0.75rem;
+    padding: 0.8rem 0.75rem 0.85rem;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.78);
   }
 
-  .po-col-item {
-    width: 12rem;
+  .po-lines tbody td {
+    display: block;
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    position: static;
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
+  }
+
+  .po-lines tbody td.po-check,
+  .po-lines tbody td.po-item,
+  .po-lines tbody td.po-desc {
+    grid-column: 1 / -1;
+  }
+
+  .po-lines tbody td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: uppercase;
+  }
+
+  .po-lines tfoot {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.45rem;
+    width: 100%;
+  }
+
+  .po-lines tfoot tr {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    margin: 0;
+  }
+
+  .po-lines tfoot td {
+    display: block;
+    width: auto;
+    min-width: 0;
+    padding: 0.1rem 0;
+    border: 0;
+    position: static;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .po-lines tfoot td.po-total-label {
+    flex: 1 1 auto;
+  }
+
+  .po-lines tfoot td.po-num {
+    flex: 0 0 8rem;
+    text-align: right;
   }
 }
 
@@ -2926,6 +3021,27 @@ p.error {
 .badge-disabled {
   background: #fecdd3;
   color: #9f1239;
+}
+
+.badge-file,
+.badge-file-other {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.badge-file-vendor_invoice {
+  background: #a5f3fc;
+  color: #155e75;
+}
+
+.badge-file-quote {
+  background: #ddd6fe;
+  color: #5b21b6;
+}
+
+.badge-file-order_confirmation {
+  background: #bbf7d0;
+  color: #166534;
 }
 
 .money {

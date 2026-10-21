@@ -24,9 +24,11 @@ Do not invent a one-off hex in a new screen. Add the color to both blocks, or us
 | `--danger-ink` | `#8a1f11` | Errors |
 | `--ok-ink` | `#166534` | Success |
 
-The mesh is a background on `body` only. It is not `background-attachment: fixed`, which jumps on iOS Safari.
+The mesh is a background on `body` only. It is not `background-attachment: fixed`, which jumps on iOS Safari. The three washes (violet, cyan, rose) sit at about 0.62, 0.50, and 0.40 so the color reads on the canvas without covering the cards.
 
-Contrast targets are WCAG AA: 4.5:1 for text, 3:1 for control borders. Primary buttons are solid `#5b21b6` with white text (about 9:1). They are not a light gradient. The violet-to-teal gradient is only the small ITS mark, which also uses white on those dark ends.
+Contrast targets are WCAG AA: 4.5:1 for text, 3:1 for control borders. Primary buttons (Save, Add, Find, Sign in) use `linear-gradient(135deg, #1d4ed8, #4f46e5, #6d28d9)`. White text stays above 4.5:1 on every stop (`#1d4ed8` about 6.7:1, `#4f46e5` about 6.3:1, `#6d28d9` about 7.1:1). Secondary buttons are quiet: ink text on a light fill with a neutral hairline, not an accent outline. The small ITS mark keeps the violet-to-teal gradient.
+
+The sidebar is sticky, `100dvh` tall, and solid `#0a0e1c`. The mobile drawer uses the same height so it fills the screen instead of stopping after the links.
 
 Chips:
 
@@ -36,7 +38,10 @@ Chips:
 | Open | `#bae6fd` | `#075985` |
 | Received, approved | `#bbf7d0` | `#166534` |
 | Cancelled, disabled | `#fecdd3` | `#9f1239` |
-| Neutral, closed | `#e2e8f0` | `#1e293b` |
+| Neutral, closed, other file | `#e2e8f0` | `#1e293b` |
+| Vendor invoice | `#a5f3fc` | `#155e75` |
+| Quote | `#ddd6fe` | `#5b21b6` |
+| Order confirmation | `#bbf7d0` | `#166534` |
 
 ## Radius, shadow, blur
 
@@ -58,6 +63,8 @@ When the browser supports `backdrop-filter`, those surfaces drop to `rgba(255, 2
 Do not put `backdrop-filter` on `body`, `.app-shell`, `.shell-content`, or `.page`. On iOS that containing box breaks `position: fixed` and can keep a camera preview from painting. The scan video stays outside any blurred form. Lens and item photos open the system camera with `<input capture="environment">`.
 
 On viewports at 800px and below, fields use a 16px font so iOS Safari does not zoom on focus. Camera and upload controls in `.gallery-actions` and `.file-button` have a 44px minimum height.
+
+Below 768px, each purchase-order line is a stacked card: item and description, then a two-by-two grid of qty, unit, unit price, and ext price. The line table does not scroll sideways. Subtotal, shipping, and total sit right-aligned under the cards.
 
 ## Type
 
