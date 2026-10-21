@@ -1427,7 +1427,7 @@ button.danger {
   z-index: 20;
   right: 0;
   top: calc(100% + 0.3rem);
-  width: 18rem;
+  width: min(20rem, calc(100vw - 1.5rem));
   padding: 0.7rem 0.75rem 0.8rem;
   background: #fff;
   border: 1px solid var(--line);
@@ -1439,6 +1439,12 @@ button.danger {
   margin: 0;
   padding: 0;
   border: 0;
+}
+
+.export-menu legend {
+  margin-bottom: 0.2rem;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .export-menu label {
@@ -2305,6 +2311,20 @@ tr.quote-latest td {
   .items-count {
     width: 100%;
     margin-left: 0;
+  }
+
+  .export-wrap {
+    flex: 1 1 100%;
+  }
+
+  .export-wrap > .button,
+  .export-menu button {
+    min-height: 44px;
+  }
+
+  .export-menu {
+    left: 0;
+    right: auto;
   }
 
   .shell-heading h1 {

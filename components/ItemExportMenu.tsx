@@ -1,9 +1,38 @@
 "use client";
 
-import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { prefersFileShare } from "@/lib/export/download";
 
-type Scope = "view" | "all";
+type Columns = "all" | "visible";
+type FileFormat = "csv" | "xlsx";
+
+const STORAGE_KEY = "its.itemExport";
+
+type ExportPayload = {
+  format: FileFormat | "sheet";
+  columns: "all" | string[];
+  tax: string;
+  q: string;
+  condition: string;
+  manufacturerId: string;
+  itemType: string;
+  sort: string;
+  dir: string;
+  selectedIds: string[];
+};
+
+function sheetsMessage(flag: string): string {
+  if (flag === "denied") return "Google did not grant access to create the spreadsheet.";
+  if (flag === "unconfigured") return "Google Sheets is not configured.";
+  if (flag === "state") return "The Google connection expired. Try again.";
+  return "Google Sheets could not connect. Try again.";
+}
+
+function fileNameFrom(header: string | null, fallback: string): string {
+  const match = header?.match(/filename="([^"]+)"/);
+  return match?.[1] || fallback;
+}
 
 export function ItemExportMenu({
   tax,
@@ -11,19 +40,50 @@ export function ItemExportMenu({
   condition,
   manufacturerId,
   itemType,
+  sort,
+  dir,
+  selectedIds,
+  visibleColumns,
 }: {
   tax: string;
   q: string;
   condition: string;
   manufacturerId: string;
   itemType: string;
+  sort: string;
+  dir: string;
+  selectedIds: string[];
+  visibleColumns: string[];
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
   const [open, setOpen] = useState(false);
-  const [scope, setScope] = useState<Scope>("view");
-  const [google, setGoogle] = useState<boolean | null>(null);
+  const [columns, setColumns] = useState<Columns>("all");
+  const [google, setGoogle] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const replayed = useRef(false);
+  const postSheetRef = useRef<(body: ExportPayload) => Promise<void>>(async () => {});
+  const latest = useRef({ tax, q, condition, manufacturerId, itemType, sort, dir, selectedIds, visibleColumns, columns });
+  latest.current = { tax, q, condition, manufacturerId, itemType, sort, dir, selectedIds, visibleColumns, columns };
+
+  function payload(format: ExportPayload["format"]): ExportPayload {
+    const current = latest.current;
+    return {
+      format,
+      columns: current.columns === "visible" ? current.visibleColumns : "all",
+      tax: current.tax,
+      q: current.q,
+      condition: current.condition,
+      manufacturerId: current.manufacturerId,
+      itemType: current.itemType,
+      sort: current.sort,
+      dir: current.dir,
+      selectedIds: current.selectedIds,
+    };
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -56,45 +116,29 @@ export function ItemExportMenu({
     };
   }, [open]);
 
-  async function run(format: "csv" | "sheet") {
+  async function postSheet(body: ExportPayload) {
     setBusy(true);
     setError(null);
     try {
       const response = await fetch("/api/items/export", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          format,
-          scope,
-          tax: scope === "view" ? tax : "",
-          q: scope === "view" ? q : "",
-          condition: scope === "view" ? condition : "",
-          manufacturerId: scope === "view" ? manufacturerId : "",
-          itemType: scope === "view" ? itemType : "",
-        }),
+        body: JSON.stringify({ ...body, format: "sheet" }),
       });
+      const result = (await response.json().catch(() => null)) as { error?: string; url?: string; consentUrl?: string } | null;
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
         if (response.status === 409) setGoogle(false);
-        throw new Error(body?.error || "Export failed.");
+        throw new Error(result?.error || "Export failed.");
       }
-      if (format === "sheet") {
-        const body = (await response.json()) as { url?: string };
-        if (!body.url) throw new Error("Google did not return a spreadsheet link.");
-        window.open(body.url, "_blank", "noopener,noreferrer");
-        setOpen(false);
+      if (result?.consentUrl) {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...body, format: "sheet" }));
+        const start = new URL(result.consentUrl, window.location.origin);
+        start.searchParams.set("next", `${window.location.pathname}${window.location.search}`);
+        window.location.assign(start.toString());
         return;
       }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const match = response.headers.get("content-disposition")?.match(/filename="([^"]+)"/);
-      link.href = url;
-      link.download = match?.[1] || "ITS items export.csv";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      if (!result?.url) throw new Error("Google did not return a spreadsheet link.");
+      window.open(result.url, "_blank", "noopener,noreferrer");
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed.");
@@ -102,6 +146,93 @@ export function ItemExportMenu({
       setBusy(false);
     }
   }
+  postSheetRef.current = postSheet;
+
+  useEffect(() => {
+    const flag = params.get("sheets");
+    if (!flag || replayed.current) return;
+    replayed.current = true;
+    const next = new URLSearchParams(params.toString());
+    next.delete("sheets");
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    if (flag !== "connected") {
+      setOpen(true);
+      setError(sheetsMessage(flag));
+      return;
+    }
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    sessionStorage.removeItem(STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw) as ExportPayload;
+      setOpen(true);
+      void postSheetRef.current(saved);
+    } catch {
+      setOpen(true);
+      setError("The saved export could not be opened in Google Sheets. Try again.");
+    }
+  }, [params, pathname, router]);
+
+  async function download(format: FileFormat) {
+    const body = payload(format);
+    const ios = prefersFileShare(navigator.userAgent, {
+      maxTouchPoints: navigator.maxTouchPoints,
+      platform: navigator.platform,
+    });
+    if (ios) {
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = "/api/items/export";
+      form.acceptCharset = "UTF-8";
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "payload";
+      input.value = JSON.stringify(body);
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+      form.remove();
+      setOpen(false);
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/items/export", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(result?.error || "Export failed.");
+      }
+      const blob = await response.blob();
+      const name = fileNameFrom(response.headers.get("content-disposition"), format === "xlsx" ? "ITS items export.xlsx" : "ITS items export.csv");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const selected = selectedIds.length;
+  const scopeNote =
+    selected > 0
+      ? `${selected} selected ${selected === 1 ? "item" : "items"}, in the current sort.`
+      : "Every item matching the current filters and sort, not only this page.";
 
   return (
     <div className="export-wrap" ref={wrapRef}>
@@ -115,48 +246,40 @@ export function ItemExportMenu({
         Export
       </button>
       {open ? (
-        <div className="export-menu" role="dialog" aria-label="Export items">
+        <div className="export-menu" role="dialog" aria-label="Export items" aria-busy={busy}>
           <fieldset>
-            <legend className="sr-only">What to export</legend>
+            <legend>Columns</legend>
             <label>
               <input
                 type="radio"
-                name="export-scope"
-                checked={scope === "view"}
-                onChange={() => setScope("view")}
+                name="export-columns"
+                checked={columns === "all"}
+                onChange={() => setColumns("all")}
               />
-              Current view
+              All fields
             </label>
             <label>
               <input
                 type="radio"
-                name="export-scope"
-                checked={scope === "all"}
-                onChange={() => setScope("all")}
+                name="export-columns"
+                checked={columns === "visible"}
+                onChange={() => setColumns("visible")}
               />
-              All items
+              Visible columns
             </label>
           </fieldset>
-          <p className="export-note">
-            Current view uses the taxonomy filter and search, plus condition, manufacturer, and item type.
-            Both choices include every matching item.
-          </p>
-          {google === null ? (
-            <p className="export-note">Checking Google Sheet…</p>
-          ) : google ? (
-            <button type="button" disabled={busy} onClick={() => run("sheet")}>
-              Google Sheet
-            </button>
-          ) : (
-            <p className="export-option">
-              <span>Google Sheet</span>
-              <span className="muted">Not configured</span>
-              <Link href="/export-setup">Setup notes</Link>
-            </p>
-          )}
-          <button type="button" className="secondary" disabled={busy} onClick={() => run("csv")}>
-            CSV download
+          <p className="export-note">{scopeNote}</p>
+          <button type="button" className="secondary" disabled={busy} onClick={() => download("csv")}>
+            CSV
           </button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => download("xlsx")}>
+            Excel
+          </button>
+          {google ? (
+            <button type="button" disabled={busy} onClick={() => postSheet(payload("sheet"))}>
+              Open in Google Sheets
+            </button>
+          ) : null}
           {error ? <p className="export-error">{error}</p> : null}
         </div>
       ) : null}

@@ -597,7 +597,17 @@ export function ItemsTable() {
             Next
           </button>
         </div>
-        <ItemExportMenu tax={tax} q={q} condition={condition} manufacturerId={manufacturerId} itemType={itemType} />
+        <ItemExportMenu
+          tax={tax}
+          q={q}
+          condition={condition}
+          manufacturerId={manufacturerId}
+          itemType={itemType}
+          sort={sort.column}
+          dir={sort.ascending ? "asc" : "desc"}
+          selectedIds={[...selected]}
+          visibleColumns={gridColumns.map((column) => column.id)}
+        />
         <Link className="button" href="/items/new">
           New item
         </Link>

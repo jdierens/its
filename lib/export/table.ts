@@ -1,32 +1,57 @@
-export const FIXED_HEADERS = [
-  "SKU",
-  "Taxonomy",
-  "Item type",
-  "Manufacturer",
-  "Model",
-  "Part number",
-  "OEM name",
-  "OEM part number",
-  "Product page",
-  "Unit",
-  "Condition",
-  "Condition note",
-  "ECCN",
-  "US HTS",
-  "CCATS",
-  "COO",
+export const MONEY_FIELDS = ["ecommerce_price", "market_price", "msrp"] as const;
+
+export type MoneyField = (typeof MONEY_FIELDS)[number];
+
+const FIELD_HEADER: Record<string, string> = {
+  sku: "SKU",
+  name: "Name",
+  description: "Description",
+  taxonomy: "Taxonomy",
+  item_type: "Item type",
+  manufacturer: "Manufacturer",
+  model: "Model",
+  part_number: "Part number",
+  oem_name: "OEM name",
+  oem_part_number: "OEM part number",
+  unit: "Unit",
+  condition: "Condition",
+  condition_note: "Condition note",
+  eccn: "ECCN",
+  us_hts: "US HTS",
+  ccats: "CCATS",
+  coo: "COO",
+  quantity: "Quantity",
+  product_url: "Product URL",
+  ecommerce_price: "Ecommerce price",
+  market_price: "Market price",
+  msrp: "MSRP",
+  edited: "Edited",
+};
+
+export const ALL_FIELD_IDS = [
+  "sku",
+  "name",
+  "description",
+  "taxonomy",
+  "item_type",
+  "manufacturer",
+  "model",
+  "part_number",
+  "oem_name",
+  "oem_part_number",
+  "unit",
+  "condition",
+  "condition_note",
+  "eccn",
+  "us_hts",
+  "ccats",
+  "coo",
+  "quantity",
+  "product_url",
+  "ecommerce_price",
+  "market_price",
+  "msrp",
 ] as const;
-
-export const PRICING_FIELDS = [
-  { key: "ecommerce_price", label: "Ecommerce price" },
-  { key: "market_price", label: "Market price" },
-  { key: "msrp", label: "MSRP" },
-  { key: "pricing_checked_at", label: "Pricing checked" },
-] as const;
-
-export type PricingKey = (typeof PRICING_FIELDS)[number]["key"];
-
-const PRICING_LABEL = new Map<string, string>(PRICING_FIELDS.map((field) => [field.key, field.label]));
 
 export type ExportAttribute = {
   name: string;
@@ -36,6 +61,8 @@ export type ExportAttribute = {
 
 export type ExportItem = {
   sku: string;
+  name: string;
+  description: string;
   taxonomy: string;
   itemType: string;
   manufacturer: string;
@@ -51,9 +78,8 @@ export type ExportItem = {
   usHts: string;
   ccats: string;
   coo: string;
-  prices: Partial<Record<PricingKey, string>>;
-  primaryImageUrl: string;
-  createdAt: string;
+  quantity: string;
+  prices: Partial<Record<MoneyField, string>>;
   updatedAt: string;
   attributes: Record<string, string>;
   attributeOrder: ExportAttribute[];
@@ -65,6 +91,7 @@ export type ExportTable = {
 };
 
 const PACIFIC = "America/Los_Angeles";
+const MONEY = new Set<string>(MONEY_FIELDS);
 
 export function exportTitle(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -96,6 +123,11 @@ export function timestampCell(value: unknown): string {
   return date.toISOString();
 }
 
+export function guardSpreadsheetFormula(value: string): string {
+  if (/^[=+\-@\t\r]/.test(value) || /^\s+[=+\-@]/.test(value)) return `'${value}`;
+  return value;
+}
+
 export function attributeColumns(items: readonly ExportItem[]): string[] {
   const seen = new Map<string, { taxonomySort: number; sort: number }>();
   for (const item of items) {
@@ -121,49 +153,82 @@ export function attributeColumns(items: readonly ExportItem[]): string[] {
     .map(([name]) => name);
 }
 
-export function buildExportTable(items: readonly ExportItem[], pricingKeys: readonly PricingKey[]): ExportTable {
-  const pricing = pricingKeys.filter((key) => PRICING_LABEL.has(key));
-  const attributes = attributeColumns(items);
-  const headers = [
-    ...FIXED_HEADERS,
-    ...pricing.map((key) => PRICING_LABEL.get(key) ?? key),
-    "Primary image URL",
-    "Created",
-    "Updated",
-    ...attributes,
-  ];
+export function exportColumnIds(input: {
+  columns: "all" | readonly string[];
+  includeMoney: boolean;
+  items: readonly ExportItem[];
+}): { id: string; header: string }[] {
+  const requested = input.columns === "all" ? ALL_FIELD_IDS : input.columns;
+  const chosen: { id: string; header: string }[] = [];
+  const seen = new Set<string>();
+  for (const raw of requested) {
+    const id = raw.trim();
+    if (!id || id === "photo" || id === "fields" || seen.has(id)) continue;
+    if (MONEY.has(id) && !input.includeMoney) continue;
+    if (id.startsWith("attr:")) {
+      const name = id.slice(5).trim();
+      if (!name) continue;
+      seen.add(id);
+      chosen.push({ id, header: name });
+      continue;
+    }
+    const header = FIELD_HEADER[id];
+    if (!header) continue;
+    seen.add(id);
+    chosen.push({ id, header });
+  }
+  if (input.columns === "all") {
+    for (const name of attributeColumns(input.items)) {
+      const id = `attr:${name}`;
+      if (seen.has(id)) continue;
+      chosen.push({ id, header: name });
+    }
+  }
+  return chosen;
+}
 
-  const rows = items.map((item) => [
-    item.sku,
-    item.taxonomy,
-    item.itemType,
-    item.manufacturer,
-    item.model,
-    item.partNumber,
-    item.oemName,
-    item.oemPartNumber,
-    item.productUrl,
-    item.unit,
-    item.condition,
-    item.conditionNote,
-    item.eccn,
-    item.usHts,
-    item.ccats,
-    item.coo,
-    ...pricing.map((key) => item.prices[key] ?? ""),
-    item.primaryImageUrl,
-    item.createdAt,
-    item.updatedAt,
-    ...attributes.map((name) => item.attributes[name] ?? ""),
-  ]);
+function fieldValue(item: ExportItem, id: string): string {
+  if (id === "sku") return item.sku;
+  if (id === "name") return item.name;
+  if (id === "description") return item.description;
+  if (id === "taxonomy") return item.taxonomy;
+  if (id === "item_type") return item.itemType;
+  if (id === "manufacturer") return item.manufacturer;
+  if (id === "model") return item.model;
+  if (id === "part_number") return item.partNumber;
+  if (id === "oem_name") return item.oemName;
+  if (id === "oem_part_number") return item.oemPartNumber;
+  if (id === "unit") return item.unit;
+  if (id === "condition") return item.condition;
+  if (id === "condition_note") return item.conditionNote;
+  if (id === "eccn") return item.eccn;
+  if (id === "us_hts") return item.usHts;
+  if (id === "ccats") return item.ccats;
+  if (id === "coo") return item.coo;
+  if (id === "quantity") return item.quantity;
+  if (id === "product_url") return item.productUrl;
+  if (id === "ecommerce_price") return item.prices.ecommerce_price ?? "";
+  if (id === "market_price") return item.prices.market_price ?? "";
+  if (id === "msrp") return item.prices.msrp ?? "";
+  if (id === "edited") return item.updatedAt;
+  if (id.startsWith("attr:")) return item.attributes[id.slice(5)] ?? "";
+  return "";
+}
 
-  return { headers, rows };
+export function buildExportTable(
+  items: readonly ExportItem[],
+  options: { columns: "all" | readonly string[]; includeMoney: boolean },
+): ExportTable {
+  const columns = exportColumnIds({ ...options, items });
+  return {
+    headers: columns.map((column) => column.header),
+    rows: items.map((item) => columns.map((column) => guardSpreadsheetFormula(fieldValue(item, column.id)))),
+  };
 }
 
 function csvCell(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  if (/[",\n\r]/.test(safe)) return `"${safe.replaceAll('"', '""')}"`;
-  return safe;
+  if (/[",\n\r]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
+  return value;
 }
 
 export function toCsv(table: ExportTable): string {
