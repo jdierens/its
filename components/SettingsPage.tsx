@@ -163,9 +163,10 @@ export function SettingsPage() {
             </div>
           ))}
           <span className="hint">
-            Pallet, crate, and box labels are 90 × 29 mm. Big reference + barcode is the default.
-            Big reference + QR encodes the bin reference, such as 20000-P. Pallet uses the bolder
-            layout.
+            Pallet, crate, and box labels are 90 × 29 mm. DDS + barcode is the default. The
+            barcode is Code 128 of the reference, such as 10041-C, with DDS on the left and the
+            reference on the right. The type word is not printed. DDS + QR encodes that same
+            reference.
           </span>
           <div>
             <label htmlFor="label-template-location">Rack location</label>

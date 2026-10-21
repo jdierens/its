@@ -33,14 +33,14 @@ test("label template defaults to the barcode and ignores unknown values", () => 
   assert.equal(labelTemplateOrDefault("qr"), "qr");
 });
 
-test("bin label templates default to the big reference barcode", () => {
+test("bin label templates default to DDS plus a barcode", () => {
   assert.deepEqual(
     BIN_TEMPLATE_SETTINGS.map((setting) => setting.key),
     ["label_template_pallet", "label_template_crate", "label_template_box"],
   );
   assert.deepEqual(
     BIN_LABEL_TEMPLATES.map((template) => template.label),
-    ["Big reference + barcode", "Big reference + QR"],
+    ["DDS + barcode", "DDS + QR"],
   );
   assert.deepEqual(emptyBinLabelTemplates(), { P: "barcode", C: "barcode", B: "barcode" });
   assert.equal(labelTemplateOrDefault("qr"), "qr");

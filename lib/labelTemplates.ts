@@ -82,8 +82,8 @@ export function labelTemplateLabel(id: LabelTemplateId): string {
 }
 
 export const BIN_LABEL_TEMPLATES = [
-  { id: "barcode", label: "Big reference + barcode" },
-  { id: "qr", label: "Big reference + QR" },
+  { id: "barcode", label: "DDS + barcode" },
+  { id: "qr", label: "DDS + QR" },
 ] as const;
 
 export const BIN_TEMPLATE_SETTINGS = [
