@@ -236,6 +236,13 @@ legend {
   font-size: 0.8rem;
 }
 
+.field-error {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--danger-ink);
+  font-size: 0.85rem;
+}
+
 .combo {
   position: relative;
 }

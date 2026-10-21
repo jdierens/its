@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { ScanBarcode, Shapes, Trash2 } from "lucide-react";
+import { Copy, ScanBarcode, Shapes, Trash2 } from "lucide-react";
 import {
   AttributeValueField,
   attributeValueError,
@@ -34,7 +34,10 @@ import {
   type ItemCondition,
   type ItemType,
 } from "@/lib/itemFields";
+import { assertDuplicateSave, fetchDuplicateSource, saveDuplicatePrices } from "@/lib/duplicateItemServer";
+import { sameItemName, skuReusesSource } from "@/lib/duplicateItem";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
+import { parseMoney } from "@/lib/pricing/quotes";
 import { productUrlError, productUrlHref } from "@/lib/productUrl";
 import { previewNewItemSku, skuSubmittedForCreate } from "@/lib/sku";
 import { fetchUnits } from "@/lib/units";
@@ -43,6 +46,7 @@ import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 type ItemFormProps = {
   mode: "create" | "edit";
   itemId?: string;
+  sourceId?: string;
 };
 
 type DraftAttribute = {
@@ -86,6 +90,9 @@ type ItemSnapshot = {
   draftType: DataType;
   draftUnit: string;
   draftUsesList: boolean;
+  ecommercePrice: string;
+  marketPrice: string;
+  msrp: string;
 };
 
 const EMPTY_ITEM: ItemSnapshot = {
@@ -119,9 +126,12 @@ const EMPTY_ITEM: ItemSnapshot = {
   draftType: "text",
   draftUnit: "",
   draftUsesList: true,
+  ecommercePrice: "",
+  marketPrice: "",
+  msrp: "",
 };
 
-export function ItemForm({ mode, itemId }: ItemFormProps) {
+export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   const router = useRouter();
   const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
   const [sku, setSku] = useState("");
@@ -173,6 +183,12 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [baseline, setBaseline] = useState<ItemSnapshot>(EMPTY_ITEM);
+  const [sourceName, setSourceName] = useState<string | null>(null);
+  const [sourceSku, setSourceSku] = useState("");
+  const [showPrices, setShowPrices] = useState(false);
+  const [ecommercePrice, setEcommercePrice] = useState("");
+  const [marketPrice, setMarketPrice] = useState("");
+  const [msrp, setMsrp] = useState("");
   const savingRef = useRef(false);
 
   usePageMeta({
@@ -189,12 +205,13 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     async function load() {
       try {
-        const [taxonomyRows, countryRows, unitRows, item, previewSku] = await Promise.all([
+        const [taxonomyRows, countryRows, unitRows, item, previewSku, source] = await Promise.all([
           fetchTaxonomies(),
           fetchCountries(),
           fetchUnits(),
           mode === "edit" && itemId ? fetchItem(itemId) : Promise.resolve(null),
           mode === "create" ? previewNewItemSku() : Promise.resolve(""),
+          mode === "create" && sourceId ? fetchDuplicateSource(sourceId) : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setTaxonomies(taxonomyRows);
@@ -273,6 +290,88 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             draftType: "text",
             draftUnit: "",
             draftUsesList: true,
+            ecommercePrice: "",
+            marketPrice: "",
+            msrp: "",
+          });
+        } else if (sourceId && !source) {
+          setMissing(true);
+        } else if (source) {
+          const taxonomy = taxonomyRows.find((row) => row.id === source.taxonomyId) ?? null;
+          const values: Record<string, string> = {};
+          for (const [attributeName, value] of Object.entries(source.attributes)) {
+            const attribute = taxonomy?.attributes.find(
+              (row) => row.name.toLowerCase() === attributeName.toLowerCase(),
+            );
+            values[attribute?.name ?? attributeName] = attribute ? canonicalValue(attribute, value) : value;
+          }
+          const nextUnit = unitOrDefault(source.unit, unitRows);
+          const prices = source.prices ?? { ecommercePrice: "", marketPrice: "", msrp: "" };
+          setSourceName(source.sourceName);
+          setSourceSku(source.sourceSku);
+          setShowPrices(source.prices !== null);
+          setEcommercePrice(prices.ecommercePrice);
+          setMarketPrice(prices.marketPrice);
+          setMsrp(prices.msrp);
+          setSku(previewSku);
+          setSkuLocked(true);
+          setName(source.name);
+          setDescription(source.description);
+          setQuantity("");
+          setTaxonomyName(taxonomy?.name ?? "");
+          setLoadedTaxonomyName(taxonomy?.name ?? null);
+          setLoadedAttributes(values);
+          setAttributeValues(values);
+          setManufacturerId(source.manufacturerId);
+          setManufacturerName(source.manufacturerName);
+          setModel(source.model);
+          setPartNumber(source.partNumber);
+          setOemName(source.oemName);
+          setOemPartNumber(source.oemPartNumber);
+          setProductUrl(source.productUrl);
+          setUnit(nextUnit);
+          setItemType(source.itemType);
+          setCondition(source.condition);
+          setConditionNote(source.conditionNote);
+          setEccn(source.eccn || DEFAULT_ECCN);
+          setUsHts(source.usHts);
+          setCcats(source.ccats);
+          setCoo(source.coo);
+          setNotes(source.notes);
+          setBaseline({
+            sku: previewSku,
+            name: source.name,
+            description: source.description,
+            quantity: "",
+            taxonomyName: taxonomy?.name ?? "",
+            longCode: "",
+            shortCode: "",
+            manufacturerId: source.manufacturerId,
+            manufacturerName: source.manufacturerName,
+            model: source.model,
+            partNumber: source.partNumber,
+            oemName: source.oemName,
+            oemPartNumber: source.oemPartNumber,
+            productUrl: source.productUrl,
+            unit: nextUnit,
+            itemType: source.itemType,
+            condition: source.condition,
+            conditionNote: source.conditionNote,
+            eccn: source.eccn || DEFAULT_ECCN,
+            usHts: source.usHts,
+            ccats: source.ccats,
+            coo: source.coo,
+            notes: source.notes,
+            attributeValues: values,
+            drafts: [],
+            pendingCount: 0,
+            draftName: "",
+            draftType: "text",
+            draftUnit: "",
+            draftUsesList: true,
+            ecommercePrice: prices.ecommercePrice,
+            marketPrice: prices.marketPrice,
+            msrp: prices.msrp,
           });
         } else if (previewSku) {
           setSku(previewSku);
@@ -290,7 +389,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     return () => {
       cancelled = true;
     };
-  }, [mode, itemId]);
+  }, [mode, itemId, sourceId]);
 
   const taxonomy = useMemo(() => {
     const query = taxonomyName.trim().toLowerCase();
@@ -383,6 +482,9 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     draftType,
     draftUnit,
     draftUsesList,
+    ecommercePrice,
+    marketPrice,
+    msrp,
   };
   const dirty = isDirty(snapshot, baseline) || manufacturerUnresolved;
 
@@ -395,13 +497,39 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
     const trimmedName = name.trim();
     const trimmedSku = sku.trim();
     const trimmedTaxonomy = taxonomy?.name ?? taxonomyName.trim();
+    const submittedSku = mode === "create" ? skuSubmittedForCreate(!skuLocked, trimmedSku) : trimmedSku;
     if (!trimmedName) {
       setSaveError("Name is required.");
+      return false;
+    }
+    if (sourceName && sameItemName(trimmedName, sourceName)) {
+      setSaveError("Change the name so this item is distinct from the original.");
       return false;
     }
     if ((mode !== "create" || !skuLocked) && !trimmedSku) {
       setSaveError("SKU is required.");
       return false;
+    }
+    if (sourceSku && skuReusesSource(submittedSku, sourceSku)) {
+      setSaveError("Choose a new SKU. The original SKU stays on the source item.");
+      return false;
+    }
+    if (showPrices) {
+      const ecommerce = parseMoney(ecommercePrice);
+      const market = parseMoney(marketPrice);
+      const retail = parseMoney(msrp);
+      if (!ecommerce.ok) {
+        setSaveError(`Ecommerce price: ${ecommerce.message}`);
+        return false;
+      }
+      if (!market.ok) {
+        setSaveError(`Market price: ${market.message}`);
+        return false;
+      }
+      if (!retail.ok) {
+        setSaveError(`MSRP: ${retail.message}`);
+        return false;
+      }
     }
     if (mode === "create" && !trimmedTaxonomy) {
       setSaveError("Choose a taxonomy.");
@@ -478,7 +606,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     const input = {
       name: trimmedName,
-      sku: mode === "create" ? skuSubmittedForCreate(!skuLocked, trimmedSku) : trimmedSku,
+      sku: submittedSku,
       description: description.trim(),
       quantity: parsedQuantity,
       taxonomyName: trimmedTaxonomy || null,
@@ -504,9 +632,13 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     setSaving(true);
       if (mode === "create") {
+        if (sourceId) await assertDuplicateSave({ sourceId, name: trimmedName, sku: submittedSku });
         const id = createdId ?? (await createItem(input));
         setCreatedId(id);
         if (notes.trim()) await saveItemNotes(id, notes);
+        if (showPrices) {
+          await saveDuplicatePrices(id, { ecommercePrice, marketPrice, msrp });
+        }
         if (pendingImages.length > 0) {
           await uploadItemImages(
             id,
@@ -635,6 +767,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       >
         {mode === "edit" && itemId ? (
           <>
+            <ToolbarButton icon={Copy} label="Duplicate" href={`/items/new?from=${itemId}`} disabled={saving || deleting} />
             <ToolbarButton icon={ScanBarcode} label="Print label" onClick={() => void onPrint()} disabled={saving || deleting} />
             <ToolbarButton
               icon={Shapes}
@@ -663,6 +796,12 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
           The item was saved. <Link href={`/items/${createdId}`}>Open it</Link> to finish the photos.
         </p>
       ) : null}
+      {sourceName ? (
+        <p className="banner">
+          Copied from {sourceSku ? `${sourceSku} ` : ""}
+          {sourceName}. Nothing is saved until you press Save. Change the name first.
+        </p>
+      ) : null}
       <form onSubmit={onSubmit} noValidate>
         <div className="grid">
           <label>
@@ -680,7 +819,10 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             {mode === "create" ? (
               skuLocked ? (
                 <>
-                  <span className="hint">Preview of the next number. It is assigned when you save.</span>
+                  <span className="hint">
+                    Preview of the next number. It is assigned when you save.
+                    {sourceName ? " The original SKU is not reused." : ""}
+                  </span>
                   <button type="button" className="secondary" onClick={() => setSkuLocked(false)}>
                     Edit SKU
                   </button>
@@ -688,6 +830,11 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
               ) : (
                 <span className="hint">This SKU will be saved as typed.</span>
               )
+            ) : null}
+            {sourceSku && !skuLocked && skuReusesSource(sku, sourceSku) ? (
+              <span className="field-error" role="alert">
+                Choose a new SKU. The original SKU stays on the source item.
+              </span>
             ) : null}
           </label>
           <label>
@@ -701,7 +848,49 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                 setSaved(false);
               }}
             />
+            {sourceName ? <span className="hint">On-hand quantity starts empty. The original quantity is not copied.</span> : null}
           </label>
+          {showPrices ? (
+            <>
+              <label>
+                Ecommerce price
+                <span className="hint">Copied amounts only. Quote history and price dates are not copied.</span>
+                <input
+                  value={ecommercePrice}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  onChange={(event) => {
+                    setEcommercePrice(event.target.value);
+                    setSaved(false);
+                  }}
+                />
+              </label>
+              <label>
+                Market price
+                <input
+                  value={marketPrice}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  onChange={(event) => {
+                    setMarketPrice(event.target.value);
+                    setSaved(false);
+                  }}
+                />
+              </label>
+              <label>
+                MSRP
+                <input
+                  value={msrp}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  onChange={(event) => {
+                    setMsrp(event.target.value);
+                    setSaved(false);
+                  }}
+                />
+              </label>
+            </>
+          ) : null}
         </div>
         <label>
           Name
@@ -713,7 +902,14 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             }}
             autoComplete="off"
             required
+            aria-invalid={sourceName !== null && sameItemName(name, sourceName)}
+            aria-describedby={sourceName ? "duplicate-name" : undefined}
           />
+          {sourceName && sameItemName(name, sourceName) ? (
+            <span className="field-error" id="duplicate-name" role="alert">
+              Change the name so this item is distinct from the original.
+            </span>
+          ) : null}
         </label>
         <label>
           Description
@@ -1181,6 +1377,9 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
                   draftType,
                   draftUnit,
                   draftUsesList,
+                  ecommercePrice,
+                  marketPrice,
+                  msrp,
                 });
                 setChangeTaxonomy(false);
               })
