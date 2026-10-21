@@ -28,7 +28,9 @@ The mesh is a background on `body` only. It is not `background-attachment: fixed
 
 Contrast targets are WCAG AA: 4.5:1 for text, 3:1 for control borders. Primary buttons (Save, Add, Find, Sign in) use `linear-gradient(135deg, #1d4ed8, #4f46e5, #6d28d9)`. White text stays above 4.5:1 on every stop (`#1d4ed8` about 6.7:1, `#4f46e5` about 6.3:1, `#6d28d9` about 7.1:1). Secondary buttons are quiet: ink text on a light fill with a neutral hairline, not an accent outline. The small ITS mark keeps the violet-to-teal gradient.
 
-The sidebar is sticky, `100dvh` tall, and solid `#0a0e1c`. The mobile drawer uses the same height so it fills the screen instead of stopping after the links.
+The sidebar is sticky, `100dvh` tall, and solid `#0a0e1c`. The mobile drawer uses the same height so it fills the screen instead of stopping after the links. The ITS mark and the version share one line, for example `ITS v0.21.0`. The version is small muted text. Hover the logo for the commit, branch, and Pacific build time. A collapsed sidebar hides the version and keeps that detail on the logo tooltip. The mobile drawer shows the version beside the mark again.
+
+The items list uses icon buttons for First page, Previous page, Next page, Export, and New item. Each has an accessible name and a tooltip. On viewports at 700px and below those controls are at least 44px square.
 
 Chips:
 

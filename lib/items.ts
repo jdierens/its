@@ -768,7 +768,6 @@ export type ItemInput = {
   name: string;
   sku: string;
   description: string;
-  quantity: number | null;
   taxonomyName: string | null;
   attributes: Record<string, string>;
   attributeDefs: AttributeDefinition[];
@@ -822,7 +821,7 @@ export async function createItem(input: ItemInput): Promise<string> {
     p_attributes: input.attributes,
     p_sku: input.sku,
     p_description: input.description,
-    p_quantity: input.quantity,
+    p_quantity: null,
     p_attribute_defs: input.attributeDefs,
     p_long_code: input.longCode ?? null,
     p_short_code: input.shortCode ?? null,
@@ -854,7 +853,25 @@ export async function deleteItem(id: string): Promise<void> {
   }
 }
 
+function asQuantity(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+/** `update_item` always assigns quantity. Read the stored value so a form save cannot clear it. */
+async function storedQuantity(id: string): Promise<number | null> {
+  const { data, error } = await (await getSupabase()).from("items").select("quantity").eq("id", id).maybeSingle();
+  if (error) throw new Error(errorText(error));
+  if (!data) throw new Error("That item is already gone.");
+  return asQuantity(data.quantity);
+}
+
 export async function updateItem(id: string, input: ItemInput): Promise<void> {
+  const quantity = await storedQuantity(id);
   const { error } = await (await getSupabase()).rpc("update_item", {
     p_id: id,
     p_name: input.name,
@@ -862,7 +879,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
     p_attributes: input.taxonomyName ? input.attributes : {},
     p_sku: input.sku,
     p_description: input.description,
-    p_quantity: input.quantity,
+    p_quantity: quantity,
     p_attribute_defs: input.taxonomyName ? input.attributeDefs : [],
     p_long_code: input.longCode ?? null,
     p_short_code: input.shortCode ?? null,

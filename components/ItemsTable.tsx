@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import { ChevronLeft, ChevronRight, ChevronsLeft, Plus } from "lucide-react";
 import { ItemExportMenu } from "@/components/ItemExportMenu";
+import { ItemsIconButton } from "@/components/ItemsIconButton";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { BulkEditBar, type BulkField } from "@/components/BulkEditBar";
@@ -29,6 +30,7 @@ import {
   writeItemSort,
 } from "@/lib/itemSort";
 import { fetchItemList, fetchListedItem, fetchTaxonomyChoices, saveItemCell } from "@/lib/items";
+import { clearItemsReturn, peekItemsScroll, rememberItemsList } from "@/lib/itemsReturn";
 import { productUrlHref } from "@/lib/productUrl";
 import { asMoney, formatMoney, moneyInput } from "@/lib/pricing/quotes";
 import { fetchManufacturerChoices } from "@/lib/manufacturers";
@@ -300,6 +302,19 @@ export function ItemsTable() {
     return () => window.removeEventListener("keydown", onSlash);
   }, []);
 
+  useEffect(() => {
+    const query = params.toString();
+    const href = query ? `${pathname}?${query}` : pathname;
+    const saved = peekItemsScroll(href);
+    const node = scrollRef.current;
+    if (saved == null || !node) return;
+    const frame = window.requestAnimationFrame(() => {
+      node.scrollTop = saved;
+      clearItemsReturn();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [pathname, params]);
+
   function replaceQuery(next: URLSearchParams) {
     const query = next.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
@@ -324,6 +339,16 @@ export function ItemsTable() {
     if (nextPage <= 1) next.delete("page");
     else next.set("page", String(nextPage));
     replaceQuery(next);
+  }
+
+  function listHref() {
+    const query = params.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }
+
+  function openItem(id: string) {
+    rememberItemsList(listHref(), scrollRef.current?.scrollTop ?? 0);
+    router.push(`/items/${id}`);
   }
 
   function move(row: number, col: number) {
@@ -464,7 +489,7 @@ export function ItemsTable() {
 
     if (action === "edit") beginEdit(row, col, null);
     else if (action === "type") beginEdit(row, col, event.key);
-    else if (action === "open" && active) router.push(`/items/${rows[active.row].id}`);
+    else if (action === "open" && active) openItem(rows[active.row].id);
     else if (event.key === "ArrowDown") move(active ? row + 1 : 0, col);
     else if (event.key === "ArrowUp") move(active ? row - 1 : rows.length - 1, col);
     else if (event.key === "ArrowRight") move(active ? row : 0, active ? col + 1 : 0);
@@ -584,33 +609,38 @@ export function ItemsTable() {
         <p className="items-count">
           {loading && rows.length === 0 ? "Loading items…" : itemRange(listPage, matched, total)}
         </p>
-        <div className={styles.pager}>
-          <button type="button" className="secondary" disabled={listPage <= 1 || loading} onClick={() => setPage(listPage - 1)}>
-            Previous
-          </button>
-          <button
-            type="button"
-            className="secondary"
+        <div className="items-actions">
+          <ItemsIconButton
+            label="First page"
+            icon={ChevronsLeft}
+            disabled={listPage <= 1 || loading}
+            onClick={() => setPage(1)}
+          />
+          <ItemsIconButton
+            label="Previous page"
+            icon={ChevronLeft}
+            disabled={listPage <= 1 || loading}
+            onClick={() => setPage(listPage - 1)}
+          />
+          <ItemsIconButton
+            label="Next page"
+            icon={ChevronRight}
             disabled={loading || listPage * ITEM_PAGE_SIZE >= matched}
             onClick={() => setPage(listPage + 1)}
-          >
-            Next
-          </button>
+          />
+          <ItemExportMenu
+            tax={tax}
+            q={q}
+            condition={condition}
+            manufacturerId={manufacturerId}
+            itemType={itemType}
+            sort={sort.column}
+            dir={sort.ascending ? "asc" : "desc"}
+            selectedIds={[...selected]}
+            visibleColumns={gridColumns.map((column) => column.id)}
+          />
+          <ItemsIconButton label="New item" icon={Plus} variant="default" href="/items/new" />
         </div>
-        <ItemExportMenu
-          tax={tax}
-          q={q}
-          condition={condition}
-          manufacturerId={manufacturerId}
-          itemType={itemType}
-          sort={sort.column}
-          dir={sort.ascending ? "asc" : "desc"}
-          selectedIds={[...selected]}
-          visibleColumns={gridColumns.map((column) => column.id)}
-        />
-        <Link className="button" href="/items/new">
-          New item
-        </Link>
       </div>
       <p id="items-help" className="hint items-help">
         Arrow keys move the cell. Enter or typing edits it. Enter and Tab save and move, Esc cancels.
@@ -732,7 +762,7 @@ export function ItemsTable() {
                         onClick={() => setActive({ row: rowIndex, col: colIndex })}
                         onDoubleClick={() => {
                           if (isEditableColumn(column.id)) beginEdit(rowIndex, colIndex, null);
-                          else router.push(`/items/${item.id}`);
+                          else openItem(item.id);
                         }}
                       >
                         {column.id === "photo" ? (

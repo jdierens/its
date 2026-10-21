@@ -1,7 +1,9 @@
 "use client";
 
+import { Download } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { ItemsIconButton } from "@/components/ItemsIconButton";
 import { prefersFileShare } from "@/lib/export/download";
 
 type Columns = "all" | "visible";
@@ -236,15 +238,13 @@ export function ItemExportMenu({
 
   return (
     <div className="export-wrap" ref={wrapRef}>
-      <button
-        type="button"
-        className="button secondary"
-        aria-expanded={open}
-        aria-haspopup="dialog"
+      <ItemsIconButton
+        label="Export"
+        icon={Download}
+        pressed={open}
+        popup="dialog"
         onClick={() => setOpen((current) => !current)}
-      >
-        Export
-      </button>
+      />
       {open ? (
         <div className="export-menu" role="dialog" aria-label="Export items" aria-busy={busy}>
           <fieldset>

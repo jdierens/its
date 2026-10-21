@@ -23,7 +23,7 @@ While sign-in is off, the form shows those prices. With sign-in on, admin, staff
 
 - Id
 - SKU
-- On-hand quantity. The field starts empty
+- On-hand quantity. The form shows an empty on-hand value and does not save one
 - Bin and location assignments. Those stay on the stock ledger
 - Purchase-order and receiving links
 - Photos and other attachments
@@ -41,4 +41,4 @@ The product page is copied. It may be the listing for the original grade.
 
 The three prices are copied for someone who can see money. Quote history is not. Clear a price before saving if the new grade should not keep it.
 
-Quantity is left empty, which saves as no quantity, the same as a new item with the field blank. It is not saved as zero.
+A duplicate is created with no on-hand quantity, the same as a new item. The form does not send a quantity, and it is not saved as zero.

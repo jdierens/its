@@ -42,6 +42,7 @@ export function AttributeValueField({ attribute, value, onChange }: AttributeVal
       {attributeLabel(attribute.name, attribute.unit)}
       <input
         list={attribute.uses_list && attribute.allowedValues.length > 0 ? listId : undefined}
+        className={attribute.data_type === "text" ? undefined : "num"}
         value={value}
         autoComplete="off"
         inputMode={

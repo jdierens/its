@@ -39,6 +39,7 @@ import { sameItemName, skuReusesSource } from "@/lib/duplicateItem";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
 import { parseMoney } from "@/lib/pricing/quotes";
 import { productUrlError, productUrlHref } from "@/lib/productUrl";
+import { itemsListHref } from "@/lib/itemsReturn";
 import { previewNewItemSku, skuSubmittedForCreate } from "@/lib/sku";
 import { fetchUnits } from "@/lib/units";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
@@ -63,7 +64,6 @@ type ItemSnapshot = {
   sku: string;
   name: string;
   description: string;
-  quantity: string;
   taxonomyName: string;
   longCode: string;
   shortCode: string;
@@ -99,7 +99,6 @@ const EMPTY_ITEM: ItemSnapshot = {
   sku: "",
   name: "",
   description: "",
-  quantity: "",
   taxonomyName: "",
   longCode: "",
   shortCode: "",
@@ -138,7 +137,8 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   const [skuLocked, setSkuLocked] = useState(mode === "create");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [quantity, setQuantity] = useState("");
+  const [onHand, setOnHand] = useState<number | null>(null);
+  const [itemsHref, setItemsHref] = useState("/items");
   const [taxonomyName, setTaxonomyName] = useState("");
   const [longCode, setLongCode] = useState("");
   const [shortCode, setShortCode] = useState("");
@@ -191,11 +191,17 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   const [msrp, setMsrp] = useState("");
   const savingRef = useRef(false);
 
+  useEffect(() => {
+    setItemsHref(itemsListHref());
+  }, []);
+
   usePageMeta({
     title: mode === "create" ? "New item" : name.trim() || "Edit item",
+    backHref: itemsHref,
+    backLabel: "Back to items",
     crumbs: [
       { label: "Inventory" },
-      { label: "Items", href: "/items" },
+      { label: "Items", href: itemsHref },
       { label: mode === "create" ? "New item" : name.trim() || "Edit item" },
     ],
   });
@@ -235,7 +241,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           setSku(item.sku);
           setName(item.name);
           setDescription(item.description);
-          setQuantity(item.quantity === null ? "" : String(item.quantity));
+          setOnHand(typeof item.quantity === "number" ? item.quantity : null);
           setTaxonomyName(taxonomy?.name ?? "");
           setLoadedTaxonomyName(taxonomy?.name ?? null);
           setLoadedAttributes(values);
@@ -263,7 +269,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             sku: item.sku,
             name: item.name,
             description: item.description,
-            quantity: item.quantity === null ? "" : String(item.quantity),
             taxonomyName: taxonomy?.name ?? "",
             longCode: "",
             shortCode: "",
@@ -317,7 +322,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           setSkuLocked(true);
           setName(source.name);
           setDescription(source.description);
-          setQuantity("");
+          setOnHand(null);
           setTaxonomyName(taxonomy?.name ?? "");
           setLoadedTaxonomyName(taxonomy?.name ?? null);
           setLoadedAttributes(values);
@@ -342,7 +347,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             sku: previewSku,
             name: source.name,
             description: source.description,
-            quantity: "",
             taxonomyName: taxonomy?.name ?? "",
             longCode: "",
             shortCode: "",
@@ -455,7 +459,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     sku,
     name,
     description,
-    quantity,
     taxonomyName,
     longCode,
     shortCode,
@@ -566,13 +569,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
       }
     }
 
-    const quantityText = quantity.trim();
-    const parsedQuantity = quantityText === "" ? null : Number(quantityText);
-    if (parsedQuantity !== null && (!Number.isFinite(parsedQuantity) || !Number.isInteger(parsedQuantity))) {
-      setSaveError("Quantity must be a whole number.");
-      return false;
-    }
-
     const attributes: Record<string, string> = {};
     for (const attribute of taxonomy?.attributes ?? []) {
       const value = (attributeValues[attribute.name] ?? "").trim();
@@ -608,7 +604,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
       name: trimmedName,
       sku: submittedSku,
       description: description.trim(),
-      quantity: parsedQuantity,
       taxonomyName: trimmedTaxonomy || null,
       attributes,
       attributeDefs,
@@ -721,7 +716,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     setSaveError(null);
     try {
       await deleteItem(itemId);
-      router.push("/items");
+      router.push(itemsListHref());
     } catch (error) {
       setSaveError(errorText(error));
       setDeleting(false);
@@ -741,7 +736,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     return (
       <main className="page">
         <p className="banner error">{loadError}</p>
-        <Link href="/items">Back to items</Link>
+        <Link href={itemsHref}>Back to items</Link>
       </main>
     );
   }
@@ -751,7 +746,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
       <main className="page">
         <p>Item not found.</p>
         <p className="muted">That item is not in the inventory.</p>
-        <Link href="/items">Back to items</Link>
+        <Link href={itemsHref}>Back to items</Link>
       </main>
     );
   }
@@ -803,8 +798,8 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         </p>
       ) : null}
       <form onSubmit={onSubmit} noValidate>
-        <div className="grid">
-          <label>
+        <div className="item-identity">
+          <label className="item-sku">
             SKU
             <input
               value={sku}
@@ -815,6 +810,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
               autoComplete="off"
               readOnly={mode === "create" && skuLocked}
               required={mode !== "create" || !skuLocked}
+              spellCheck={false}
             />
             {mode === "create" ? (
               skuLocked ? (
@@ -837,80 +833,34 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
               </span>
             ) : null}
           </label>
-          <label>
-            Quantity
+          <label className="item-name">
+            Name
             <input
-              type="number"
-              step="1"
-              value={quantity}
+              value={name}
               onChange={(event) => {
-                setQuantity(event.target.value);
+                setName(event.target.value);
                 setSaved(false);
               }}
+              autoComplete="off"
+              required
+              maxLength={Math.max(80, name.length)}
+              aria-invalid={sourceName !== null && sameItemName(name, sourceName)}
+              aria-describedby={sourceName ? "duplicate-name" : undefined}
             />
-            {sourceName ? <span className="hint">On-hand quantity starts empty. The original quantity is not copied.</span> : null}
+            {sourceName && sameItemName(name, sourceName) ? (
+              <span className="field-error" id="duplicate-name" role="alert">
+                Change the name so this item is distinct from the original.
+              </span>
+            ) : null}
           </label>
-          {showPrices ? (
-            <>
-              <label>
-                Ecommerce price
-                <span className="hint">Copied amounts only. Quote history and price dates are not copied.</span>
-                <input
-                  value={ecommercePrice}
-                  inputMode="decimal"
-                  autoComplete="off"
-                  onChange={(event) => {
-                    setEcommercePrice(event.target.value);
-                    setSaved(false);
-                  }}
-                />
-              </label>
-              <label>
-                Market price
-                <input
-                  value={marketPrice}
-                  inputMode="decimal"
-                  autoComplete="off"
-                  onChange={(event) => {
-                    setMarketPrice(event.target.value);
-                    setSaved(false);
-                  }}
-                />
-              </label>
-              <label>
-                MSRP
-                <input
-                  value={msrp}
-                  inputMode="decimal"
-                  autoComplete="off"
-                  onChange={(event) => {
-                    setMsrp(event.target.value);
-                    setSaved(false);
-                  }}
-                />
-              </label>
-            </>
-          ) : null}
+          <div className="on-hand">
+            <span className="on-hand-label">On hand</span>
+            <strong className="on-hand-value">{onHand === null ? "—" : onHand.toLocaleString("en-US")}</strong>
+          </div>
         </div>
-        <label>
-          Name
-          <input
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              setSaved(false);
-            }}
-            autoComplete="off"
-            required
-            aria-invalid={sourceName !== null && sameItemName(name, sourceName)}
-            aria-describedby={sourceName ? "duplicate-name" : undefined}
-          />
-          {sourceName && sameItemName(name, sourceName) ? (
-            <span className="field-error" id="duplicate-name" role="alert">
-              Change the name so this item is distinct from the original.
-            </span>
-          ) : null}
-        </label>
+        {sourceName ? (
+          <p className="hint">On-hand quantity starts empty. The original quantity is not copied.</p>
+        ) : null}
         <label>
           Description
           <textarea
@@ -932,85 +882,57 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           />
           <span className="hint">Optional. A taxonomy change can append removed field values here.</span>
         </label>
-        {mode === "edit" ? (
-          <div className="taxonomy-lock">
-            <label>
-              Taxonomy
-              <input
-                value={
-                  taxonomy
-                    ? taxonomy.shortCode
-                      ? `${taxonomy.shortCode} — ${taxonomy.name}`
-                      : taxonomy.name
-                    : "No taxonomy"
-                }
-                readOnly
-              />
-            </label>
-            </div>
-        ) : (
-          <label>
-            Taxonomy
-            <input
-              list="taxonomy-names"
-              value={taxonomyName}
-              placeholder="Select or type a taxonomy"
-              autoComplete="off"
-              onChange={(event) => onTaxonomyChange(event.target.value)}
-            />
-            <datalist id="taxonomy-names">
-              {taxonomies.map((row) => (
-                <option key={row.id} value={row.name} />
-              ))}
-            </datalist>
-            {isNewTaxonomy ? (
-              <span className="hint">
-                New taxonomy. Enter its codes, then save. It is added at the end of the list.
-              </span>
-            ) : null}
-          </label>
-        )}
-        {isNewTaxonomy ? (
+        {showPrices ? (
           <div className="grid">
             <label>
-              Long code
+              Ecommerce price
+              <span className="hint">Copied amounts only. Quote history and price dates are not copied.</span>
               <input
-                value={longCode}
-                placeholder="CRD/NIC"
+                className="num"
+                value={ecommercePrice}
+                inputMode="decimal"
                 autoComplete="off"
-                spellCheck={false}
-                required
                 onChange={(event) => {
-                  setLongCode(event.target.value.toUpperCase());
+                  setEcommercePrice(event.target.value);
                   setSaved(false);
                 }}
               />
             </label>
             <label>
-              Short code
+              Market price
               <input
-                value={shortCode}
-                placeholder="NIC"
-                maxLength={3}
+                className="num"
+                value={marketPrice}
+                inputMode="decimal"
                 autoComplete="off"
-                spellCheck={false}
-                required
                 onChange={(event) => {
-                  setShortCode(event.target.value.toUpperCase().slice(0, 3));
+                  setMarketPrice(event.target.value);
                   setSaved(false);
                 }}
               />
-              <span className="hint">Exactly 3 letters or digits. Printed on the label.</span>
+            </label>
+            <label>
+              MSRP
+              <input
+                className="num"
+                value={msrp}
+                inputMode="decimal"
+                autoComplete="off"
+                onChange={(event) => {
+                  setMsrp(event.target.value);
+                  setSaved(false);
+                }}
+              />
             </label>
           </div>
         ) : null}
         <fieldset>
           <legend>Main</legend>
-          <div className="grid">
+          <div className="item-main-row">
             <label>
-              Item type
+              Type
               <select
-                aria-label="Item type"
+                aria-label="Type"
                 value={itemType}
                 onChange={(event) => {
                   const next = ITEM_TYPES.find((type) => type === event.target.value) ?? DEFAULT_ITEM_TYPE;
@@ -1025,6 +947,95 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                 ))}
               </select>
             </label>
+            <label>
+              Unit
+              <select
+                aria-label="Unit"
+                value={unit}
+                onChange={(event) => {
+                  setUnit(event.target.value);
+                  setSaved(false);
+                }}
+              >
+                {unitChoices.map((choice) => (
+                  <option key={choice} value={choice}>
+                    {choice}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {mode === "edit" ? (
+              <label>
+                Taxonomy
+                <input
+                  value={
+                    taxonomy
+                      ? taxonomy.shortCode
+                        ? `${taxonomy.shortCode} — ${taxonomy.name}`
+                        : taxonomy.name
+                      : "No taxonomy"
+                  }
+                  readOnly
+                />
+              </label>
+            ) : (
+              <label>
+                Taxonomy
+                <input
+                  list="taxonomy-names"
+                  value={taxonomyName}
+                  placeholder="Select or type a taxonomy"
+                  autoComplete="off"
+                  onChange={(event) => onTaxonomyChange(event.target.value)}
+                />
+                <datalist id="taxonomy-names">
+                  {taxonomies.map((row) => (
+                    <option key={row.id} value={row.name} />
+                  ))}
+                </datalist>
+                {isNewTaxonomy ? (
+                  <span className="hint">
+                    New taxonomy. Enter its codes, then save. It is added at the end of the list.
+                  </span>
+                ) : null}
+              </label>
+            )}
+          </div>
+          {isNewTaxonomy ? (
+            <div className="grid">
+              <label>
+                Long code
+                <input
+                  value={longCode}
+                  placeholder="CRD/NIC"
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                  onChange={(event) => {
+                    setLongCode(event.target.value.toUpperCase());
+                    setSaved(false);
+                  }}
+                />
+              </label>
+              <label>
+                Short code
+                <input
+                  value={shortCode}
+                  placeholder="NIC"
+                  maxLength={3}
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                  onChange={(event) => {
+                    setShortCode(event.target.value.toUpperCase().slice(0, 3));
+                    setSaved(false);
+                  }}
+                />
+                <span className="hint">Exactly 3 letters or digits. Printed on the label.</span>
+              </label>
+            </div>
+          ) : null}
+          <div className="item-main-row">
             <ManufacturerSelect
               manufacturerId={manufacturerId}
               manufacturerName={manufacturerName}
@@ -1057,6 +1068,8 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                 }}
               />
             </label>
+          </div>
+          <div className="grid">
             <label>
               OEM name
               <input
@@ -1102,23 +1115,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
               ) : (
                 <span className="hint">Optional http or https address.</span>
               )}
-            </label>
-            <label>
-              Unit
-              <select
-                aria-label="Unit"
-                value={unit}
-                onChange={(event) => {
-                  setUnit(event.target.value);
-                  setSaved(false);
-                }}
-              >
-                {unitChoices.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
             </label>
             <label>
               Condition
@@ -1338,6 +1334,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                   values[attribute?.name ?? link.name] = attribute ? canonicalValue(attribute, link.value) : link.value;
                 }
                 setSku(result.sku || item.sku);
+                setOnHand(typeof item.quantity === "number" ? item.quantity : null);
                 setNotes(result.notes);
                 setTaxonomyName(match?.name ?? "");
                 setLoadedTaxonomyName(match?.name ?? null);
@@ -1350,7 +1347,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                   sku: result.sku || item.sku,
                   name,
                   description,
-                  quantity,
                   taxonomyName: match?.name ?? "",
                   longCode,
                   shortCode,

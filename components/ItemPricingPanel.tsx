@@ -497,7 +497,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                       {QUOTE_SOURCE_LABELS[quote.source]}
                       {quote.outlier ? <span className="badge-outlier">Outlier</span> : null}
                     </td>
-                    <td className="sku">
+                    <td className="sku num">
                       {formatMoney(quote.price, quote.currency)}
                       {quote.url ? (
                         <>
@@ -508,7 +508,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                         </>
                       ) : null}
                     </td>
-                    <td className="sku">{formatQty(quote.qty)}</td>
+                    <td className="sku num">{formatQty(quote.qty)}</td>
                     <td>{quote.condition || "—"}</td>
                     <td>
                       {sellerLabel(quote)}
@@ -551,7 +551,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
             </label>
             <label>
               Qty
-              <input value={quoteQty} inputMode="decimal" autoComplete="off" onChange={(event) => setQuoteQty(event.target.value)} />
+              <input className="num" value={quoteQty} inputMode="decimal" autoComplete="off" onChange={(event) => setQuoteQty(event.target.value)} />
             </label>
             <label>
               Condition
@@ -642,9 +642,9 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                   <tr key={txn.id}>
                     <td>{txn.type === "buy" ? "Buy" : "Sell"}</td>
                     <td className="sku">{txn.txnDate}</td>
-                    <td className="sku">{formatQty(txn.qty)}</td>
-                    <td className="sku">{formatMoney(txn.unitPrice)}</td>
-                    <td className="sku">{formatMoney(txn.total)}</td>
+                    <td className="sku num">{formatQty(txn.qty)}</td>
+                    <td className="sku num">{formatMoney(txn.unitPrice)}</td>
+                    <td className="sku num">{formatMoney(txn.total)}</td>
                     <td>
                       {txn.type === "sell" ? txn.customerName || "—" : txn.vendorName || "—"}
                       {txn.notes ? <span className="hint">{txn.notes}</span> : null}
@@ -676,7 +676,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
             </label>
             <label>
               Qty
-              <input value={txnQty} inputMode="decimal" autoComplete="off" onChange={(event) => setTxnQty(event.target.value)} />
+              <input className="num" value={txnQty} inputMode="decimal" autoComplete="off" onChange={(event) => setTxnQty(event.target.value)} />
             </label>
             <label>
               Unit price
@@ -777,7 +777,7 @@ function MoneyInput({ value, onChange }: { value: string; onChange: (value: stri
       <span className="money-prefix" aria-hidden="true">
         $
       </span>
-      <input value={value} inputMode="decimal" autoComplete="off" onChange={(event) => onChange(event.target.value)} />
+      <input className="num" value={value} inputMode="decimal" autoComplete="off" onChange={(event) => onChange(event.target.value)} />
     </span>
   );
 }

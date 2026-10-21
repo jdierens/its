@@ -4,7 +4,6 @@ const ref = process.env.NEXT_PUBLIC_GIT_REF || "dev";
 const builtAt = process.env.NEXT_PUBLIC_BUILD_TIME || "";
 const channel = process.env.NEXT_PUBLIC_APP_CHANNEL || "development";
 
-const shortSha = sha === "dev" ? "dev" : sha.slice(0, 7);
 const devBuild = channel !== "production" && channel !== "preview";
 const shownVersion = devBuild ? `${version}-dev` : version;
 const badge = channel === "production" ? null : channel === "preview" ? "preview" : "dev";
@@ -23,16 +22,7 @@ function pacificTime(iso: string): string {
   }).format(date);
 }
 
-export const revisionTooltip = [`${sha}`, `branch ${ref}`, pacificTime(builtAt)].join("\n");
-export const revisionLabel = `v${shownVersion} · ${shortSha}`;
-export const revisionMini = `v${version}`;
-export const revisionBadge = badge;
-
-export function AppRevision() {
-  return (
-    <p className="brand-rev" title={revisionTooltip}>
-      <span>{revisionLabel}</span>
-      {revisionBadge ? <span className="rev-badge">{revisionBadge}</span> : null}
-    </p>
-  );
-}
+export const revisionBeside = `v${shownVersion}`;
+export const revisionTooltip = [revisionBeside, badge, sha, `branch ${ref}`, pacificTime(builtAt)]
+  .filter((line): line is string => Boolean(line))
+  .join("\n");

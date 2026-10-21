@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Contact,
   Aperture,
+  ArrowLeft,
   Menu,
   Package,
   Plug,
@@ -35,7 +36,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { AppRevision, revisionMini, revisionTooltip } from "@/components/AppRevision";
+import { revisionBeside, revisionTooltip } from "@/components/AppRevision";
 import { ScanListener } from "@/components/ScanListener";
 import { SignedInUser } from "@/components/SignedInUser";
 import { fetchCurrentAppUser, type AppUser } from "@/lib/appUsers";
@@ -175,9 +176,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="brand-block">
             <Link href="/items" className="brand" title={revisionTooltip}>
               <span className="brand-mark">ITS</span>
-              <span className="brand-rev-mini">{revisionMini}</span>
+              <span className="brand-version">{revisionBeside}</span>
             </Link>
-            <AppRevision />
           </div>
           <nav className="sidebar-nav" aria-label="Main">
             {groups.map((group) => (
@@ -258,6 +258,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <Menu size={18} strokeWidth={1.75} aria-hidden />
             </button>
+            {meta.backHref ? (
+              <Link
+                href={meta.backHref}
+                className="icon-button back-link"
+                aria-label={meta.backLabel || "Back"}
+                title={meta.backLabel || "Back"}
+              >
+                <ArrowLeft size={18} strokeWidth={1.75} aria-hidden />
+              </Link>
+            ) : null}
             <div className="shell-heading">
               <nav aria-label="Breadcrumb">
                 <ol className="crumbs">
