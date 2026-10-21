@@ -10,7 +10,16 @@ import {
   qrSymbolMm,
   type LabelTemplateId,
 } from "@/lib/labelTemplates";
-import { binTypeWord, type BinType } from "@/lib/bins";
+import type { BinType } from "@/lib/bins";
+import {
+  BIN_BARCODE_FORMAT,
+  BIN_BARCODE_MAX_MM,
+  BIN_BARCODE_QUIET_MODULES,
+  BIN_LABEL_BRAND,
+  mmToCssPx,
+  quietInsetRatio,
+  scaledModuleWidth,
+} from "@/lib/binLabelLayout";
 
 type BinLabelProps = {
   reference: string;
@@ -18,10 +27,7 @@ type BinLabelProps = {
   layout: LabelTemplateId;
 };
 
-const WIDE_MODULE_PX = 1.28;
-const NARROW_MODULE_PX = 0.96;
-const BAR_HEIGHT_PX = 30;
-const MAX_BARCODE_MM = 84;
+const BAR_HEIGHT_PX = 50;
 
 function qrPath(text: string): { d: string; span: number; sideMm: number } | null {
   if (!text) return null;
@@ -48,21 +54,21 @@ function qrPath(text: string): { d: string; span: number; sideMm: number } | nul
 
 export function BinLabel({ reference, type, layout }: BinLabelProps) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const word = binTypeWord(type);
+  const lineRef = useRef<HTMLDivElement>(null);
   const symbol = useMemo(
     () => (layout === "qr" ? qrPath(reference) : null),
     [layout, reference],
   );
-  const pallet = type === "P";
 
   useLayoutEffect(() => {
     const svg = svgRef.current;
+    const line = lineRef.current;
     if (!svg || layout !== "barcode" || !reference) return;
 
     const draw = (moduleWidth: number) => {
-      const quietZone = Math.round(moduleWidth * 10);
+      const quietZone = Math.max(1, Math.round(moduleWidth * BIN_BARCODE_QUIET_MODULES));
       JsBarcode(svg, reference, {
-        format: "CODE128",
+        format: BIN_BARCODE_FORMAT,
         width: moduleWidth,
         height: BAR_HEIGHT_PX,
         margin: 0,
@@ -76,40 +82,63 @@ export function BinLabel({ reference, type, layout }: BinLabelProps) {
         flat: true,
       });
       svg.setAttribute("shape-rendering", "crispEdges");
+      return quietZone;
     };
 
-    draw(WIDE_MODULE_PX);
-    const maxPx = (MAX_BARCODE_MM * 96) / 25.4;
-    const drawn = parseFloat(svg.getAttribute("width") || "");
-    if (Number.isFinite(drawn) && drawn > maxPx) draw(NARROW_MODULE_PX);
+    draw(1);
+    const unit = parseFloat(svg.getAttribute("width") || "");
+    const target = mmToCssPx(BIN_BARCODE_MAX_MM);
+    let moduleWidth = scaledModuleWidth(unit, target);
+    let quiet = draw(moduleWidth);
+    let drawn = parseFloat(svg.getAttribute("width") || "");
+    if (Number.isFinite(drawn) && drawn > target + 1) {
+      moduleWidth = scaledModuleWidth(drawn, target) * moduleWidth;
+      quiet = draw(moduleWidth);
+      drawn = parseFloat(svg.getAttribute("width") || "");
+    }
+    if (line) {
+      const inset = `${quietInsetRatio(drawn, quiet) * 100}%`;
+      line.style.paddingLeft = inset;
+      line.style.paddingRight = inset;
+    }
   }, [layout, reference]);
+
+  const caption = (
+    <>
+      <span className="bin-label-brand">{BIN_LABEL_BRAND}</span>
+      <span className="bin-label-ref">{reference}</span>
+    </>
+  );
 
   return (
     <article
-      className={`bin-label${pallet ? " bin-label-pallet" : ""}${layout === "qr" ? " bin-label-qr-layout" : ""}`}
+      className={`bin-label${layout === "qr" ? " bin-label-qr-layout" : ""}`}
       data-label-template={layout}
       data-bin-type={type}
       data-bin-reference={reference}
     >
-      <div className="bin-label-copy">
-        <div className="bin-label-word">{word}</div>
-        {pallet ? <div className="bin-label-mark" /> : null}
-        <div className="bin-label-ref">{reference}</div>
-      </div>
       {layout === "qr" && symbol ? (
-        <svg
-          className="bin-label-qr"
-          viewBox={`0 0 ${symbol.span} ${symbol.span}`}
-          width={`${symbol.sideMm}mm`}
-          height={`${symbol.sideMm}mm`}
-          shapeRendering="crispEdges"
-          role="img"
-          aria-label={reference}
-        >
-          <path d={symbol.d} fill="#000000" />
-        </svg>
+        <>
+          <div className="bin-label-copy">{caption}</div>
+          <svg
+            className="bin-label-qr"
+            viewBox={`0 0 ${symbol.span} ${symbol.span}`}
+            width={`${symbol.sideMm}mm`}
+            height={`${symbol.sideMm}mm`}
+            shapeRendering="crispEdges"
+            role="img"
+            aria-label={reference}
+          >
+            <path d={symbol.d} fill="#000000" />
+          </svg>
+        </>
       ) : (
-        <svg ref={svgRef} className="bin-label-bars" role="img" aria-label={reference} />
+        <div className="bin-label-stack">
+          <svg ref={svgRef} className="bin-label-bars" role="img" aria-label={reference} />
+          <div ref={lineRef} className="bin-label-line">
+            {caption}
+          </div>
+        </div>
       )}
     </article>
   );
@@ -127,10 +156,11 @@ export const BIN_LABEL_PRINT_CSS = `
   width: 90mm;
   height: 29mm;
   box-sizing: border-box;
-  padding: 1.8mm 1.5mm 2.6mm;
+  padding: 1.6mm 3mm 1.8mm;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
   background: #fff;
   color: #000;
@@ -144,48 +174,41 @@ export const BIN_LABEL_PRINT_CSS = `
   opacity: 1;
 }
 
+.bin-label-stack {
+  width: 84mm;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1.3mm;
+}
+
+.bin-label-line,
 .bin-label-copy {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 3mm;
   min-width: 0;
-}
-
-.bin-label-word {
-  font-size: 4.4mm;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  box-sizing: border-box;
+  font-size: 8.6mm;
+  font-weight: 600;
   line-height: 1;
-}
-
-.bin-label-pallet .bin-label-word {
-  font-size: 5.2mm;
-  letter-spacing: 0.12em;
-}
-
-.bin-label-mark {
-  width: 22mm;
-  height: 0.8mm;
-  margin-top: 0.45mm;
-  background: #000;
-}
-
-.bin-label-ref {
-  margin-top: 0.7mm;
-  font-size: 8.2mm;
-  font-weight: 700;
-  line-height: 0.95;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.bin-label-pallet .bin-label-ref {
-  font-size: 9mm;
+.bin-label-brand,
+.bin-label-ref {
+  font: inherit;
+  letter-spacing: inherit;
 }
 
 .bin-label-bars {
   display: block;
-  width: auto;
-  max-width: 100%;
-  height: 8mm;
+  width: 100%;
+  height: auto;
 }
 
 .bin-label-qr-layout {
@@ -196,9 +219,12 @@ export const BIN_LABEL_PRINT_CSS = `
 }
 
 .bin-label-qr-layout .bin-label-copy {
-  display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
+  align-items: flex-start;
   justify-content: center;
+  gap: 1.2mm;
+  font-size: 6.2mm;
 }
 
 .bin-label-qr {
@@ -274,7 +300,6 @@ export const BIN_LABEL_PRINT_CSS = `
     opacity: 1 !important;
   }
 
-  .bin-label-mark,
   .bin-label-qr path {
     background: #000 !important;
     fill: #000 !important;
