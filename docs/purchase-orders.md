@@ -457,6 +457,37 @@ Confirm assigns the next PO number and turns the row into a normal draft. Link a
 
 The refresh token and the parsed invoice stay on the server. PDFs use the private bucket. Signed URLs are created only for `can_view_financials`. The intake table has row level security and a `service_role` grant only. No anon or authenticated grant. The Pub/Sub push is verified. The mailbox scope is read-only. A person's confirm stores that session user. The unattended read stores a system operator, not a guessed name. Logs do not include PDF bytes, the refresh token, or the raw Gemini request.
 
+## Future: vendor quotes, RFQs, estimates
+
+Not scheduled. This is not a phase and nothing here is built. Prices on these rows are money: `can_view_financials` to read, `can_edit_financials` to write. Warehouse roles do not receive them.
+
+A vendor quote covers products or services. A line may name an existing item or only a description, for a product that has no SKU yet or for a service. A quote is solicited when it replies to an RFQ, or unsolicited when the vendor sends it on their own. An RFQ is either internal or from a customer.
+
+From a vendor quote, someone can create a customer estimate, a vendor purchase order, or both. A customer estimate can later be converted to a sales order. Sales orders are still the later-documents phase. Conversion does not exist until that phase does.
+
+Sketch, not a migration:
+
+| Entity | Role |
+|---|---|
+| `rfqs` | The request. `source` is `customer` or `internal`. `customer_id` is set only when a customer asked. |
+| `rfq_lines` | What was requested: description, optional `item_id`, quantity, unit. A service line has no item. |
+| `vendor_quotes` | One vendor's answer. `vendor_id`. `rfq_id` is null on an unsolicited quote. Status, currency, quoted date, expiry. |
+| `vendor_quote_lines` | `line_kind` `product` or `service`. `item_id` nullable. Description required when there is no item. Quantity, unit, unit price, extension. Optional `rfq_line_id`. |
+| `customer_estimates` | A price to a customer. Optional `vendor_quote_id`. Status, currency. |
+| `customer_estimate_lines` | Same shape as a quote line. Optional `vendor_quote_line_id`. |
+| `customer_estimates.sales_order_id` | Set when the estimate is converted. The column waits until sales orders exist. |
+| `po_lines.vendor_quote_line_id` | Set when a purchase order is created from a quote line. Nullable. Absent until this work is scheduled. |
+
+One quote can point at an estimate and a purchase order at the same time. Creating either one does not consume the other. Declining a quote creates neither.
+
+The purchase order already in this document does not have to change for that sketch to fit later.
+
+A known line is an item or a description. A product with no SKU yet, and a service, are description lines. The quote keeps its own description, so a later SKU (`can_edit_items`) does not rewrite the quote. A nullable `vendor_quote_line_id` on `po_lines` can be added when quotes are built. Existing PO rows stay valid.
+
+A file on a purchase order typed `quote` is the vendor's PDF attached to that order. It is not a `vendor_quotes` row. Creating a PO from a quote can store that same PDF with kind `quote`. The attachment types stay vendor invoice, quote, order confirmation, and other. No new type is required.
+
+A service line is not stock. It does not post an inventory movement and it is not received into a bin. Goods on the same PO still follow the receiving rules above. Phase 1 does not post receipts, so nothing in the current PO has to special-case services yet.
+
 ## Open questions
 
 1. Please send a header row, and a few sample rows, from the Transactions sheet, the Inventory sheet, and the serial sheet.
