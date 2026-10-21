@@ -21,3 +21,14 @@ test("browser modules that upload photos or reserve SKUs do not open a database 
     assert.equal(text.includes("NEXT_PUBLIC_SUPABASE_ANON_KEY"), false, name);
   }
 });
+
+test("saving a photo confirms the object without downloading it", () => {
+  const images = source("images.ts");
+  assert.match(images, /\.exists\(/);
+  assert.equal(images.includes("response.body"), false);
+  assert.equal(images.includes('Range: "bytes=0-0"'), false);
+  const upload = source("imageUpload.ts");
+  assert.match(upload, /withDeadline/);
+  assert.match(upload, /AbortController/);
+  assert.equal(upload.includes("getSupabase"), false);
+});

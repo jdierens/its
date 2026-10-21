@@ -1,5 +1,6 @@
 "use server";
 
+import { withDeadline } from "@/lib/deadline";
 import { errorText } from "@/lib/errors";
 import { ITEM_IMAGE_BUCKET, imageExtension, imageFileError } from "@/lib/imageFiles";
 import { appendSortStart, shiftedSortOrders, sortOrderAfterSource } from "@/lib/imageOrder";
@@ -7,6 +8,8 @@ import { getSupabase } from "@/lib/supabase";
 import type { ItemImage } from "@/lib/types";
 
 const SIGNED_URL_SECONDS = 60 * 60;
+const STORAGE_CHECK_MS = 8_000;
+const STORAGE_MISSING = "The photo did not finish uploading.";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ImageRow = {
@@ -104,11 +107,18 @@ export async function reserveItemImageUpload(
 
 async function objectIsStored(path: string): Promise<boolean> {
   const supabase = await getSupabase();
-  const signed = await supabase.storage.from(ITEM_IMAGE_BUCKET).createSignedUrl(path, 60);
-  if (signed.error || !signed.data?.signedUrl) return false;
-  const response = await fetch(signed.data.signedUrl, { headers: { Range: "bytes=0-0" } });
-  await response.body?.cancel();
-  return response.ok;
+  // HEAD metadata only. Downloading the object (and then cancelling the body)
+  // never settled after the lockdown, so the item_images row was never inserted.
+  const found = await withDeadline(
+    supabase.storage.from(ITEM_IMAGE_BUCKET).exists(path),
+    STORAGE_CHECK_MS,
+    STORAGE_MISSING,
+  );
+  if (found.data) return true;
+  if (!found.error) return false;
+  const status = "status" in found.error ? Number(found.error.status) : undefined;
+  if (status === 400 || status === 404) return false;
+  throw new Error(errorText(found.error));
 }
 
 export async function commitItemImageUpload(input: {
@@ -119,7 +129,7 @@ export async function commitItemImageUpload(input: {
 }): Promise<void> {
   assertOwnedPath(input.itemId, input.id, input.path);
   if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0) throw new Error("Could not save the photo.");
-  if (!(await objectIsStored(input.path))) throw new Error("The photo did not finish uploading.");
+  if (!(await objectIsStored(input.path))) throw new Error(STORAGE_MISSING);
   const { error } = await (await getSupabase()).from("item_images").insert({
     id: input.id,
     item_id: input.itemId,
@@ -174,7 +184,7 @@ export async function commitEditedImage(input: {
 }): Promise<void> {
   assertOwnedPath(input.itemId, input.id, input.path);
   assertIds(input.itemId, input.sourceImageId);
-  if (!(await objectIsStored(input.path))) throw new Error("The photo did not finish uploading.");
+  if (!(await objectIsStored(input.path))) throw new Error(STORAGE_MISSING);
 
   const supabase = await getSupabase();
   const existing = await supabase.from("item_images").select("id, sort_order").eq("item_id", input.itemId);
