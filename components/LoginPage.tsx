@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { COMPANY_DOMAIN, safeNextPath } from "@/lib/authDomain";
 import { errorText } from "@/lib/errors";
 import { browserSupabase } from "@/lib/supabaseBrowser";
@@ -43,15 +45,15 @@ export function LoginPage({ error, next }: { error: string | null; next: string 
 
   return (
     <main className="auth-screen">
-      <section className="card auth-card">
+      <Card className="auth-card">
         <p className="soon-kicker">ITS</p>
         <h1>Sign in</h1>
         <p className="hint">Use your @{COMPANY_DOMAIN} Google account. A new account waits for an admin to approve it.</p>
         {message ? <p className="error">{message}</p> : null}
-        <button type="button" onClick={() => void signIn()} disabled={busy}>
+        <Button onClick={() => void signIn()} disabled={busy}>
           {busy ? "Opening Google…" : "Sign in with Google"}
-        </button>
-      </section>
+        </Button>
+      </Card>
     </main>
   );
 }

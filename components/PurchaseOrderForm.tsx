@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PurchaseOrderAttachments } from "@/components/PurchaseOrderAttachments";
+import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
 import { PAYMENT_TERMS } from "@/lib/paymentTerms";
 import { SHIPMENT_CARRIERS, parseFreightIn, trackingUrl } from "@/lib/poCharges";
@@ -274,7 +275,7 @@ export function PurchaseOrderForm({
           <>
             <span className="sku">{order.number}</span>
             {" · "}
-            {purchaseOrderStatusLabel(order.status)}
+            <Badge tone={order.status}>{purchaseOrderStatusLabel(order.status)}</Badge>
             {order.vendorName ? ` · ${order.vendorName}` : ""}
             {showMoney && order.total != null ? ` · ${formatMoney(order.total, order.currency ?? "USD")}` : ""}
           </>
@@ -467,7 +468,7 @@ export function PurchaseOrderForm({
               {lines.map((line, index) => (
                 <tr key={index}>
                   {editable ? (
-                    <td>
+                    <td className="po-check">
                       <input
                         type="checkbox"
                         aria-label={`Select line ${index + 1}`}
@@ -476,7 +477,7 @@ export function PurchaseOrderForm({
                       />
                     </td>
                   ) : null}
-                  <td className="po-item">
+                  <td className="po-item" data-label="Item">
                     {line.itemId ? (
                       <div className="po-item-id">
                         {line.itemSku} - {line.itemName}
@@ -491,7 +492,7 @@ export function PurchaseOrderForm({
                           autoComplete="off"
                           aria-label={`Find item for line ${index + 1}`}
                         />
-                        <button type="button" className="secondary" onClick={() => void findItem(index)}>
+                        <button type="button" onClick={() => void findItem(index)}>
                           Find
                         </button>
                         {line.itemId ? (
@@ -532,7 +533,7 @@ export function PurchaseOrderForm({
                       </div>
                     ) : null}
                   </td>
-                  <td className="po-desc">
+                  <td className="po-desc" data-label="Description">
                     <input
                       aria-label={`Description for line ${index + 1}`}
                       value={line.description}
@@ -541,7 +542,7 @@ export function PurchaseOrderForm({
                       readOnly={!editable}
                     />
                   </td>
-                  <td className="po-num">
+                  <td className="po-num" data-label="Qty">
                     <input
                       aria-label={`Quantity for line ${index + 1}`}
                       value={line.qty}
@@ -550,7 +551,7 @@ export function PurchaseOrderForm({
                       inputMode="decimal"
                     />
                   </td>
-                  <td className="po-unit">
+                  <td className="po-unit" data-label="Unit">
                     <input
                       aria-label={`Unit for line ${index + 1}`}
                       value={line.unit}
@@ -559,7 +560,7 @@ export function PurchaseOrderForm({
                     />
                   </td>
                   {showMoney ? (
-                    <td className="po-num">
+                    <td className="po-num" data-label="Unit price">
                       <input
                         aria-label={`Unit price for line ${index + 1}`}
                         value={line.unitCost}
@@ -571,7 +572,7 @@ export function PurchaseOrderForm({
                     </td>
                   ) : null}
                   {showMoney ? (
-                    <td className="po-num">
+                    <td className="po-num" data-label="Ext price">
                       <input
                         aria-label={`Extension for line ${index + 1}`}
                         value={line.extPrice}
@@ -602,7 +603,7 @@ export function PurchaseOrderForm({
               Add lines
               <input value={addCount} onChange={(event) => setAddCount(event.target.value)} inputMode="numeric" />
             </label>
-            <button type="button" className="secondary" onClick={addLines}>
+            <button type="button" onClick={addLines}>
               Add
             </button>
             <button type="button" className="secondary" onClick={removeSelected}>
