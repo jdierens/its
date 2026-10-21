@@ -57,7 +57,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         label: "Purchase orders",
         href: "/purchasing/orders",
-        description: "Order stock from suppliers.",
+        description: "Create and send purchase orders.",
       },
     ],
   },
@@ -216,6 +216,28 @@ export function pageMetaFor(pathname: string): PageMeta {
         { label: "Contacts" },
         { label: "Customers", href: "/customers" },
         { label: "Edit customer" },
+      ],
+    };
+  }
+
+  if (pathname === "/purchasing/orders/new") {
+    return {
+      title: "New purchase order",
+      crumbs: [
+        { label: "Purchasing" },
+        { label: "Purchase orders", href: "/purchasing/orders" },
+        { label: "New purchase order" },
+      ],
+    };
+  }
+
+  if (/^\/purchasing\/orders\/[^/]+$/.test(pathname)) {
+    return {
+      title: "Purchase order",
+      crumbs: [
+        { label: "Purchasing" },
+        { label: "Purchase orders", href: "/purchasing/orders" },
+        { label: "Purchase order" },
       ],
     };
   }
