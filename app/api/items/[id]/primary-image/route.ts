@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { primaryStoragePath } from "@/lib/imageOrder";
-import { ITEM_IMAGE_BUCKET } from "@/lib/images";
+import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
 import { getSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";

@@ -7,7 +7,9 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { compressImage } from "@/lib/compressImage";
 import { errorText } from "@/lib/errors";
 import { moveItem } from "@/lib/imageOrder";
-import { deleteItemImage, fetchItemImages, imageFileError, reorderItemImages, uploadItemImages } from "@/lib/images";
+import { imageFileError } from "@/lib/imageFiles";
+import { deleteItemImage, fetchItemImages, reorderItemImages } from "@/lib/images";
+import { uploadItemImages } from "@/lib/imageUpload";
 import type { ItemImage } from "@/lib/types";
 
 export type PendingImage = {

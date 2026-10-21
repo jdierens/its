@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { ensureAppUser } from "@/lib/appUserRecord";
 import { authRequired } from "@/lib/authRequired";
 import { hostedDomain, isCompanyEmail, safeNextPath } from "@/lib/authDomain";
-import { getSupabase } from "@/lib/supabase";
+import { getServerSupabase } from "@/lib/supabase.server";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
   const next = safeNextPath(request.nextUrl.searchParams.get("next"));
   if (!code) return loginRedirect(request, "missing");
 
-  const supabase = await getSupabase();
+  const supabase = await getServerSupabase();
   const exchanged = await supabase.auth.exchangeCodeForSession(code);
   if (exchanged.error) return loginRedirect(request, "denied");
 
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
   const email = user?.email ?? null;
   const identity = user?.identities?.find((item) => item.provider === "google") ?? user?.identities?.[0];
   const domain = hostedDomain(identity);
-  if (error || !user || !isCompanyEmail(email) || (domain && domain !== "deepdiscountservers.com")) {
+  if (error || !user || !email || !isCompanyEmail(email) || (domain && domain !== "deepdiscountservers.com")) {
     await supabase.auth.signOut();
     return loginRedirect(request, "domain");
   }
@@ -42,15 +43,14 @@ export async function GET(request: NextRequest) {
   const identityData = identity?.identity_data;
   const record = identityData && typeof identityData === "object" ? (identityData as { name?: unknown; full_name?: unknown }) : null;
   const name = typeof record?.full_name === "string" ? record.full_name : typeof record?.name === "string" ? record.name : null;
-  const ensured = await supabase.rpc("ensure_app_user", { p_name: name });
-  if (ensured.error) {
+  let status = "";
+  try {
+    const ensured = await ensureAppUser({ id: user.id, email, name });
+    status = ensured.status;
+  } catch {
     await supabase.auth.signOut();
     return loginRedirect(request, "profile");
   }
-
-  const status = ensured.data && typeof ensured.data === "object" && "status" in ensured.data
-    ? String((ensured.data as { status?: string }).status ?? "")
-    : "";
   const url = request.nextUrl.clone();
   url.search = "";
   if (status === "approved") {

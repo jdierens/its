@@ -1,3 +1,5 @@
+"use server";
+
 import { errorText } from "@/lib/errors";
 import type { ContactKind, PostalAddress, SyncStatus } from "@/lib/qbo/map";
 import { tableFor } from "@/lib/qbo/map";

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { ensureAppUser, readAppUser } from "@/lib/appUserRecord";
 import { authRequired } from "@/lib/authRequired";
 import { gateRequest, isCompanyEmail, type AppRole, type AppStatus } from "@/lib/authDomain";
 import { isPublicPath } from "@/lib/publicPaths";
@@ -59,15 +60,10 @@ export async function middleware(request: NextRequest) {
   let role: AppRole | null = null;
 
   if (email && userId && isCompanyEmail(email)) {
-    const loaded = await supabase.from("app_users").select("status, role").eq("id", userId).maybeSingle();
-    let profile = loaded.data;
-    if (!profile) {
-      await supabase.rpc("ensure_app_user");
-      const refreshed = await supabase.from("app_users").select("status, role").eq("id", userId).maybeSingle();
-      profile = refreshed.data;
-    }
-    status = asStatus(profile?.status);
-    role = asRole(profile?.role);
+    let profile = await readAppUser(userId);
+    if (!profile) profile = await ensureAppUser({ id: userId, email, name: null });
+    status = asStatus(profile.status);
+    role = asRole(profile.role);
   }
 
   const decision = gateRequest({

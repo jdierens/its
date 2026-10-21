@@ -1,16 +1,13 @@
+"use server";
+
 import { errorText } from "@/lib/errors";
-import {
-  appendSortStart,
-  shiftedSortOrders,
-  sortOrderAfterSource,
-} from "@/lib/imageOrder";
+import { ITEM_IMAGE_BUCKET, imageExtension, imageFileError } from "@/lib/imageFiles";
+import { appendSortStart, shiftedSortOrders, sortOrderAfterSource } from "@/lib/imageOrder";
 import { getSupabase } from "@/lib/supabase";
 import type { ItemImage } from "@/lib/types";
 
-export const ITEM_IMAGE_BUCKET = "item-images";
-export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-
 const SIGNED_URL_SECONDS = 60 * 60;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ImageRow = {
   id: string;
@@ -20,56 +17,12 @@ type ImageRow = {
   source_image_id: string | null;
 };
 
-function extensionFor(file: File): string {
-  const fromName = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (["jpg", "jpeg", "png", "webp", "gif"].includes(fromName)) {
-    return fromName === "jpeg" ? "jpg" : fromName;
-  }
-  if (file.type === "image/png") return "png";
-  if (file.type === "image/webp") return "webp";
-  if (file.type === "image/gif") return "gif";
-  return "jpg";
-}
-
-export function imageFileError(file: File): string | null {
-  const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-  if (!allowed.includes(file.type)) {
-    return `${file.name} must be a JPEG, PNG, WebP, or GIF.`;
-  }
-  if (file.size > MAX_IMAGE_BYTES) {
-    return `${file.name} is larger than 10 MB.`;
-  }
-  return null;
-}
-
-export async function signedImageUrls(paths: string[]): Promise<Map<string, string>> {
-  const urls = new Map<string, string>();
-  const unique = [...new Set(paths.filter(Boolean))];
-  if (unique.length === 0) return urls;
-
-  const supabase = await getSupabase();
-  const { data, error } = await supabase.storage
-    .from(ITEM_IMAGE_BUCKET)
-    .createSignedUrls(unique, SIGNED_URL_SECONDS);
-
-  if (!error && data) {
-    for (const row of data) {
-      if (row.path && row.signedUrl && !row.error) urls.set(row.path, row.signedUrl);
-    }
-  }
-
-  const missing = unique.filter((path) => !urls.has(path));
-  await Promise.all(
-    missing.map(async (path) => {
-      const downloaded = await supabase.storage.from(ITEM_IMAGE_BUCKET).download(path);
-      if (!downloaded.error && downloaded.data) {
-        urls.set(path, URL.createObjectURL(downloaded.data));
-      }
-    }),
-  );
-
-  return urls;
-}
+export type ImageUploadTicket = {
+  id: string;
+  path: string;
+  signedUrl: string;
+  sortOrder: number;
+};
 
 function toItemImage(row: ImageRow, url: string | null): ItemImage {
   return {
@@ -82,6 +35,31 @@ function toItemImage(row: ImageRow, url: string | null): ItemImage {
   };
 }
 
+function assertIds(itemId: string, imageId: string): void {
+  if (!UUID_PATTERN.test(itemId) || !UUID_PATTERN.test(imageId)) throw new Error("Unknown photo.");
+}
+
+function assertOwnedPath(itemId: string, imageId: string, path: string): void {
+  assertIds(itemId, imageId);
+  if (path.includes("..") || path.includes("\\") || !path.startsWith(`${itemId}/${imageId}.`)) {
+    throw new Error("Unknown photo.");
+  }
+}
+
+export async function signedImageUrls(paths: string[]): Promise<Map<string, string>> {
+  const urls = new Map<string, string>();
+  const unique = [...new Set(paths.filter(Boolean))];
+  if (unique.length === 0) return urls;
+
+  const supabase = await getSupabase();
+  const { data, error } = await supabase.storage.from(ITEM_IMAGE_BUCKET).createSignedUrls(unique, SIGNED_URL_SECONDS);
+  if (error) throw new Error(errorText(error));
+  for (const row of data ?? []) {
+    if (row.path && row.signedUrl && !row.error) urls.set(row.path, row.signedUrl);
+  }
+  return urls;
+}
+
 export async function fetchItemImages(itemId: string): Promise<ItemImage[]> {
   const { data, error } = await (await getSupabase())
     .from("item_images")
@@ -89,7 +67,6 @@ export async function fetchItemImages(itemId: string): Promise<ItemImage[]> {
     .eq("item_id", itemId)
     .order("sort_order")
     .order("created_at");
-
   if (error) throw new Error(errorText(error));
 
   const rows = (data ?? []) as ImageRow[];
@@ -97,45 +74,64 @@ export async function fetchItemImages(itemId: string): Promise<ItemImage[]> {
   return rows.map((row) => toItemImage(row, urls.get(row.storage_path) ?? null));
 }
 
-export async function uploadItemImages(itemId: string, files: File[]): Promise<void> {
-  if (files.length === 0) return;
-
-  const supabase = await getSupabase();
-  const existing = await supabase
-    .from("item_images")
-    .select("sort_order")
-    .eq("item_id", itemId);
+async function nextSortOrder(itemId: string): Promise<number> {
+  const existing = await (await getSupabase()).from("item_images").select("sort_order").eq("item_id", itemId);
   if (existing.error) throw new Error(errorText(existing.error));
-  let sortOrder = appendSortStart((existing.data ?? []).map((row) => Number(row.sort_order)));
-  const uploadedPaths: string[] = [];
+  return appendSortStart((existing.data ?? []).map((row) => Number(row.sort_order)));
+}
 
-  try {
-    for (const file of files) {
-      const id = crypto.randomUUID();
-      const path = `${itemId}/${id}.${extensionFor(file)}`;
-      const { error: uploadError } = await supabase.storage.from(ITEM_IMAGE_BUCKET).upload(path, file, {
-        contentType: file.type,
-        upsert: false,
-      });
-      if (uploadError) throw new Error(errorText(uploadError));
-      uploadedPaths.push(path);
-
-      const { error: insertError } = await supabase.from("item_images").insert({
-        id,
-        item_id: itemId,
-        storage_path: path,
-        sort_order: sortOrder,
-      });
-      if (insertError) throw new Error(errorText(insertError));
-      sortOrder += 1;
-    }
-  } catch (error) {
-    if (uploadedPaths.length > 0) {
-      await supabase.storage.from(ITEM_IMAGE_BUCKET).remove(uploadedPaths);
-      await supabase.from("item_images").delete().in("storage_path", uploadedPaths);
-    }
-    throw error;
+async function reserveUpload(itemId: string, file: { name: string; type: string; size: number }, sortOrder: number): Promise<ImageUploadTicket> {
+  const problem = imageFileError(file);
+  if (problem) throw new Error(problem);
+  const id = crypto.randomUUID();
+  const path = `${itemId}/${id}.${imageExtension(file)}`;
+  assertOwnedPath(itemId, id, path);
+  const supabase = await getSupabase();
+  const signed = await supabase.storage.from(ITEM_IMAGE_BUCKET).createSignedUploadUrl(path);
+  if (signed.error || !signed.data?.signedUrl) {
+    throw new Error(signed.error ? errorText(signed.error) : "Could not prepare the photo upload.");
   }
+  return { id, path, signedUrl: signed.data.signedUrl, sortOrder };
+}
+
+export async function reserveItemImageUpload(
+  itemId: string,
+  file: { name: string; type: string; size: number },
+): Promise<ImageUploadTicket> {
+  if (!UUID_PATTERN.test(itemId)) throw new Error("Unknown item.");
+  return reserveUpload(itemId, file, await nextSortOrder(itemId));
+}
+
+async function objectIsStored(path: string): Promise<boolean> {
+  const supabase = await getSupabase();
+  const signed = await supabase.storage.from(ITEM_IMAGE_BUCKET).createSignedUrl(path, 60);
+  if (signed.error || !signed.data?.signedUrl) return false;
+  const response = await fetch(signed.data.signedUrl, { headers: { Range: "bytes=0-0" } });
+  await response.body?.cancel();
+  return response.ok;
+}
+
+export async function commitItemImageUpload(input: {
+  itemId: string;
+  id: string;
+  path: string;
+  sortOrder: number;
+}): Promise<void> {
+  assertOwnedPath(input.itemId, input.id, input.path);
+  if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0) throw new Error("Could not save the photo.");
+  if (!(await objectIsStored(input.path))) throw new Error("The photo did not finish uploading.");
+  const { error } = await (await getSupabase()).from("item_images").insert({
+    id: input.id,
+    item_id: input.itemId,
+    storage_path: input.path,
+    sort_order: input.sortOrder,
+  });
+  if (error) throw new Error(errorText(error));
+}
+
+export async function discardItemImage(path: string): Promise<void> {
+  if (!path || path.includes("..") || path.startsWith("/")) return;
+  await (await getSupabase()).storage.from(ITEM_IMAGE_BUCKET).remove([path]);
 }
 
 export async function reorderItemImages(itemId: string, orderedIds: string[]): Promise<void> {
@@ -150,24 +146,37 @@ export async function reorderItemImages(itemId: string, orderedIds: string[]): P
 }
 
 export async function deleteItemImage(image: ItemImage): Promise<void> {
+  assertOwnedPath(image.itemId, image.id, image.storagePath);
   const supabase = await getSupabase();
   const removed = await supabase.storage.from(ITEM_IMAGE_BUCKET).remove([image.storagePath]);
   if (removed.error) throw new Error(errorText(removed.error));
-  const { error } = await supabase.from("item_images").delete().eq("id", image.id);
+  const { error } = await supabase.from("item_images").delete().eq("id", image.id).eq("item_id", image.itemId);
   if (error) throw new Error(errorText(error));
 }
 
-export async function saveEditedImage(input: {
+export async function reserveEditedImageUpload(input: {
   itemId: string;
   sourceImageId: string;
-  blob: Blob;
-}): Promise<string> {
-  const supabase = await getSupabase();
-  const id = crypto.randomUUID();
-  const extension = input.blob.type === "image/png" ? "png" : "jpg";
-  const path = `${input.itemId}/${id}.${extension}`;
-  const contentType = extension === "png" ? "image/png" : "image/jpeg";
+  type: string;
+  size: number;
+}): Promise<ImageUploadTicket> {
+  assertIds(input.itemId, input.sourceImageId);
+  const type = input.type === "image/png" ? "image/png" : "image/jpeg";
+  const name = type === "image/png" ? "edit.png" : "edit.jpg";
+  return reserveUpload(input.itemId, { name, type, size: input.size }, 0);
+}
 
+export async function commitEditedImage(input: {
+  itemId: string;
+  sourceImageId: string;
+  id: string;
+  path: string;
+}): Promise<void> {
+  assertOwnedPath(input.itemId, input.id, input.path);
+  assertIds(input.itemId, input.sourceImageId);
+  if (!(await objectIsStored(input.path))) throw new Error("The photo did not finish uploading.");
+
+  const supabase = await getSupabase();
   const existing = await supabase.from("item_images").select("id, sort_order").eq("item_id", input.itemId);
   if (existing.error) throw new Error(errorText(existing.error));
   const orders = (existing.data ?? []).map((row) => ({
@@ -177,39 +186,34 @@ export async function saveEditedImage(input: {
   const insertAt = sortOrderAfterSource(orders, input.sourceImageId);
   const shifts = shiftedSortOrders(orders, insertAt);
 
-  const uploaded = await supabase.storage.from(ITEM_IMAGE_BUCKET).upload(path, input.blob, {
-    contentType,
-    upsert: false,
-  });
-  if (uploaded.error) throw new Error(errorText(uploaded.error));
-
   try {
     for (const shift of shifts) {
       const updated = await supabase.from("item_images").update({ sort_order: shift.sortOrder }).eq("id", shift.id);
       if (updated.error) throw new Error(errorText(updated.error));
     }
     const inserted = await supabase.from("item_images").insert({
-      id,
+      id: input.id,
       item_id: input.itemId,
-      storage_path: path,
+      storage_path: input.path,
       sort_order: insertAt,
       source_image_id: input.sourceImageId,
     });
     if (inserted.error) throw new Error(errorText(inserted.error));
   } catch (error) {
-    await supabase.storage.from(ITEM_IMAGE_BUCKET).remove([path]);
+    await supabase.storage.from(ITEM_IMAGE_BUCKET).remove([input.path]);
     for (const shift of [...shifts].reverse()) {
       await supabase.from("item_images").update({ sort_order: shift.sortOrder - 1 }).eq("id", shift.id);
     }
     throw error;
   }
-  return id;
 }
 
-export async function downloadItemImage(storagePath: string): Promise<Blob> {
-  const downloaded = await (await getSupabase()).storage.from(ITEM_IMAGE_BUCKET).download(storagePath);
-  if (downloaded.error || !downloaded.data) {
-    throw new Error(downloaded.error ? errorText(downloaded.error) : "Could not download the photo.");
-  }
-  return downloaded.data;
+export async function signedItemImageUrl(storagePath: string): Promise<string> {
+  const supabase = await getSupabase();
+  const row = await supabase.from("item_images").select("id").eq("storage_path", storagePath).maybeSingle();
+  if (row.error) throw new Error(errorText(row.error));
+  if (!row.data) throw new Error("Could not download the photo.");
+  const signed = await supabase.storage.from(ITEM_IMAGE_BUCKET).createSignedUrl(storagePath, SIGNED_URL_SECONDS);
+  if (signed.error || !signed.data?.signedUrl) throw new Error("Could not download the photo.");
+  return signed.data.signedUrl;
 }

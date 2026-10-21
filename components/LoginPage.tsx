@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { COMPANY_DOMAIN, safeNextPath } from "@/lib/authDomain";
 import { errorText } from "@/lib/errors";
-import { getSupabase } from "@/lib/supabase";
+import { browserSupabase } from "@/lib/supabaseBrowser";
 
 const ERRORS: Record<string, string> = {
   domain: `Sign-in is limited to @${COMPANY_DOMAIN} Google accounts.`,
@@ -20,7 +20,7 @@ export function LoginPage({ error, next }: { error: string | null; next: string 
     setBusy(true);
     setMessage(null);
     try {
-      const supabase = await getSupabase();
+      const supabase = browserSupabase();
       const origin = window.location.origin;
       const destination = safeNextPath(next);
       const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(destination)}`;

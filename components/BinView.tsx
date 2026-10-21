@@ -2,45 +2,31 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { fetchBin } from "@/lib/binActions";
+import type { BinRecord } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
-import { getSupabase } from "@/lib/supabase";
-
-type BinRow = {
-  number: number;
-  type: string;
-  reference: string;
-  created_at: string;
-  printed_count: number;
-  last_printed_at: string | null;
-  notes: string | null;
-};
 
 const TYPE_NAME: Record<string, string> = { P: "Pallet", C: "Crate", B: "Box" };
 
 export function BinView({ reference }: { reference: string }) {
-  const [row, setRow] = useState<BinRow | null>(null);
+  const [row, setRow] = useState<BinRecord | null>(null);
   const [missing, setMissing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const supabase = await getSupabase();
-      const { data, error } = await supabase
-        .from("bins")
-        .select("number, type, reference, created_at, printed_count, last_printed_at, notes")
-        .eq("reference", reference)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error) {
-        setMessage(errorText(error));
-        return;
+      try {
+        const loaded = await fetchBin(reference);
+        if (cancelled) return;
+        if (!loaded) {
+          setMissing(true);
+          return;
+        }
+        setRow(loaded);
+      } catch (error) {
+        if (!cancelled) setMessage(errorText(error));
       }
-      if (!data) {
-        setMissing(true);
-        return;
-      }
-      setRow(data as BinRow);
     })();
     return () => {
       cancelled = true;
@@ -63,15 +49,15 @@ export function BinView({ reference }: { reference: string }) {
           </div>
           <div>
             <dt>Printed</dt>
-            <dd>{row.printed_count}</dd>
+            <dd>{row.printedCount}</dd>
           </div>
           <div>
             <dt>Created</dt>
-            <dd>{new Date(row.created_at).toLocaleString()}</dd>
+            <dd>{new Date(row.createdAt).toLocaleString()}</dd>
           </div>
           <div>
             <dt>Last printed</dt>
-            <dd>{row.last_printed_at ? new Date(row.last_printed_at).toLocaleString() : "Not yet"}</dd>
+            <dd>{row.lastPrintedAt ? new Date(row.lastPrintedAt).toLocaleString() : "Not yet"}</dd>
           </div>
           {row.notes ? (
             <div>

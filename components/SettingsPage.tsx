@@ -3,17 +3,15 @@
 import { FormEvent, useEffect, useState } from "react";
 import { fetchSalesWindowDays, saveSalesWindowDays } from "@/lib/itemPricing";
 import { errorText } from "@/lib/errors";
-import { fetchBinCounter, nextNumberError, saveBinNextNumber } from "@/lib/bins";
+import { fetchBinCounter, saveBinNextNumber } from "@/lib/binActions";
+import { nextNumberError } from "@/lib/bins";
+import { fetchBinLabelTemplates, fetchLabelTemplate, saveBinLabelTemplates, saveLabelTemplate } from "@/lib/labelActions";
 import {
   BIN_LABEL_TEMPLATES,
   BIN_TEMPLATE_SETTINGS,
   DEFAULT_LABEL_TEMPLATE,
   emptyBinLabelTemplates,
-  fetchBinLabelTemplates,
-  fetchLabelTemplate,
   LABEL_TEMPLATES,
-  saveBinLabelTemplates,
-  saveLabelTemplate,
   type BinLabelTemplates,
   type LabelTemplateId,
 } from "@/lib/labelTemplates";

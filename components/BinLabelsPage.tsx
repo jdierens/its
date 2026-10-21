@@ -9,25 +9,27 @@ import {
   BIN_TYPES,
   binCreatedLabel,
   binTypeLabel,
-  fetchBinCounter,
-  fetchRecentBins,
   formatBinReference,
   parseBinRange,
   parseBinReference,
   parsePrintCount,
-  printBinRange,
-  reprintBin,
-  reserveBins,
   type BinRecord,
   type BinType,
 } from "@/lib/bins";
 import {
+  fetchBinCounter,
+  fetchRecentBins,
+  printBinRange,
+  reprintBin,
+  reserveBins,
+} from "@/lib/binActions";
+import {
   binLabelTemplateLabel,
   emptyBinLabelTemplates,
-  fetchBinLabelTemplates,
   type BinLabelTemplates,
   type LabelTemplateId,
 } from "@/lib/labelTemplates";
+import { fetchBinLabelTemplates } from "@/lib/labelActions";
 
 type Batch = {
   labels: Array<{ reference: string; type: BinType }>;

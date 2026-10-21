@@ -1,7 +1,10 @@
+"use server";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { errorText } from "@/lib/errors";
+import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
 import { primaryStoragePath } from "@/lib/imageOrder";
-import { ITEM_IMAGE_BUCKET, signedImageUrls } from "@/lib/images";
+import { signedImageUrls } from "@/lib/images";
 import {
   DEFAULT_CONDITION,
   DEFAULT_ECCN,
