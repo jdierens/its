@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { fetchAppUsers, fetchCurrentAppUser, setAppUser, type AppUser } from "@/lib/appUsers";
 import { COMPANY_DOMAIN, type AppRole, type AppStatus } from "@/lib/authDomain";
 import { errorText } from "@/lib/errors";
@@ -94,7 +95,9 @@ export function UsersAdmin() {
                         ))}
                       </select>
                     </td>
-                    <td>{statusLabel(row.status)}</td>
+                    <td>
+                      <Badge tone={row.status}>{statusLabel(row.status)}</Badge>
+                    </td>
                     <td className="user-actions">
                       {row.status !== "approved" ? (
                         <button type="button" disabled={busy || mine} onClick={() => void save(row, row.role, "approved")}>

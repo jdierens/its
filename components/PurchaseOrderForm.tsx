@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PurchaseOrderAttachments } from "@/components/PurchaseOrderAttachments";
+import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
 import { PAYMENT_TERMS } from "@/lib/paymentTerms";
 import { SHIPMENT_CARRIERS, parseFreightIn, trackingUrl } from "@/lib/poCharges";
@@ -274,7 +275,7 @@ export function PurchaseOrderForm({
           <>
             <span className="sku">{order.number}</span>
             {" · "}
-            {purchaseOrderStatusLabel(order.status)}
+            <Badge tone={order.status}>{purchaseOrderStatusLabel(order.status)}</Badge>
             {order.vendorName ? ` · ${order.vendorName}` : ""}
             {showMoney && order.total != null ? ` · ${formatMoney(order.total, order.currency ?? "USD")}` : ""}
           </>

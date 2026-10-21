@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { listPurchaseOrders } from "@/lib/purchaseOrders";
 import { purchasePageAccess } from "@/lib/purchaseSession";
 import { purchaseOrderStatusLabel } from "@/lib/purchaseOrderDraft";
@@ -33,7 +34,7 @@ export default async function PurchaseOrdersPage() {
                 <th>Status</th>
                 <th>Ordered</th>
                 <th>Expected</th>
-                {access.canViewMoney ? <th>Total</th> : null}
+                {access.canViewMoney ? <th className="money">Total</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -43,10 +44,12 @@ export default async function PurchaseOrdersPage() {
                     <Link href={`/purchasing/orders/${order.id}`}>{order.number}</Link>
                   </td>
                   <td>{order.vendorName}</td>
-                  <td>{purchaseOrderStatusLabel(order.status)}</td>
+                  <td>
+                    <Badge tone={order.status}>{purchaseOrderStatusLabel(order.status)}</Badge>
+                  </td>
                   <td>{order.orderedOn ?? ""}</td>
                   <td>{order.expectedOn ?? ""}</td>
-                  {access.canViewMoney ? <td>{formatMoney(order.total, "USD")}</td> : null}
+                  {access.canViewMoney ? <td className="money">{formatMoney(order.total, "USD")}</td> : null}
                 </tr>
               ))}
             </tbody>
