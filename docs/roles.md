@@ -13,7 +13,7 @@ Suggested capabilities:
 | Capability | Means |
 |---|---|
 | `can_view_financials` | See prices, quotes, transactions, pricing pages, and financial fields. |
-| `can_edit_financials` | Change those amounts and add quotes or transactions. |
+| `can_edit_financials` | Change those amounts, add quotes or transactions, and create, enter, and send a purchase order. |
 | `can_edit_items` | Create, edit, or delete an item's physical record and non-financial attributes. |
 | `can_add_photos` | Add a photo to an item. Removing a photo stays with `can_edit_items`. |
 | `can_log_picks` | Log picks and packs. |
@@ -46,6 +46,8 @@ Yes means the role has the capability. **Guess** means Jan should confirm it. **
 | `can_manage_users` | yes | no | no | no | no |
 | `can_manage_integrations` | yes | guess: no | no | no | no |
 | `can_edit_settings` | yes | guess: pricing window and labels, not integrations | guess: bin counter only | proposal: no | no |
+
+Jan confirmed purchase orders. Admin and staff create, enter, and send them. That is `can_edit_financials` in the matrix above. There is no separate approver. Warehouse manager and warehouse clerk do not create, enter, or send. They see quantities only, through `can_receive`. `read_only` can see the order and cannot send it.
 
 `warehouse_clerk` is the floor role under `warehouse_manager`. Neither role sees money. The clerk proposals are: log picks and packs, add photos, put stock away and move bins, and receive quantities against a purchase order. The clerk does not approve a cycle count, post a quantity adjustment, create, edit, or delete an item, or open settings. Photo delete stays with `can_edit_items`, so the proposal is add-only for the clerk.
 
@@ -82,7 +84,7 @@ Pages and client calls:
 - Items list columns and inline edit: ecommerce price, market price, MSRP (`components/ItemsTable.tsx`, `lib/inlineEdit.ts`, `lib/itemSort.ts`).
 - Item page pricing panel: the three prices, price references, transactions, and **Update pricing** (`components/ItemPricingPanel.tsx`, `lib/itemPricing.ts`).
 - `/pricing` is a placeholder page. The nav item is still there.
-- `/sales/orders`, `/purchasing/orders`, `/warehouse/pick`, and `/warehouse/receiving` are placeholders with no money yet. Purchase orders and sales orders will be money when they exist.
+- `/sales/orders`, `/purchasing/orders`, `/warehouse/pick`, and `/warehouse/receiving` are placeholders. Creating, entering, and sending a purchase order is `can_edit_financials` (admin and staff). `read_only` can see prices on that order and cannot send it. Warehouse roles do not get the form. Receiving returns quantities only.
 - Admin settings: the pricing window.
 - Item export CSV: `ecommerce_price`, `market_price`, `msrp`, `pricing_checked_at` (`lib/export/table.ts`, `lib/export/load.ts`, `app/api/items/export/route.ts`).
 - Customer and vendor forms: `tax_id`.
@@ -119,7 +121,7 @@ Phases:
 
 1. Capability map and `read_only` writes rejected. Strip financial columns for any future role without `can_view_financials`, even before that role exists, so the list, item fetch, cell save, pricing actions, pricing route, and CSV share one filter. Admin and staff behavior stays. This phase touches every mutating server action and the read paths in the inventory above. It is mechanical and wide, and it does not add a role.
 2. After Jan confirms the matrix, including the clerk proposals, one migration adds `warehouse_manager` and `warehouse_clerk` to the check constraint. Update the users screen and the capability map. Do not seed an account in the migration.
-3. Warehouse features that are still placeholders call the specific capability when they are built: picks and packs use `can_log_picks`, putaway and bin moves use `can_move_bins`, receiving uses `can_receive` and omits purchase-order prices, and cycle-count approval uses `can_adjust_counts`. Sales orders and purchase orders are money and call `can_view_financials`.
+3. Warehouse features that are still placeholders call the specific capability when they are built: picks and packs use `can_log_picks`, putaway and bin moves use `can_move_bins`, receiving uses `can_receive` and omits purchase-order prices, and cycle-count approval uses `can_adjust_counts`. Creating and sending a purchase order uses `can_edit_financials`. Viewing one uses `can_view_financials`.
 4. If a cost is stored as an attribute, add a financial flag on `attributes` and strip those values with the other financial fields.
 
 ## Open questions
