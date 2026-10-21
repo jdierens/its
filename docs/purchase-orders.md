@@ -10,7 +10,7 @@ ITS replaces both sheets. It is the operational source of truth for purchase ord
 
 Vendors are `public.vendors`, including QuickBooks id, sync token, and sync status. Addresses are jsonb. `tax_id` is the vendor tax identifier.
 
-Items are one row plus EAV attributes (`attributes`, `item_attributes`). `items.quantity` is a single on-hand number. Condition is `New` or `Used`. A new item's note is empty, `Factory Sealed`, or `New Open Box`. There is no grade, no serial flag, no bin, and no ownership flag. Model, part number, and OEM part number are text. Lens already matches SKU, part number, OEM part number, model, and the Spec Code attribute. New SKUs come from `reserve_item_sku()`. Photos are `item_images` in the private `item-images` bucket. Seeded drive taxonomies are HDD (`DSK/HDD`) and SSD (`DSK/SSD`).
+Items are one row plus EAV attributes (`attributes`, `item_attributes`). `items.quantity` is a single on-hand number. Condition is `New` or `Used`. A new item's note is empty, `Factory Sealed`, or `New Open Box`. There is no grade, no serial flag, no bin, and no ownership flag. Model, part number, and OEM part number are text. Lens already matches SKU, part number, OEM part number, model, and the Spec Code attribute. New SKUs are assigned inside `create_item` when the item is saved. `peek_item_sku()` only previews the next number. Photos are `item_images` in the private `item-images` bucket. Seeded drive taxonomies are HDD (`DSK/HDD`) and SSD (`DSK/SSD`).
 
 `item_transactions` is buy and sell only. Quantity is positive, `unit_price` is required, and `total` is generated. A buy names a vendor. `source` is `manual`, `qbo`, or `ebay`. The same source, reference, and item cannot be inserted twice.
 
@@ -144,7 +144,7 @@ Operators often have no item id. An intake line stores what they can see.
 
 Photos use the existing signed-upload path. Files live under an intake prefix in `item-images` until a SKU exists, then the same bytes attach as `item_images`. A clerk with `can_add_photos` can take them. The warehouse payload is part, model, quantity, bin, serials, and photos. It has no prices.
 
-Matching suggestions reuse the Lens candidate rules: normalized exact part number, OEM part number, and model, then trigram similarity, then a Lens reading of the dock photo (manufacturer, taxonomy, part). Several items can share a part number. The screen lists them and does not pick one by itself. `can_edit_items` confirms a match or creates a SKU through `reserve_item_sku()`. A clerk can enter the line and cannot match it or create the SKU.
+Matching suggestions reuse the Lens candidate rules: normalized exact part number, OEM part number, and model, then trigram similarity, then a Lens reading of the dock photo (manufacturer, taxonomy, part). Several items can share a part number. The screen lists them and does not pick one by itself. `can_edit_items` confirms a match or creates an item, and the SKU is assigned when that item is saved. A clerk can enter the line and cannot match it or create the SKU.
 
 On match, the same transaction sets `item_id` on the line, its units, its serials, and its ledger rows, and sets `items.quantity` to the identified ledger sum. There is no second `in`.
 

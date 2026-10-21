@@ -1,23 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cachedReservation } from "./sku.ts";
+import { skuSubmittedForCreate } from "./sku.ts";
 
-test("a second call within a second reuses the reserved SKU", () => {
-  let calls = 0;
-  const first = cachedReservation(null, 1_000, () => {
-    calls += 1;
-    return "107133";
-  });
-  const second = cachedReservation(first.slot, 1_500, () => {
-    calls += 1;
-    return "107134";
-  });
-  assert.equal(calls, 1);
-  assert.equal(second.value, "107133");
+test("an untouched preview does not send a SKU to save", () => {
+  assert.equal(skuSubmittedForCreate(false, "107134"), "");
+  assert.equal(skuSubmittedForCreate(false, ""), "");
 });
 
-test("a later new item takes the next reservation", () => {
-  const first = cachedReservation(null, 1_000, () => "107133");
-  const second = cachedReservation(first.slot, 2_000, () => "107134");
-  assert.equal(second.value, "107134");
+test("a typed SKU is saved as written", () => {
+  assert.equal(skuSubmittedForCreate(true, " 107200 "), "107200");
+  assert.equal(skuSubmittedForCreate(true, " SM-1 "), "SM-1");
 });

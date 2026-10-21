@@ -36,7 +36,7 @@ import {
 } from "@/lib/itemFields";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
 import { productUrlError, productUrlHref } from "@/lib/productUrl";
-import { clearNewItemSku, reserveNewItemSku } from "@/lib/sku";
+import { previewNewItemSku, skuSubmittedForCreate } from "@/lib/sku";
 import { fetchUnits } from "@/lib/units";
 import type { AttributeDefinition, DataType, Taxonomy } from "@/lib/types";
 
@@ -189,12 +189,12 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     async function load() {
       try {
-        const [taxonomyRows, countryRows, unitRows, item, reservedSku] = await Promise.all([
+        const [taxonomyRows, countryRows, unitRows, item, previewSku] = await Promise.all([
           fetchTaxonomies(),
           fetchCountries(),
           fetchUnits(),
           mode === "edit" && itemId ? fetchItem(itemId) : Promise.resolve(null),
-          mode === "create" ? reserveNewItemSku() : Promise.resolve(""),
+          mode === "create" ? previewNewItemSku() : Promise.resolve(""),
         ]);
         if (cancelled) return;
         setTaxonomies(taxonomyRows);
@@ -274,10 +274,10 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             draftUnit: "",
             draftUsesList: true,
           });
-        } else if (reservedSku) {
-          setSku(reservedSku);
+        } else if (previewSku) {
+          setSku(previewSku);
           setSkuLocked(true);
-          setBaseline((current) => ({ ...current, sku: reservedSku }));
+          setBaseline((current) => ({ ...current, sku: previewSku }));
         }
       } catch (error) {
         if (!cancelled) setLoadError(errorText(error));
@@ -399,7 +399,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
       setSaveError("Name is required.");
       return false;
     }
-    if (!trimmedSku) {
+    if ((mode !== "create" || !skuLocked) && !trimmedSku) {
       setSaveError("SKU is required.");
       return false;
     }
@@ -478,7 +478,7 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
 
     const input = {
       name: trimmedName,
-      sku: trimmedSku,
+      sku: mode === "create" ? skuSubmittedForCreate(!skuLocked, trimmedSku) : trimmedSku,
       description: description.trim(),
       quantity: parsedQuantity,
       taxonomyName: trimmedTaxonomy || null,
@@ -513,7 +513,6 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
             pendingImages.map((image) => image.file),
           );
         }
-        clearNewItemSku();
         router.push(`/items/${id}`);
         return true;
       }
@@ -676,12 +675,12 @@ export function ItemForm({ mode, itemId }: ItemFormProps) {
               }}
               autoComplete="off"
               readOnly={mode === "create" && skuLocked}
-              required
+              required={mode !== "create" || !skuLocked}
             />
             {mode === "create" ? (
               skuLocked ? (
                 <>
-                  <span className="hint">Filled in automatically. The next number is reserved for this item.</span>
+                  <span className="hint">Preview of the next number. It is assigned when you save.</span>
                   <button type="button" className="secondary" onClick={() => setSkuLocked(false)}>
                     Edit SKU
                   </button>
