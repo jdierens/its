@@ -1,10 +1,12 @@
 # SKU numbers
 
-A new item gets the next SKU automatically. `reserve_item_sku` locks one row in `sku_counter` and returns a number. That number is one past the higher of the counter and the highest all-digit SKU already in `items`. The counter starts empty, so the first reservation is computed from the table. Today that highest SKU is 107132, so the next new item is 107133.
+A new item gets the next SKU when it is saved. `peek_item_sku` shows that number and does not move `sku_counter`. The preview is the higher of the counter and one past the highest all-digit SKU already in `items`. `create_item` calls `allocate_item_sku` when `p_sku` is blank or `auto`, in the same transaction as the insert. Two saves at once lock the counter row, so each gets its own number. Closing the form does not skip a number.
 
-An import of older SKUs does not need a separate counter update. Saving a numeric SKU, including a bulk import, moves the counter to one past that SKU when the saved number is higher. SKUs that are not all digits are left as typed and do not move the counter.
+`reserve_item_sku` still consumes a number on every call. The app does not call it.
 
-The new-item form fills the SKU and keeps it read-only. **Edit SKU** unlocks the field. That override is on the form for whoever is creating the item. Limiting it to admins waits until sign-in is the deployed gate. The number shown was already reserved, so leaving the page without saving skips that number.
+An import of older SKUs does not need a separate counter update. Saving a numeric SKU, including a typed SKU or a bulk import, moves the counter to one past that SKU when the saved number is higher. SKUs that are not all digits are left as typed and do not move the counter.
+
+The new-item form fills the SKU and keeps it read-only. **Edit SKU** unlocks the field. That override is on the form for whoever is creating the item. Limiting it to admins waits until sign-in is the deployed gate. The locked number is only a preview. A typed SKU is saved as written.
 
 Bin labels use `bin_counter` and still start at 20000. The two counters are not connected.
 

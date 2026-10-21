@@ -10,7 +10,7 @@ import { uploadItemImages } from "@/lib/imageUpload";
 import { DEFAULT_ECCN, DEFAULT_ITEM_TYPE, DEFAULT_UNIT, ITEM_TYPES, itemTypeOrDefault, type ItemType } from "@/lib/itemFields";
 import { createItem, fetchTaxonomies } from "@/lib/items";
 import { conditionFromHints, suggestedItemName, type LensHit, type LensReading } from "@/lib/lens/rank";
-import { reserveNewItemSku } from "@/lib/sku";
+import { previewNewItemSku, skuSubmittedForCreate } from "@/lib/sku";
 import type { AttributeDefinition, Taxonomy } from "@/lib/types";
 
 const MAX_SHOTS = 4;
@@ -31,6 +31,7 @@ export function LensPage() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
+  const [skuEdited, setSkuEdited] = useState(false);
   const [manufacturerId, setManufacturerId] = useState<string | null>(null);
   const [manufacturerName, setManufacturerName] = useState("");
   const [unresolved, setUnresolved] = useState(false);
@@ -161,17 +162,22 @@ export function LensPage() {
   async function openCreate() {
     setCreating(true);
     setMessage(null);
-    if (sku) return;
+    if (sku || skuEdited) return;
     try {
-      setSku(await reserveNewItemSku());
+      setSku(await previewNewItemSku());
     } catch (error) {
       setMessage(errorText(error));
     }
   }
 
   async function saveItem() {
-    if (!name.trim() || !sku.trim()) {
-      setMessage("Name and SKU are required.");
+    const submittedSku = skuEdited ? skuSubmittedForCreate(true, sku) : "";
+    if (!name.trim()) {
+      setMessage("Name is required.");
+      return;
+    }
+    if (skuEdited && !submittedSku) {
+      setMessage("SKU is required.");
       return;
     }
     if (unresolved) {
@@ -184,7 +190,7 @@ export function LensPage() {
       const taxonomy = taxonomies.find((entry) => entry.id === taxonomyId) ?? null;
       const id = await createItem({
         name: name.trim(),
-        sku: sku.trim(),
+        sku: submittedSku,
         description: description.trim(),
         quantity: null,
         taxonomyName: taxonomy?.name ?? null,
@@ -324,7 +330,16 @@ export function LensPage() {
             </label>
             <label>
               SKU
-              <input value={sku} onChange={(event) => setSku(event.target.value)} />
+              <input
+                value={sku}
+                onChange={(event) => {
+                  setSkuEdited(true);
+                  setSku(event.target.value);
+                }}
+              />
+              <span className="hint">
+                {skuEdited ? "This SKU will be saved as typed." : "Preview of the next number. It is assigned when you save, unless you type a different SKU."}
+              </span>
             </label>
             <label>
               Manufacturer
