@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { listPurchaseOrders, purchasePageAccess } from "@/lib/purchaseOrders";
+import { listPurchaseOrders } from "@/lib/purchaseOrders";
+import { purchasePageAccess } from "@/lib/purchaseSession";
 import { purchaseOrderStatusLabel } from "@/lib/purchaseOrderDraft";
 import { formatMoney } from "@/lib/pricing/quotes";
 

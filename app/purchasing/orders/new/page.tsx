@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PurchaseOrderForm } from "@/components/PurchaseOrderForm";
-import { listPurchaseVendors, purchasePageAccess } from "@/lib/purchaseOrders";
+import { listPurchaseVendors } from "@/lib/purchaseOrders";
+import { purchasePageAccess } from "@/lib/purchaseSession";
 
 export const dynamic = "force-dynamic";
 

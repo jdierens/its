@@ -200,15 +200,18 @@ Test results hang off the serial (the unit), not off the SKU. A later listing ro
 | `ordered_on`, `expected_on` | dates |
 | `sent_at`, `closed_at` | timestamptz, nullable |
 | `ship_to` | jsonb, vendor shipping-address shape |
-| `notes` | text |
+| `vendor_notes` | text printed or sent to the vendor. Not a price field |
+| `internal_notes` | text never shown to the vendor. The original `notes` column was renamed to this, so text already saved stays internal |
 | `qbo_po_id`, `qbo_doc_number` | nullable financial link |
 | `operator_id`, `occurred_at`, `created_at` | session and server clock |
 
-The order total shown to someone who can see money is the line subtotal plus `freight_in` (zero when freight has not been entered). Warehouse responses omit terms, freight-in, the subtotal, and the total.
+The order total shown to someone who can see money is the sum of the line extensions plus `freight_in` (zero when freight has not been entered). On the form that total sits under the lines: subtotal, shipping / freight-in, total. Warehouse responses omit terms, freight-in, the subtotal, the total, unit price, extension, and internal notes. Vendor notes stay, because they are the text already sent to the vendor. Prices do not belong in vendor notes.
 
 Freight-in is stored for a later landed-cost allocation. That allocation is not built yet. The default split is by received line value: each received unit's share is `freight_in` times its `quantity × unit cost`, divided by the value of all received lines on the order. The unit's landed cost is its unit cost plus that share. A lot's own freight pool is still an open question.
 
 `po_shipments` is one tracking number on the order: `carrier` (`UPS`, `FedEx`, `USPS`, `DHL`, `Freight`, or `Other`) and `tracking_number`. A purchase order can have several, because it can arrive in more than one shipment. Tracking can be added after the order is sent. A later receipt references `po_shipments.id`, and saving the list again keeps that id when the carrier and number stay the same. Parcel carriers open a tracking page. Freight and Other do not. Tracking is not money.
+
+`po_attachments` stores PDF files on the order. The type is `vendor_invoice`, `quote`, `order_confirmation`, or `other`. There is no customer-document type. The bytes live in the private `po-documents` bucket. The server creates a signed URL for someone who can see money. A role without `can_view_financials` receives no attachment rows and no signed URL. That is true for every current type: a vendor invoice and a quote are the bill and the offer, an order confirmation repeats those prices, and an unlabeled file may be an invoice. Row level security is on, and only `service_role` can read the table. The bucket has no anon or authenticated policy.
 
 `po_lines.line_kind` is `known` or `lot`.
 
@@ -216,7 +219,7 @@ Freight-in is stored for a later landed-cost allocation. That allocation is not 
 |---|---|---|
 | Item | `item_id` or a description | description only, `item_id` null |
 | Quantity | `qty_ordered` greater than 0 | null. Pieces appear as intake lines after processing |
-| Price | `unit_cost` | `total_cost` for the whole lot. `unit_cost` null |
+| Price | `unit_cost` numeric(12,4) and `ext_price` numeric(12,2). The extension matches quantity times unit cost within rounding. Four decimals let a filled extension be split back onto the unit | `total_cost` for the whole lot. `unit_cost` and `ext_price` null |
 | Expectation | condition, condition note, grade, unit | none until processing |
 
 A purchase can mix known lines and one lot line. A lot line requires a project. `qty_received` on a known line is the sum of receipt quantities whose disposition is `accepted` or `damaged`. A `wrong_item` line is left out. It is not typed.
@@ -326,7 +329,7 @@ The same file hash is refused as a duplicate import. A new file that repeats a s
 
 Jan confirmed who may create, enter, and send a purchase order: admin and staff. That is `can_edit_financials`. There is no separate approver. Warehouse manager and warehouse clerk cannot create, enter, or send. Their receiving screens use `can_receive` and the server returns quantities only.
 
-PO unit cost, freight-in, line subtotal, order total, lot totals, allocation, remainder, disposal cost, terms, share percent, deductions, payable, settlement amounts, buy rows, credits, and `vendors.tax_id` are money. Editing them requires `can_edit_financials`. Reading them requires `can_view_financials`. Approving a settlement or buy-out PO is the same capability, so warehouse roles cannot approve one either.
+PO unit cost, line extension, freight-in, line subtotal, order total, lot totals, allocation, remainder, disposal cost, terms, internal notes, share percent, deductions, payable, settlement amounts, buy rows, credits, and `vendors.tax_id` are money. So is every purchase-order file (`vendor_invoice`, `quote`, `order_confirmation`, and `other`). Editing them requires `can_edit_financials`. Reading them requires `can_view_financials`. Vendor notes are not money. Approving a settlement or buy-out PO is the same capability, so warehouse roles cannot approve one either.
 
 Receiving, identifying descriptions, photos, visual grade, wipe upload, and putaway use `can_receive`, `can_add_photos`, and `can_move_bins`. Those responses omit money on the server. Matching an existing item or creating a SKU is `can_edit_items`. The clerk proposal can do the warehouse steps and cannot create the SKU, so an unidentified line waits for a warehouse manager.
 

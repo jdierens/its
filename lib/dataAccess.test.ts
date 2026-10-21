@@ -15,7 +15,7 @@ test("the shared database client is server-only and does not carry the publishab
 });
 
 test("browser modules that upload photos or reserve SKUs do not open a database client", () => {
-  for (const name of ["imageUpload.ts", "imageFiles.ts", "sku.ts", "bins.ts", "labelTemplates.ts"]) {
+  for (const name of ["imageUpload.ts", "imageFiles.ts", "sku.ts", "bins.ts", "labelTemplates.ts", "poAttachmentUpload.ts"]) {
     const text = source(name);
     assert.equal(text.includes("getSupabase"), false, name);
     assert.equal(text.includes("NEXT_PUBLIC_SUPABASE_ANON_KEY"), false, name);
