@@ -395,6 +395,102 @@ Each phase is a small pull request. The first usable known-line slice is phases 
 11. **Later documents.** Sales orders, RMAs, cycle counts, and serials marked `sold`. Mixed-layer picks and post-settlement clawbacks land here.
 12. **Place bins.** After the location codes are loaded, move a bin into another bin or onto a location. One `bin_events` row carries the session operator and the timestamps. Contents follow the container. No per-item ledger rows.
 
+## Vendor invoice intake from email
+
+Design only. Nothing in this section is built.
+
+Jan's mailbox is `jan@deepdiscountservers.com`. A `purchasing@` alias may replace it later. The job reads one mailbox. It does not read anyone else's mail.
+
+### How mail gets in
+
+Use the Gmail API with a server-side OAuth refresh token. Do not take mail from an unsigned public webhook.
+
+The token is one row, the same idea as the QuickBooks and eBay connection rows: refresh token on the server, service role only, never sent to the browser, never written to a log. The scope is read-only Gmail. The job cannot send or delete.
+
+`users.watch` publishes mailbox changes to a Google Pub/Sub topic. The push endpoint checks the Google-signed token (issuer, audience, and the push identity) before it reads history. A request that fails that check is dropped. A periodic `history.list` poll is the backstop when a push is missed. The poll starts at the last stored history id and does not download a message that is already stored.
+
+The connected account can be Jan's Gmail now, or `purchasing@` later. Forwarding `purchasing@` into the connected mailbox is the other way to add that alias. The job still trusts only the connected account.
+
+Forwarding to an inbound address that POSTs the raw message is the alternative. It has fewer Google pieces, and the URL is public. It is acceptable only when the provider signs every request and the signature is checked before a PDF is stored. An unsigned webhook is not this design. Gmail is the recommendation.
+
+### Drafts have no PO number
+
+Cheap checks run before any paid call. The message needs a PDF attachment, `application/pdf`, at most 10 MB. The sha256 must be new. A message with no PDF is ignored and is not sent to Gemini.
+
+An invoice that does not match an existing PO becomes an intake draft. That row is not a numbered purchase order. `number` stays null. `reserve_purchase_order_number()` is not called. The counter moves only when someone with `can_edit_financials` confirms that the draft is a real new PO. Confirmation reserves the next number and leaves a normal draft. Discarding an intake draft does not use a number.
+
+`purchase_orders.number` is `not null` and unique today. The build needs a later migration that allows null for unconfirmed intake rows. Unique allows many nulls. A partial unique index keeps numbered POs unique. That migration is not part of this note.
+
+### Matching a PO that already has a number
+
+Before creating an intake draft, match a numbered purchase order:
+
+1. A PO number printed on the invoice, such as `PO-12`.
+2. Otherwise the vendor plus the invoice total against one open order, within a small money tolerance. Two open orders for the same vendor and the same total do not auto-match.
+
+A match attaches the PDF to that PO as a vendor invoice. It does not create a second PO. The file types are the ones on the purchase order: vendor invoice, quote, order confirmation, or other. There is no customer-document type. The bytes go to the private `po-documents` bucket. The comparison is invoice lines against PO lines, quantity and unit price first. Mismatches are flags. The job does not edit the PO lines.
+
+### Parsing, and not paying for a thrown-away answer
+
+Gemini document extraction, one call per new PDF, after the cheap checks. This is the same rule as Lens: do not pay for an answer that gets thrown away.
+
+- One request. No automatic retry. No second timer that cancels a call Google will still bill.
+- The server waits long enough to keep an answer that arrives. Lens waits 50 seconds inside the function limit. This call does the same.
+- A small output cap and a JSON schema: vendor name, invoice number, invoice date, currency, PO number if printed, lines (description, sku, quantity, unit price, extension), freight, and total.
+- The cheap document model (Flash-Lite, or whatever Lens is using then). Not a larger model.
+- The raw JSON is stored on the intake row. The review screen reads that JSON. It does not call Gemini again.
+- A transport failure before Google accepts the request can be tried once later. A timeout after the request was sent is not retried by itself. A person can ask for one new read. That is a button, not a loop.
+
+### Vendor match, dedupe, and the queue
+
+Match the extracted vendor name, and the address when it is present, to `vendors`. One confident match is stored. Zero matches or several matches leave the vendor empty and the row in the queue. The job does not create a vendor.
+
+Dedupe, before Gemini:
+
+- sha256 of the PDF is unique.
+- Gmail message id is unique.
+- Vendor plus invoice number, when both are present, is unique across intake rows and files already stored.
+- A duplicate stores nothing and does not call Gemini.
+
+The queue is for `can_edit_financials`. `read_only` can see it, including the money. Warehouse roles cannot see it. The PDF and the extracted prices are money. Each row is either a new intake draft with no PO number, or a matched PO with line mismatches.
+
+Confirm assigns the next PO number and turns the row into a normal draft. Link attaches the PDF to the chosen PO and runs the same comparison. Discard deletes the intake row and the stored PDF. Only confirm moves the counter.
+
+### Security
+
+The refresh token and the parsed invoice stay on the server. PDFs use the private bucket. Signed URLs are created only for `can_view_financials`. The intake table has row level security and a `service_role` grant only. No anon or authenticated grant. The Pub/Sub push is verified. The mailbox scope is read-only. A person's confirm stores that session user. The unattended read stores a system operator, not a guessed name. Logs do not include PDF bytes, the refresh token, or the raw Gemini request.
+
+## Future: vendor quotes, RFQs, estimates
+
+Not scheduled. This is not a phase and nothing here is built. Prices on these rows are money: `can_view_financials` to read, `can_edit_financials` to write. Warehouse roles do not receive them.
+
+A vendor quote covers products or services. A line may name an existing item or only a description, for a product that has no SKU yet or for a service. A quote is solicited when it replies to an RFQ, or unsolicited when the vendor sends it on their own. An RFQ is either internal or from a customer.
+
+From a vendor quote, someone can create a customer estimate, a vendor purchase order, or both. A customer estimate can later be converted to a sales order. Sales orders are still the later-documents phase. Conversion does not exist until that phase does.
+
+Sketch, not a migration:
+
+| Entity | Role |
+|---|---|
+| `rfqs` | The request. `source` is `customer` or `internal`. `customer_id` is set only when a customer asked. |
+| `rfq_lines` | What was requested: description, optional `item_id`, quantity, unit. A service line has no item. |
+| `vendor_quotes` | One vendor's answer. `vendor_id`. `rfq_id` is null on an unsolicited quote. Status, currency, quoted date, expiry. |
+| `vendor_quote_lines` | `line_kind` `product` or `service`. `item_id` nullable. Description required when there is no item. Quantity, unit, unit price, extension. Optional `rfq_line_id`. |
+| `customer_estimates` | A price to a customer. Optional `vendor_quote_id`. Status, currency. |
+| `customer_estimate_lines` | Same shape as a quote line. Optional `vendor_quote_line_id`. |
+| `customer_estimates.sales_order_id` | Set when the estimate is converted. The column waits until sales orders exist. |
+| `po_lines.vendor_quote_line_id` | Set when a purchase order is created from a quote line. Nullable. Absent until this work is scheduled. |
+
+One quote can point at an estimate and a purchase order at the same time. Creating either one does not consume the other. Declining a quote creates neither.
+
+The purchase order already in this document does not have to change for that sketch to fit later.
+
+A known line is an item or a description. A product with no SKU yet, and a service, are description lines. The quote keeps its own description, so a later SKU (`can_edit_items`) does not rewrite the quote. A nullable `vendor_quote_line_id` on `po_lines` can be added when quotes are built. Existing PO rows stay valid.
+
+A file on a purchase order typed `quote` is the vendor's PDF attached to that order. It is not a `vendor_quotes` row. Creating a PO from a quote can store that same PDF with kind `quote`. The attachment types stay vendor invoice, quote, order confirmation, and other. No new type is required.
+
+A service line is not stock. It does not post an inventory movement and it is not received into a bin. Goods on the same PO still follow the receiving rules above. Phase 1 does not post receipts, so nothing in the current PO has to special-case services yet.
+
 ## Open questions
 
 1. Please send a header row, and a few sample rows, from the Transactions sheet, the Inventory sheet, and the serial sheet.
@@ -411,3 +507,10 @@ Each phase is a small pull request. The first usable known-line slice is phases 
 12. May units from a lot be sold while their cost is still provisional?
 13. Please confirm the wipe product's name (SysOps or something else) and send a sample export with its header row. Must the wipe certificate file be kept on each unit, or is a certificate reference enough?
 14. Please confirm owned lots and takeouts use a project plus an upfront PO, as recommended above.
+15. Should vendor-invoice intake start on jan@deepdiscountservers.com now, or wait until a purchasing@ mailbox exists?
+16. Confirm that admin and staff, the same people who send a purchase order, are the ones who turn an intake draft into a numbered PO.
+17. When an invoice has no PO number and the vendor has two open orders, is vendor plus total enough only when a single order is close, or should the queue always ask?
+18. Should a quantity or unit-price mismatch only show on the review queue, or should it also block receiving?
+19. Who owns the Google Cloud project for the Gmail watch, and is a signed Pub/Sub push acceptable?
+20. Should a PDF that is not an invoice be ignored, or kept on a review row as an other file?
+21. Can one PDF contain more than one invoice?
