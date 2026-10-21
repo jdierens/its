@@ -86,7 +86,7 @@ Pages and client calls:
 - `/pricing` is a placeholder page. The nav item is still there.
 - `/sales/orders`, `/purchasing/orders`, `/warehouse/pick`, and `/warehouse/receiving` are placeholders. Creating, entering, and sending a purchase order is `can_edit_financials` (admin and staff). `read_only` can see prices on that order and cannot send it. Warehouse roles do not get the form. Receiving returns quantities only.
 - Admin settings: the pricing window.
-- Item export CSV: `ecommerce_price`, `market_price`, `msrp`, `pricing_checked_at` (`lib/export/table.ts`, `lib/export/load.ts`, `app/api/items/export/route.ts`).
+- Item export (CSV, Excel, and Google Sheets): `ecommerce_price`, `market_price`, and `msrp`, and only when the caller has `can_view_financials` (admin, staff, and `read_only`). Any other role gets those columns omitted on the server. `read_only` can export. The route always requires an approved signed-in user (`lib/export/table.ts`, `lib/export/load.ts`, `lib/export/access.ts`, `app/api/items/export/route.ts`). See `docs/item-export.md`.
 - Customer and vendor forms: `tax_id`.
 
 Server paths that return or write money:

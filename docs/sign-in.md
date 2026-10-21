@@ -19,7 +19,7 @@ Do this once in the `deepdiscountservers.com` Google account and in the Supabase
 3. Authorized JavaScript origins: `https://its-epks.vercel.app` and `http://localhost:3000`.
 4. Authorized redirect URI: `https://fxsbpreasbdalwthyzvk.supabase.co/auth/v1/callback`. Google sends the user there. Supabase then returns the browser to the app.
 5. In the Supabase dashboard, Authentication → URL configuration, set Site URL to `https://its-epks.vercel.app`. Add these redirect URLs: `https://its-epks.vercel.app/auth/callback` and `http://localhost:3000/auth/callback`.
-6. Authentication → Providers → Google: turn it on and paste the client id and client secret. Leave the provider on.
+6. Authentication → Providers → Google: turn it on and paste the client id and client secret. Leave the provider on. Item export to a person's own Drive uses a separate consent for `https://www.googleapis.com/auth/drive.file`. Do not add that scope here or to the sign-in request. Those steps are in `docs/item-export.md`.
 
 ## Phase 2, not applied
 
