@@ -4,15 +4,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { errorText } from "@/lib/errors";
+import { PAYMENT_TERMS } from "@/lib/paymentTerms";
+import { SHIPMENT_CARRIERS, parseFreightIn, trackingUrl } from "@/lib/poCharges";
 import { purchaseOrderStatusLabel } from "@/lib/purchaseOrderDraft";
 import {
   cancelPurchaseOrder,
   savePurchaseOrder,
+  savePurchaseOrderCharges,
   searchPurchaseItems,
   sendPurchaseOrder,
   type PurchaseItemHit,
   type PurchaseOrderLineView,
   type PurchaseOrderView,
+  type PurchaseShipmentView,
   type PurchaseVendor,
 } from "@/lib/purchaseOrders";
 import { formatMoney } from "@/lib/pricing/quotes";
@@ -44,9 +48,12 @@ export function PurchaseOrderForm({
 }) {
   const router = useRouter();
   const editable = canEdit && (order == null || order.status === "draft");
+  const chargesEditable = canEdit && (order == null || order.status !== "cancelled");
   const [vendorId, setVendorId] = useState(order?.vendorId ?? vendors[0]?.id ?? "");
   const [fulfillment, setFulfillment] = useState(order?.fulfillment ?? "warehouse");
   const [terms, setTerms] = useState(order?.terms ?? "");
+  const [freightIn, setFreightIn] = useState(order?.freightIn ?? "");
+  const [shipments, setShipments] = useState<PurchaseShipmentView[]>(order?.shipments ?? []);
   const [orderedOn, setOrderedOn] = useState(order?.orderedOn ?? "");
   const [expectedOn, setExpectedOn] = useState(order?.expectedOn ?? "");
   const [notes, setNotes] = useState(order?.notes ?? "");
@@ -79,6 +86,8 @@ export function PurchaseOrderForm({
         vendorId,
         fulfillment,
         terms: showMoney ? terms : "",
+        freightIn: showMoney ? freightIn : "",
+        shipments,
         orderedOn,
         expectedOn,
         notes,
@@ -93,6 +102,20 @@ export function PurchaseOrderForm({
       });
       if (order) router.refresh();
       else router.push(`/purchasing/orders/${saved.id}`);
+    } catch (error) {
+      setMessage(errorText(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveCharges() {
+    if (!order) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await savePurchaseOrderCharges(order.id, { freightIn: showMoney ? freightIn : "", shipments });
+      router.refresh();
     } catch (error) {
       setMessage(errorText(error));
     } finally {
@@ -198,9 +221,34 @@ export function PurchaseOrderForm({
         {showMoney ? (
           <label>
             Terms
-            <input value={terms} onChange={(event) => setTerms(event.target.value)} readOnly={!editable} />
+            {editable ? (
+              <select value={terms} onChange={(event) => setTerms(event.target.value)} required>
+                <option value="">Choose terms</option>
+                {PAYMENT_TERMS.map((term) => (
+                  <option key={term} value={term}>
+                    {term}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input value={terms || "—"} readOnly />
+            )}
           </label>
         ) : null}
+        {showMoney ? (
+          <label>
+            Freight in
+            <input
+              value={freightIn}
+              onChange={(event) => setFreightIn(event.target.value)}
+              readOnly={!chargesEditable}
+              inputMode="decimal"
+              placeholder="0.00"
+            />
+            <span className="hint">USD. Often entered after the order is sent. Added to the order total, not to a line.</span>
+          </label>
+        ) : null}
+        {showMoney ? <OrderTotals lines={lines} freightIn={freightIn} /> : null}
         <label>
           Notes
           <textarea value={notes} onChange={(event) => setNotes(event.target.value)} readOnly={!editable} />
@@ -303,6 +351,87 @@ export function PurchaseOrderForm({
             ) : null}
           </fieldset>
         ))}
+        <fieldset>
+          <legend>Tracking</legend>
+          {shipments.length === 0 && !chargesEditable ? <p className="muted">No tracking numbers yet.</p> : null}
+          {shipments.map((shipment, index) => {
+            const href = trackingUrl(shipment.carrier, shipment.trackingNumber);
+            return (
+              <div className="grid" key={index}>
+                <label>
+                  Carrier
+                  {chargesEditable ? (
+                    <select
+                      value={shipment.carrier}
+                      onChange={(event) =>
+                        setShipments((current) =>
+                          current.map((row, rowIndex) => (rowIndex === index ? { ...row, carrier: event.target.value } : row)),
+                        )
+                      }
+                    >
+                      <option value="">Choose a carrier</option>
+                      {SHIPMENT_CARRIERS.map((carrier) => (
+                        <option key={carrier} value={carrier}>
+                          {carrier}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={shipment.carrier} readOnly />
+                  )}
+                </label>
+                <label>
+                  Tracking number
+                  {chargesEditable ? (
+                    <input
+                      value={shipment.trackingNumber}
+                      onChange={(event) =>
+                        setShipments((current) =>
+                          current.map((row, rowIndex) =>
+                            rowIndex === index ? { ...row, trackingNumber: event.target.value } : row,
+                          ),
+                        )
+                      }
+                      autoComplete="off"
+                    />
+                  ) : href ? (
+                    <a href={href} target="_blank" rel="noopener noreferrer">
+                      {shipment.trackingNumber}
+                    </a>
+                  ) : (
+                    <input value={shipment.trackingNumber} readOnly />
+                  )}
+                  {chargesEditable && href ? (
+                    <span className="hint">
+                      <a href={href} target="_blank" rel="noopener noreferrer">
+                        Open tracking
+                      </a>
+                    </span>
+                  ) : null}
+                </label>
+                {chargesEditable ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setShipments((current) => current.filter((_, rowIndex) => rowIndex !== index))}
+                  >
+                    Remove shipment
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+          {chargesEditable ? (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setShipments((current) => [...current, { carrier: "", trackingNumber: "" }])}
+            >
+              Add tracking number
+            </button>
+          ) : null}
+          <p className="hint">A purchase order can arrive in more than one shipment. A receipt can point at one of these later.</p>
+        </fieldset>
         {editable ? (
           <div className="actions">
             <button type="button" className="secondary" onClick={() => setLines((current) => [...current, { ...EMPTY_LINE }])}>
@@ -323,7 +452,46 @@ export function PurchaseOrderForm({
             ) : null}
           </div>
         ) : null}
+        {!editable && chargesEditable && order ? (
+          <div className="actions">
+            <button type="button" disabled={saving} onClick={() => void saveCharges()}>
+              {saving ? "Saving…" : showMoney ? "Save freight and tracking" : "Save tracking"}
+            </button>
+          </div>
+        ) : null}
       </form>
     </main>
+  );
+}
+
+function OrderTotals({ lines, freightIn }: { lines: LineState[]; freightIn: string }) {
+  let cents = 0;
+  let complete = true;
+  for (const line of lines) {
+    if (!line.qty.trim() && !line.unitCost.trim()) continue;
+    if (!line.qty.trim() || !line.unitCost.trim()) {
+      complete = false;
+      break;
+    }
+    const qty = Number(line.qty);
+    const cost = Number(line.unitCost.replace(/[$,]/g, ""));
+    if (!Number.isFinite(qty) || !Number.isFinite(cost)) {
+      complete = false;
+      break;
+    }
+    cents += Math.round(qty * cost * 100);
+  }
+  const subtotal = complete ? cents / 100 : null;
+  const freight = parseFreightIn(freightIn);
+  const freightAmount = freight === "invalid" ? null : freight;
+  const total = subtotal == null || freight === "invalid" ? null : subtotal + (freightAmount ?? 0);
+  return (
+    <p className="page-note">
+      Subtotal {formatMoney(subtotal)}
+      {" · "}
+      Freight in {freight === "invalid" ? "—" : formatMoney(freightAmount)}
+      {" · "}
+      Total {formatMoney(total)}
+    </p>
   );
 }

@@ -8,7 +8,7 @@ function draft(overrides: Partial<PoDraftInput> = {}): PoDraftInput {
   return {
     vendorId,
     fulfillment: "warehouse",
-    terms: "Net 30",
+    terms: "Net30",
     orderedOn: "2026-10-21",
     expectedOn: "",
     notes: "",
@@ -43,6 +43,13 @@ test("a known line needs a vendor, a quantity, and a unit cost", () => {
   assert.equal(saved.value.lines[0]?.qty, 2);
   assert.equal(saved.value.lines[0]?.unitCost, 40.5);
   assert.equal(purchaseOrderTotal(saved.value.lines), 81);
+  assert.equal(saved.value.terms, "Net30");
+});
+
+test("terms must be one of the fixed values", () => {
+  assert.equal(normalizePurchaseOrderDraft(draft({ terms: "Net 30" })).ok, false);
+  assert.equal(normalizePurchaseOrderDraft(draft({ terms: "" })).ok, false);
+  assert.equal(normalizePurchaseOrderDraft(draft({ terms: "Net15" })).ok, true);
 });
 
 test("a blank extra line is ignored", () => {
@@ -61,11 +68,13 @@ test("a blank extra line is ignored", () => {
 
 test("people who cannot see money do not receive costs", () => {
   const hidden = hidePurchaseMoney(
-    { terms: "Net 30", currency: "USD", unitCost: 12, total: 24 },
+    { terms: "Net30", currency: "USD", unitCost: 12, subtotal: 24, freightIn: 8, total: 32 },
     { canEdit: false, canViewMoney: false },
   );
   assert.equal(hidden.terms, null);
   assert.equal(hidden.unitCost, null);
+  assert.equal(hidden.subtotal, null);
+  assert.equal(hidden.freightIn, null);
   assert.equal(hidden.total, null);
 
   const visible = hidePurchaseMoney(
