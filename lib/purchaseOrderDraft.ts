@@ -1,4 +1,5 @@
-import type { PurchaseAccess } from "./purchaseAccess";
+import { parsePaymentTerm, type PaymentTerm } from "@/lib/paymentTerms";
+import type { PurchaseAccess } from "@/lib/purchaseAccess";
 
 export const PO_STATUSES = ["draft", "open", "partially_received", "received", "closed", "cancelled"] as const;
 export type PoStatus = (typeof PO_STATUSES)[number];
@@ -34,7 +35,7 @@ export type NormalizedPoLine = {
 export type NormalizedPoDraft = {
   vendorId: string;
   fulfillment: "warehouse" | "drop_ship";
-  terms: string | null;
+  terms: PaymentTerm;
   orderedOn: string | null;
   expectedOn: string | null;
   notes: string | null;
@@ -66,8 +67,8 @@ export function normalizePurchaseOrderDraft(input: PoDraftInput): { ok: true; va
   const expectedOn = optionalDate(input.expectedOn);
   if (expectedOn === "invalid") return { ok: false, error: "Expected date must be a calendar date." };
 
-  const terms = clip(input.terms, 500);
-  if (terms === "long") return { ok: false, error: "Terms are too long." };
+  const terms = parsePaymentTerm(input.terms);
+  if (terms === "invalid") return { ok: false, error: "Choose terms." };
   const notes = clip(input.notes, 4000);
   if (notes === "long") return { ok: false, error: "Notes are too long." };
 
@@ -129,10 +130,16 @@ export function purchaseOrderTotal(lines: { qty: number; unitCost: number }[]): 
   return cents / 100;
 }
 
-export function hidePurchaseMoney<T extends { terms?: string | null; currency?: string | null; unitCost?: number | null; total?: number | null }>(
-  row: T,
-  access: PurchaseAccess,
-): T {
+export function hidePurchaseMoney<
+  T extends {
+    terms?: string | null;
+    currency?: string | null;
+    unitCost?: number | null;
+    total?: number | null;
+    subtotal?: number | null;
+    freightIn?: number | string | null;
+  },
+>(row: T, access: PurchaseAccess): T {
   if (access.canViewMoney) return row;
   return {
     ...row,
@@ -140,6 +147,8 @@ export function hidePurchaseMoney<T extends { terms?: string | null; currency?: 
     currency: row.currency === undefined ? undefined : null,
     unitCost: row.unitCost === undefined ? undefined : null,
     total: row.total === undefined ? undefined : null,
+    subtotal: row.subtotal === undefined ? undefined : null,
+    freightIn: row.freightIn === undefined ? undefined : null,
   };
 }
 

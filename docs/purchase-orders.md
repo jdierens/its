@@ -195,13 +195,20 @@ Test results hang off the serial (the unit), not off the SKU. A later listing ro
 | `status` | lifecycle below. Settlement and buy-out skip receiving |
 | `fulfillment` | `warehouse` or `drop_ship` |
 | `currency` | default `USD` |
-| `terms` | text, nullable. Money |
+| `terms` | `Net0`, `Net1`, `Net7`, `Net10`, `Net14`, `Net15`, or `Net30`. Money. Null only on rows saved before that list |
+| `freight_in` | numeric(12,2), USD, null or at least 0. Money. The freight bill, editable after the order is sent |
 | `ordered_on`, `expected_on` | dates |
 | `sent_at`, `closed_at` | timestamptz, nullable |
 | `ship_to` | jsonb, vendor shipping-address shape |
 | `notes` | text |
 | `qbo_po_id`, `qbo_doc_number` | nullable financial link |
 | `operator_id`, `occurred_at`, `created_at` | session and server clock |
+
+The order total shown to someone who can see money is the line subtotal plus `freight_in` (zero when freight has not been entered). Warehouse responses omit terms, freight-in, the subtotal, and the total.
+
+Freight-in is stored for a later landed-cost allocation. That allocation is not built yet. The default split is by received line value: each received unit's share is `freight_in` times its `quantity × unit cost`, divided by the value of all received lines on the order. The unit's landed cost is its unit cost plus that share. A lot's own freight pool is still an open question.
+
+`po_shipments` is one tracking number on the order: `carrier` (`UPS`, `FedEx`, `USPS`, `DHL`, `Freight`, or `Other`) and `tracking_number`. A purchase order can have several, because it can arrive in more than one shipment. Tracking can be added after the order is sent. A later receipt references `po_shipments.id`, and saving the list again keeps that id when the carrier and number stay the same. Parcel carriers open a tracking page. Freight and Other do not. Tracking is not money.
 
 `po_lines.line_kind` is `known` or `lot`.
 
@@ -319,7 +326,7 @@ The same file hash is refused as a duplicate import. A new file that repeats a s
 
 Jan confirmed who may create, enter, and send a purchase order: admin and staff. That is `can_edit_financials`. There is no separate approver. Warehouse manager and warehouse clerk cannot create, enter, or send. Their receiving screens use `can_receive` and the server returns quantities only.
 
-PO unit cost, lot totals, allocation, remainder, disposal cost, terms, share percent, deductions, payable, settlement amounts, buy rows, credits, and `vendors.tax_id` are money. Editing them requires `can_edit_financials`. Reading them requires `can_view_financials`. Approving a settlement or buy-out PO is the same capability, so warehouse roles cannot approve one either.
+PO unit cost, freight-in, line subtotal, order total, lot totals, allocation, remainder, disposal cost, terms, share percent, deductions, payable, settlement amounts, buy rows, credits, and `vendors.tax_id` are money. Editing them requires `can_edit_financials`. Reading them requires `can_view_financials`. Approving a settlement or buy-out PO is the same capability, so warehouse roles cannot approve one either.
 
 Receiving, identifying descriptions, photos, visual grade, wipe upload, and putaway use `can_receive`, `can_add_photos`, and `can_move_bins`. Those responses omit money on the server. Matching an existing item or creating a SKU is `can_edit_items`. The clerk proposal can do the warehouse steps and cannot create the SKU, so an unidentified line waits for a warehouse manager.
 
@@ -393,7 +400,7 @@ Each phase is a small pull request. The first usable known-line slice is phases 
 4. Which deductions define net (marketplace fees, shipping, payment fees, refurb costs)? Is settlement per sale, periodic, or a negotiated batch, and is there one settlement PO per sale or one per period?
 5. Answered for the model. A bin is a movable container. Product goes into a bin. A location is a fixed coded place, and a bin sits in a location or in another bin. Please send the location code list. On the Inventory sheet sample, say whether each location cell is a bin reference or a location code.
 6. Which taxonomies are serialized, and is a serial required for every piece before grading can finish?
-7. Does freight or other landed cost join the lot pool, or stay outside item cost?
+7. Known-line freight-in is stored on the purchase order and will be allocated by received line value later. Does a lot's freight join that lot's cost pool, or stay as this freight-in charge?
 8. Confirm the clerk still cannot create the SKU, so a new item found during intake waits for a warehouse manager.
 9. Answered. Damaged units count as received on the PO line. They stay in stock with status damaged, so picking skips them. A cost write-down is a separate financial adjustment.
 10. Is the serial sheet only sold units, or does it also contain serials still in stock?
