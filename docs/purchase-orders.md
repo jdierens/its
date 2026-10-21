@@ -14,7 +14,7 @@ Items are one row plus EAV attributes (`attributes`, `item_attributes`). `items.
 
 `item_transactions` is buy and sell only. Quantity is positive, `unit_price` is required, and `total` is generated. A buy names a vendor. `source` is `manual`, `qbo`, or `ebay`. The same source, reference, and item cannot be inserted twice.
 
-Bins are pallet, crate, and box labels (`20000-P`). `bins.current_location_id` is an unused uuid. There is no locations table and no link from an item to a bin. `bin_events.actor` is free text. `app_settings` is a key/value table. `app_users.id` is the person in the session.
+Bins are already the movable containers: pallet `P`, crate `C`, and box `B`, labeled `20000-P`. `bin_counter` issues the next number and starts at 20000 because older physical labels use the `1xxxx` range. `bins.current_location_id` is an unused uuid with no foreign key. There is no locations table yet. `bin_events` records created, printed, reprinted, and moved, and its actor is free text. `app_settings` holds the next bin number. `app_users.id` is the person in the session.
 
 Capabilities are the names in `docs/roles.md` (pull request #42): `can_view_financials`, `can_edit_financials`, `can_edit_items`, `can_add_photos`, `can_receive`, `can_move_bins`, `can_adjust_counts`. That document is design too. Warehouse roles cannot see money. The clerk proposal can receive, put away, and add photos, and cannot edit or delete items.
 
@@ -88,11 +88,35 @@ Warehouse screens show the code, the type, the consignor name, and pipeline coun
 
 Project intake uses `ref_type = project` and `ref_id` of the project. That reference stays. Settlement does not rewrite it. The chain after settlement is unit → project → settlement PO line.
 
-A putaway is two rows that share one transfer id: `out` of the holding balance and `in` to the destination bin. Both keep the same project, ownership, and item. Item quantity does not change. A known-line receipt of warehouse goods is one `in` with `bin_id` null until putaway.
+A putaway is two rows that share one transfer id: `out` of the holding balance and `in` to the destination bin. Both keep the same project, ownership, and item. Item quantity does not change. A known-line receipt of warehouse goods is one `in` with `bin_id` null until putaway. Relocating that bin is a bin event, not another pair of item rows. See Bins and locations.
 
 Cost is not a ledger column. Unit cost lives on the PO line, the allocation, and the buy transaction.
 
 Rows that do not exist yet still have a `ref_type`. No writer inserts `sales_order`, `rma`, `vendor_return`, `cycle_count`, `scrap`, or `internal_use` until that feature exists. Cycle-count rows require `can_adjust_counts`.
+
+## Bins and locations
+
+A bin is a movable container. Product goes into a bin. A bin is placed inside another bin (boxes on a pallet) or in a fixed location. The first build puts product away into a bin and stops there. The tables below ship in that same migration so a later placement does not reshape the ledger. Jan will supply the location codes. The `locations` table stays empty until then.
+
+`locations`: `id`, unique `code`, `description`. Row level security on, `service_role` only.
+
+Keep the current `bins` row. `number`, `type` (`P`, `C`, `B`), and `reference` (`20000-P`) stay the label people scan. `bin_counter` stays the shared counter.
+
+Replace unused `current_location_id` with two nullable foreign keys: `parent_bin_id` references `bins`, and `location_id` references `locations`. A placed bin has exactly one of those set. A bin that has only been printed has neither. That is every bin today. The check is `num_nonnulls(parent_bin_id, location_id) <= 1`.
+
+A move sets exactly one parent. The server sets `operator_id` from the session and sets `occurred_at` and `created_at` from the server clock. The history row is the existing `bin_events` type `moved`, extended with `operator_id`, `occurred_at`, `from_parent_bin_id`, `to_parent_bin_id`, and foreign keys on the location columns it already has. Older print events keep their free-text `actor`. The client does not send the operator or the timestamps.
+
+The move walks `parent_bin_id` from the new parent upward. If the walk meets the bin being moved, the move is rejected. A bin cannot be its own parent. The walk and the parent update are one transaction.
+
+**Effective location.** Start at the stock's `bin_id`. If that bin has `location_id`, that code is the location. If it has `parent_bin_id`, repeat from the parent. If both are empty, the stock is in a bin that has not been placed.
+
+**Moving a container.** Update that one bin's parent and insert one `bin_events` row. Child bins keep their parent. Item movements keep the `bin_id` they were put into. A pallet move from one location to another, or nesting a box onto that pallet, does not insert an inventory row per unit. The next query follows the new chain, so the box and everything in it show up at the pallet's location.
+
+**Stock by location.** Direct quantity in a bin is the ledger sum for that `bin_id`. Quantity at a location is that direct sum for every bin whose walk ends at that location, grouped by item. Nested goods are included because their walk passes through the outer bin. "What is on this pallet" is a different total: the pallet's own movements plus movements whose bin walks up to the pallet. An unplaced bin's quantity stays on hand under no location.
+
+**Migration.** Add `locations` with no seed rows. Add the two parent columns and the check. Add the cycle rejection to the move path. Point `bin_events` location ids at `locations`, and add the operator and parent-bin columns. `current_location_id` is not written by the print desk. Drop it when every value is null. If any row is set, stop and list those bins before dropping the column. Reprint and the counter stay as they are. This alter does not grant `anon` or `authenticated`.
+
+**Inventory sheet.** A cell that matches `bins.reference` (`20000-P` or a legacy `1xxxx` label) is that bin. A fixed location code is not a substitute for a bin. Product sits in a bin. A sheet cell that names only a place stays on the movement note with `bin_id` null until someone puts that quantity in a bin.
 
 ## Intake lines
 
@@ -310,7 +334,7 @@ One-time imports, then the sheets stop.
 
 **Transactions sheet.** Open purchase orders become purchase POs and known lines. A reference shaped like a project code becomes a project, and the PO links to it when both exist. Match the vendor on QuickBooks id, then on display name. Match a line to an item on SKU when the cell is a SKU. Otherwise keep the description, part, or model on an intake line. Store the sheet reference in `ref_label` and in `qbo_doc_number` when the cell is a QuickBooks number.
 
-**Inventory sheet.** One `opening_balance` movement per item and location. Match the item on SKU or the sheet's item id. Match the location to `bins.reference` when it looks like a bin label. Otherwise keep the location text on the note and leave `bin_id` null. Direction comes from IN or OUT. `occurred_at` and `operator_label` come from the sheet. `operator_id` is set only when the name matches one `app_users` row.
+**Inventory sheet.** One `opening_balance` movement per item and container. Match the item on SKU or the sheet's item id. Match a bin reference to `bins.reference`. A place name that is not a bin stays on the note with `bin_id` null, as in Bins and locations. Direction comes from IN or OUT. `occurred_at` and `operator_label` come from the sheet. `operator_id` is set only when the name matches one `app_users` row.
 
 **Serial sheet.** Match item ID, transaction reference, serial, operator, and timestamp onto `serials` and one `serial_events` row. Link `ref_label` to that reference and to a project when the code matches. Status defaults to `sold`, because this sheet tracks sold units. Duplicate in-stock serials are reported and left unmerged.
 
@@ -335,11 +359,11 @@ Owed, paid, and any cost figures require `can_view_financials`. Warehouse report
 
 ## Phases
 
-Each phase is a small pull request. The first usable known-line slice is phases 1–3: create a PO, receive it, put it away. Projects come next and do not block that slice. The first ledger migration already includes nullable `project_id`, nullable `item_id`, and `ownership`, so later phases add rows to the same log.
+Each phase is a small pull request. The first usable known-line slice is phases 1–3: create a PO, receive it, and put it away into a bin. Placing that bin at a location is phase 12, after the location codes exist. Projects come next and do not block that slice. The first ledger migration already includes nullable `project_id`, nullable `item_id`, and `ownership`, so later phases add rows to the same log.
 
 1. **Ledger and known PO.** `inventory_movements`, `purchase_orders`, `po_lines`. Admin and staff create, edit, and send a known-line PO. Warehouse roles do not get that screen. No receipt yet.
 2. **Receive known lines.** Receipts, the `po` transaction source, the ledger `in`, and the quantity cache. Warehouse screens are quantities only. Existing items only.
-3. **Putaway.** Scan a bin that already exists. The two-row transfer. Unlocated quantity is visible.
+3. **Putaway into a bin.** Scan an existing reference (`20000-P`). The two-row item transfer. Unlocated quantity is visible. The same migration adds empty `locations`, the parent columns, the one-parent check, and cycle prevention. The screen does not ask where the bin sits.
 4. **Projects and unidentified intake.** Projects, intake lines, units through `identified`, match suggestions, Lens, photos, bin, quantity, and serial before a SKU exists.
 5. **Grading and wipes.** Visual grade, SysOps import, pipeline to `graded`. Depends on a sample export.
 6. **Project putaway.** Pipeline to `put_away`. Ready-to-sell counts. Same transfer as phase 3.
@@ -348,6 +372,7 @@ Each phase is a small pull request. The first usable known-line slice is phases 
 9. **Consignment settlement.** Draft POs from the project, approval, COGS, buy-out, project and consignor reports. Revenue share and clawback wait until sales exist. Negotiated batch settlement can ship in this phase.
 10. **QuickBooks push.** PurchaseOrder on send, Bill on owned receipt or owned-lot approval, settlement PO on approval. Payments stay in QuickBooks.
 11. **Later documents.** Sales orders, RMAs, cycle counts, and serials marked `sold`. Mixed-layer picks and post-settlement clawbacks land here.
+12. **Place bins.** After the location codes are loaded, move a bin into another bin or onto a location. One `bin_events` row carries the session operator and the timestamps. Contents follow the container. No per-item ledger rows.
 
 ## Open questions
 
@@ -355,7 +380,7 @@ Each phase is a small pull request. The first usable known-line slice is phases 
 2. Where do new known-SKU purchase orders start: typed into ITS, or still born on the Transactions sheet until import day?
 3. Answered. Admin and staff can create, enter, and send purchase orders. Warehouse roles cannot. They see quantities only.
 4. Which deductions define net (marketplace fees, shipping, payment fees, refurb costs)? Is settlement per sale, periodic, or a negotiated batch, and is there one settlement PO per sale or one per period?
-5. Is a bin label (`20000-P`) the storage location on the Inventory sheet, or is location a shelf or a room?
+5. Answered for the model. A bin is a movable container. Product goes into a bin. A location is a fixed coded place, and a bin sits in a location or in another bin. Please send the location code list. On the Inventory sheet sample, say whether each location cell is a bin reference or a location code.
 6. Which taxonomies are serialized, and is a serial required for every piece before grading can finish?
 7. Does freight or other landed cost join the lot pool, or stay outside item cost?
 8. Confirm the clerk still cannot create the SKU, so a new item found during intake waits for a warehouse manager.
