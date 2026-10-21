@@ -1,6 +1,6 @@
 # Roles and capabilities
 
-Design only. The app still has `admin`, `staff`, and `read_only`, and `read_only` can still write. This note is the plan for a warehouse role that cannot see money, and for making `read_only` view-only.
+Design only. The app still has `admin`, `staff`, and `read_only`, and `read_only` can still write. This note is the plan for two warehouse roles that cannot see money, and for making `read_only` view-only. Jan has asked for `warehouse_manager` and a lower `warehouse_clerk`. The clerk's exact capabilities are proposals.
 
 ## Model
 
@@ -14,31 +14,42 @@ Suggested capabilities:
 |---|---|
 | `can_view_financials` | See prices, quotes, transactions, pricing pages, and financial fields. |
 | `can_edit_financials` | Change those amounts and add quotes or transactions. |
-| `can_edit_items` | Create and edit an item's physical record, photos, and non-financial attributes. |
-| `can_manage_warehouse` | Picks, cycle counts, putaway, bin moves, receiving, and bin labels. |
+| `can_edit_items` | Create, edit, or delete an item's physical record and non-financial attributes. |
+| `can_add_photos` | Add a photo to an item. Removing a photo stays with `can_edit_items`. |
+| `can_log_picks` | Log picks and packs. |
+| `can_move_bins` | Putaway and bin moves. |
+| `can_receive` | Receive quantities against a purchase order. The order's prices stay behind `can_view_financials`. |
+| `can_adjust_counts` | Approve a cycle count and post the quantity adjustment. |
+| `can_manage_warehouse` | Shorthand for the four floor capabilities plus `can_adjust_counts`. Prefer the specific capability at the call site. |
 | `can_manage_catalog` | Taxonomies, attribute definitions, and the manufacturer list. |
 | `can_manage_users` | Approve people and change roles. |
 | `can_manage_integrations` | Connect or disconnect QuickBooks and eBay, and run a sync. |
 | `can_edit_settings` | Change app settings. The pricing window is also `can_edit_financials`. |
 
-`can_edit_financials` implies `can_view_financials`. A view-only role has the view capability and not the edit one. A warehouse role has neither.
+`can_edit_financials` implies `can_view_financials`. A view-only role has the view capability and not the edit one. Both warehouse roles have neither. `can_edit_items` includes delete. The clerk does not get it.
 
 ## Role matrix
 
-Yes means the role has the capability. **Guess** means Jan should confirm it before the role is added.
+Yes means the role has the capability. **Guess** means Jan should confirm it. **Proposal** is the suggested clerk split. Jan asked for the clerk role; he has not confirmed these cells yet.
 
-| Capability | admin | staff | warehouse_manager | warehouse_staff | read_only |
+| Capability | admin | staff | warehouse_manager | warehouse_clerk | read_only |
 |---|---|---|---|---|---|
 | `can_view_financials` | yes | yes | no | no | yes |
 | `can_edit_financials` | yes | yes | no | no | no |
-| `can_edit_items` | yes | yes | yes | guess: quantity, condition, photos, bins only | no |
-| `can_manage_warehouse` | yes | yes | yes | yes | no |
+| `can_edit_items` | yes | yes | yes | proposal: no | no |
+| `can_add_photos` | yes | yes | yes | proposal: yes, add only | no |
+| `can_log_picks` | yes | yes | yes | proposal: yes | no |
+| `can_move_bins` | yes | yes | yes | proposal: yes | no |
+| `can_receive` | yes | yes | yes | proposal: yes, quantities only | no |
+| `can_adjust_counts` | yes | yes | yes | proposal: no | no |
 | `can_manage_catalog` | yes | yes | guess: no, but can pick an existing manufacturer | no | no |
 | `can_manage_users` | yes | no | no | no | no |
 | `can_manage_integrations` | yes | guess: no | no | no | no |
-| `can_edit_settings` | yes | guess: pricing window and labels, not integrations | guess: bin counter only | no | no |
+| `can_edit_settings` | yes | guess: pricing window and labels, not integrations | guess: bin counter only | proposal: no | no |
 
-`warehouse_manager` is the name to confirm. It is the role that does warehouse work and does not see money. `warehouse_staff` is optional. Leave it out of the check constraint until Jan wants a narrower floor role. Staff keeps financial access, matching "everything except admin," with integrations called out as the guess above.
+`warehouse_clerk` is the floor role under `warehouse_manager`. Neither role sees money. The clerk proposals are: log picks and packs, add photos, put stock away and move bins, and receive quantities against a purchase order. The clerk does not approve a cycle count, post a quantity adjustment, create, edit, or delete an item, or open settings. Photo delete stays with `can_edit_items`, so the proposal is add-only for the clerk.
+
+`warehouse_manager` keeps item edits, cycle-count adjustments, and the floor work. The name `warehouse_manager` is still to confirm. Staff keeps financial access, matching "everything except admin," with integrations called out as the guess above.
 
 `read_only` can see money and cannot change it. That is different from the warehouse roles, which cannot see money at all.
 
@@ -85,7 +96,7 @@ Server paths that return or write money:
 - QuickBooks sync copies customers and vendors, including tax ids. Transaction import is described as a later insert into `item_transactions` and does not run yet.
 - The eBay seller connection does not store listing prices. The price lookup uses app credentials on the pricing route above.
 
-Not money, so a warehouse role can keep them: quantity, condition, photos, bins, labels, scan, Lens candidates (sku, name, part, model, quantity), and the physical attributes listed above. Item labels do not print a price. ECCN, US HTS, and CCATS are trade fields, not amounts. Whether warehouse may edit them is a guess.
+Not money: quantity, condition, photos, bins, labels, scan, Lens candidates (sku, name, part, model, quantity), and the physical attributes listed above. Item labels do not print a price. A manager with `can_edit_items` can change the physical fields. A clerk, under the proposal, can look them up and add a photo, and cannot edit or delete the item. ECCN, US HTS, and CCATS are trade fields, not amounts. Whether a manager may edit them is a guess. The clerk proposal leaves them unchanged.
 
 ## Settings, manufacturers, and integrations
 
@@ -95,8 +106,8 @@ Recommended gates:
 
 - Users: `can_manage_users` (admin).
 - Integrations, including QuickBooks and eBay connect, disconnect, and sync: `can_manage_integrations`. Recommend admin only. The pages hold tokens and a financial sync. Staff do not need them for pricing lookups. The lookup route is separate and uses `can_view_financials` / `can_edit_financials`.
-- Manufacturers admin (create, rename, merge): `can_manage_catalog`. Recommend admin and staff. A warehouse manager can still set a manufacturer that already exists on an item.
-- Settings: split by key. The pricing window is `can_edit_financials`. Label templates can stay with anyone who prints labels (`can_edit_items` or `can_manage_warehouse`). The bin counter is the guess for warehouse managers. Until the page is split, hide the whole settings page from warehouse roles so the window does not leak.
+- Manufacturers admin (create, rename, merge): `can_manage_catalog`. Recommend admin and staff. A warehouse manager can still set a manufacturer that already exists on an item. A clerk cannot edit the item, so the clerk does not change the manufacturer.
+- Settings: split by key. The pricing window is `can_edit_financials`. Label templates can stay with anyone who prints labels. The bin counter is the guess for warehouse managers. The clerk proposal is no settings access, including the bin counter. Until the page is split, hide the whole settings page from both warehouse roles so the window does not leak.
 
 ## Migration and phases
 
@@ -107,14 +118,15 @@ The SQL functions `ensure_app_user` and `set_app_user` are not on the sign-in pa
 Phases:
 
 1. Capability map and `read_only` writes rejected. Strip financial columns for any future role without `can_view_financials`, even before that role exists, so the list, item fetch, cell save, pricing actions, pricing route, and CSV share one filter. Admin and staff behavior stays. This phase touches every mutating server action and the read paths in the inventory above. It is mechanical and wide, and it does not add a role.
-2. After Jan confirms the matrix, one migration adds `warehouse_manager` (and `warehouse_staff` only if confirmed) to the check constraint. Update the users screen and the capability map. Do not seed an account in the migration.
-3. Warehouse features that are still placeholders (pick, cycle count, putaway, receiving) call `can_manage_warehouse` when they are built. Sales orders and purchase orders are money and call `can_view_financials`.
+2. After Jan confirms the matrix, including the clerk proposals, one migration adds `warehouse_manager` and `warehouse_clerk` to the check constraint. Update the users screen and the capability map. Do not seed an account in the migration.
+3. Warehouse features that are still placeholders call the specific capability when they are built: picks and packs use `can_log_picks`, putaway and bin moves use `can_move_bins`, receiving uses `can_receive` and omits purchase-order prices, and cycle-count approval uses `can_adjust_counts`. Sales orders and purchase orders are money and call `can_view_financials`.
 4. If a cost is stored as an attribute, add a financial flag on `attributes` and strip those values with the other financial fields.
 
 ## Open questions
 
-- Confirm the role name `warehouse_manager`.
-- Is `warehouse_staff` needed now, and may that role create an item or only update quantity, condition, photos, and bins?
+- Confirm the role name `warehouse_manager`. `warehouse_clerk` is the name Jan used.
+- Confirm the clerk proposals: log picks and packs, add photos, putaway and bin moves, and receive quantities against a purchase order.
+- Confirm the clerk does not approve cycle counts, post quantity adjustments, create, edit, or delete items, delete photos, or open settings.
 - May staff open Integrations, or is that admin only?
 - May a warehouse manager see vendor and customer names and shipping addresses, with tax id removed?
 - May a warehouse manager edit ECCN, US HTS, and CCATS?
