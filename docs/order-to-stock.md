@@ -15,7 +15,7 @@ Warehouse roles still see no money. New tables enable row level security and gra
 | 2 | Goods that need a test or a grade before the SKU is right | Test, then split the pile into the graded SKUs. |
 | 3 | A server | Pull CPU, memory, SSD, HDD, and NIC/HBA cards into bins. |
 | 4 | The server left on the pallet after that pull | One shell line, a server item, goes on a pallet bin (`-P`). Parts inside it are identified later by splitting that line. |
-| 5 | Consignment on one or more projects (`AZSIM6930`, `OHNST6902`) | The same floor work as 1–4. When a unit sells, a row is added to that consignor's one open placeholder purchase order. The purchase price is the net sale times the agreed percentage. |
+| 5 | Consignment on one or more projects (`AZSIM6930`, `OHNST6902`) | The same floor work as 1–4. When a unit sells, a row is added to that consignor's one open placeholder purchase order. The purchase price is the net sale times the consignor's share, after the sales manager enters the net. |
 | 6 | Serial numbers | Usually captured on the SKUs that track them. Sometimes captured at intake, before the SKU is known. |
 
 ## What already exists
@@ -24,7 +24,7 @@ Items are one row per SKU. `items.quantity` is a cache. This design makes it the
 
 `po_counter` issues the next purchase-order number. `po_attachments` holds the vendor PDF (invoice, quote, order confirmation, or other) in the private `po-documents` bucket. A role without `can_view_financials` receives neither the file nor a signed URL.
 
-Roles follow `docs/roles.md`. The clerk receives, moves bins, and adds photos, and does not see money and does not create a SKU. Sales operations is an assignment in Users settings, the same kind of assignment as the pricing officer. It approves a proposed SKU, assigns one, and creates the missing item. The warehouse manager does not audit SKUs and does not create the item an intake line is waiting on. Where `docs/roles.md` gives `can_edit_items` to the warehouse manager, this note wins for those two actions. The pricing officer is described under Cost, and it lands in phase 1 of `docs/roles.md`. The sales manager is a separate assignment. Only that assignment may override whether one item is serialized. See Serials.
+Roles follow `docs/roles.md`. The clerk receives, moves bins, and adds photos, and does not see money and does not create a SKU. Sales operations is an assignment in Users settings, the same kind of assignment as the pricing officer. It approves a proposed SKU, assigns one, and creates the missing item. The warehouse manager does not audit SKUs and does not create the item an intake line is waiting on. Where `docs/roles.md` gives `can_edit_items` to the warehouse manager, this note wins for those two actions. The pricing officer is described under Cost, and it lands in phase 1 of `docs/roles.md`. The sales manager is a separate assignment. Only that assignment may override whether one item is serialized, enter the net sales price on a consignor row, close that consignor's open placeholder, and post an adjustment after the purchase price is stored. See Serials and Consignment.
 
 Every live write stores `operator_id` from the session and `occurred_at` plus `created_at` from the server clock. The phone shows the person's initials, taken from their name at that moment and stored on the event so a later rename does not rewrite history. Each step has a comment box with no short length limit.
 
@@ -96,12 +96,12 @@ Same shape as `docs/purchase-orders.md`. A code such as `AZSIM6930` is the name 
 | `financial_status` | `open`, `cost_pending`, `costed`, `settling`, `settled` |
 | `status` | `active` or `closed` |
 | `model` | `revenue_share` or `negotiated` on consignment. Empty when owned |
-| `consignor_share_percent` | revenue share only. Money. Hidden from the floor |
+| `consignor_share_percent` | optional override of the consignor's default share. Empty means this project sets no rate of its own. A 75/25 consignor/consignee split is stored as 0.75. Money. Hidden from the floor. Never a per-item rate |
 | `settlement_cadence` | `per_sale`, `periodic`, or `negotiated_batch` |
 | `notes` | text |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | session, initials snapshot, server clock |
 
-`vendors` gains `is_consignor`. A consignment project requires a vendor with that flag. Warehouse screens show the code, the type, the consignor's name, and counts. Share percent and every dollar stay off those payloads.
+`vendors` gains `is_consignor` and `consignor_share_percent`. A consignment project requires a vendor with that flag. The vendor percent is the default consignor share. A 75/25 consignor/consignee split is stored as 0.75. A project may override it. A taxonomy may carry its own share. An item never carries a share. An item may be excluded from consignment, and then it is not a consignment item. Warehouse screens show the code, the type, the consignor's name, and counts. Share percent and every dollar stay off those payloads.
 
 ### Purchase orders and the counter
 
@@ -115,7 +115,7 @@ Columns this flow reads from `purchase_orders`: `id`, `number`, `vendor_id`, `pr
 
 `pre_agreed_prices` is off by default. It is set only when the vendor agreement already names a unit price for individual components. With the flag off, the pricing officer cannot approve until receiving is complete. With the flag on, the officer can enter and approve those unit prices before the last receipt. See Cost.
 
-A placeholder purchase order has its own lifecycle, `placeholder_status`: `open`, `closed`, then `paid`. It does not use the receiving statuses. At most one row per vendor has `purpose = consignor_placeholder` and `placeholder_status = open`.
+A placeholder purchase order has its own lifecycle, `placeholder_status`: `open`, `closed`, then `paid`. It does not use the receiving statuses. At most one row per vendor has `purpose = consignor_placeholder` and `placeholder_status = open`. The sales manager closes it by hand. See Consignment.
 
 ### Consignor sale rows
 
@@ -131,10 +131,17 @@ One row is one sale of consigned goods, added to the consignor's open placeholde
 | `qty` | quantity sold, greater than 0 |
 | `project_id` | optional. `AZSIM6930` or `OHNST6902` when the lineage has a project |
 | `intake_line_id` | the pile the sold unit came from, when lineage has one |
-| `net_sales_price` | money. What is deducted to reach net is an open question |
-| `agreed_percentage` | the share applied to this row. A 75% agreement is stored as 0.75 |
-| `purchase_price` | computed and stored: `net_sales_price × agreed_percentage`. A later edit to the project percent does not rewrite this row. Whether a person may override it is an open question |
+| `net_sales_price` | money, empty until the sales manager types it. ITS does not compute fees or shipping. Empty means the row is pending |
+| `agreed_percentage` | the consignor's share, snapshotted when the row is created. A 75/25 split is stored as 0.75. Later rate changes do not rewrite it. Not typed on the row |
+| `purchase_price` | empty until the net is entered. Then `net_sales_price × agreed_percentage`, rounded half-up to the cent. A $100.00 net at 0.75 is $75.00. Not typed |
+| `priced_at` | when the purchase price was stored. The row locks at that moment |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | the sale posting, from the session and the server clock |
+
+The share comes from the consignor, with a project override and a taxonomy rate beside it. It is never stored on the item. `vendors.consignor_share_percent` is the default. `projects.consignor_share_percent` is the optional project override. A taxonomy may set `consignor_share_percent` for that taxonomy. When the row is created it copies the resolved share into `agreed_percentage`. A later change to any of those rates does not rewrite the copy. The proposed order is project and taxonomy, then project, then consignor and taxonomy, then the consignor default. Which source wins when more than one is set is open question 23.
+
+An item with `consignment_excluded` set is not a consignment item. A sale of it does not add a placeholder row. The flag is not a percentage.
+
+Before `priced_at`, the sales manager may edit the row, including a return or a correction. Each edit writes an audit row: who, when, the old values, the new values, and a comment. After `priced_at` the row is locked. A later return or correction is an adjustment, the same pattern as a grade split after a locked allocation. The locked row stays. The adjustment stores a reason, a comment, the initials, and the time, and any corrected net. Its purchase price is still the snapshotted share times that net, rounded half-up to the cent. Nobody types the purchase price.
 
 ### Incoming tags
 
@@ -442,22 +449,24 @@ When an item that came from consignor X sells, the sale is walked back to X: ser
 |---|---|
 | Item description | The sold item |
 | Qty sold | How many this sale took |
-| Net sales price | Money. What is deducted to reach net is an open question |
-| Agreed percentage | The share used on this row. Where it is set is an open question |
-| Purchase price | Computed and stored: net sales price × agreed percentage. A 75% agreement multiplies by 0.75 |
+| Net sales price | Typed by the sales manager. The fees and shipping behind that number are outside ITS. The row can be saved before this is known |
+| Consignor share | Snapshotted onto the row from the consignor default, the project override, or a taxonomy rate. A 75/25 split is 0.75. Not a per-item rate |
+| Purchase price | Computed once the net is entered: net times the snapshotted share, half-up to the cent. $100.00 at 0.75 is $75.00. Not typed |
 | Project | Optional, such as `AZSIM6930` or `OHNST6902` |
 
-The row stores `sales_order_line_id`, and that value is unique, so the same sale cannot be added twice. The purchase price is written at that moment. A later change to the project's percent does not rewrite it. Whether someone may type a different purchase price is an open question.
+The row stores `sales_order_line_id`, and that value is unique, so the same sale cannot be added twice. The share is copied onto the row when the row is created. A later change to the consignor, the project, or the taxonomy does not rewrite it. The purchase price stays empty until the sales manager enters the net. There is no manual override of that price.
+
+An item marked excluded is skipped. No row is added, because that item is not on consignment.
 
 The next sale from the same consignor adds another row to that same open purchase order, until the order is closed. If the consignor has no open placeholder, one is opened automatically, `po_counter` issues the number, and the sale row is added to it. A second open placeholder for the same consignor is refused.
 
-The placeholder moves from `open` to `closed` to `paid`. Open accepts new rows. Closed does not. Paid records that the consignor was paid. Who closes it, and whether that is manual, monthly, or when the consignor is paid, is an open question.
+The sales manager closes the open placeholder. The close follows a conversation with the consignor. It is often about a month, and a large or a small dollar volume can make it sooner or later. Nothing closes it on a schedule. The screen can show the age of the open order and the running total of its purchase prices, so the close is prompted and still manual. Closed does not accept new rows. Paid records that the consignor was paid.
 
-COGS for that unit is the purchase price on its row, recognized at the sale. That matches the rule that consignment has no cost at intake.
+COGS for that unit is the purchase price on its row, recognized when the net is entered and the price is stored. That matches the rule that consignment has no cost at intake. A pending row has no COGS yet.
 
-A return or refund after the row exists is an open question: a negative row on the open purchase order, or a correction of the existing row. This note does not choose one.
+Until that price is stored, a return or a correction is an edit of the row. Each edit records who, when, the old values, the new values, and a comment. Once the price is stored, the row is locked. A later return or correction is an adjustment. The locked figures stay. The adjustment carries the reason, the comment, the initials, and the time. A corrected net still multiplies by the snapshotted share and rounds half-up to the cent.
 
-Net sales price, the percentage, and the purchase price are money. Only `can_view_financials` receives them. The placeholder order and `consignor_sale_lines` follow the same rule as the other new tables: row level security on, `service_role` only.
+Net sales price, the share, and the purchase price are money. Only `can_view_financials` receives them. The placeholder order and `consignor_sale_lines` follow the same rule as the other new tables: row level security on, `service_role` only.
 
 ### 6. Serials at SKU level, and sometimes at intake
 
@@ -555,7 +564,7 @@ COGS for owned goods is assigned per purchase order, and only for items. A proje
 
 The item-lines total is the sum of the merchandise lines. Freight, shipping, tax, and any other landed or non-item cost stay outside it. The grand total on the purchase order can be higher. The allocation does not have to equal that grand total.
 
-Consignment stays without a cost from intake through put-away. At sale, COGS is the purchase price on that unit's row on the consignor's placeholder purchase order. That price is net sales price times the agreed percentage. It is not this allocation.
+Consignment stays without a cost from intake through put-away. At sale, COGS is the purchase price on that unit's row on the consignor's placeholder purchase order. That price is the net the sales manager typed times the consignor share snapshotted on the row, rounded half-up to the cent. It is empty until the net is entered. It is not this allocation, and it is not typed by hand.
 
 For an owned purchase order, the summary is one row per SKU: the quantity whose intake line, after every split, still carries that `purchase_order_id`. Two bins of the same SKU on the same order are one row. A SKU that also arrived on a second order is a row on that second allocation, for that second quantity only. Intake lines are not cost lines. A parent that was fully split is not on the summary. Its children are, and they keep the parent's purchase order.
 
@@ -661,7 +670,7 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 6. **Test, grade, serials.** The 51-to-31/20 split. An untested remainder stays on the original SKU and can move bins. Serials at intake and at the bench. The sales manager's per-item override. Lineage on the children. Consolidation suggests a bin that already holds the SKU on this receiving.
 7. **Put-away to a place.** The bin suffix selects `HWS.00.00.00` or `HWR.00.00.00`. A scanned code can be more specific. Put-away is refused when a serialized item has fewer serials than its quantity. One `bin_events` row. No new inventory rows per unit.
 8. **Adjustments after lock.** A grade split moves quantity immediately and holds the dollars until an adjustment. The locked summary stays locked. The adjustment stores the reason, initials, time, and comment, and may link to a vendor price change or a future VRA. The vendor credit is separate from the COGS re-spread.
-9. **Consignor placeholder purchase order.** When a consigned unit sells, add a row to that consignor's one open placeholder, or open one if none exists. COGS is the row's purchase price, recognized at the sale. Depends on sales orders existing.
+9. **Consignor placeholder purchase order.** When a consigned unit sells, add a row to that consignor's one open placeholder, or open one if none exists. Snapshot the consignor share. The sales manager enters the net, and the purchase price is computed then. Edits before that price are audited. After it, a correction is an adjustment. The sales manager closes the placeholder by hand. Depends on sales orders existing.
 
 ## Decisions
 
@@ -681,16 +690,17 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 | 2026-10-22 | HDD, SSD, high-end CPUs, and cards are the types that usually require a serial. `taxonomies.serialized` is the default. `items.serialized` is the item's setting, and empty follows the taxonomy. The sales manager can override that setting per item. Put-away is blocked when a serialized item has no serials captured for its quantity. |
 | 2026-10-22 | An untested remainder stays on the original SKU and may move to another bin. The move is an ordinary move and keeps lineage. During receiving, identical SKUs should share a bin. The screen suggests a bin on the same receiving (project, incoming tag, or purchase order) that already holds that SKU. The operator can accept it or choose another. Consolidation keeps each unit's origin. |
 | 2026-10-22 | Put-away does not wait for a location list. A `-B` or `-C` bin defaults to `HWS.00.00.00`. A `-P` bin defaults to `HWR.00.00.00`. `HWS.Row.Bay.Elevation` is Henderson Warehouse Shelves. `HWR.Row.Bay.Elevation.Orientation` is Henderson Warehouse Racking, with orientation `N`, `S`, `E`, `W`, or `C`. A location stores the code, the type (`shelves` or `racking`), and the parsed row, bay, elevation, and orientation. A check per type validates the code. The bin suffix chooses the default. |
+| 2026-10-22 | The consignor share defaults on the consignor. A project may override it, and a taxonomy may define its own rate. It is never set per item. An item may be excluded from consignment, and then it is not a consignment item. Each placeholder row snapshots the resolved share so a later rate change does not rewrite it. |
+| 2026-10-22 | The sales manager closes an open consignor purchase order, after aligning with the consignor. It is often monthly, and the dollar volume can make it sooner or later. The close is manual. The open order can show its age and its running total as a prompt. |
+| 2026-10-22 | Net sales price is typed by the sales manager from figures ITS does not have. ITS does not calculate fees or shipping. A row may be saved pending that net. The purchase price is computed only once the net is entered. |
+| 2026-10-22 | Returns and corrections edit the row until the purchase price is stored. Each edit records who, when, the old values, the new values, and a comment. After that price, the row is locked and a change is an adjustment, the same pattern as a post-lock grade split. |
+| 2026-10-22 | Purchase price is the net sales price times the consignor's share, rounded half-up to the cent. A 75/25 consignor/consignee split on a $100.00 net sale is a purchase price of $75.00. The stored percentage is the consignor's share. The price is computed. It is not overridden by hand. |
 
 ## Open questions
 
-Questions 1–14 are answered under Decisions. Questions 15–19 are unchanged. Questions 20–22 were added with the location decision.
+Questions 1–19 are answered under Decisions. Questions 20–22 are unchanged. Question 23 was added with the consignor-share decision.
 
-15. Is the agreed percentage set per consignor, per project, or per row (can it vary by item)?
-16. Who closes an open consignor PO, and when (manually, on a schedule, or at settlement)?
-17. Is net sales price the sale price minus fees and shipping (eBay fees etc.)? Define what is deducted.
-18. How does a return after the row is added get handled: a negative row or a correction?
-19. Can the computed purchase price be overridden manually?
 20. Does orientation (N/S/E/W/C) apply only to racking (HWR), or to shelves too? The defaults have no orientation segment, so is it optional?
 21. What do the -B, -C and -P suffixes stand for exactly (bin, carton?, pallet), and are there others?
 22. Are row/bay/elevation always two digits (00)?
+23. When both a project override and a taxonomy rate exist, which wins? Proposed resolution order: project+taxonomy, then project, then consignor+taxonomy, then consignor default.
