@@ -24,7 +24,7 @@ Items are one row per SKU. `items.quantity` is a cache. This design makes it the
 
 `po_counter` issues the next purchase-order number. `po_attachments` holds the vendor PDF (invoice, quote, order confirmation, or other) in the private `po-documents` bucket. A role without `can_view_financials` receives neither the file nor a signed URL.
 
-Roles follow `docs/roles.md`. The clerk receives, moves bins, and adds photos, and does not see money and does not create a SKU. The senior who audits a SKU is the warehouse manager (`can_edit_items`). The pricing officer is new and is described under Cost.
+Roles follow `docs/roles.md`. The clerk receives, moves bins, and adds photos, and does not see money and does not create a SKU. The senior who audits a SKU is the warehouse manager (`can_edit_items`). The pricing officer is an assignment in Users settings. It is described under Cost, and it lands in phase 1 of `docs/roles.md`.
 
 Every live write stores `operator_id` from the session and `occurred_at` plus `created_at` from the server clock. The phone shows the person's initials, taken from their name at that moment and stored on the event so a later rename does not rewrite history. Each step has a comment box with no short length limit.
 
@@ -545,7 +545,13 @@ A wrong price, with the SKU list unchanged, uses the same two paths. Re-open whe
 
 `can_view_financials` is required to read unit prices, extensions, the remainder, the item-lines total, freight, the placeholder purchase price, attachments, and buy transactions. The clerk and the warehouse manager do not have that capability. Their intake, work order, test, and put-away payloads omit those fields on the server. Hiding a column in the browser is not the control.
 
-The pricing officer, admin, and staff have `can_view_financials`. Writing an allocation uses a new capability, `can_allocate_cogs`, held by the pricing officer and by admin and staff. The officer does not receive trucks and does not send purchase orders.
+Writing an allocation requires `can_allocate_cogs`. That capability belongs to the pricing officer assignment. The assignment also grants `can_view_financials`, so a person whose main role cannot see money still sees costs once they are a pricing officer. Staff do not receive it automatically. The officer does not receive trucks and does not send purchase orders.
+
+The assignment is made in Users settings, beside the person's role and status. It can sit on the admin, so Jan stays admin and is the pricing officer. The same person may approve and lock.
+
+At least one approved user must hold it. The migration turns it on for every approved admin, which is Jan by default. It does not create a user. The server refuses a save that would leave none: clearing the assignment, disabling the account, or deleting the user. The error is "Assign another pricing officer before removing the last one." The check runs in the users action, because the service role bypasses row level security.
+
+This ships in phase 1 of `docs/roles.md`, with the capability map, before the allocation screen exists.
 
 ### The pricing officer's screen
 
@@ -553,7 +559,7 @@ The screen lives on Pricing, which is still a placeholder. It is a desk screen. 
 
 The list is one row per non-consignment purchase order, including each order on a shared project: number, vendor, project code when there is one, the pre-agreed flag, whether receiving is complete, the item-lines total, allocation state, and the remainder. Consignment projects are absent. There is no combined project total to allocate. Opening an order shows only the SKUs traced to its intake lines: SKU, name, quantity, unit price, extension, and the remainder against that order's item-lines total. Freight and the grand total sit beside the tie figure so the officer can see they are excluded. Bins and serials are a disclosure under the row. They are not part of the math.
 
-**Save draft** stores the prices. **Approve** follows the rule for that order: after receiving is complete, or earlier when `pre_agreed_prices` is set. **Lock** is available once receiving is complete and the remainder is zero. **Approve and lock** is the normal end of an ordinary order. **Re-open** and **New adjustment** ask for a comment, then land on a draft the officer can edit. A changed summary shows a banner that the received list for this purchase order no longer matches the approved lines. A pre-agreed order that is still receiving shows the running variance.
+**Save draft** stores the prices. **Approve** follows the rule for that order: after receiving is complete, or earlier when `pre_agreed_prices` is set. **Lock** is available once receiving is complete and the remainder is zero. The same pricing officer may approve and lock. **Approve and lock** is the normal end of an ordinary order. **Re-open** and **New adjustment** ask for a comment, then land on a draft the officer can edit. A changed summary shows a banner that the received list for this purchase order no longer matches the approved lines. A pre-agreed order that is still receiving shows the running variance.
 
 ## Screens, in the order the floor uses them
 
@@ -594,12 +600,12 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 | 2026-10-22 | COGS covers items only. An allocation ties to that purchase order's item-lines total. Freight, shipping, tax, and any other landed or non-item cost stay out of the figure. |
 | 2026-10-22 | The default is that prices are approved after receiving is complete. A purchase order can be flagged `pre_agreed_prices` when the vendor agreement already prices individual components. With that flag the officer can enter and approve unit prices before receiving finishes. Quantities on the summary keep updating as receipts land. The extension-equals-item-lines-total check is enforced at final lock, and any variance is left for the officer to resolve. Without the flag, approval stays blocked until receiving is complete. |
 | 2026-10-22 | When a project has several purchase orders, each order is priced separately. Each gets its own allocation, tied to its own item-lines total and to the SKUs traced to that order's intake. There is no project-level pool. Intake lines carry the purchase order they came in on, and a grade split copies it onto the children. |
+| 2026-10-22 | Pricing officer is a role assigned in Users settings. It grants `can_allocate_cogs` and `can_view_financials`. At least one approved user must hold it. The migration turns it on for the approved admin, Jan, and the server blocks removing or disabling the last one. The same person may approve and lock. This is part of phase 1 in `docs/roles.md`. |
 
 ## Open questions
 
-Questions 1, 2, and 3 are answered under Decisions. The numbers below are unchanged.
+Questions 1, 2, 3, and 4 are answered under Decisions. The numbers below are unchanged.
 
-4. Is the pricing officer a new role with `can_allocate_cogs` and `can_view_financials`, and should Approve and Lock be the same person?
 5. After a locked allocation, which path is the default when a grade split changes the summary: re-open the whole summary, or an adjustment entry that leaves the lock in place?
 6. Incoming tags: stay on the 90 mm × 29 mm bin roll, or move to the 62 mm × 100 mm roll when the words need more room?
 7. Confirm the bin barcode stays the reference (`20014-B`) and the clerk's words (`Pallet X - Type 1 Server - 12 units`) are a caption on that same label.

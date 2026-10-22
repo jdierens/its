@@ -14,6 +14,7 @@ Suggested capabilities:
 |---|---|
 | `can_view_financials` | See prices, quotes, transactions, pricing pages, and financial fields. |
 | `can_edit_financials` | Change those amounts, add quotes or transactions, and create, enter, and send a purchase order. |
+| `can_allocate_cogs` | Enter, approve, and lock owned-goods cost on a purchase order. Comes from the pricing officer assignment, not from staff. |
 | `can_edit_items` | Create, edit, or delete an item's physical record and non-financial attributes. |
 | `can_add_photos` | Add a photo to an item. Removing a photo stays with `can_edit_items`. |
 | `can_log_picks` | Log picks and packs. |
@@ -54,6 +55,8 @@ Jan confirmed purchase orders. Admin and staff create, enter, and send them. Tha
 `warehouse_manager` keeps item edits, cycle-count adjustments, and the floor work. The name `warehouse_manager` is still to confirm. Staff keeps financial access, matching "everything except admin," with integrations called out as the guess above.
 
 `read_only` can see money and cannot change it. That is different from the warehouse roles, which cannot see money at all.
+
+Pricing officer is an assignment on the user, not a sixth column in the matrix. It is turned on in Users settings and can sit on the admin. It grants `can_allocate_cogs` and `can_view_financials`. The same person may approve and lock a cost allocation. At least one approved user must hold it. The details and the last-officer guard are in `docs/order-to-stock.md`.
 
 ## Enforcement
 
@@ -119,7 +122,7 @@ The SQL functions `ensure_app_user` and `set_app_user` are not on the sign-in pa
 
 Phases:
 
-1. Capability map and `read_only` writes rejected. Strip financial columns for any future role without `can_view_financials`, even before that role exists, so the list, item fetch, cell save, pricing actions, pricing route, and CSV share one filter. Admin and staff behavior stays. This phase touches every mutating server action and the read paths in the inventory above. It is mechanical and wide, and it does not add a role.
+1. Capability map and `read_only` writes rejected. Strip financial columns for any future role without `can_view_financials`, even before that role exists, so the list, item fetch, cell save, pricing actions, pricing route, and CSV share one filter. Admin and staff behavior stays. This phase also adds the pricing officer assignment from `docs/order-to-stock.md`: `can_allocate_cogs` plus `can_view_financials`, a control in Users settings, a migration that turns the assignment on for every approved admin, and a server refusal that leaves at least one. The error is "Assign another pricing officer before removing the last one." Warehouse role names are still not added here. This phase touches every mutating server action and the read paths in the inventory above. It is mechanical and wide.
 2. After Jan confirms the matrix, including the clerk proposals, one migration adds `warehouse_manager` and `warehouse_clerk` to the check constraint. Update the users screen and the capability map. Do not seed an account in the migration.
 3. Warehouse features that are still placeholders call the specific capability when they are built: picks and packs use `can_log_picks`, putaway and bin moves use `can_move_bins`, receiving uses `can_receive` and omits purchase-order prices, and cycle-count approval uses `can_adjust_counts`. Creating and sending a purchase order uses `can_edit_financials`. Viewing one uses `can_view_financials`.
 4. If a cost is stored as an attribute, add a financial flag on `attributes` and strip those values with the other financial fields.
