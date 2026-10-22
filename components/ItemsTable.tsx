@@ -4,7 +4,8 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, Plus } from "lucide-react";
 import { ItemExportMenu } from "@/components/ItemExportMenu";
 import { ItemsIconButton } from "@/components/ItemsIconButton";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { QueryField } from "@/components/QueryField";
 import { BulkEditBar, type BulkField } from "@/components/BulkEditBar";
 import { CellEditor } from "@/components/CellEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -155,7 +156,8 @@ export function ItemsTable() {
   const manufacturerId = params.get("mfr") ?? "";
   const sort = parseItemSort(params.get("sort"), params.get("dir"));
   const page = parseItemPage(params.get("page"));
-  const [draft, setDraft] = useState(q);
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
   const [choices, setChoices] = useState<TaxonomyChoice[]>([]);
   const [manufacturers, setManufacturers] = useState<{ id: string; name: string }[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
@@ -204,9 +206,15 @@ export function ItemsTable() {
     ];
   }, [columns, pricing]);
 
-  useEffect(() => {
-    setDraft(q);
-  }, [q]);
+  const commitSearch = useCallback((trimmed: string) => {
+    if (trimmed === (paramsRef.current.get("q") ?? "")) return;
+    const next = new URLSearchParams(paramsRef.current.toString());
+    if (trimmed) next.set("q", trimmed);
+    else next.delete("q");
+    next.delete("page");
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,20 +235,6 @@ export function ItemsTable() {
   }, []);
 
   useEffect(() => {
-    const handle = window.setTimeout(() => {
-      const trimmed = draft.trim();
-      if (trimmed === q) return;
-      const next = new URLSearchParams(params.toString());
-      if (trimmed) next.set("q", trimmed);
-      else next.delete("q");
-      next.delete("page");
-      const query = next.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-    }, 250);
-    return () => window.clearTimeout(handle);
-  }, [draft, q, params, pathname, router]);
-
-  useEffect(() => {
     let cancelled = false;
     setLoading(true);
     fetchItemList({ tax, q, condition, manufacturerId, itemType, sort: sort.column, dir: sort.ascending ? "asc" : "desc", page })
@@ -257,7 +251,7 @@ export function ItemsTable() {
         setActive(null);
         setEditing(null);
         if (result.page !== page) {
-          const next = new URLSearchParams(params.toString());
+          const next = new URLSearchParams(paramsRef.current.toString());
           if (result.page <= 1) next.delete("page");
           else next.set("page", String(result.page));
           const query = next.toString();
@@ -273,7 +267,7 @@ export function ItemsTable() {
     return () => {
       cancelled = true;
     };
-  }, [tax, q, condition, manufacturerId, itemType, sort.column, sort.ascending, page, params, pathname, router]);
+  }, [tax, q, condition, manufacturerId, itemType, sort.column, sort.ascending, page, pathname, router]);
 
   useEffect(() => {
     if (!active || editing) return;
@@ -589,22 +583,14 @@ export function ItemsTable() {
             </option>
           ))}
         </select>
-        <input
-          ref={searchRef}
+        <QueryField
+          inputRef={searchRef}
           className="items-search"
           type="search"
           aria-label="Search items"
           placeholder="Search SKU, name, manufacturer, model, part number"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              if (draft) setDraft("");
-              else event.currentTarget.blur();
-            }
-          }}
+          value={q}
+          onCommit={commitSearch}
         />
         <p className="items-count">
           {loading && rows.length === 0 ? "Loading items…" : itemRange(listPage, matched, total)}

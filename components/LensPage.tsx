@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePageMeta } from "@/components/AppShell";
+import { FastArea, FastInput } from "@/components/FastField";
 import { ManufacturerSelect } from "@/components/ManufacturerSelect";
 import { errorText } from "@/lib/errors";
 import { compressImage } from "@/lib/compressImage";
@@ -42,6 +43,10 @@ export function LensPage() {
   const [itemType, setItemType] = useState<ItemType>(DEFAULT_ITEM_TYPE);
   const [condition, setCondition] = useState<"New" | "Used">("Used");
   const [description, setDescription] = useState("");
+  const live = useRef(new Map<string, string>());
+  function read(key: string, fallback: string) {
+    return live.current.has(key) ? (live.current.get(key) as string) : fallback;
+  }
   const onUnresolved = useCallback((value: boolean) => setUnresolved(value), []);
   const shotsRef = useRef(shots);
   shotsRef.current = shots;
@@ -171,8 +176,10 @@ export function LensPage() {
   }
 
   async function saveItem() {
-    const submittedSku = skuEdited ? skuSubmittedForCreate(true, sku) : "";
-    if (!name.trim()) {
+    const nameNow = read("name", name);
+    const skuNow = read("sku", sku);
+    const submittedSku = skuEdited ? skuSubmittedForCreate(true, skuNow) : "";
+    if (!nameNow.trim()) {
       setMessage("Name is required.");
       return;
     }
@@ -189,19 +196,19 @@ export function LensPage() {
     try {
       const taxonomy = taxonomies.find((entry) => entry.id === taxonomyId) ?? null;
       const id = await createItem({
-        name: name.trim(),
+        name: nameNow.trim(),
         sku: submittedSku,
-        description: description.trim(),
+        description: read("description", description).trim(),
         taxonomyName: taxonomy?.name ?? null,
         attributes: attributesFor(taxonomy, reading),
         attributeDefs: (taxonomy?.attributes ?? []).map(definitionFor),
         longCode: taxonomy?.longCode ?? null,
         shortCode: taxonomy?.shortCode ?? null,
         manufacturerId,
-        model: model.trim(),
-        partNumber: partNumber.trim(),
+        model: read("model", model).trim(),
+        partNumber: read("partNumber", partNumber).trim(),
         oemName: "",
-        oemPartNumber: oemPartNumber.trim(),
+        oemPartNumber: read("oemPartNumber", oemPartNumber).trim(),
         productUrl: "",
         unit: DEFAULT_UNIT,
         condition,
@@ -325,15 +332,20 @@ export function LensPage() {
           <div className="grid">
             <label>
               Name
-              <input value={name} onChange={(event) => setName(event.target.value)} />
+              <FastInput
+                value={name}
+                onDraft={(next) => live.current.set("name", next)}
+                onValue={setName}
+              />
             </label>
             <label>
               SKU
-              <input
+              <FastInput
                 value={sku}
-                onChange={(event) => {
+                onDraft={(next) => live.current.set("sku", next)}
+                onValue={(next) => {
                   setSkuEdited(true);
-                  setSku(event.target.value);
+                  setSku(next);
                 }}
               />
               <span className="hint">
@@ -354,15 +366,23 @@ export function LensPage() {
             </label>
             <label>
               Model
-              <input value={model} onChange={(event) => setModel(event.target.value)} />
+              <FastInput value={model} onDraft={(next) => live.current.set("model", next)} onValue={setModel} />
             </label>
             <label>
               Part number
-              <input value={partNumber} onChange={(event) => setPartNumber(event.target.value)} />
+              <FastInput
+                value={partNumber}
+                onDraft={(next) => live.current.set("partNumber", next)}
+                onValue={setPartNumber}
+              />
             </label>
             <label>
               OEM part number
-              <input value={oemPartNumber} onChange={(event) => setOemPartNumber(event.target.value)} />
+              <FastInput
+                value={oemPartNumber}
+                onDraft={(next) => live.current.set("oemPartNumber", next)}
+                onValue={setOemPartNumber}
+              />
             </label>
             <label>
               Taxonomy
@@ -391,7 +411,12 @@ export function LensPage() {
           </div>
           <label>
             Description
-            <textarea rows={4} value={description} onChange={(event) => setDescription(event.target.value)} />
+            <FastArea
+              rows={4}
+              value={description}
+              onDraft={(next) => live.current.set("description", next)}
+              onValue={setDescription}
+            />
           </label>
           <button type="button" disabled={busy} onClick={() => void saveItem()}>
             Save item and attach photos

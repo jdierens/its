@@ -45,6 +45,12 @@ export function sortLabelMatches(matches: readonly LabelItem[], query: string): 
  * An exact SKU selects immediately. A typed prefix does not, even when one row matches.
  * Enter selects only when the search comes back with a single row.
  */
+/** Enter applies the result. A live search applies only while the field still shows that query. */
+export function labelResultApplies(typed: string, query: string, submitted: boolean): boolean {
+  if (submitted) return true;
+  return typed.trim() === query;
+}
+
 export function labelLookupChoice(input: {
   submitted: boolean;
   exact: boolean;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePageMeta } from "@/components/AppShell";
+import { FastArea, FastInput } from "@/components/FastField";
 import { PageToolbar } from "@/components/PageToolbar";
 import { createContact, fetchContact, updateContact, type ContactInput } from "@/lib/contacts";
 import { errorText } from "@/lib/errors";
@@ -65,7 +66,32 @@ export function ContactForm({
   const [saved, setSaved] = useState(false);
   const [baseline, setBaseline] = useState<ContactInput>(EMPTY);
   const savingRef = useRef(false);
-  const dirty = isDirty(form, baseline);
+  const live = useRef(new Map<string, string>());
+  function read(key: string, fallback: string) {
+    return live.current.has(key) ? (live.current.get(key) as string) : fallback;
+  }
+  function currentContact(): ContactInput {
+    const billing = { ...form.billingAddress };
+    const shipping = { ...form.shippingAddress };
+    for (const [key, value] of live.current) {
+      if (key.startsWith("billing.")) billing[key.slice("billing.".length) as keyof PostalAddress] = value;
+      if (key.startsWith("shipping.")) shipping[key.slice("shipping.".length) as keyof PostalAddress] = value;
+    }
+    return {
+      ...form,
+      displayName: read("displayName", form.displayName),
+      companyName: read("companyName", form.companyName),
+      givenName: read("givenName", form.givenName),
+      familyName: read("familyName", form.familyName),
+      primaryEmail: read("primaryEmail", form.primaryEmail),
+      phone: read("phone", form.phone),
+      taxId: read("taxId", form.taxId),
+      notes: read("notes", form.notes),
+      billingAddress: billing,
+      shippingAddress: shipping,
+    };
+  }
+  const dirty = isDirty(currentContact(), baseline);
 
   const title =
     mode === "create" ? `New ${noun}` : form.displayName.trim() || `Edit ${noun}`;
@@ -98,6 +124,7 @@ export function ContactForm({
           notes: contact.notes,
           active: contact.active,
         });
+        live.current.clear();
         setForm(loaded);
         setBaseline(cloneContact(loaded));
         setQboId(contact.qboId);
@@ -129,10 +156,12 @@ export function ContactForm({
 
   async function save(): Promise<boolean> {
     if (savingRef.current) return false;
+    const current = currentContact();
+    if (!isDirty(current, baseline)) return false;
     savingRef.current = true;
     setSaveError(null);
     setSaved(false);
-    const displayName = form.displayName.trim();
+    const displayName = current.displayName.trim();
     if (!displayName) {
       setSaveError("Enter a display name.");
       savingRef.current = false;
@@ -143,12 +172,12 @@ export function ContactForm({
       savingRef.current = false;
       return false;
     }
-    if (form.primaryEmail.trim().length > 100) {
+    if (current.primaryEmail.trim().length > 100) {
       setSaveError("Email must be 100 characters or less.");
       savingRef.current = false;
       return false;
     }
-    if (form.phone.trim().length > 30) {
+    if (current.phone.trim().length > 30) {
       setSaveError("Phone must be 30 characters or less.");
       savingRef.current = false;
       return false;
@@ -156,14 +185,15 @@ export function ContactForm({
     setSaving(true);
     try {
       if (mode === "create") {
-        const id = await createContact(kind, form);
+        const id = await createContact(kind, current);
         router.push(`${listHref}/${id}`);
         return true;
       }
       if (!contactId) return false;
-      await updateContact(kind, contactId, form, qboId);
+      await updateContact(kind, contactId, current, qboId);
+      live.current.clear();
       setSyncStatus(qboId ? "pending" : "local");
-      setBaseline(cloneContact(form));
+      setBaseline(cloneContact(current));
       setSaved(true);
       return true;
     } catch (error) {
@@ -177,7 +207,7 @@ export function ContactForm({
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!dirty || savingRef.current) return;
+    if (savingRef.current) return;
     await save();
   }
 
@@ -202,7 +232,7 @@ export function ContactForm({
 
   return (
     <main className="page">
-      <PageToolbar dirty={dirty} saving={saving} saved={saved} onSave={() => void save()} />
+      <PageToolbar dirty={dirty} saving={saving} saved={saved} attemptSave onSave={() => void save()} />
       {loadError ? <p className="banner error">{loadError}</p> : null}
       {syncStatus === "conflict" ? (
         <p className="banner error">
@@ -219,59 +249,52 @@ export function ContactForm({
         <div className="grid">
           <label>
             Display name
-            <input
-              value={form.displayName}
-              onChange={(event) => patch({ displayName: event.target.value })}
+            <FastInput
+              {...bindContact(live.current, "displayName", form.displayName, (next) => patch({ displayName: next }))}
               required
               maxLength={500}
             />
           </label>
           <label>
             Company
-            <input
-              value={form.companyName}
-              onChange={(event) => patch({ companyName: event.target.value })}
+            <FastInput
+              {...bindContact(live.current, "companyName", form.companyName, (next) => patch({ companyName: next }))}
               maxLength={500}
             />
           </label>
           <label>
             Given name
-            <input
-              value={form.givenName}
-              onChange={(event) => patch({ givenName: event.target.value })}
+            <FastInput
+              {...bindContact(live.current, "givenName", form.givenName, (next) => patch({ givenName: next }))}
               maxLength={100}
             />
           </label>
           <label>
             Family name
-            <input
-              value={form.familyName}
-              onChange={(event) => patch({ familyName: event.target.value })}
+            <FastInput
+              {...bindContact(live.current, "familyName", form.familyName, (next) => patch({ familyName: next }))}
               maxLength={100}
             />
           </label>
           <label>
             Email
-            <input
+            <FastInput
               type="email"
-              value={form.primaryEmail}
-              onChange={(event) => patch({ primaryEmail: event.target.value })}
+              {...bindContact(live.current, "primaryEmail", form.primaryEmail, (next) => patch({ primaryEmail: next }))}
               maxLength={100}
             />
           </label>
           <label>
             Phone
-            <input
-              value={form.phone}
-              onChange={(event) => patch({ phone: event.target.value })}
+            <FastInput
+              {...bindContact(live.current, "phone", form.phone, (next) => patch({ phone: next }))}
               maxLength={30}
             />
           </label>
           <label>
             {taxLabel}
-            <input
-              value={form.taxId}
-              onChange={(event) => patch({ taxId: event.target.value })}
+            <FastInput
+              {...bindContact(live.current, "taxId", form.taxId, (next) => patch({ taxId: next }))}
               maxLength={30}
             />
           </label>
@@ -287,11 +310,13 @@ export function ContactForm({
         <AddressFields
           legend="Billing address"
           value={form.billingAddress}
+          onDraft={(key, value) => live.current.set(`billing.${key}`, value)}
           onChange={(key, value) => patchAddress("billingAddress", key, value)}
         />
         <AddressFields
           legend="Shipping address"
           value={form.shippingAddress}
+          onDraft={(key, value) => live.current.set(`shipping.${key}`, value)}
           onChange={(key, value) => patchAddress("shippingAddress", key, value)}
         />
         {kind === "vendor" ? (
@@ -301,7 +326,7 @@ export function ContactForm({
         ) : null}
         <label>
           Notes
-          <textarea value={form.notes} onChange={(event) => patch({ notes: event.target.value })} />
+          <FastArea {...bindContact(live.current, "notes", form.notes, (next) => patch({ notes: next }))} />
         </label>
         <p className="hint">QuickBooks is updated the next time you sync from Admin &gt; Integrations.</p>
         {saveError ? <p className="banner error">{saveError}</p> : null}
@@ -315,14 +340,26 @@ export function ContactForm({
   );
 }
 
+function bindContact(live: Map<string, string>, key: string, value: string, commit: (next: string) => void) {
+  return {
+    value,
+    onDraft: (next: string) => {
+      live.set(key, next);
+    },
+    onValue: commit,
+  };
+}
+
 function AddressFields({
   legend,
   value,
   onChange,
+  onDraft,
 }: {
   legend: string;
   value: PostalAddress;
   onChange: (key: keyof PostalAddress, value: string) => void;
+  onDraft: (key: keyof PostalAddress, value: string) => void;
 }) {
   return (
     <fieldset>
@@ -330,33 +367,35 @@ function AddressFields({
       <div className="grid">
         <label>
           Line 1
-          <input value={value.line1 ?? ""} onChange={(event) => onChange("line1", event.target.value)} />
+          <FastInput value={value.line1 ?? ""} onDraft={(next) => onDraft("line1", next)} onValue={(next) => onChange("line1", next)} />
         </label>
         <label>
           Line 2
-          <input value={value.line2 ?? ""} onChange={(event) => onChange("line2", event.target.value)} />
+          <FastInput value={value.line2 ?? ""} onDraft={(next) => onDraft("line2", next)} onValue={(next) => onChange("line2", next)} />
         </label>
         <label>
           City
-          <input value={value.city ?? ""} onChange={(event) => onChange("city", event.target.value)} />
+          <FastInput value={value.city ?? ""} onDraft={(next) => onDraft("city", next)} onValue={(next) => onChange("city", next)} />
         </label>
         <label>
           State
-          <input
+          <FastInput
             value={value.countrySubDivisionCode ?? ""}
-            onChange={(event) => onChange("countrySubDivisionCode", event.target.value)}
+            onDraft={(next) => onDraft("countrySubDivisionCode", next)}
+            onValue={(next) => onChange("countrySubDivisionCode", next)}
           />
         </label>
         <label>
           Postal code
-          <input
+          <FastInput
             value={value.postalCode ?? ""}
-            onChange={(event) => onChange("postalCode", event.target.value)}
+            onDraft={(next) => onDraft("postalCode", next)}
+            onValue={(next) => onChange("postalCode", next)}
           />
         </label>
         <label>
           Country
-          <input value={value.country ?? ""} onChange={(event) => onChange("country", event.target.value)} />
+          <FastInput value={value.country ?? ""} onDraft={(next) => onDraft("country", next)} onValue={(next) => onChange("country", next)} />
         </label>
       </div>
     </fieldset>

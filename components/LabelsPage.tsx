@@ -3,14 +3,14 @@
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Printer, X } from "lucide-react";
+import { FastInput } from "@/components/FastField";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
-import { Input } from "@/components/ui/input";
 import { errorText } from "@/lib/errors";
 import { findItemForLabel } from "@/lib/items";
 import { fetchLabelTemplate } from "@/lib/labelActions";
 import { labelCopiesCommit, labelCopiesDraft, labelQuantityCommit, labelQuantityDraft } from "@/lib/labelDesk";
-import { descriptionSnippet, labelLookupChoice } from "@/lib/labelLookup";
+import { descriptionSnippet, labelLookupChoice, labelResultApplies } from "@/lib/labelLookup";
 import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import {
   labelTemplateLabel,
@@ -48,6 +48,8 @@ export function LabelsPage() {
   const [edited, setEdited] = useState(false);
   const requestId = useRef(0);
   const holdQuery = useRef<string | null>(null);
+  const typed = useRef(initialIdentifier);
+  const [held, setHeld] = useState(0);
 
   useEffect(() => {
     if (printStamp === 0) return;
@@ -102,7 +104,9 @@ export function LabelsPage() {
     requestId.current += 1;
     setLoading(false);
     const shown = found.sku || found.name;
+    typed.current = shown;
     holdQuery.current = shown;
+    setHeld((current) => current + 1);
     setIdentifier(shown);
     setItem(found);
     setMatches([]);
@@ -127,7 +131,7 @@ export function LabelsPage() {
     setError(null);
     try {
       const result = await searchItemsForLabel(query);
-      if (id !== requestId.current) return;
+      if (id !== requestId.current || !labelResultApplies(typed.current, query, submitted)) return;
       const choice = labelLookupChoice({
         submitted,
         exact: Boolean(result.exact),
@@ -180,7 +184,10 @@ export function LabelsPage() {
     const handle = window.setTimeout(() => {
       void runSearch(query, false);
     }, 300);
-    return () => window.clearTimeout(handle);
+    return () => {
+      window.clearTimeout(handle);
+      requestId.current += 1;
+    };
   }, [edited, identifier]);
 
   function onFind(event: FormEvent<HTMLFormElement>) {
@@ -217,6 +224,8 @@ export function LabelsPage() {
   function clearSearch() {
     requestId.current += 1;
     holdQuery.current = null;
+    typed.current = "";
+    setHeld((current) => current + 1);
     setEdited(true);
     setIdentifier("");
     setItem(null);
@@ -255,9 +264,10 @@ export function LabelsPage() {
           <label className="label-query" htmlFor="label-search">
             SKU, name, or description
             <span className="label-query-box">
-              <Input
+              <FastInput
                 id="label-search"
                 value={identifier}
+                syncKey={held}
                 autoFocus
                 autoComplete="off"
                 autoCapitalize="off"
@@ -270,9 +280,16 @@ export function LabelsPage() {
                 aria-controls="label-results"
                 aria-busy={loading}
                 aria-activedescendant={active >= 0 ? `label-hit-${matches[active]?.id}` : undefined}
-                onChange={(event) => {
+                onDraft={(value) => {
+                  typed.current = value;
+                  requestId.current += 1;
+                }}
+                onValue={(value) => {
+                  if (value !== typed.current) return;
+                  if (holdQuery.current === value) return;
+                  holdQuery.current = null;
                   setEdited(true);
-                  setIdentifier(event.target.value);
+                  setIdentifier(value);
                   setItem(null);
                   setMatches([]);
                   setTruncated(false);
@@ -290,23 +307,25 @@ export function LabelsPage() {
           </label>
           <label className="label-qty" htmlFor="label-qty">
             Qty on label
-            <Input
+            <FastInput
               id="label-qty"
               inputMode="numeric"
               autoComplete="off"
               value={quantity}
-              onChange={(event) => setQuantity(labelQuantityDraft(event.target.value))}
+              transform={labelQuantityDraft}
+              onValue={setQuantity}
               onBlur={() => setQuantity((current) => labelQuantityCommit(current))}
             />
           </label>
           <label className="label-copies" htmlFor="label-copies">
             Copies
-            <Input
+            <FastInput
               id="label-copies"
               inputMode="numeric"
               autoComplete="off"
               value={copiesText}
-              onChange={(event) => setCopiesText(labelCopiesDraft(event.target.value))}
+              transform={labelCopiesDraft}
+              onValue={setCopiesText}
               onBlur={() => setCopiesText((current) => labelCopiesCommit(current))}
             />
           </label>

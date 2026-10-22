@@ -2,7 +2,7 @@
 
 import { X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState, type DragEvent, type KeyboardEvent } from "react";
+import { memo, useEffect, useState, type DragEvent, type KeyboardEvent } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { compressImage } from "@/lib/compressImage";
 import { errorText } from "@/lib/errors";
@@ -32,7 +32,7 @@ type Tile = {
   editHref: string | null;
 };
 
-export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryProps) {
+export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryProps) {
   const [images, setImages] = useState<ItemImage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -321,7 +321,7 @@ export function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryPro
       ) : null}
     </fieldset>
   );
-}
+});
 
 function Thumb({ tile, primary }: { tile: Tile; primary: boolean }) {
   return (

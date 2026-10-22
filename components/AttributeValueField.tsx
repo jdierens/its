@@ -1,3 +1,4 @@
+import { FastInput } from "@/components/FastField";
 import { attributeValueError } from "@/lib/itemFields";
 
 export { attributeValueError };
@@ -27,9 +28,10 @@ type AttributeValueFieldProps = {
   attribute: Attribute;
   value: string;
   onChange: (value: string) => void;
+  onDraft?: (value: string) => void;
 };
 
-export function AttributeValueField({ attribute, value, onChange }: AttributeValueFieldProps) {
+export function AttributeValueField({ attribute, value, onChange, onDraft }: AttributeValueFieldProps) {
   const listId = `attribute-values-${attribute.id}`;
   const trimmed = value.trim();
   const isNew =
@@ -40,10 +42,12 @@ export function AttributeValueField({ attribute, value, onChange }: AttributeVal
   return (
     <label>
       {attributeLabel(attribute.name, attribute.unit)}
-      <input
+      <FastInput
         list={attribute.uses_list && attribute.allowedValues.length > 0 ? listId : undefined}
         className={attribute.data_type === "text" ? undefined : "num"}
         value={value}
+        onDraft={onDraft}
+        onValue={onChange}
         autoComplete="off"
         inputMode={
           attribute.data_type === "decimal"
@@ -52,7 +56,6 @@ export function AttributeValueField({ attribute, value, onChange }: AttributeVal
               ? "numeric"
               : undefined
         }
-        onChange={(event) => onChange(event.target.value)}
       />
       {attribute.uses_list && attribute.allowedValues.length > 0 ? (
         <datalist id={listId}>
