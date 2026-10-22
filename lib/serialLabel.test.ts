@@ -7,6 +7,7 @@ import {
   SERIAL_DESCRIPTION_MAX,
   SERIAL_HEAD_GAP_MM,
   SERIAL_LABEL_PAD_X_MM,
+  SERIAL_LABEL_SIZE,
   SERIAL_LABEL_WIDTH_MM,
   SERIAL_QUIET_MODULES,
   addSerial,
@@ -29,6 +30,10 @@ test("serial description stays on two lines and ends with an ellipsis", () => {
   assert.ok(shown.endsWith("…"));
   assert.ok(shown.length <= SERIAL_DESCRIPTION_MAX);
   assert.ok(shown.length < LONG.length);
+});
+
+test("serial label size is named like the 29 × 90 mm item label", () => {
+  assert.equal(SERIAL_LABEL_SIZE, "62 × 100 mm");
 });
 
 test("107132 and SRM7C-1 keep the description beside the SKU", () => {

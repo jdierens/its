@@ -1,6 +1,10 @@
 import { labelQuantityCommit } from "@/lib/labelDesk";
 
-/** DK-1202 die, landscape. The 100 mm side is the feed; the 62 mm side is the tape width. */
+/**
+ * DK-1202. Named like the item label's 29 × 90 mm: tape width, then feed length.
+ * The page is landscape, so the 100 mm feed is the width and the 62 mm tape is the height.
+ */
+export const SERIAL_LABEL_SIZE = "62 × 100 mm";
 export const SERIAL_LABEL_WIDTH_MM = 100;
 export const SERIAL_LABEL_HEIGHT_MM = 62;
 

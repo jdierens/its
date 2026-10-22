@@ -21,6 +21,7 @@ import {
 import { descriptionSnippet, labelResultApplies } from "@/lib/labelLookup";
 import {
   addSerial,
+  SERIAL_LABEL_SIZE,
   serialLabelQtyText,
   serialPrintProblem,
   serialsToPrint,
@@ -523,17 +524,17 @@ export function LabelsPage() {
             <>
               <p>Brother QL-820NWB, DK-1202 die-cut labels, from a Mac browser. In the print dialog use:</p>
               <ul>
-                <li>Paper size: 62 × 100 mm</li>
+                <li>Paper size: {SERIAL_LABEL_SIZE}</li>
                 <li>Orientation: Landscape</li>
                 <li>Scale: 100%</li>
                 <li>Margins: None</li>
                 <li>Headers and footers: off</li>
               </ul>
               <p>
-                The page is 100 mm wide by 62 mm tall. The 62 mm side is the tape width across the print head, and the
-                100 mm side is the feed. Each serial is one page, and copies print that page again. Qty on label is
-                printed on every page and does not change stock. Scan a serial and press Enter to add another, up to
-                30. The preview below is the same size.
+                Each page is {SERIAL_LABEL_SIZE}. The 62 mm side is the tape width across the print head, and the
+                100 mm side is the feed, so the page is landscape. Each serial is one page, and copies print that page
+                again. Qty on label is printed on every page and does not change stock. Scan a serial and press Enter
+                to add another, up to 30. The preview below is the same size.
               </p>
             </>
           ) : (

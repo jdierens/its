@@ -131,7 +131,7 @@ export const SERIAL_LABEL_PRINT_CSS = `
   width: ${SERIAL_LABEL_WIDTH_MM}mm;
   height: ${SERIAL_LABEL_HEIGHT_MM}mm;
   box-sizing: border-box;
-  /* The QL-820NWB print head does not cover the last ~1.5 mm of a 62 mm tape.
+  /* DK-1202 is 62 × 100 mm. The print head does not cover the last ~1.5 mm of the 62 mm tape.
      Those edges are the top and bottom of this landscape page. */
   padding: 2.2mm 3mm 2.6mm;
   display: flex;
