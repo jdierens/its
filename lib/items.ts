@@ -768,7 +768,6 @@ export type ItemInput = {
   name: string;
   sku: string;
   description: string;
-  quantity: number | null;
   taxonomyName: string | null;
   attributes: Record<string, string>;
   attributeDefs: AttributeDefinition[];
@@ -822,7 +821,7 @@ export async function createItem(input: ItemInput): Promise<string> {
     p_attributes: input.attributes,
     p_sku: input.sku,
     p_description: input.description,
-    p_quantity: input.quantity,
+    p_quantity: null,
     p_attribute_defs: input.attributeDefs,
     p_long_code: input.longCode ?? null,
     p_short_code: input.shortCode ?? null,
@@ -862,7 +861,6 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
     p_attributes: input.taxonomyName ? input.attributes : {},
     p_sku: input.sku,
     p_description: input.description,
-    p_quantity: input.quantity,
     p_attribute_defs: input.taxonomyName ? input.attributeDefs : [],
     p_long_code: input.longCode ?? null,
     p_short_code: input.shortCode ?? null,

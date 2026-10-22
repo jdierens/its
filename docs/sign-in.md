@@ -4,6 +4,8 @@ Sign-in is shipped and idle. It runs only when the server env `AUTH_REQUIRED` is
 
 The app asks for a Google session on every page except `PUBLIC_PATHS` (`/privacy`, `/terms`, `/api/ebay/callback`, `/api/ebay/account-deletion`, `/api/qbo/callback`). `/login` and `/auth/callback` are open so sign-in can start. A signed-in person whose email is not `@deepdiscountservers.com` is signed out. Google's hosted-domain (`hd`) claim is checked on the callback, and the email domain is checked from the verified session after that.
 
+A signed-in name appears at the bottom of the sidebar. **Sign out** there is a muted ghost button, icon and text when the sidebar is open, icon only when it is collapsed. It posts to `/auth/sign-out`. The waiting page has its own Sign out control.
+
 The first sign-in creates a pending row in `app_users`. Pending and disabled people see **Waiting for approval** and cannot open the rest of the app. `jan@deepdiscountservers.com` is seeded as an approved admin. The seed uses a placeholder id until that Google account signs in, then the row moves onto that account.
 
 **Admin > Users** (admins only) approves an account, sets admin, staff, or read only, or disables it. An admin cannot remove their own access, and the last approved admin stays. Read only is recorded and does not block saves yet. That wait is phase 2, below.

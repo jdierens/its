@@ -6,6 +6,8 @@ export type Crumb = {
 export type PageMeta = {
   title: string;
   crumbs: Crumb[];
+  backHref?: string;
+  backLabel?: string;
 };
 
 export type NavItem = {

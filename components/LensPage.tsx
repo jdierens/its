@@ -192,7 +192,6 @@ export function LensPage() {
         name: name.trim(),
         sku: submittedSku,
         description: description.trim(),
-        quantity: null,
         taxonomyName: taxonomy?.name ?? null,
         attributes: attributesFor(taxonomy, reading),
         attributeDefs: (taxonomy?.attributes ?? []).map(definitionFor),

@@ -11,7 +11,7 @@ export function SignedInUser({ label }: { label: string }) {
         {label}
       </span>
       <form action="/auth/sign-out" method="post">
-        <button type="submit" className="secondary sidebar-signout" title="Sign out">
+        <button type="submit" className="sidebar-signout" aria-label="Sign out" title="Sign out">
           <LogOut size={16} strokeWidth={1.75} aria-hidden />
           <span className="nav-label">Sign out</span>
         </button>
