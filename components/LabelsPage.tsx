@@ -5,12 +5,20 @@ import { FormEvent, useEffect, useMemo, useRef, useState, type KeyboardEvent } f
 import { Printer, X } from "lucide-react";
 import { FastInput } from "@/components/FastField";
 import { PrintedLabel } from "@/components/labelRenderers";
+import { SerialItemLabel, SERIAL_LABEL_PRINT_CSS } from "@/components/SerialItemLabel";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { errorText } from "@/lib/errors";
 import { findItemForLabel } from "@/lib/items";
 import { fetchLabelTemplate } from "@/lib/labelActions";
 import { labelCopiesCommit, labelCopiesDraft, labelQuantityCommit, labelQuantityDraft } from "@/lib/labelDesk";
 import { descriptionSnippet, labelLookupChoice, labelResultApplies } from "@/lib/labelLookup";
+import {
+  addSerial,
+  serialLabelQtyText,
+  serialPrintProblem,
+  serialsToPrint,
+  type SerialAddStatus,
+} from "@/lib/serialLabel";
 import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import {
   labelTemplateLabel,
@@ -19,6 +27,13 @@ import {
   type LabelTemplateId,
 } from "@/lib/labelTemplates";
 import type { LabelItem } from "@/lib/types";
+
+type LabelDeskMode = "item" | "serial";
+
+const SERIAL_ADD_MESSAGE: Record<Exclude<SerialAddStatus, "added" | "empty">, string> = {
+  duplicate: "That serial is already in the list.",
+  full: "The list holds 30 serials. Print these, then scan the rest.",
+};
 
 function todayLabel(date: Date): string {
   return date.toLocaleDateString("en-GB", {
@@ -34,6 +49,10 @@ export function LabelsPage() {
   const [identifier, setIdentifier] = useState(initialIdentifier);
   const [quantity, setQuantity] = useState("1");
   const [copiesText, setCopiesText] = useState("1");
+  const [mode, setMode] = useState<LabelDeskMode>("item");
+  const [serialDraft, setSerialDraft] = useState("");
+  const [serials, setSerials] = useState<string[]>([]);
+  const [serialHeld, setSerialHeld] = useState(0);
   const [item, setItem] = useState<LabelItem | null>(null);
   const [matches, setMatches] = useState<LabelItem[]>([]);
   const [truncated, setTruncated] = useState(false);
@@ -51,10 +70,18 @@ export function LabelsPage() {
   const typed = useRef(initialIdentifier);
   const [held, setHeld] = useState(0);
 
+  const wantSerialFocus = useRef(false);
+
   useEffect(() => {
     if (printStamp === 0) return;
     window.print();
   }, [printStamp]);
+
+  useEffect(() => {
+    if (mode !== "serial" || !wantSerialFocus.current) return;
+    wantSerialFocus.current = false;
+    document.getElementById("label-serial")?.focus();
+  }, [mode]);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -115,6 +142,9 @@ export function LabelsPage() {
     setSettledQuery("");
     setError(null);
     setPrintedOn(todayLabel(new Date()));
+    if (mode === "serial") {
+      window.requestAnimationFrame(() => document.getElementById("label-serial")?.focus());
+    }
   }
 
   async function runSearch(raw: string, submitted: boolean) {
@@ -237,12 +267,53 @@ export function LabelsPage() {
     setLoading(false);
   }
 
+  function selectMode(next: LabelDeskMode) {
+    if (next === mode) return;
+    setError(null);
+    if (next === "serial") wantSerialFocus.current = true;
+    setMode(next);
+  }
+
+  function commitSerial(raw: string) {
+    const next = addSerial(serials, raw);
+    if (next.status === "empty") return;
+    if (next.status !== "added") {
+      setError(SERIAL_ADD_MESSAGE[next.status]);
+      return;
+    }
+    setSerials(next.list);
+    setSerialDraft("");
+    setSerialHeld((current) => current + 1);
+    setError(null);
+  }
+
+  function removeSerial(serial: string) {
+    setSerials((current) => current.filter((row) => row !== serial));
+  }
+
   function printLabel() {
     const nextQuantity = labelQuantityCommit(quantity);
     const nextCopies = labelCopiesCommit(copiesText);
     setQuantity(nextQuantity);
     setCopiesText(nextCopies);
-    if (!item) return;
+    if (mode === "serial") {
+      const problem = serialPrintProblem({
+        hasItem: item !== null,
+        serialCount: serialsToPrint(serials, serialDraft).length,
+      });
+      if (problem) {
+        setError(problem);
+        return;
+      }
+      const pending = serialsToPrint(serials, serialDraft);
+      if (!serials.some((row) => row.toLowerCase() === pending[pending.length - 1]?.toLowerCase())) {
+        setSerials(pending);
+        setSerialDraft("");
+        setSerialHeld((current) => current + 1);
+      }
+    } else if (!item) {
+      return;
+    }
     setError(null);
     setPrintedOn(todayLabel(new Date()));
     setPrintStamp((current) => current + 1);
@@ -254,13 +325,29 @@ export function LabelsPage() {
   const qrReady = readyTemplate !== "qr" || origin !== "";
   const payload = item && readyTemplate === "qr" && origin ? qrLabelPayload(origin, item.id, item.sku) : "";
   const listOpen = matches.length > 0;
+  const serialBatch = serialsToPrint(serials, mode === "serial" ? serialDraft : "");
+  const canPrint = mode === "serial" ? item !== null && serialBatch.length > 0 : item !== null;
+  const previewSerial = serialBatch[0] ?? "";
 
   return (
     <main className="page">
-      <style>{LABEL_PRINT_CSS}</style>
+      <style>{mode === "serial" ? SERIAL_LABEL_PRINT_CSS : LABEL_PRINT_CSS}</style>
       <form className="no-print label-desk" onSubmit={onFind}>
         <p className="hint">The quantity is printed on the label. It does not change the item&apos;s stock.</p>
         <div className="label-row">
+          <div className="label-kind">
+            <span className="label-caption" id="label-kind-caption">
+              Label
+            </span>
+            <div className="label-segments" role="group" aria-labelledby="label-kind-caption">
+              <button type="button" aria-pressed={mode === "item"} onClick={() => selectMode("item")}>
+                Item
+              </button>
+              <button type="button" aria-pressed={mode === "serial"} onClick={() => selectMode("serial")}>
+                Serial
+              </button>
+            </div>
+          </div>
           <label className="label-query" htmlFor="label-search">
             <span className="label-caption">Search</span>
             <span className="label-query-box">
@@ -305,6 +392,28 @@ export function LabelsPage() {
               ) : null}
             </span>
           </label>
+          {mode === "serial" ? (
+            <label className="label-serial" htmlFor="label-serial">
+              <span className="label-caption">Serial number</span>
+              <FastInput
+                id="label-serial"
+                value={serialDraft}
+                syncKey={serialHeld}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="done"
+                onValue={setSerialDraft}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  commitSerial(event.currentTarget.value);
+                }}
+              />
+            </label>
+          ) : null}
+          <div className="label-actions">
           <label className="label-qty" htmlFor="label-qty">
             <span className="label-caption">Qty on label</span>
             <FastInput
@@ -336,12 +445,25 @@ export function LabelsPage() {
             className="label-print"
             aria-label="Print"
             title="Print"
-            disabled={!item}
+            disabled={!canPrint}
             onClick={printLabel}
           >
             <Printer size={18} strokeWidth={1.75} aria-hidden />
           </button>
+          </div>
         </div>
+        {mode === "serial" && serials.length > 0 ? (
+          <ul className="serial-picks" aria-label="Serials to print">
+            {serials.map((serial) => (
+              <li key={serial}>
+                <span>{serial}</span>
+                <button type="button" aria-label={`Remove ${serial}`} onClick={() => removeSerial(serial)}>
+                  <X size={14} strokeWidth={1.75} aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {listOpen ? (
           <ul className="label-results" id="label-results" role="listbox" aria-label="Matching items">
             {matches.map((match, index) => {
@@ -373,18 +495,70 @@ export function LabelsPage() {
           </p>
         ) : null}
         <div className="print-help">
-          <p>Brother QL-820NWB, DK-1201 die-cut labels, from a Mac browser. In the print dialog use:</p>
-          <ul>
-            <li>Paper size: 29 × 90 mm</li>
-            <li>Orientation: Landscape</li>
-            <li>Scale: 100%</li>
-            <li>Margins: None</li>
-            <li>Headers and footers: off</li>
-          </ul>
-          <p>Each copy is one 90 mm × 29 mm page. The preview below is the same size.</p>
+          {mode === "serial" ? (
+            <>
+              <p>Brother QL-820NWB, DK-1202 die-cut labels, from a Mac browser. In the print dialog use:</p>
+              <ul>
+                <li>Paper size: 62 × 100 mm</li>
+                <li>Orientation: Landscape</li>
+                <li>Scale: 100%</li>
+                <li>Margins: None</li>
+                <li>Headers and footers: off</li>
+              </ul>
+              <p>
+                The page is 100 mm wide by 62 mm tall. The 62 mm side is the tape width across the print head, and the
+                100 mm side is the feed. Each serial is one page, and copies print that page again. Qty on label is
+                printed on every page and does not change stock. Scan a serial and press Enter to add another, up to
+                30. The preview below is the same size.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>Brother QL-820NWB, DK-1201 die-cut labels, from a Mac browser. In the print dialog use:</p>
+              <ul>
+                <li>Paper size: 29 × 90 mm</li>
+                <li>Orientation: Landscape</li>
+                <li>Scale: 100%</li>
+                <li>Margins: None</li>
+                <li>Headers and footers: off</li>
+              </ul>
+              <p>Each copy is one 90 mm × 29 mm page. The preview below is the same size.</p>
+            </>
+          )}
         </div>
       </form>
-      {item && readyTemplate && qrReady ? (
+      {mode === "serial" && item && previewSerial ? (
+        <>
+          <div className="no-print label-preview">
+            <p className="hint">
+              Preview for {item.sku || item.id}. {serialBatch.length} {serialBatch.length === 1 ? "serial" : "serials"}{" "}
+              × {copies} {copies === 1 ? "copy" : "copies"}. Each label prints {serialLabelQtyText(quantity)}.
+            </p>
+            <div className="serial-frame">
+              <SerialItemLabel
+                sku={item.sku}
+                description={item.description.trim() || item.name}
+                quantity={labelQuantity}
+                serial={previewSerial}
+              />
+            </div>
+          </div>
+          <div className="print-sheet">
+            {serialBatch.flatMap((serial) =>
+              Array.from({ length: Math.max(copies, 1) }, (_, index) => (
+                <SerialItemLabel
+                  key={`${serial}-${index}`}
+                  sku={item.sku}
+                  description={item.description.trim() || item.name}
+                  quantity={labelQuantity}
+                  serial={serial}
+                />
+              )),
+            )}
+          </div>
+        </>
+      ) : null}
+      {mode === "item" && item && readyTemplate && qrReady ? (
         <>
           <div className="no-print label-preview">
             <p className="hint">
