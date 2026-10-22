@@ -7,7 +7,7 @@ One row holds **Search**, **Qty on label**, **Copies**, and **Print**. Each name
 - The text is an exact SKU, ignoring case (`107132`) → that item is selected and the label is prepared. No extra confirmation.
 - Other text (`SRM7C`) is a case-insensitive partial match on SKU, name, and description. `%`, `_`, and `\` in the text are escaped so they are not LIKE wildcards.
 - One match on Enter selects that item. The page does not ask you to pick 1 of 1.
-- Several matches show a short list under that row: SKU, name, and a one-line description. Tap or click a row. On a desktop keyboard, Up and Down move and Enter picks the highlighted row.
+- Several matches show a short list under that row: SKU, name, and a one-line description. Tap or click a row, or press Enter on the highlighted row. That selects the item the same way an exact SKU does: the field shows the SKU (or the name when the SKU is empty), the label preview loads, and Print turns on. A blur of the search field does not clear that list before the row is chosen. If Print cannot run, the page says why.
 - Nothing matches → **No items found**.
 - Typing can search on its own, after a short pause. The field keeps what you type. A result is applied only when the field still shows the text that was searched, so a slower reply cannot replace a newer string. A SKU prefix does not select an item while you are still typing, even if only one row matches. An exact SKU does, once that pause lands on the exact SKU.
 - The list stops at 25 rows and says to refine the search when more exist.
