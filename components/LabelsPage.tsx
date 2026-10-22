@@ -2,13 +2,14 @@
 
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Printer, X } from "lucide-react";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { errorText } from "@/lib/errors";
 import { findItemForLabel } from "@/lib/items";
 import { fetchLabelTemplate } from "@/lib/labelActions";
+import { labelCopiesCommit, labelCopiesDraft, labelQuantityCommit, labelQuantityDraft } from "@/lib/labelDesk";
 import { descriptionSnippet, labelLookupChoice } from "@/lib/labelLookup";
 import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import {
@@ -95,11 +96,7 @@ export function LabelsPage() {
     };
   }, [initialIdentifier]);
 
-  const copies = useMemo(() => {
-    const parsed = Number(copiesText);
-    if (!Number.isInteger(parsed) || parsed < 1) return 0;
-    return Math.min(parsed, 100);
-  }, [copiesText]);
+  const copies = useMemo(() => Number(labelCopiesCommit(copiesText)), [copiesText]);
 
   function choose(found: LabelItem) {
     requestId.current += 1;
@@ -217,24 +214,33 @@ export function LabelsPage() {
     }
   }
 
+  function clearSearch() {
+    requestId.current += 1;
+    holdQuery.current = null;
+    setEdited(true);
+    setIdentifier("");
+    setItem(null);
+    setMatches([]);
+    setTruncated(false);
+    setActive(-1);
+    setSettledQuery("");
+    setError(null);
+    setLoading(false);
+  }
+
   function printLabel() {
-    const parsedQuantity = Number(quantity);
-    const parsedCopies = Number(copiesText);
-    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 0) {
-      setError("Quantity must be a whole number.");
-      return;
-    }
-    if (!Number.isInteger(parsedCopies) || parsedCopies < 1 || parsedCopies > 100) {
-      setError("Copies must be a whole number from 1 to 100.");
-      return;
-    }
+    const nextQuantity = labelQuantityCommit(quantity);
+    const nextCopies = labelCopiesCommit(copiesText);
+    setQuantity(nextQuantity);
+    setCopiesText(nextCopies);
+    if (!item) return;
     setError(null);
     setPrintedOn(todayLabel(new Date()));
     setPrintStamp((current) => current + 1);
   }
 
   const code = item ? barcodeValue(item.sku, item.id) : "";
-  const labelQuantity = quantity.trim() || "0";
+  const labelQuantity = labelQuantityCommit(quantity);
   const readyTemplate = template;
   const qrReady = readyTemplate !== "qr" || origin !== "";
   const payload = item && readyTemplate === "qr" && origin ? qrLabelPayload(origin, item.id, item.sku) : "";
@@ -245,66 +251,75 @@ export function LabelsPage() {
       <style>{LABEL_PRINT_CSS}</style>
       <form className="no-print label-desk" onSubmit={onFind}>
         <p className="hint">The quantity is printed on the label. It does not change the item&apos;s stock.</p>
-        <div className="grid">
-          <label>
+        <div className="label-row">
+          <label className="label-query" htmlFor="label-search">
             SKU, name, or description
-            <Input
-              id="label-search"
-              value={identifier}
-              autoFocus
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="search"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={listOpen}
-              aria-controls="label-results"
-              aria-activedescendant={active >= 0 ? `label-hit-${matches[active]?.id}` : undefined}
-              onChange={(event) => {
-                setEdited(true);
-                setIdentifier(event.target.value);
-                setItem(null);
-                setMatches([]);
-                setTruncated(false);
-                setActive(-1);
-                setError(null);
-              }}
-              onKeyDown={onSearchKey}
-            />
+            <span className="label-query-box">
+              <Input
+                id="label-search"
+                value={identifier}
+                autoFocus
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="search"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={listOpen}
+                aria-controls="label-results"
+                aria-busy={loading}
+                aria-activedescendant={active >= 0 ? `label-hit-${matches[active]?.id}` : undefined}
+                onChange={(event) => {
+                  setEdited(true);
+                  setIdentifier(event.target.value);
+                  setItem(null);
+                  setMatches([]);
+                  setTruncated(false);
+                  setActive(-1);
+                  setError(null);
+                }}
+                onKeyDown={onSearchKey}
+              />
+              {identifier ? (
+                <button type="button" className="label-clear" aria-label="Clear search" title="Clear search" onClick={clearSearch}>
+                  <X size={14} strokeWidth={1.75} aria-hidden />
+                </button>
+              ) : null}
+            </span>
           </label>
-          <label>
-            Quantity on label
+          <label className="label-qty" htmlFor="label-qty">
+            Qty on label
             <Input
-              type="number"
-              min="0"
-              step="1"
+              id="label-qty"
               inputMode="numeric"
+              autoComplete="off"
               value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
+              onChange={(event) => setQuantity(labelQuantityDraft(event.target.value))}
+              onBlur={() => setQuantity((current) => labelQuantityCommit(current))}
             />
           </label>
-          <label>
+          <label className="label-copies" htmlFor="label-copies">
             Copies
             <Input
-              type="number"
-              min="1"
-              max="100"
-              step="1"
+              id="label-copies"
               inputMode="numeric"
+              autoComplete="off"
               value={copiesText}
-              onChange={(event) => setCopiesText(event.target.value)}
+              onChange={(event) => setCopiesText(labelCopiesDraft(event.target.value))}
+              onBlur={() => setCopiesText((current) => labelCopiesCommit(current))}
             />
           </label>
-        </div>
-        <div className="actions">
-          <Button type="submit" disabled={loading}>
-            {loading ? "Searching…" : "Search"}
-          </Button>
-          <Button type="button" variant="secondary" disabled={!item} onClick={printLabel}>
-            Print
-          </Button>
+          <button
+            type="button"
+            className="label-print"
+            aria-label="Print"
+            title="Print"
+            disabled={!item}
+            onClick={printLabel}
+          >
+            <Printer size={18} strokeWidth={1.75} aria-hidden />
+          </button>
         </div>
         {listOpen ? (
           <ul className="label-results" id="label-results" role="listbox" aria-label="Matching items">
