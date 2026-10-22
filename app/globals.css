@@ -559,6 +559,10 @@ button.label-print {
   box-sizing: border-box;
 }
 
+.label-row input {
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+}
+
 button.label-clear {
   position: absolute;
   top: 50%;
@@ -592,6 +596,8 @@ button.label-clear:hover {
   padding-left: 0.75rem;
   padding-right: calc(0.75rem + 0.5rem);
   text-align: right;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
@@ -632,22 +638,35 @@ button.label-print:hover:not(:disabled) {
 
 @media (max-width: 640px) {
   .label-row {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: start;
-    align-items: start;
+    grid-template-columns: max-content max-content max-content minmax(0, 1fr);
+    align-items: end;
   }
 
   .label-row > .label-query {
+    grid-column: 1 / -1;
     width: 100%;
     max-width: none;
   }
 
   .label-query input {
     width: 100%;
+    padding-right: 3rem;
+  }
+
+  .label-row input,
+  button.label-print {
+    height: 44px;
+    min-height: 44px;
   }
 
   button.label-print {
-    justify-self: start;
+    width: 44px;
+    min-width: 44px;
+  }
+
+  button.label-clear {
+    width: 44px;
+    height: 44px;
   }
 }
 
