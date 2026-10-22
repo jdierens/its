@@ -503,25 +503,55 @@ button.thumb-delete {
 }
 
 .label-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto auto auto auto;
   align-items: end;
+  justify-content: start;
   gap: 0.75rem 0.9rem;
 }
 
+.label-row > label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin: 0;
+  font-size: inherit;
+  font-weight: 400;
+  color: inherit;
+}
+
+.label-caption {
+  display: block;
+  margin: 0 0 0.3rem;
+  font-size: 0.86rem;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .label-query {
-  width: 28ch;
+  width: max-content;
   max-width: 100%;
 }
 
 .label-query-box {
   position: relative;
   display: block;
+  width: 100%;
 }
 
 .label-query input {
-  width: 100%;
-  padding-right: 1.9rem;
+  width: calc(25ch + 2.75rem + 2px);
+  max-width: 100%;
+  padding-left: 0.75rem;
+  padding-right: 2rem;
+}
+
+.label-row input,
+button.label-print {
+  height: calc(1.45em + 1rem + 2px);
+  box-sizing: border-box;
 }
 
 button.label-clear {
@@ -550,36 +580,53 @@ button.label-clear:hover {
   color: var(--ink);
 }
 
+.label-row > .label-qty,
+.label-row > .label-copies {
+  display: inline-grid;
+  justify-items: stretch;
+  width: max-content;
+  max-width: 100%;
+}
+
+.label-qty .label-caption,
+.label-copies .label-caption {
+  width: max-content;
+}
+
 .label-qty input,
 .label-copies input {
+  width: 100%;
+  max-width: 100%;
+  padding-left: 0.75rem;
+  padding-right: calc(0.75rem + 0.5rem);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 .label-qty input {
-  width: 6.5ch;
+  min-width: calc(4ch + 2rem + 2px);
 }
 
 .label-copies input {
-  width: 4.5ch;
+  min-width: calc(2ch + 2rem + 2px);
 }
 
 button.label-print {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  min-height: 44px;
+  width: calc(1.45em + 1rem + 2px);
+  min-width: 0;
+  min-height: 0;
   margin: 0;
   padding: 0;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.96);
   background-image: none;
   color: var(--ink);
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid var(--input-border);
   border-radius: 10px;
   box-shadow: none;
+  font-weight: 400;
 }
 
 button.label-print:hover:not(:disabled) {
@@ -593,18 +640,25 @@ button.label-print:hover:not(:disabled) {
 
 @media (max-width: 640px) {
   .label-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
-    align-items: end;
+    grid-template-columns: max-content max-content max-content minmax(0, 1fr);
   }
 
   .label-query {
     grid-column: 1 / -1;
     width: auto;
+    max-width: none;
+    min-width: 0;
   }
 
-  .label-print {
-    justify-self: end;
+  .label-query input {
+    width: 100%;
+  }
+}
+
+@media (max-width: 800px) {
+  .label-row input,
+  button.label-print {
+    font-size: 16px;
   }
 }
 
