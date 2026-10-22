@@ -309,6 +309,7 @@ export function LabelsPage() {
             <span className="label-caption">Qty on label</span>
             <FastInput
               id="label-qty"
+              size={4}
               inputMode="numeric"
               autoComplete="off"
               value={quantity}
@@ -321,6 +322,7 @@ export function LabelsPage() {
             <span className="label-caption">Copies</span>
             <FastInput
               id="label-copies"
+              size={2}
               inputMode="numeric"
               autoComplete="off"
               value={copiesText}
