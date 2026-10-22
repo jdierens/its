@@ -512,12 +512,17 @@ button.thumb-delete {
 
 .label-row label,
 .label-row > .label-kind {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  display: grid;
+  grid-template-rows: auto auto;
+  grid-auto-flow: row;
+  align-content: end;
+  justify-items: stretch;
+  width: max-content;
+  max-width: 100%;
   margin: 0;
   font-size: inherit;
   font-weight: 400;
+  line-height: inherit;
   color: inherit;
 }
 
@@ -607,6 +612,10 @@ button.label-print {
   box-sizing: border-box;
 }
 
+.label-row input {
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+}
+
 button.label-clear {
   position: absolute;
   top: 50%;
@@ -633,21 +642,6 @@ button.label-clear:hover {
   color: var(--ink);
 }
 
-.label-row .label-qty,
-.label-row .label-copies,
-.label-row .label-serial {
-  display: inline-grid;
-  justify-items: stretch;
-  width: max-content;
-  max-width: 100%;
-}
-
-.label-qty .label-caption,
-.label-copies .label-caption,
-.label-serial .label-caption {
-  width: max-content;
-}
-
 .label-qty input,
 .label-copies input,
 .label-serial input {
@@ -661,6 +655,8 @@ button.label-clear:hover {
   padding-left: 0.75rem;
   padding-right: calc(0.75rem + 0.5rem);
   text-align: right;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
@@ -759,6 +755,7 @@ button.label-print:hover:not(:disabled) {
 @media (max-width: 1180px) {
   .label-row {
     grid-template-columns: max-content max-content max-content minmax(0, 1fr);
+    align-items: end;
   }
 
   .label-kind {
@@ -766,7 +763,7 @@ button.label-print:hover:not(:disabled) {
     grid-row: 1;
   }
 
-  .label-query {
+  .label-row .label-query {
     grid-column: 2 / -1;
     grid-row: 1;
     width: auto;
@@ -776,16 +773,17 @@ button.label-print:hover:not(:disabled) {
 
   .label-query input {
     width: 100%;
+    padding-right: 3rem;
   }
 
-  .label-row .label-serial {
+  .label-row.serial-on .label-serial {
     grid-column: 1 / -1;
     grid-row: 2;
     width: 100%;
     max-width: none;
   }
 
-  .label-serial input {
+  .label-row.serial-on .label-serial input {
     width: 100%;
     min-width: 0;
   }
@@ -793,10 +791,14 @@ button.label-print:hover:not(:disabled) {
   .label-actions {
     display: flex;
     grid-column: 1 / -1;
-    grid-row: 3;
+    grid-row: 2;
     align-items: flex-end;
     gap: 0.9rem;
     min-width: 0;
+  }
+
+  .label-row.serial-on .label-actions {
+    grid-row: 3;
   }
 }
 
@@ -811,6 +813,11 @@ button.label-print:hover:not(:disabled) {
   button.label-print {
     width: 44px;
     min-width: 44px;
+  }
+
+  button.label-clear {
+    width: 44px;
+    height: 44px;
   }
 
   .serial-picks button {

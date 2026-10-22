@@ -11,7 +11,14 @@ import { errorText } from "@/lib/errors";
 import { findItemForLabel } from "@/lib/items";
 import { fetchLabelTemplate } from "@/lib/labelActions";
 import { labelCopiesCommit, labelCopiesDraft, labelQuantityCommit, labelQuantityDraft } from "@/lib/labelDesk";
-import { descriptionSnippet, labelLookupChoice, labelResultApplies } from "@/lib/labelLookup";
+import {
+  labelCommitAction,
+  labelHighlightedChoice,
+  labelPrintProblem,
+  labelSearchOutcome,
+  labelShownText,
+} from "@/lib/labelDeskSelection";
+import { descriptionSnippet, labelResultApplies } from "@/lib/labelLookup";
 import {
   addSerial,
   serialLabelQtyText,
@@ -61,7 +68,6 @@ export function LabelsPage() {
   const [printedOn, setPrintedOn] = useState(() => todayLabel(new Date()));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [printStamp, setPrintStamp] = useState(0);
   const [template, setTemplate] = useState<LabelTemplateId | null>(null);
   const [origin, setOrigin] = useState("");
   const [edited, setEdited] = useState(false);
@@ -69,23 +75,17 @@ export function LabelsPage() {
   const holdQuery = useRef<string | null>(null);
   const typed = useRef(initialIdentifier);
   const [held, setHeld] = useState(0);
-
   const wantSerialFocus = useRef(false);
 
   useEffect(() => {
-    if (printStamp === 0) return;
-    window.print();
-  }, [printStamp]);
+    setOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     if (mode !== "serial" || !wantSerialFocus.current) return;
     wantSerialFocus.current = false;
     document.getElementById("label-serial")?.focus();
   }, [mode]);
-
-  useEffect(() => {
-    setOrigin(window.location.origin);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +130,7 @@ export function LabelsPage() {
   function choose(found: LabelItem) {
     requestId.current += 1;
     setLoading(false);
-    const shown = found.sku || found.name;
+    const shown = labelShownText(found);
     typed.current = shown;
     holdQuery.current = shown;
     setHeld((current) => current + 1);
@@ -145,6 +145,13 @@ export function LabelsPage() {
     if (mode === "serial") {
       window.requestAnimationFrame(() => document.getElementById("label-serial")?.focus());
     }
+  }
+
+  function selectMode(next: LabelDeskMode) {
+    if (next === mode) return;
+    setError(null);
+    if (next === "serial") wantSerialFocus.current = true;
+    setMode(next);
   }
 
   async function runSearch(raw: string, submitted: boolean) {
@@ -162,25 +169,18 @@ export function LabelsPage() {
     try {
       const result = await searchItemsForLabel(query);
       if (id !== requestId.current || !labelResultApplies(typed.current, query, submitted)) return;
-      const choice = labelLookupChoice({
+      const outcome = labelSearchOutcome({
         submitted,
-        exact: Boolean(result.exact),
-        matchCount: result.matches.length,
+        exact: result.exact,
+        matches: result.matches,
         truncated: result.truncated,
       });
       setSettledQuery(query);
-      if (choice === "select") {
-        const found = result.exact ?? result.matches[0];
-        if (!found) {
-          setItem(null);
-          setMatches([]);
-          setError("No items found");
-          return;
-        }
-        choose(found);
+      if (outcome.type === "select") {
+        choose(outcome.item);
         return;
       }
-      if (choice === "empty") {
+      if (outcome.type === "empty" || outcome.type === "missing") {
         setItem(null);
         setMatches([]);
         setTruncated(false);
@@ -189,9 +189,9 @@ export function LabelsPage() {
         return;
       }
       setItem(null);
-      setMatches(result.matches);
-      setTruncated(result.truncated);
-      setActive(result.matches.length > 0 ? 0 : -1);
+      setMatches(outcome.matches);
+      setTruncated(outcome.truncated);
+      setActive(outcome.matches.length > 0 ? 0 : -1);
     } catch (err) {
       if (id !== requestId.current) return;
       setError(errorText(err));
@@ -220,17 +220,32 @@ export function LabelsPage() {
     };
   }, [edited, identifier]);
 
-  function onFind(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const query = identifier.trim();
-    if (matches.length > 1 && settledQuery === query && active >= 0 && matches[active]) {
-      choose(matches[active]);
+  function selectOrSearch() {
+    const field = typed.current.trim();
+    const highlighted = labelHighlightedChoice({
+      identifier: field,
+      settledQuery,
+      matches,
+      active,
+    });
+    if (highlighted) {
+      choose(highlighted);
       return;
     }
-    void runSearch(query, true);
+    void runSearch(field, true);
+  }
+
+  function onFind(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    selectOrSearch();
   }
 
   function onSearchKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      selectOrSearch();
+      return;
+    }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       if (matches.length === 0) return;
       event.preventDefault();
@@ -267,13 +282,6 @@ export function LabelsPage() {
     setLoading(false);
   }
 
-  function selectMode(next: LabelDeskMode) {
-    if (next === mode) return;
-    setError(null);
-    if (next === "serial") wantSerialFocus.current = true;
-    setMode(next);
-  }
-
   function commitSerial(raw: string) {
     const next = addSerial(serials, raw);
     if (next.status === "empty") return;
@@ -297,26 +305,32 @@ export function LabelsPage() {
     setQuantity(nextQuantity);
     setCopiesText(nextCopies);
     if (mode === "serial") {
-      const problem = serialPrintProblem({
-        hasItem: item !== null,
-        serialCount: serialsToPrint(serials, serialDraft).length,
-      });
+      const pending = serialsToPrint(serials, serialDraft);
+      const problem = serialPrintProblem({ hasItem: item !== null, serialCount: pending.length });
       if (problem) {
         setError(problem);
         return;
       }
-      const pending = serialsToPrint(serials, serialDraft);
       if (!serials.some((row) => row.toLowerCase() === pending[pending.length - 1]?.toLowerCase())) {
         setSerials(pending);
         setSerialDraft("");
         setSerialHeld((current) => current + 1);
       }
-    } else if (!item) {
-      return;
+    } else {
+      const templateReady = template !== null && (template !== "qr" || origin !== "");
+      const problem = labelPrintProblem({ hasItem: item !== null, templateReady });
+      if (problem) {
+        setError(problem);
+        return;
+      }
     }
     setError(null);
     setPrintedOn(todayLabel(new Date()));
-    setPrintStamp((current) => current + 1);
+    try {
+      window.print();
+    } catch (err) {
+      setError(errorText(err));
+    }
   }
 
   const code = item ? barcodeValue(item.sku, item.id) : "";
@@ -334,7 +348,7 @@ export function LabelsPage() {
       <style>{mode === "serial" ? SERIAL_LABEL_PRINT_CSS : LABEL_PRINT_CSS}</style>
       <form className="no-print label-desk" onSubmit={onFind}>
         <p className="hint">The quantity is printed on the label. It does not change the item&apos;s stock.</p>
-        <div className="label-row">
+        <div className={mode === "serial" ? "label-row serial-on" : "label-row"}>
           <div className="label-kind">
             <span className="label-caption" id="label-kind-caption">
               Label
@@ -372,8 +386,13 @@ export function LabelsPage() {
                   requestId.current += 1;
                 }}
                 onValue={(value) => {
-                  if (value !== typed.current) return;
-                  if (holdQuery.current === value) return;
+                  const action = labelCommitAction({
+                    value,
+                    typed: typed.current,
+                    held: holdQuery.current,
+                    identifier,
+                  });
+                  if (action === "ignore") return;
                   holdQuery.current = null;
                   setEdited(true);
                   setIdentifier(value);
@@ -414,42 +433,42 @@ export function LabelsPage() {
             </label>
           ) : null}
           <div className="label-actions">
-          <label className="label-qty" htmlFor="label-qty">
-            <span className="label-caption">Qty on label</span>
-            <FastInput
-              id="label-qty"
-              size={4}
-              inputMode="numeric"
-              autoComplete="off"
-              value={quantity}
-              transform={labelQuantityDraft}
-              onValue={setQuantity}
-              onBlur={() => setQuantity((current) => labelQuantityCommit(current))}
-            />
-          </label>
-          <label className="label-copies" htmlFor="label-copies">
-            <span className="label-caption">Copies</span>
-            <FastInput
-              id="label-copies"
-              size={2}
-              inputMode="numeric"
-              autoComplete="off"
-              value={copiesText}
-              transform={labelCopiesDraft}
-              onValue={setCopiesText}
-              onBlur={() => setCopiesText((current) => labelCopiesCommit(current))}
-            />
-          </label>
-          <button
-            type="button"
-            className="label-print"
-            aria-label="Print"
-            title="Print"
-            disabled={!canPrint}
-            onClick={printLabel}
-          >
-            <Printer size={18} strokeWidth={1.75} aria-hidden />
-          </button>
+            <label className="label-qty" htmlFor="label-qty">
+              <span className="label-caption">Qty on label</span>
+              <FastInput
+                id="label-qty"
+                size={4}
+                inputMode="numeric"
+                autoComplete="off"
+                value={quantity}
+                transform={labelQuantityDraft}
+                onValue={setQuantity}
+                onBlur={() => setQuantity((current) => labelQuantityCommit(current))}
+              />
+            </label>
+            <label className="label-copies" htmlFor="label-copies">
+              <span className="label-caption">Copies</span>
+              <FastInput
+                id="label-copies"
+                size={2}
+                inputMode="numeric"
+                autoComplete="off"
+                value={copiesText}
+                transform={labelCopiesDraft}
+                onValue={setCopiesText}
+                onBlur={() => setCopiesText((current) => labelCopiesCommit(current))}
+              />
+            </label>
+            <button
+              type="button"
+              className="label-print"
+              aria-label="Print"
+              title="Print"
+              disabled={!canPrint}
+              onClick={printLabel}
+            >
+              <Printer size={18} strokeWidth={1.75} aria-hidden />
+            </button>
           </div>
         </div>
         {mode === "serial" && serials.length > 0 ? (
@@ -477,6 +496,11 @@ export function LabelsPage() {
                     role="option"
                     aria-selected={index === active}
                     onMouseEnter={() => setActive(index)}
+                    onPointerDown={(event) => {
+                      if (event.pointerType === "mouse" && event.button !== 0) return;
+                      event.preventDefault();
+                      choose(match);
+                    }}
                     onClick={() => choose(match)}
                   >
                     <span className="label-hit-sku">{match.sku || "No SKU"}</span>
