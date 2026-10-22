@@ -504,13 +504,14 @@ button.thumb-delete {
 
 .label-row {
   display: grid;
-  grid-template-columns: auto auto auto auto;
+  grid-template-columns: auto auto auto auto auto auto;
   align-items: end;
   justify-content: start;
   gap: 0.75rem 0.9rem;
 }
 
-.label-row > label {
+.label-row label,
+.label-row > .label-kind {
   display: grid;
   grid-template-rows: auto auto;
   grid-auto-flow: row;
@@ -523,6 +524,58 @@ button.thumb-delete {
   font-weight: 400;
   line-height: inherit;
   color: inherit;
+}
+
+.label-kind,
+.label-serial {
+  width: max-content;
+  max-width: 100%;
+}
+
+.label-actions {
+  display: contents;
+}
+
+.label-segments {
+  display: inline-flex;
+  align-items: stretch;
+  height: calc(1.45em + 1rem + 2px);
+  box-sizing: border-box;
+  border: 1px solid var(--input-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.label-segments button {
+  margin: 0;
+  padding: 0 0.85rem;
+  height: 100%;
+  min-height: 0;
+  background: none;
+  background-image: none;
+  color: var(--ink);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font: inherit;
+  font-weight: 400;
+}
+
+.label-segments button + button {
+  border-left: 1px solid var(--input-border);
+}
+
+.label-segments button[aria-pressed="true"] {
+  background: #0f172a;
+  background-image: none;
+  color: #fff;
+  font-weight: 600;
+}
+
+.label-segments button:hover:not([aria-pressed="true"]) {
+  background: rgba(15, 23, 42, 0.06);
+  background-image: none;
 }
 
 .label-caption {
@@ -590,15 +643,28 @@ button.label-clear:hover {
 }
 
 .label-qty input,
-.label-copies input {
+.label-copies input,
+.label-serial input {
   width: 100%;
   max-width: 100%;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+}
+
+.label-qty input,
+.label-copies input {
   padding-left: 0.75rem;
   padding-right: calc(0.75rem + 0.5rem);
   text-align: right;
   font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
+}
+
+.label-serial input {
+  min-width: calc(16ch + 2rem + 2px);
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  text-align: left;
 }
 
 .label-qty input {
@@ -636,16 +702,73 @@ button.label-print:hover:not(:disabled) {
   min-height: 44px;
 }
 
-@media (max-width: 640px) {
+.serial-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0;
+}
+
+.serial-picks li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  max-width: 100%;
+  padding: 0.1rem 0.15rem 0.1rem 0.7rem;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--input-border);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.serial-picks li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.serial-picks button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  background-image: none;
+  color: var(--muted);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.serial-picks button:hover {
+  background: rgba(15, 23, 42, 0.06);
+  background-image: none;
+  color: var(--ink);
+}
+
+@media (max-width: 1180px) {
   .label-row {
     grid-template-columns: max-content max-content max-content minmax(0, 1fr);
     align-items: end;
   }
 
-  .label-row > .label-query {
-    grid-column: 1 / -1;
-    width: 100%;
+  .label-kind {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .label-row .label-query {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    width: auto;
     max-width: none;
+    min-width: 0;
   }
 
   .label-query input {
@@ -653,8 +776,36 @@ button.label-print:hover:not(:disabled) {
     padding-right: 3rem;
   }
 
+  .label-row.serial-on .label-serial {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    max-width: none;
+  }
+
+  .label-row.serial-on .label-serial input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .label-actions {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    align-items: flex-end;
+    gap: 0.9rem;
+    min-width: 0;
+  }
+
+  .label-row.serial-on .label-actions {
+    grid-row: 3;
+  }
+}
+
+@media (max-width: 640px) {
   .label-row input,
-  button.label-print {
+  button.label-print,
+  .label-segments {
     height: 44px;
     min-height: 44px;
   }
@@ -665,6 +816,11 @@ button.label-print:hover:not(:disabled) {
   }
 
   button.label-clear {
+    width: 44px;
+    height: 44px;
+  }
+
+  .serial-picks button {
     width: 44px;
     height: 44px;
   }
