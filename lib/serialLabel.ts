@@ -14,8 +14,17 @@ export const SERIAL_QUIET_MODULES = 10;
 /** Bars plus quiet zone stay inside the label after the side padding. */
 export const SERIAL_BARCODE_MAX_MM = 90;
 
-/** Bar height before the quiet zone. A little taller than the old 22 mm so the label is not empty underneath. */
-export const SERIAL_BARCODE_HEIGHT_MM = 28;
+/**
+ * Bar height. About 30% shorter than the previous 28 mm.
+ * Module width and the ten-module quiet zone stay as they are.
+ */
+export const SERIAL_BARCODE_HEIGHT_MM = 28 * 0.7;
+
+/** Human-readable serial under the bars. One and a half times the previous 4 mm. */
+export const SERIAL_HUMAN_FONT_MM = 6;
+
+/** Printed quantity on the serial label. The layout is still here when this is turned on. */
+export const SERIAL_LABEL_SHOW_QTY = false;
 
 /** Side padding on the serial label. The head is the width that remains. */
 export const SERIAL_LABEL_PAD_X_MM = 3;
@@ -100,9 +109,21 @@ export function serialLabelHeadMode(input: {
   gapPx: number;
 }): SerialHeadMode {
   if (input.headPx <= 0) return "inline";
-  const descriptionPx = input.headPx - input.skuPx - input.qtyPx - input.gapPx * 2;
+  const gaps = input.qtyPx > 0 ? input.gapPx * 2 : input.gapPx;
+  const descriptionPx = input.headPx - input.skuPx - input.qtyPx - gaps;
   if (descriptionPx < input.headPx * 0.5) return "stacked";
   return "inline";
+}
+
+/**
+ * Font size for the human-readable serial. It stays at `baseFontMm` until that
+ * width would pass `maxWidthPx`, then it scales down so the line fits.
+ */
+export function serialHumanFontMm(input: { textWidthPx: number; maxWidthPx: number; baseFontMm: number }): number {
+  if (input.baseFontMm <= 0) return 0;
+  if (input.maxWidthPx <= 0 || input.textWidthPx <= 0) return input.baseFontMm;
+  if (input.textWidthPx <= input.maxWidthPx) return input.baseFontMm;
+  return (input.baseFontMm * input.maxWidthPx) / input.textWidthPx;
 }
 
 /** A pipe would add a fifth field. Each value is stored without one. */
