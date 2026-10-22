@@ -13,6 +13,7 @@ import { usePageMeta } from "@/components/AppShell";
 import { ChangeTaxonomyDialog } from "@/components/ChangeTaxonomyDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CountrySelect } from "@/components/CountrySelect";
+import { FastArea, FastInput } from "@/components/FastField";
 import { ItemGallery, type PendingImage } from "@/components/ItemGallery";
 import { ManufacturerSelect } from "@/components/ManufacturerSelect";
 import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
@@ -130,6 +131,16 @@ const EMPTY_ITEM: ItemSnapshot = {
   msrp: "",
 };
 
+function bindText(live: Map<string, string>, key: string, value: string, commit: (next: string) => void) {
+  return {
+    value,
+    onDraft: (next: string) => {
+      live.set(key, next);
+    },
+    onValue: commit,
+  };
+}
+
 export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   const router = useRouter();
   const [taxonomies, setTaxonomies] = useState<Taxonomy[]>([]);
@@ -190,6 +201,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   const [marketPrice, setMarketPrice] = useState("");
   const [msrp, setMsrp] = useState("");
   const savingRef = useRef(false);
+  const live = useRef(new Map<string, string>());
 
   useEffect(() => {
     setItemsHref(itemsListHref());
@@ -220,6 +232,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           mode === "create" && sourceId ? fetchDuplicateSource(sourceId) : Promise.resolve(null),
         ]);
         if (cancelled) return;
+        live.current.clear();
         setTaxonomies(taxonomyRows);
         setCountries(countryRows);
         setUnits(unitRows);
@@ -404,6 +417,9 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   const isNewTaxonomy = taxonomyName.trim() !== "" && !taxonomy;
 
   function onTaxonomyChange(nextName: string) {
+    for (const key of [...live.current.keys()]) {
+      if (key.startsWith("attr:")) live.current.delete(key);
+    }
     setTaxonomyName(nextName);
     setSaved(false);
     setDrafts([]);
@@ -418,7 +434,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   }
 
   function addDraft() {
-    const trimmed = draftName.trim();
+    const trimmed = read("draftName", draftName).trim();
     if (!trimmed) {
       setSaveError("Enter a name for the new attribute.");
       return;
@@ -438,10 +454,12 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         key: crypto.randomUUID(),
         name: trimmed,
         data_type: draftType,
-        unit: draftUnit.trim(),
+        unit: read("draftUnit", draftUnit).trim(),
         uses_list: draftUsesList,
       },
     ]);
+    live.current.delete("draftName");
+    live.current.delete("draftUnit");
     setDraftName("");
     setDraftUnit("");
     setDraftType("text");
@@ -455,51 +473,67 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     return names;
   }, [units, unit]);
 
-  const snapshot: ItemSnapshot = {
-    sku,
-    name,
-    description,
-    taxonomyName,
-    longCode,
-    shortCode,
-    manufacturerId,
-    manufacturerName,
-    model,
-    partNumber,
-    oemName,
-    oemPartNumber,
-    productUrl,
-    unit,
-    itemType,
-    condition,
-    conditionNote,
-    eccn,
-    usHts,
-    ccats,
-    coo,
-    notes,
-    attributeValues,
-    drafts,
-    pendingCount: pendingImages.length,
-    draftName,
-    draftType,
-    draftUnit,
-    draftUsesList,
-    ecommercePrice,
-    marketPrice,
-    msrp,
-  };
+  function read(key: string, fallback: string) {
+    return live.current.has(key) ? (live.current.get(key) as string) : fallback;
+  }
+
+  function currentSnapshot(): ItemSnapshot {
+    const attributes = { ...attributeValues };
+    for (const [key, value] of live.current) {
+      if (key.startsWith("attr:")) attributes[key.slice(5)] = value;
+    }
+    return {
+      sku: read("sku", sku),
+      name: read("name", name),
+      description: read("description", description),
+      taxonomyName: read("taxonomyName", taxonomyName),
+      longCode: read("longCode", longCode),
+      shortCode: read("shortCode", shortCode),
+      manufacturerId,
+      manufacturerName,
+      model: read("model", model),
+      partNumber: read("partNumber", partNumber),
+      oemName: read("oemName", oemName),
+      oemPartNumber: read("oemPartNumber", oemPartNumber),
+      productUrl: read("productUrl", productUrl),
+      unit,
+      itemType,
+      condition,
+      conditionNote: read("conditionNote", conditionNote),
+      eccn: read("eccn", eccn),
+      usHts: read("usHts", usHts),
+      ccats: read("ccats", ccats),
+      coo,
+      notes: read("notes", notes),
+      attributeValues: attributes,
+      drafts,
+      pendingCount: pendingImages.length,
+      draftName: read("draftName", draftName),
+      draftType,
+      draftUnit: read("draftUnit", draftUnit),
+      draftUsesList,
+      ecommercePrice: read("ecommercePrice", ecommercePrice),
+      marketPrice: read("marketPrice", marketPrice),
+      msrp: read("msrp", msrp),
+    };
+  }
+
+  const snapshot = currentSnapshot();
   const dirty = isDirty(snapshot, baseline) || manufacturerUnresolved;
 
   async function save(): Promise<boolean> {
     if (savingRef.current) return false;
+    const current = currentSnapshot();
+    if (!isDirty(current, baseline) && !manufacturerUnresolved) return false;
     savingRef.current = true;
     setSaveError(null);
     setSaved(false);
     try {
-    const trimmedName = name.trim();
-    const trimmedSku = sku.trim();
-    const trimmedTaxonomy = taxonomy?.name ?? taxonomyName.trim();
+    const trimmedName = current.name.trim();
+    const trimmedSku = current.sku.trim();
+    const taxonomyMatch =
+      taxonomies.find((row) => row.name.toLowerCase() === current.taxonomyName.trim().toLowerCase()) ?? null;
+    const trimmedTaxonomy = taxonomyMatch?.name ?? current.taxonomyName.trim();
     const submittedSku = mode === "create" ? skuSubmittedForCreate(!skuLocked, trimmedSku) : trimmedSku;
     if (!trimmedName) {
       setSaveError("Name is required.");
@@ -518,9 +552,9 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
       return false;
     }
     if (showPrices) {
-      const ecommerce = parseMoney(ecommercePrice);
-      const market = parseMoney(marketPrice);
-      const retail = parseMoney(msrp);
+      const ecommerce = parseMoney(current.ecommercePrice);
+      const market = parseMoney(current.marketPrice);
+      const retail = parseMoney(current.msrp);
       if (!ecommerce.ok) {
         setSaveError(`Ecommerce price: ${ecommerce.message}`);
         return false;
@@ -542,12 +576,12 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
       setSaveError("Choose a manufacturer from the list, or add the new name.");
       return false;
     }
-    const htsProblem = htsError(usHts);
+    const htsProblem = htsError(current.usHts);
     if (htsProblem) {
       setSaveError(`US HTS: ${htsProblem}`);
       return false;
     }
-    const urlProblem = productUrlError(productUrl);
+    const urlProblem = productUrlError(current.productUrl);
     if (urlProblem) {
       setSaveError(urlProblem);
       return false;
@@ -557,8 +591,8 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     let longCodeValue: string | null = null;
     let shortCodeValue: string | null = null;
     if (creatingTaxonomy) {
-      longCodeValue = longCode.trim().toUpperCase();
-      shortCodeValue = shortCode.trim().toUpperCase();
+      longCodeValue = current.longCode.trim().toUpperCase();
+      shortCodeValue = current.shortCode.trim().toUpperCase();
       if (!/^[A-Z0-9]+(?:\/[A-Z0-9]+)*$/.test(longCodeValue)) {
         setSaveError("Long code must be uppercase letters, digits, and slashes, like CRD/NIC.");
         return false;
@@ -570,8 +604,8 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     }
 
     const attributes: Record<string, string> = {};
-    for (const attribute of taxonomy?.attributes ?? []) {
-      const value = (attributeValues[attribute.name] ?? "").trim();
+    for (const attribute of taxonomyMatch?.attributes ?? []) {
+      const value = (current.attributeValues[attribute.name] ?? "").trim();
       if (!value) continue;
       const problem = attributeValueError(attribute.data_type, value);
       if (problem) {
@@ -583,7 +617,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
 
     const attributeDefs: AttributeDefinition[] = [];
     for (const draft of drafts) {
-      const value = (attributeValues[draft.key] ?? "").trim();
+      const value = (current.attributeValues[draft.key] ?? "").trim();
       if (value) {
         const problem = attributeValueError(draft.data_type, value);
         if (problem) {
@@ -603,25 +637,25 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     const input = {
       name: trimmedName,
       sku: submittedSku,
-      description: description.trim(),
+      description: current.description.trim(),
       taxonomyName: trimmedTaxonomy || null,
       attributes,
       attributeDefs,
       longCode: longCodeValue,
       shortCode: shortCodeValue,
       manufacturerId,
-      model,
-      partNumber,
-      oemName,
-      oemPartNumber,
-      productUrl,
+      model: current.model,
+      partNumber: current.partNumber,
+      oemName: current.oemName,
+      oemPartNumber: current.oemPartNumber,
+      productUrl: current.productUrl,
       unit,
       itemType,
       condition,
-      conditionNote,
-      eccn,
-      usHts,
-      ccats,
+      conditionNote: current.conditionNote,
+      eccn: current.eccn,
+      usHts: current.usHts,
+      ccats: current.ccats,
       coo,
     };
 
@@ -630,9 +664,13 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         if (sourceId) await assertDuplicateSave({ sourceId, name: trimmedName, sku: submittedSku });
         const id = createdId ?? (await createItem(input));
         setCreatedId(id);
-        if (notes.trim()) await saveItemNotes(id, notes);
+        if (current.notes.trim()) await saveItemNotes(id, current.notes);
         if (showPrices) {
-          await saveDuplicatePrices(id, { ecommercePrice, marketPrice, msrp });
+          await saveDuplicatePrices(id, {
+            ecommercePrice: current.ecommercePrice,
+            marketPrice: current.marketPrice,
+            msrp: current.msrp,
+          });
         }
         if (pendingImages.length > 0) {
           await uploadItemImages(
@@ -645,7 +683,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
       }
       if (!itemId) throw new Error("Missing item id.");
       await updateItem(itemId, input);
-      await saveItemNotes(itemId, notes);
+      await saveItemNotes(itemId, current.notes);
       const refreshed = await fetchTaxonomies();
       setTaxonomies(refreshed);
       const match = refreshed.find((row) => row.name.toLowerCase() === trimmedTaxonomy.toLowerCase());
@@ -655,8 +693,9 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
       setLoadedAttributes(attributes);
       setAttributeValues(attributes);
       setDrafts([]);
+      live.current.clear();
       setBaseline({
-        ...snapshot,
+        ...current,
         taxonomyName: nextTaxonomyName,
         attributeValues: attributes,
         drafts: [],
@@ -674,18 +713,17 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!dirty || savingRef.current) return;
     await save();
   }
 
-  const labelHref = sku.trim()
-    ? `/labels?sku=${encodeURIComponent(sku.trim())}`
+  const labelHref = snapshot.sku.trim()
+    ? `/labels?sku=${encodeURIComponent(snapshot.sku.trim())}`
     : itemId
       ? `/labels?id=${itemId}`
       : "/labels";
 
   async function onPrint() {
-    if (dirty) {
+    if (isDirty(currentSnapshot(), baseline) || manufacturerUnresolved) {
       if (!window.confirm(SAVE_BEFORE_LABEL)) return;
       const ok = await save();
       if (!ok) return;
@@ -695,7 +733,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
 
   async function onChangeTaxonomy() {
     if (!itemId) return;
-    if (dirty) {
+    if (isDirty(currentSnapshot(), baseline) || manufacturerUnresolved) {
       if (!window.confirm(SAVE_BEFORE_TAXONOMY)) return;
       const ok = await save();
       if (!ok) return;
@@ -758,6 +796,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         saving={saving}
         saved={saved}
         onSave={() => void save()}
+        attemptSave
         listen={!confirmDelete && !changeTaxonomy}
       >
         {mode === "edit" && itemId ? (
@@ -801,12 +840,11 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         <div className="item-identity">
           <label className="item-sku">
             SKU
-            <input
-              value={sku}
-              onChange={(event) => {
-                setSku(event.target.value);
+            <FastInput
+              {...bindText(live.current, "sku", sku, (next) => {
+                setSku(next);
                 setSaved(false);
-              }}
+              })}
               autoComplete="off"
               readOnly={mode === "create" && skuLocked}
               required={mode !== "create" || !skuLocked}
@@ -827,7 +865,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                 <span className="hint">This SKU will be saved as typed.</span>
               )
             ) : null}
-            {sourceSku && !skuLocked && skuReusesSource(sku, sourceSku) ? (
+            {sourceSku && !skuLocked && skuReusesSource(snapshot.sku, sourceSku) ? (
               <span className="field-error" role="alert">
                 Choose a new SKU. The original SKU stays on the source item.
               </span>
@@ -835,19 +873,18 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           </label>
           <label className="item-name">
             Name
-            <input
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
+            <FastInput
+              {...bindText(live.current, "name", name, (next) => {
+                setName(next);
                 setSaved(false);
-              }}
+              })}
               autoComplete="off"
               required
-              maxLength={Math.max(80, name.length)}
-              aria-invalid={sourceName !== null && sameItemName(name, sourceName)}
+              maxLength={Math.max(80, snapshot.name.length)}
+              aria-invalid={sourceName !== null && sameItemName(snapshot.name, sourceName)}
               aria-describedby={sourceName ? "duplicate-name" : undefined}
             />
-            {sourceName && sameItemName(name, sourceName) ? (
+            {sourceName && sameItemName(snapshot.name, sourceName) ? (
               <span className="field-error" id="duplicate-name" role="alert">
                 Change the name so this item is distinct from the original.
               </span>
@@ -863,22 +900,20 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         ) : null}
         <label>
           Description
-          <textarea
-            value={description}
-            onChange={(event) => {
-              setDescription(event.target.value);
+          <FastArea
+            {...bindText(live.current, "description", description, (next) => {
+              setDescription(next);
               setSaved(false);
-            }}
+            })}
           />
         </label>
         <label>
           Notes
-          <textarea
-            value={notes}
-            onChange={(event) => {
-              setNotes(event.target.value);
+          <FastArea
+            {...bindText(live.current, "notes", notes, (next) => {
+              setNotes(next);
               setSaved(false);
-            }}
+            })}
           />
           <span className="hint">Optional. A taxonomy change can append removed field values here.</span>
         </label>
@@ -887,41 +922,38 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             <label>
               Ecommerce price
               <span className="hint">Copied amounts only. Quote history and price dates are not copied.</span>
-              <input
+              <FastInput
                 className="num"
-                value={ecommercePrice}
                 inputMode="decimal"
                 autoComplete="off"
-                onChange={(event) => {
-                  setEcommercePrice(event.target.value);
+                {...bindText(live.current, "ecommercePrice", ecommercePrice, (next) => {
+                  setEcommercePrice(next);
                   setSaved(false);
-                }}
+                })}
               />
             </label>
             <label>
               Market price
-              <input
+              <FastInput
                 className="num"
-                value={marketPrice}
                 inputMode="decimal"
                 autoComplete="off"
-                onChange={(event) => {
-                  setMarketPrice(event.target.value);
+                {...bindText(live.current, "marketPrice", marketPrice, (next) => {
+                  setMarketPrice(next);
                   setSaved(false);
-                }}
+                })}
               />
             </label>
             <label>
               MSRP
-              <input
+              <FastInput
                 className="num"
-                value={msrp}
                 inputMode="decimal"
                 autoComplete="off"
-                onChange={(event) => {
-                  setMsrp(event.target.value);
+                {...bindText(live.current, "msrp", msrp, (next) => {
+                  setMsrp(next);
                   setSaved(false);
-                }}
+                })}
               />
             </label>
           </div>
@@ -981,12 +1013,14 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             ) : (
               <label>
                 Taxonomy
-                <input
+                <FastInput
                   list="taxonomy-names"
-                  value={taxonomyName}
                   placeholder="Select or type a taxonomy"
                   autoComplete="off"
-                  onChange={(event) => onTaxonomyChange(event.target.value)}
+                  {...bindText(live.current, "taxonomyName", taxonomyName, (next) => {
+                    onTaxonomyChange(next);
+                    setSaved(false);
+                  })}
                 />
                 <datalist id="taxonomy-names">
                   {taxonomies.map((row) => (
@@ -1005,31 +1039,31 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             <div className="grid">
               <label>
                 Long code
-                <input
-                  value={longCode}
+                <FastInput
                   placeholder="CRD/NIC"
                   autoComplete="off"
                   spellCheck={false}
                   required
-                  onChange={(event) => {
-                    setLongCode(event.target.value.toUpperCase());
+                  transform={(value) => value.toUpperCase()}
+                  {...bindText(live.current, "longCode", longCode, (next) => {
+                    setLongCode(next);
                     setSaved(false);
-                  }}
+                  })}
                 />
               </label>
               <label>
                 Short code
-                <input
-                  value={shortCode}
+                <FastInput
                   placeholder="NIC"
                   maxLength={3}
                   autoComplete="off"
                   spellCheck={false}
                   required
-                  onChange={(event) => {
-                    setShortCode(event.target.value.toUpperCase().slice(0, 3));
+                  transform={(value) => value.toUpperCase().slice(0, 3)}
+                  {...bindText(live.current, "shortCode", shortCode, (next) => {
+                    setShortCode(next);
                     setSaved(false);
-                  }}
+                  })}
                 />
                 <span className="hint">Exactly 3 letters or digits. Printed on the label.</span>
               </label>
@@ -1048,68 +1082,63 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             />
             <label>
               Model
-              <input
-                value={model}
+              <FastInput
                 autoComplete="off"
-                onChange={(event) => {
-                  setModel(event.target.value);
+                {...bindText(live.current, "model", model, (next) => {
+                  setModel(next);
                   setSaved(false);
-                }}
+                })}
               />
             </label>
             <label>
               Part number
-              <input
-                value={partNumber}
+              <FastInput
                 autoComplete="off"
-                onChange={(event) => {
-                  setPartNumber(event.target.value);
+                {...bindText(live.current, "partNumber", partNumber, (next) => {
+                  setPartNumber(next);
                   setSaved(false);
-                }}
+                })}
               />
             </label>
           </div>
           <div className="grid">
             <label>
               OEM name
-              <input
-                value={oemName}
+              <FastInput
                 autoComplete="off"
-                onChange={(event) => {
-                  setOemName(event.target.value);
+                {...bindText(live.current, "oemName", oemName, (next) => {
+                  setOemName(next);
                   setSaved(false);
-                }}
+                })}
               />
             </label>
             <label>
               OEM part number
-              <input
-                value={oemPartNumber}
+              <FastInput
                 autoComplete="off"
-                onChange={(event) => {
-                  setOemPartNumber(event.target.value);
+                {...bindText(live.current, "oemPartNumber", oemPartNumber, (next) => {
+                  setOemPartNumber(next);
                   setSaved(false);
-                }}
+                })}
               />
             </label>
             <label>
               Product page
-              <input
+              <FastInput
                 type="url"
                 inputMode="url"
-                value={productUrl}
                 autoComplete="off"
                 spellCheck={false}
                 placeholder="https://"
-                onChange={(event) => {
-                  setProductUrl(event.target.value);
+                {...bindText(live.current, "productUrl", productUrl, (next) => {
+                  setProductUrl(next);
                   setSaved(false);
-                }}
+                })}
               />
-              {productUrl.trim() && productUrlError(productUrl) ? (
-                <span className="error-text">{productUrlError(productUrl)}</span>
-              ) : productUrlHref(productUrl) ? (
-                <a href={productUrlHref(productUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
+              {snapshot.productUrl.trim() && productUrlError(snapshot.productUrl) ? (
+                <span className="error-text">{productUrlError(snapshot.productUrl)}</span>
+              ) : productUrlHref(snapshot.productUrl) ? (
+                <a href={productUrlHref(snapshot.productUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
                   Open product page
                 </a>
               ) : (
@@ -1156,13 +1185,12 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             ) : (
               <label>
                 Condition note
-                <input
-                  value={conditionNote}
+                <FastInput
                   autoComplete="off"
-                  onChange={(event) => {
-                    setConditionNote(event.target.value);
+                  {...bindText(live.current, "conditionNote", conditionNote, (next) => {
+                    setConditionNote(next);
                     setSaved(false);
-                  }}
+                  })}
                 />
                 <span className="hint">Optional.</span>
               </label>
@@ -1174,41 +1202,38 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           <div className="grid">
             <label>
               ECCN
-              <input
-                value={eccn}
+              <FastInput
                 autoComplete="off"
                 spellCheck={false}
-                onChange={(event) => {
-                  setEccn(event.target.value);
+                {...bindText(live.current, "eccn", eccn, (next) => {
+                  setEccn(next);
                   setSaved(false);
-                }}
+                })}
               />
               <span className="hint">Blank saves as {DEFAULT_ECCN}.</span>
             </label>
             <label>
               US HTS
-              <input
-                value={usHts}
+              <FastInput
                 autoComplete="off"
                 spellCheck={false}
                 placeholder="8471.30.0100"
-                onChange={(event) => {
-                  setUsHts(event.target.value);
+                {...bindText(live.current, "usHts", usHts, (next) => {
+                  setUsHts(next);
                   setSaved(false);
-                }}
+                })}
               />
               <span className="hint">Digits and optional dots, up to 10 digits.</span>
             </label>
             <label>
               CCATS
-              <input
-                value={ccats}
+              <FastInput
                 autoComplete="off"
                 spellCheck={false}
-                onChange={(event) => {
-                  setCcats(event.target.value);
+                {...bindText(live.current, "ccats", ccats, (next) => {
+                  setCcats(next);
                   setSaved(false);
-                }}
+                })}
               />
             </label>
             <CountrySelect
@@ -1230,6 +1255,9 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                   key={attribute.id}
                   attribute={attribute}
                   value={attributeValues[attribute.name] ?? ""}
+                  onDraft={(value) => {
+                    live.current.set(`attr:${attribute.name}`, value);
+                  }}
                   onChange={(value) => {
                     setAttributeValues((current) => ({ ...current, [attribute.name]: value }));
                     setSaved(false);
@@ -1252,6 +1280,9 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                     values: [],
                   }}
                   value={attributeValues[draft.key] ?? ""}
+                  onDraft={(value) => {
+                    live.current.set(`attr:${draft.key}`, value);
+                  }}
                   onChange={(value) => {
                     setAttributeValues((current) => ({ ...current, [draft.key]: value }));
                     setSaved(false);
@@ -1262,10 +1293,9 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             <div className="draft-attribute">
               <label>
                 New attribute
-                <input
-                  value={draftName}
+                <FastInput
                   autoComplete="off"
-                  onChange={(event) => setDraftName(event.target.value)}
+                  {...bindText(live.current, "draftName", draftName, setDraftName)}
                 />
               </label>
               <label>
@@ -1283,10 +1313,9 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
               </label>
               <label>
                 Unit
-                <input
-                  value={draftUnit}
+                <FastInput
                   autoComplete="off"
-                  onChange={(event) => setDraftUnit(event.target.value)}
+                  {...bindText(live.current, "draftUnit", draftUnit, setDraftUnit)}
                 />
               </label>
               <label className="check">

@@ -58,7 +58,7 @@ Chips:
 
 Cards, forms, the top bar, stats, and banners default to `--card` (`rgba(255, 255, 255, 0.94)`). That is already readable with no blur.
 
-When the browser supports `backdrop-filter`, those surfaces drop to `rgba(255, 255, 255, 0.86)` and blur by `--blur-glass`. The items grid and the sidebar stay solid: the grid is a data surface, and the sidebar has to stay dark when it overlays the page.
+When the browser supports `backdrop-filter`, cards, the top bar, stats, and banners drop to `rgba(255, 255, 255, 0.86)` and blur by `--blur-glass`. Forms stay on the solid card color. A form repaints while someone types, and a blur on that paint is what makes keystrokes feel late on phones. The items grid and the sidebar stay solid: the grid is a data surface, and the sidebar has to stay dark when it overlays the page.
 
 `prefers-reduced-transparency: reduce` turns the blur off and uses `--card-solid` (`#ffffff`).
 

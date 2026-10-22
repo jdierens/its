@@ -19,6 +19,7 @@ export function PageToolbar({
   onSave,
   disabled = false,
   listen = true,
+  attemptSave = false,
   showSave = true,
   leaveMessage = LEAVE_WITHOUT_SAVING,
   children,
@@ -29,6 +30,8 @@ export function PageToolbar({
   onSave: () => void;
   disabled?: boolean;
   listen?: boolean;
+  /** Call save even when the toolbar has not re-rendered the dirty flag yet. */
+  attemptSave?: boolean;
   showSave?: boolean;
   leaveMessage?: string;
   children?: ReactNode;
@@ -37,11 +40,13 @@ export function PageToolbar({
   const saveRef = useRef(onSave);
   const canSaveRef = useRef(canSave);
   const listenRef = useRef(listen);
+  const attemptRef = useRef(attemptSave);
   const dirtyRef = useRef(dirty);
   const messageRef = useRef(leaveMessage);
   saveRef.current = onSave;
   canSaveRef.current = canSave;
   listenRef.current = listen;
+  attemptRef.current = attemptSave;
   dirtyRef.current = dirty;
   messageRef.current = leaveMessage;
 
@@ -61,7 +66,8 @@ export function PageToolbar({
     function onKey(event: KeyboardEvent) {
       if (!isSaveShortcut(event)) return;
       event.preventDefault();
-      if (!listenRef.current || !canSaveRef.current) return;
+      if (!listenRef.current) return;
+      if (!attemptRef.current && !canSaveRef.current) return;
       saveRef.current();
     }
     window.addEventListener("keydown", onKey);

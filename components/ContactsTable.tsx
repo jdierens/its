@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { QueryField } from "@/components/QueryField";
 import { errorText } from "@/lib/errors";
 import { fetchContactList, type Contact } from "@/lib/contacts";
 import type { ContactKind, SyncStatus } from "@/lib/qbo/map";
@@ -32,7 +33,8 @@ export function ContactsTable({ kind }: { kind: ContactKind }) {
   const params = useSearchParams();
   const q = params.get("q") ?? "";
   const noun = kind === "customer" ? "customers" : "vendors";
-  const [draft, setDraft] = useState(q);
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
   const [rows, setRows] = useState<Contact[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -42,22 +44,14 @@ export function ContactsTable({ kind }: { kind: ContactKind }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const cellRefs = useRef(new Map<string, HTMLTableCellElement>());
 
-  useEffect(() => {
-    setDraft(q);
-  }, [q]);
-
-  useEffect(() => {
-    const handle = window.setTimeout(() => {
-      const trimmed = draft.trim();
-      if (trimmed === q) return;
-      const next = new URLSearchParams(params.toString());
-      if (trimmed) next.set("q", trimmed);
-      else next.delete("q");
-      const query = next.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-    }, 250);
-    return () => window.clearTimeout(handle);
-  }, [draft, q, params, pathname, router]);
+  const commitSearch = useCallback((trimmed: string) => {
+    if (trimmed === (paramsRef.current.get("q") ?? "")) return;
+    const next = new URLSearchParams(paramsRef.current.toString());
+    if (trimmed) next.set("q", trimmed);
+    else next.delete("q");
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,22 +149,14 @@ export function ContactsTable({ kind }: { kind: ContactKind }) {
   return (
     <main className="page items-page">
       <div className="items-toolbar">
-        <input
-          ref={searchRef}
+        <QueryField
+          inputRef={searchRef}
           className="items-search"
           type="search"
           aria-label={`Search ${noun}`}
           placeholder="Search name, company, email, phone"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              if (draft) setDraft("");
-              else event.currentTarget.blur();
-            }
-          }}
+          value={q}
+          onCommit={commitSearch}
         />
         <p className="items-count">
           {loading && rows.length === 0

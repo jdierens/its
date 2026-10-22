@@ -9,7 +9,7 @@ One row holds the search field, **Qty on label**, **Copies**, and **Print**. The
 - One match on Enter selects that item. The page does not ask you to pick 1 of 1.
 - Several matches show a short list under that row: SKU, name, and a one-line description. Tap or click a row. On a desktop keyboard, Up and Down move and Enter picks the highlighted row.
 - Nothing matches → **No items found**.
-- Typing can search on its own. A SKU prefix does not select an item while you are still typing, even if only one row matches. An exact SKU does.
+- Typing can search on its own, after a short pause. The field keeps what you type. A result is applied only when the field still shows the text that was searched, so a slower reply cannot replace a newer string. A SKU prefix does not select an item while you are still typing, even if only one row matches. An exact SKU does, once that pause lands on the exact SKU.
 - The list stops at 25 rows and says to refine the search when more exist.
 
 A link from the item page still opens `/labels?sku=` or `/labels?id=` and prepares that item. **Qty on label** is a whole number from 0 to 9999, right-aligned, and does not change stock. **Copies** is a whole number from 1 to 99, right-aligned, and starts at 1. A blank quantity becomes 0. A blank or zero copy count becomes 1. **Print** is a printer icon. Its name and tooltip are Print. It stays off until an item is selected, and it is a 44px target. On a narrow phone the row wraps onto two lines, with the search field on the first line and quantity, copies, and Print on the second.

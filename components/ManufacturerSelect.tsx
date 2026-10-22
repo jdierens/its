@@ -27,6 +27,7 @@ export function ManufacturerSelect({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef(0);
+  const focused = useRef(false);
 
   const unresolved =
     query.trim().length > 0 && normalizeLabel(query) !== normalizeLabel(manufacturerName);
@@ -36,6 +37,7 @@ export function ManufacturerSelect({
   }, [onUnresolved, unresolved]);
 
   useEffect(() => {
+    if (focused.current) return;
     setQuery(manufacturerName);
   }, [manufacturerName]);
 
@@ -51,7 +53,10 @@ export function ManufacturerSelect({
           if (current === request.current) setError(errorText(err));
         });
     }, 180);
-    return () => window.clearTimeout(handle);
+    return () => {
+      window.clearTimeout(handle);
+      request.current += 1;
+    };
   }, [open, query]);
 
   const exact = suggestions.some((row) => row.score >= 0.99);
@@ -83,7 +88,10 @@ export function ManufacturerSelect({
         value={query}
         placeholder="Search or add a manufacturer"
         autoComplete="off"
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          focused.current = true;
+          setOpen(true);
+        }}
         onChange={(event) => {
           const next = event.target.value;
           setQuery(next);
@@ -91,6 +99,7 @@ export function ManufacturerSelect({
           if (next.trim() === "") onChange(null, "");
         }}
         onBlur={() => {
+          focused.current = false;
           window.setTimeout(() => setOpen(false), 160);
         }}
         onKeyDown={(event) => {

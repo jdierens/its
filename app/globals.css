@@ -3434,7 +3434,6 @@ h1 {
 
 @supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
   .card,
-  form,
   .shell-top,
   .stat,
   .banner {
@@ -3446,7 +3445,6 @@ h1 {
 
 @media (prefers-reduced-transparency: reduce) {
   .card,
-  form,
   .shell-top,
   .stat,
   .banner,

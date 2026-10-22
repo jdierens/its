@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
+import { FastArea, FastInput } from "@/components/FastField";
 import { PurchaseOrderAttachments } from "@/components/PurchaseOrderAttachments";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
@@ -34,7 +35,12 @@ import {
 } from "@/lib/purchaseOrders";
 import { formatMoney } from "@/lib/pricing/quotes";
 
-type LineState = PurchaseOrderLineView & { query: string; hits: PurchaseItemHit[]; selected: boolean };
+type LineState = PurchaseOrderLineView & {
+  key: string;
+  query: string;
+  hits: PurchaseItemHit[];
+  selected: boolean;
+};
 
 const EMPTY_LINE: LineState = {
   itemId: "",
@@ -49,7 +55,157 @@ const EMPTY_LINE: LineState = {
   query: "",
   hits: [],
   selected: false,
+  key: "",
 };
+
+function blankLine(): LineState {
+  return { ...EMPTY_LINE, key: crypto.randomUUID() };
+}
+
+function lineText(live: Map<string, string>, key: string, field: string, fallback: string) {
+  const id = `${key}:${field}`;
+  return live.has(id) ? (live.get(id) as string) : fallback;
+}
+
+const PoLineRow = memo(function PoLineRow({
+  line,
+  index,
+  editable,
+  showMoney,
+  textLive,
+  onPatch,
+  onPrice,
+  onBlurPrice,
+  onFind,
+  onPick,
+  onClear,
+}: {
+  line: LineState;
+  index: number;
+  editable: boolean;
+  showMoney: boolean;
+  textLive: Map<string, string>;
+  onPatch: (key: string, patch: Partial<LineState>) => void;
+  onPrice: (key: string, edited: PriceEdit, value: string) => void;
+  onBlurPrice: (key: string, edited: "unit" | "ext") => void;
+  onFind: (key: string) => void;
+  onPick: (key: string, hit: PurchaseItemHit) => void;
+  onClear: (key: string) => void;
+}) {
+  return (
+    <tr>
+      {editable ? (
+        <td className="po-check">
+          <input
+            type="checkbox"
+            aria-label={`Select line ${index + 1}`}
+            checked={line.selected}
+            onChange={(event) => onPatch(line.key, { selected: event.target.checked })}
+          />
+        </td>
+      ) : null}
+      <td className="po-item" data-label="Item">
+        {line.itemId ? (
+          <div className="po-item-id">
+            {line.itemSku} - {line.itemName}
+          </div>
+        ) : null}
+        {editable ? (
+          <div className="combo po-find">
+            <FastInput
+              value={line.query}
+              onDraft={(next) => textLive.set(`${line.key}:query`, next)}
+              onValue={(next) => onPatch(line.key, { query: next })}
+              placeholder={line.itemId ? "Change item" : "SKU or name"}
+              autoComplete="off"
+              aria-label={`Find item for line ${index + 1}`}
+            />
+            <button type="button" onClick={() => void onFind(line.key)}>
+              Find
+            </button>
+            {line.itemId ? (
+              <button type="button" className="secondary" onClick={() => onClear(line.key)}>
+                Clear
+              </button>
+            ) : null}
+            {line.hits.length > 0 ? (
+              <div className="combo-menu">
+                {line.hits.map((hit) => (
+                  <button
+                    key={hit.id}
+                    type="button"
+                    className="combo-option"
+                    onClick={() => onPick(line.key, hit)}
+                  >
+                    <span>
+                      {hit.sku} - {hit.name}
+                    </span>
+                    {hit.description ? <span className="hint">{hit.description}</span> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </td>
+      <td className="po-desc" data-label="Description">
+        <FastInput
+          aria-label={`Description for line ${index + 1}`}
+          value={line.description}
+          placeholder="Item description"
+          onDraft={(next) => textLive.set(`${line.key}:description`, next)}
+          onValue={(next) => onPatch(line.key, { description: next })}
+          readOnly={!editable}
+        />
+      </td>
+      <td className="po-num" data-label="Qty">
+        <FastInput
+          aria-label={`Quantity for line ${index + 1}`}
+          value={line.qty}
+          onDraft={(next) => textLive.set(`${line.key}:qty`, next)}
+          onValue={(next) => onPrice(line.key, "qty", next)}
+          readOnly={!editable}
+          inputMode="decimal"
+        />
+      </td>
+      <td className="po-unit" data-label="Unit">
+        <FastInput
+          aria-label={`Unit for line ${index + 1}`}
+          value={line.unit}
+          onDraft={(next) => textLive.set(`${line.key}:unit`, next)}
+          onValue={(next) => onPatch(line.key, { unit: next })}
+          readOnly={!editable}
+        />
+      </td>
+      {showMoney ? (
+        <td className="po-num" data-label="Unit price">
+          <FastInput
+            aria-label={`Unit price for line ${index + 1}`}
+            value={line.unitCost}
+            onDraft={(next) => textLive.set(`${line.key}:unitCost`, next)}
+            onValue={(next) => onPrice(line.key, "unit", next)}
+            onBlur={() => onBlurPrice(line.key, "unit")}
+            readOnly={!editable}
+            inputMode="decimal"
+          />
+        </td>
+      ) : null}
+      {showMoney ? (
+        <td className="po-num" data-label="Ext price">
+          <FastInput
+            aria-label={`Extension for line ${index + 1}`}
+            value={line.extPrice}
+            onDraft={(next) => textLive.set(`${line.key}:extPrice`, next)}
+            onValue={(next) => onPrice(line.key, "ext", next)}
+            onBlur={() => onBlurPrice(line.key, "ext")}
+            readOnly={!editable}
+            inputMode="decimal"
+          />
+        </td>
+      ) : null}
+    </tr>
+  );
+});
 
 export function PurchaseOrderForm({
   order,
@@ -76,54 +232,97 @@ export function PurchaseOrderForm({
   const [internalNotes, setInternalNotes] = useState(order?.internalNotes ?? "");
   const [lines, setLines] = useState<LineState[]>(
     order && order.lines.length > 0
-      ? order.lines.map((line) => ({ ...line, query: "", hits: [], selected: false }))
-      : [{ ...EMPTY_LINE }],
+      ? order.lines.map((line) => ({ ...line, query: "", hits: [], selected: false, key: crypto.randomUUID() }))
+      : [blankLine()],
   );
+  const textLive = useRef(new Map<string, string>());
+  const findGeneration = useRef(0);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
   const [addCount, setAddCount] = useState("1");
   const [importMode, setImportMode] = useState<"replace" | "append">("append");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  function updateLine(index: number, patch: Partial<LineState>) {
-    setLines((current) => current.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line)));
-  }
+  const updateLine = useCallback((key: string, patch: Partial<LineState>) => {
+    setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  }, []);
 
-  function editPrice(index: number, edited: PriceEdit, value: string) {
+  const editPrice = useCallback((key: string, edited: PriceEdit, value: string) => {
     setLines((current) =>
-      current.map((line, lineIndex) => {
-        if (lineIndex !== index) return line;
-        const next = { ...line, qty: edited === "qty" ? value : line.qty, unitCost: edited === "unit" ? value : line.unitCost, extPrice: edited === "ext" ? value : line.extPrice };
-        const synced = syncLinePrices({ qty: next.qty, unitCost: next.unitCost, extPrice: next.extPrice, edited });
-        return { ...next, unitCost: synced.unitCost, extPrice: synced.extPrice };
+      current.map((line) => {
+        if (line.key !== key) return line;
+        const qty = edited === "qty" ? value : lineText(textLive.current, key, "qty", line.qty);
+        const unitCost = edited === "unit" ? value : lineText(textLive.current, key, "unitCost", line.unitCost);
+        const extPrice = edited === "ext" ? value : lineText(textLive.current, key, "extPrice", line.extPrice);
+        const synced = syncLinePrices({ qty, unitCost, extPrice, edited });
+        textLive.current.set(`${key}:qty`, qty);
+        textLive.current.set(`${key}:unitCost`, synced.unitCost);
+        textLive.current.set(`${key}:extPrice`, synced.extPrice);
+        return { ...line, qty, unitCost: synced.unitCost, extPrice: synced.extPrice };
       }),
     );
-  }
+  }, []);
 
-  function blurPrice(index: number, edited: "unit" | "ext") {
+  const blurPrice = useCallback((key: string, edited: "unit" | "ext") => {
     setLines((current) =>
-      current.map((line, lineIndex) => {
-        if (lineIndex !== index) return line;
+      current.map((line) => {
+        if (line.key !== key) return line;
         if (edited === "unit") {
-          const parsed = parseUnitCost(line.unitCost);
-          return parsed == null ? line : { ...line, unitCost: formatUnitPrice(parsed) };
+          const raw = lineText(textLive.current, key, "unitCost", line.unitCost);
+          const parsed = parseUnitCost(raw);
+          if (parsed == null) return line;
+          const unitCost = formatUnitPrice(parsed);
+          textLive.current.set(`${key}:unitCost`, unitCost);
+          return { ...line, unitCost };
         }
-        const parsed = parseExtension(line.extPrice);
-        return parsed == null ? line : { ...line, extPrice: formatExtension(parsed) };
+        const raw = lineText(textLive.current, key, "extPrice", line.extPrice);
+        const parsed = parseExtension(raw);
+        if (parsed == null) return line;
+        const extPrice = formatExtension(parsed);
+        textLive.current.set(`${key}:extPrice`, extPrice);
+        return { ...line, extPrice };
       }),
     );
-  }
+  }, []);
 
-  async function findItem(index: number) {
-    const query = lines[index]?.query ?? "";
+  const findItem = useCallback(async (key: string) => {
+    const queryId = `${key}:query`;
+    const query = textLive.current.has(queryId)
+      ? (textLive.current.get(queryId) as string)
+      : (linesRef.current.find((line) => line.key === key)?.query ?? "");
+    const generation = ++findGeneration.current;
     try {
       const hits = await searchPurchaseItems(query);
-      updateLine(index, { hits });
+      if (generation !== findGeneration.current) return;
+      const latest = textLive.current.has(queryId) ? (textLive.current.get(queryId) as string).trim() : query.trim();
+      if (latest !== query.trim()) return;
+      setLines((current) => current.map((line) => (line.key === key ? { ...line, hits } : line)));
       if (hits.length === 0) setMessage("No matching item.");
     } catch (error) {
-      setMessage(errorText(error));
+      if (generation === findGeneration.current) setMessage(errorText(error));
     }
-  }
+  }, []);
+
+  const pickItem = useCallback((key: string, hit: PurchaseItemHit) => {
+    const description = descriptionFromPickedItem(hit.description);
+    textLive.current.set(`${key}:query`, "");
+    textLive.current.set(`${key}:description`, description);
+    setLines((current) =>
+      current.map((line) =>
+        line.key === key
+          ? { ...line, itemId: hit.id, itemSku: hit.sku, itemName: hit.name, description, hits: [], query: "" }
+          : line,
+      ),
+    );
+  }, []);
+
+  const clearItem = useCallback((key: string) => {
+    setLines((current) =>
+      current.map((line) => (line.key === key ? { ...line, itemId: "", itemSku: "", itemName: "", hits: [] } : line)),
+    );
+  }, []);
 
   function addLines() {
     const count = Number(addCount);
@@ -132,26 +331,30 @@ export function PurchaseOrderForm({
       return;
     }
     setMessage(null);
-    setLines((current) => [...current, ...Array.from({ length: count }, () => ({ ...EMPTY_LINE }))]);
+    setLines((current) => [...current, ...Array.from({ length: count }, () => blankLine())]);
   }
 
   function removeSelected() {
     setLines((current) => {
       const next = current.filter((line) => !line.selected);
-      return next.length > 0 ? next : [{ ...EMPTY_LINE }];
+      return next.length > 0 ? next : [blankLine()];
     });
   }
 
   function linePayload() {
     return lines.map((line) => ({
       itemId: line.itemId,
-      description: line.description,
-      qty: line.qty,
-      unitCost: line.unitCost,
-      extPrice: line.extPrice,
+      description: lineText(textLive.current, line.key, "description", line.description),
+      qty: lineText(textLive.current, line.key, "qty", line.qty),
+      unitCost: lineText(textLive.current, line.key, "unitCost", line.unitCost),
+      extPrice: lineText(textLive.current, line.key, "extPrice", line.extPrice),
       condition: line.condition,
-      unit: line.unit,
+      unit: lineText(textLive.current, line.key, "unit", line.unit),
     }));
+  }
+
+  function readNote(key: string, fallback: string) {
+    return textLive.current.has(key) ? (textLive.current.get(key) as string) : fallback;
   }
 
   async function save() {
@@ -162,12 +365,12 @@ export function PurchaseOrderForm({
         vendorId,
         fulfillment,
         terms: showMoney ? terms : "",
-        freightIn: showMoney ? freightIn : "",
+        freightIn: showMoney ? readNote("freightIn", freightIn) : "",
         shipments,
         orderedOn,
         expectedOn,
-        vendorNotes,
-        internalNotes: showMoney ? internalNotes : "",
+        vendorNotes: readNote("vendorNotes", vendorNotes),
+        internalNotes: showMoney ? readNote("internalNotes", internalNotes) : "",
         lines: linePayload(),
       });
       if (order) router.refresh();
@@ -185,10 +388,10 @@ export function PurchaseOrderForm({
     setMessage(null);
     try {
       await savePurchaseOrderCharges(order.id, {
-        freightIn: showMoney ? freightIn : "",
+        freightIn: showMoney ? readNote("freightIn", freightIn) : "",
         shipments,
-        vendorNotes,
-        internalNotes: showMoney ? internalNotes : "",
+        vendorNotes: readNote("vendorNotes", vendorNotes),
+        internalNotes: showMoney ? readNote("internalNotes", internalNotes) : "",
       });
       router.refresh();
     } catch (error) {
@@ -247,7 +450,7 @@ export function PurchaseOrderForm({
       return;
     }
     const imported = usable.map((row) => ({
-      ...EMPTY_LINE,
+      ...blankLine(),
       itemId: row.itemId,
       itemSku: row.itemSku,
       itemName: row.itemName,
@@ -466,124 +669,20 @@ export function PurchaseOrderForm({
             </thead>
             <tbody>
               {lines.map((line, index) => (
-                <tr key={index}>
-                  {editable ? (
-                    <td className="po-check">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select line ${index + 1}`}
-                        checked={line.selected}
-                        onChange={(event) => updateLine(index, { selected: event.target.checked })}
-                      />
-                    </td>
-                  ) : null}
-                  <td className="po-item" data-label="Item">
-                    {line.itemId ? (
-                      <div className="po-item-id">
-                        {line.itemSku} - {line.itemName}
-                      </div>
-                    ) : null}
-                    {editable ? (
-                      <div className="combo po-find">
-                        <input
-                          value={line.query}
-                          onChange={(event) => updateLine(index, { query: event.target.value })}
-                          placeholder={line.itemId ? "Change item" : "SKU or name"}
-                          autoComplete="off"
-                          aria-label={`Find item for line ${index + 1}`}
-                        />
-                        <button type="button" onClick={() => void findItem(index)}>
-                          Find
-                        </button>
-                        {line.itemId ? (
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => updateLine(index, { itemId: "", itemSku: "", itemName: "", hits: [] })}
-                          >
-                            Clear
-                          </button>
-                        ) : null}
-                        {line.hits.length > 0 ? (
-                          <div className="combo-menu">
-                            {line.hits.map((hit) => (
-                              <button
-                                key={hit.id}
-                                type="button"
-                                className="combo-option"
-                                onClick={() =>
-                                  updateLine(index, {
-                                    itemId: hit.id,
-                                    itemSku: hit.sku,
-                                    itemName: hit.name,
-                                    description: descriptionFromPickedItem(hit.description),
-                                    hits: [],
-                                    query: "",
-                                  })
-                                }
-                              >
-                                <span>
-                                  {hit.sku} - {hit.name}
-                                </span>
-                                {hit.description ? <span className="hint">{hit.description}</span> : null}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="po-desc" data-label="Description">
-                    <input
-                      aria-label={`Description for line ${index + 1}`}
-                      value={line.description}
-                      placeholder="Item description"
-                      onChange={(event) => updateLine(index, { description: event.target.value })}
-                      readOnly={!editable}
-                    />
-                  </td>
-                  <td className="po-num" data-label="Qty">
-                    <input
-                      aria-label={`Quantity for line ${index + 1}`}
-                      value={line.qty}
-                      onChange={(event) => editPrice(index, "qty", event.target.value)}
-                      readOnly={!editable}
-                      inputMode="decimal"
-                    />
-                  </td>
-                  <td className="po-unit" data-label="Unit">
-                    <input
-                      aria-label={`Unit for line ${index + 1}`}
-                      value={line.unit}
-                      onChange={(event) => updateLine(index, { unit: event.target.value })}
-                      readOnly={!editable}
-                    />
-                  </td>
-                  {showMoney ? (
-                    <td className="po-num" data-label="Unit price">
-                      <input
-                        aria-label={`Unit price for line ${index + 1}`}
-                        value={line.unitCost}
-                        onChange={(event) => editPrice(index, "unit", event.target.value)}
-                        onBlur={() => blurPrice(index, "unit")}
-                        readOnly={!editable}
-                        inputMode="decimal"
-                      />
-                    </td>
-                  ) : null}
-                  {showMoney ? (
-                    <td className="po-num" data-label="Ext price">
-                      <input
-                        aria-label={`Extension for line ${index + 1}`}
-                        value={line.extPrice}
-                        onChange={(event) => editPrice(index, "ext", event.target.value)}
-                        onBlur={() => blurPrice(index, "ext")}
-                        readOnly={!editable}
-                        inputMode="decimal"
-                      />
-                    </td>
-                  ) : null}
-                </tr>
+                <PoLineRow
+                  key={line.key}
+                  line={line}
+                  index={index}
+                  editable={editable}
+                  showMoney={showMoney}
+                  textLive={textLive.current}
+                  onPatch={updateLine}
+                  onPrice={editPrice}
+                  onBlurPrice={blurPrice}
+                  onFind={findItem}
+                  onPick={pickItem}
+                  onClear={clearItem}
+                />
               ))}
             </tbody>
             {showMoney ? (
@@ -592,7 +691,11 @@ export function PurchaseOrderForm({
                 freightIn={freightIn}
                 editable={chargesEditable}
                 labelSpan={(editable ? 1 : 0) + 5}
-                onFreight={setFreightIn}
+                onFreight={(next) => {
+                  textLive.current.set("freightIn", next);
+                  setFreightIn(next);
+                }}
+                onFreightDraft={(next) => textLive.current.set("freightIn", next)}
               />
             ) : null}
           </table>
@@ -675,13 +778,23 @@ export function PurchaseOrderForm({
         <div className={showMoney ? "po-notes" : "po-notes po-notes-single"}>
           <label>
             Vendor notes
-            <textarea value={vendorNotes} onChange={(event) => setVendorNotes(event.target.value)} readOnly={!chargesEditable} />
+            <FastArea
+              value={vendorNotes}
+              onDraft={(next) => textLive.current.set("vendorNotes", next)}
+              onValue={setVendorNotes}
+              readOnly={!chargesEditable}
+            />
             <span className="hint">Printed or sent to the vendor.</span>
           </label>
           {showMoney ? (
             <label>
               Internal notes
-              <textarea value={internalNotes} onChange={(event) => setInternalNotes(event.target.value)} readOnly={!chargesEditable} />
+              <FastArea
+                value={internalNotes}
+                onDraft={(next) => textLive.current.set("internalNotes", next)}
+                onValue={setInternalNotes}
+                readOnly={!chargesEditable}
+              />
               <span className="hint">Never shown to the vendor.</span>
             </label>
           ) : null}
@@ -730,12 +843,14 @@ function OrderTotals({
   editable,
   labelSpan,
   onFreight,
+  onFreightDraft,
 }: {
   lines: LineState[];
   freightIn: string;
   editable: boolean;
   labelSpan: number;
   onFreight: (value: string) => void;
+  onFreightDraft?: (value: string) => void;
 }) {
   let cents = 0;
   let complete = true;
@@ -771,11 +886,12 @@ function OrderTotals({
           </label>
         </td>
         <td className="po-num">
-          <input
+          <FastInput
             id="po-freight"
             aria-label="Shipping / Freight-in"
             value={freightIn}
-            onChange={(event) => onFreight(event.target.value)}
+            onDraft={onFreightDraft}
+            onValue={onFreight}
             readOnly={!editable}
             inputMode="decimal"
             placeholder="0.00"

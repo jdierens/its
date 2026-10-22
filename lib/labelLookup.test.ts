@@ -5,6 +5,7 @@ import {
   escapeLike,
   labelLikeOr,
   labelLookupChoice,
+  labelResultApplies,
   sortLabelMatches,
 } from "./labelLookup.ts";
 import type { LabelItem } from "./types.ts";
@@ -26,6 +27,12 @@ test("like wildcards in the query are escaped and the filter stays one value", (
     labelLikeOr(`100%_a,b"c`),
     `sku.ilike."%100\\%\\_a,b""c%",name.ilike."%100\\%\\_a,b""c%",description.ilike."%100\\%\\_a,b""c%"`,
   );
+});
+
+test("a live label result is dropped once the field has moved on", () => {
+  assert.equal(labelResultApplies("CPU\\PLAT", "CPU", false), false);
+  assert.equal(labelResultApplies("CPU", "CPU", false), true);
+  assert.equal(labelResultApplies("CPU\\PLAT", "CPU", true), true);
 });
 
 test("exact SKU selects immediately, including while typing", () => {
