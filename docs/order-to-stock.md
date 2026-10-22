@@ -14,17 +14,17 @@ Warehouse roles still see no money. New tables enable row level security and gra
 | 1 | A product that is not a SKU yet | Log what is printed on the part. Someone else creates the SKU. |
 | 2 | Goods that need a test or a grade before the SKU is right | Test, then split the pile into the graded SKUs. |
 | 3 | A server | Pull CPU, memory, SSD, HDD, and NIC/HBA cards into bins. |
-| 4 | The chassis after that pull | Motherboard, heatsinks, PSUs, risers, and cables stay inside and still get identified. |
+| 4 | The server left on the pallet after that pull | One shell line, a server item, goes on a pallet bin (`-P`). Parts inside it are identified later by splitting that line. |
 | 5 | Consignment on one or more projects (`AZSIM6930`, `OHNST6902`) | The same floor work as 1–4. When a unit sells, a row is added to that consignor's one open placeholder purchase order. The purchase price is the net sale times the agreed percentage. |
 | 6 | Serial numbers | Usually captured on the SKUs that track them. Sometimes captured at intake, before the SKU is known. |
 
 ## What already exists
 
-Items are one row per SKU. `items.quantity` is a cache. This design makes it the sum of ledger rows that already have a SKU. Bins are pallets, crates, and boxes (`20000-P`). They nest: a bin sits in another bin or at a location. `bin_events` stays the history. `current_location_id` is replaced by `parent_bin_id` and `location_id` as in `docs/purchase-orders.md`. The location list itself waits for Jan.
+Items are one row per SKU. `items.quantity` is a cache. This design makes it the sum of ledger rows that already have a SKU. Bins today carry a reference such as `20000-P` and a type letter `P`, `C`, or `B`. They nest: a bin sits in another bin or at a location. `bin_events` stays the history. `current_location_id` is replaced by `parent_bin_id` and `location_id` as in `docs/purchase-orders.md`. Put-away uses the location codes under Bins and locations. It does not wait for a longer list.
 
 `po_counter` issues the next purchase-order number. `po_attachments` holds the vendor PDF (invoice, quote, order confirmation, or other) in the private `po-documents` bucket. A role without `can_view_financials` receives neither the file nor a signed URL.
 
-Roles follow `docs/roles.md`. The clerk receives, moves bins, and adds photos, and does not see money and does not create a SKU. The senior who audits a SKU is the warehouse manager (`can_edit_items`). The pricing officer is an assignment in Users settings. It is described under Cost, and it lands in phase 1 of `docs/roles.md`.
+Roles follow `docs/roles.md`. The clerk receives, moves bins, and adds photos, and does not see money and does not create a SKU. Sales operations is an assignment in Users settings, the same kind of assignment as the pricing officer. It approves a proposed SKU, assigns one, and creates the missing item. The warehouse manager does not audit SKUs and does not create the item an intake line is waiting on. Where `docs/roles.md` gives `can_edit_items` to the warehouse manager, this note wins for those two actions. The pricing officer is described under Cost, and it lands in phase 1 of `docs/roles.md`. The sales manager is a separate assignment. Only that assignment may override whether one item is serialized. See Serials.
 
 Every live write stores `operator_id` from the session and `occurred_at` plus `created_at` from the server clock. The phone shows the person's initials, taken from their name at that moment and stored on the event so a later rename does not rewrite history. Each step has a comment box with no short length limit.
 
@@ -34,7 +34,7 @@ A truck arrives. Each pallet and each loose box gets an incoming tag, for exampl
 
 A work order tells the team what to pull. Parts land in a container. In this step a container is any of these: a coded bin, a box, a tote, a cart, or a pallet spot. It usually has a code, and that code can be scanned. A code is optional. What the record must have is the origin: where the pulled items came from. On the floor that origin is a post-it or a more formal note. It names the project, the incoming tag or pallet, the server type, and the units. Pallet X with 12 Type 1 servers and 8 Type 2 servers gets two containers. One origin is project `AZSIM6903`, tag `INCOMING AZSIM6903 P001`, Type 1 Server, 12 units. The other is the same pallet and Type 2 Server, 8 units. A photo or a scan of the note can be attached. If a container has no code, the system generates a temporary container ID and prints a 62 × 100 mm tag so the container can be scanned. Lineage uses the origin fields. It does not use the code.
 
-An operator opens that container and logs the header, then the lines. The header is the container's origin: the project, the incoming pallet, the server type, and the quantity. Each line is a product identifier, a quantity, and the container that holds it. The operator may not know the SKU. A guessed SKU waits for audit. A senior can assign the SKU directly. If no SKU exists, someone with `can_edit_items` creates one.
+An operator opens that container and logs the header, then the lines. The header is the container's origin: the project, the incoming pallet, the server type, and the quantity. Each line is a product identifier, a quantity, and the container that holds it. The operator may not know the SKU. A guessed SKU waits for audit. Sales operations can assign the SKU directly. If no SKU exists, sales operations creates one. A rejected guess goes back to unknown, and the comment is required. When the SKU is known, the screen suggests a bin on this same receiving that already holds it. The operator can accept that bin or choose another. The piles can share a bin, and each unit keeps its own origin.
 
 Labels are one tap away on that screen: incoming tag, bin, item, and serial.
 
@@ -42,7 +42,7 @@ Some lines go to test. Probing and wiping happen there. Serials are captured on 
 
 The project ends as a list of SKUs, quantities, bins, and serials where the SKU has them. Each quantity can be walked back to the project, the incoming tag, the pallet, the server or container it came out of, and the person who logged it. That walk uses the container's origin fields, not its code.
 
-The last physical step is put-away: the bin is placed at a warehouse or office location. That list is not in this note. Jan will send it. Until then a bin can be labeled and filled and has no fixed place.
+The last physical step is put-away: the bin is placed at a location. A `-B` or `-C` bin defaults to `HWS.00.00.00`. A `-P` bin defaults to `HWR.00.00.00`. The operator can scan a more specific code. Put-away does not wait for another list. A serialized item cannot be put away until each piece has a serial.
 
 ## Domain model
 
@@ -70,7 +70,7 @@ erDiagram
   items ||--o{ serials : "serialized SKUs"
   serials ||--o{ serial_events : history
   bins ||--o{ bins : nests
-  bins }o--o| locations : "placed later"
+  bins }o--o| locations : "default or scanned"
   bins ||--o{ bin_events : history
   intake_lines ||--o{ inventory_movements : posts
   inventory_movements }o--o| items : "once a SKU exists"
@@ -195,8 +195,8 @@ One line is one product pile: an identifier, a quantity, a bin, and eventually a
 | `incoming_tag_id` | the pallet or box tag |
 | `work_task_id` | set when a pull produced the line |
 | `parent_line_id` | the line this one was split from. Empty on the first count |
-| `source_bin_id` | the server bin or chassis the part came out of |
-| `line_kind` | `whole`, `pulled`, or `remains` |
+| `source_bin_id` | the pallet bin (`-P`) a pulled part came off. A chassis is a server item, never a bin, so this column does not point at one |
+| `line_kind` | `whole`, `pulled`, or `remains`. `remains` is the one shell line for a server item left on the pallet |
 | `identifier` | what the operator typed or scanned: part, model, or a description |
 | `qty` | greater than 0 |
 | `bin_id` | the container this pile sits in. Lineage reads that container's origin, not its code |
@@ -208,7 +208,7 @@ One line is one product pile: an identifier, a quantity, a bin, and eventually a
 | `notes` | text |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | who logged it |
 
-`line_kind = remains` is a part that stays in the chassis. It still needs a SKU. It is not a second pull into a parts bin.
+`line_kind = remains` is one shell line: the server item left after the pull. It sits on a pallet bin (`-P`). It is not a bin, and it is not a second pull into a parts bin. One line covers that shell until someone identifies the parts still in it. That identification splits the line. The shell moves to `split`. Each part is a new intake line with `parent_line_id` pointing at the shell, and each child copies the shell's project, incoming tag, and purchase order.
 
 A known purchase-order line starts with `sku_state = approved` and `item_id` already set. The identifier is the SKU.
 
@@ -222,10 +222,10 @@ The audit is the line's `sku_state`, plus one event row per change.
 | `intake_line_id` | required |
 | `from_state`, `to_state` | `unknown`, `proposed`, `approved` |
 | `item_id` | the SKU this event names |
-| `comment` | text. Required when an audit is sent back |
-| `operator_id`, `operator_initials`, `occurred_at`, `created_at` | the auditor or the senior |
+| `comment` | text. Required when a proposal is rejected |
+| `operator_id`, `operator_initials`, `occurred_at`, `created_at` | sales operations, or the clerk who proposed |
 
-A clerk may set `proposed`. Only `can_edit_items` may approve, assign, or create the item. Creating an item uses the existing save, which assigns the SKU number. The clerk cannot open that form.
+A clerk may set `proposed`. Sales operations approves it, assigns a different SKU, or creates the item. Creating an item uses the existing save, which assigns the SKU number. The clerk cannot open that form. The warehouse manager cannot approve, assign, or create. Rejecting a proposal sets `sku_state` back to `unknown` and requires a comment. The line does not stay `proposed`.
 
 ### Grade operations
 
@@ -239,11 +239,17 @@ The 51-to-31/20 split is one operation. The parent line moves to `split`. Each r
 | `comment` | text |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | the bench |
 
-Child lines store the new SKU, the new bin, the grade, and the quantity. Their quantities add up to `qty_in`. A remainder that was not tested stays on the parent, and the parent stays `logged` or `testing` for that leftover quantity. The tested portion is the parent of the children.
+Child lines store the new SKU, the new bin, the grade, and the quantity. Their quantities add up to `qty_in`. A remainder that was not tested stays on the original SKU. The parent stays `logged` or `testing` for that leftover quantity. The tested portion is the parent of the children. The remainder can move to a different bin. That move is an ordinary `out` and `in` with one `transfer_id`. The parent line keeps its origin, so the move does not start a new lineage.
 
 ### Serials
 
-Same shape as `docs/purchase-orders.md`. `taxonomies.serialized` defaults false. `items.serialized` empty means "use the taxonomy." A serial may exist before the SKU: `item_id` is empty and the serial points at the intake line.
+Same shape as `docs/purchase-orders.md`. A serial may exist before the SKU: `item_id` is empty and the serial points at the intake line.
+
+`taxonomies.serialized` is the default for items in that taxonomy. It is yes for the types that are usually one serial per piece: HDD, SSD, high-end CPUs, and cards. It is no for the rest.
+
+`items.serialized` is the item's own setting. Empty means use the taxonomy. The value on the item, after that fallback, is what receiving and put-away use. The sales manager is an assignment in Users settings. Only that assignment may set `items.serialized` to yes or no against the taxonomy default. The override is stored on the item. A later change to the taxonomy does not rewrite an item that already has its own value.
+
+Put-away is refused when the item is serialized and the line has fewer captured serials than its quantity. The block is the count, not a warning. An item that is not serialized can be put away with no serials.
 
 | Column | Notes |
 |---|---|
@@ -291,9 +297,32 @@ Lineage reads `origin_project_id`, `origin_incoming_tag_id`, `origin_server_type
 
 A pull container must have a `code` or a `temporary_id`, so it can be scanned. When the temporary id is created, the work-order screen prints one 62 × 100 mm tag on the DK-1202 roll, through the serial-label pipeline: landscape, 94 mm printable width. The large line and the Code 128 are the temporary id. Under them: the project, the incoming tag, the server type, the units, and the initials.
 
-`locations`: `id`, unique `code`, `description`. No rows until Jan's list arrives.
-
 `bin_events` keeps `created`, `printed`, `reprinted`, and `moved`. A move gains `operator_id`, `operator_initials`, `occurred_at`, `from_parent_bin_id`, and `to_parent_bin_id`.
+
+`locations` holds the warehouse places a bin can be put away to. The two defaults are rows in this table. Put-away can use them immediately.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid |
+| `code` | unique. `HWS.00.00.00` or `HWR.01.04.06.N` |
+| `type` | `shelves` or `racking` |
+| `row` | the row segment, parsed from the code |
+| `bay` | the bay segment |
+| `elevation` | the elevation segment, in feet |
+| `orientation` | `N`, `S`, `E`, `W`, or `C`. Empty when the code has no orientation segment |
+| `description` | text. Henderson Warehouse Shelves, or Henderson Warehouse Racking |
+
+`HWS.Row.Bay.Elevation` is Henderson Warehouse Shelves, then the row, the bay, and the elevation in feet. `HWR.Row.Bay.Elevation.Orientation` is Henderson Warehouse Racking, then the row, the bay, the elevation in feet, and an orientation.
+
+A check follows the type. A shelves code starts with `HWS` and has row, bay, and elevation. A racking code starts with `HWR` and has row, bay, and elevation, plus an orientation when that segment is present. The two defaults are valid: `HWS.00.00.00` and `HWR.00.00.00`. Whether orientation belongs only on racking, and whether it may be left off, is an open question. Whether row, bay, and elevation are always two digits is an open question. Until those are answered, the check accepts the defaults and a racking code that adds one orientation letter.
+
+The bin suffix picks the default. A reference ending in `-B` or `-C` uses `HWS.00.00.00`. A reference ending in `-P` uses `HWR.00.00.00`. What those three letters stand for, and whether more suffixes exist, is an open question. The operator can scan a different code that passes the check. Put-away writes `location_id` and does not wait for more locations to be loaded.
+
+### Bin consolidation
+
+During receiving, identical SKUs should share a bin. When a line has an item, the screen looks for a bin already holding that SKU on the same receiving. The receiving is the project, or the incoming tag, or the purchase order when the receipt has no project. The screen suggests that bin. The operator accepts it or chooses another.
+
+Accepting the suggestion sets this line's bin. It does not delete the other line or rewrite its origin. Each unit still walks back through its own intake line, tag, project, and purchase order. A later move of an untested remainder uses the same ledger move and leaves that origin in place.
 
 ### Ledger
 
@@ -371,7 +400,7 @@ Approving posts buy transactions for the extensions of the quantity received so 
 
 ### 0. A purchase order for a known SKU
 
-A purchase order already lists the SKU and the quantity. The clerk scans the PO, confirms the count, scans a bin, and prints the bin label if the bin is new. The line is born approved. The ledger `in` uses that SKU. `items.quantity` updates. No project is required.
+A purchase order already lists the SKU and the quantity. The clerk scans the PO and confirms the count. If this purchase order already has that SKU in a bin, the screen suggests that bin. The clerk accepts it or scans another, and prints the bin label if the bin is new. The line is born approved. The ledger `in` uses that SKU. `items.quantity` updates. No project is required. Sharing the suggested bin does not merge this line into the earlier one.
 
 The pricing officer later opens the summary of SKUs and quantities actually received. They type a unit price. The screen may start from the vendor's line price. That price becomes COGS only when the allocation is approved. By default Approve waits until receiving is complete, and the extensions must equal the item-lines total. A purchase order flagged `pre_agreed_prices` can be priced earlier. See Cost.
 
@@ -379,7 +408,7 @@ The pricing officer later opens the summary of SKUs and quantities actually rece
 
 The operator scans the incoming tag, types the part number from the label, enters the quantity, and scans the bin. `sku_state` stays `unknown`. The quantity is on the ledger with an empty `item_id`, so the items list does not grow.
 
-Search suggestions use the same part, OEM, and model matches as Lens. The screen lists them and does not pick one. A person who recognizes a SKU sets it to `proposed`. A warehouse manager approves it, or assigns a different one, which is already `approved`. If none of the suggestions is right, that manager creates the item. The SKU number is assigned on save, as it is today. One transaction then writes `item_id` onto the line, its serials, and its ledger rows, and refreshes `items.quantity`. There is no second `in`.
+Search suggestions use the same part, OEM, and model matches as Lens. The screen lists them and does not pick one. A person who recognizes a SKU sets it to `proposed`. Sales operations approves it, or assigns a different one, which is already `approved`. If none of the suggestions is right, sales operations creates the item. The SKU number is assigned on save, as it is today. One transaction then writes `item_id` onto the line, its serials, and its ledger rows, and refreshes `items.quantity`. There is no second `in`. Rejecting the proposal returns the line to `unknown` and requires a comment. Once the SKU is known, the screen suggests a bin on this receiving that already holds it. The operator can accept that bin or leave the line where it is.
 
 ### 2. Test and grade, including 51 to 31 and 20
 
@@ -387,17 +416,21 @@ Item X, still untested, sits in box B, quantity 51. The bench scans box B, recor
 
 The result is one grade operation. Thirty-one move to SKU 1A in box B1. Twenty move to SKU 1B in box B2. The parent line becomes `split`. Each child stores `parent_line_id`, the new bin, the grade, and the operator. The ledger takes 51 out of item X and puts 31 and 20 in. Box B's balance for item X is zero. Serials that were on the parent follow the child they were graded into, and `serial_events` records the move.
 
-If the SKUs 1A and 1B are new, they are created and audited before the split is posted. If they already exist, the senior's choice on the bench is the approval.
+If the SKUs 1A and 1B are new, sales operations creates them and approves them before the split is posted. If they already exist, sales operations approves the choice on the bench.
+
+A test that covers only part of the 51 leaves the rest on item X. That remainder can move to another bin. The move is the ordinary ledger pair, and the parent line still carries the origin.
 
 ### 3. Pulling a server apart
 
 Pallet X is tag `INCOMING AZSIM6903 P001` and holds 12 Type 1 servers and 8 Type 2 servers. The work order `Pull Pallet X` has two tasks. Each task opens a container and records the origin: project `AZSIM6903`, that incoming tag, the server type, and 12 or 8 units. A container that already has a code is scanned. A container with no code gets a temporary id and a 62 × 100 mm tag. The origin note can be photographed or attached.
 
-The operator scans the pallet tag, confirms the server type and the 12, then adds lines: a CPU identifier and a quantity, memory, SSDs, HDDs, NIC and HBA cards. Each line has its own container, which may be the task container or a smaller box inside it. `line_kind` is `pulled`. `source_bin_id` is the server's container when the chassis itself has one. Identifiers that are not SKUs follow situation 1.
+The operator scans the pallet tag, confirms the server type and the 12, then adds lines: a CPU identifier and a quantity, memory, SSDs, HDDs, NIC and HBA cards. Each line has its own container, which may be the task container or a smaller box inside it. `line_kind` is `pulled`. `source_bin_id` is the pallet bin (`-P`) the server was sitting on. The chassis is a server item, not that bin. Identifiers that are not SKUs follow situation 1.
 
-### 4. What stays in the chassis
+### 4. The shell left on the pallet
 
-After the pull, the chassis still holds the motherboard, heatsinks, PSUs, risers, and cables. Those are intake lines with `line_kind = remains`, the same parent server, and the chassis bin. They go through the same unknown, proposed, and approved SKU path. They do not have to move to a parts bin to be identified. A comment on the chassis says what was left in it.
+After the pull, each server still on the pallet is one intake line. `line_kind` is `remains`. The line is a server item, the shell, and it is placed on a pallet bin (`-P`). It goes through the same unknown, proposed, and approved SKU path. The motherboard, heatsinks, PSUs, risers, and cables are not separate lines yet.
+
+When someone identifies those parts, the shell line splits. The shell moves to `split`. Each part line points at the shell with `parent_line_id` and keeps the shell's project, incoming tag, and purchase order. A comment on the shell says what was found. The parts do not have to be logged as their own lines at the pull.
 
 ### 5. Consignment
 
@@ -428,7 +461,7 @@ Net sales price, the percentage, and the purchase price are money. Only `can_vie
 
 ### 6. Serials at SKU level, and sometimes at intake
 
-A SKU whose taxonomy is serialized, or whose own flag says so, needs a serial for each piece before put-away. The bench is the usual place, because that is when the drive or the board is in hand. The serial screen is the one already used for serial labels: scan or type, Enter adds, duplicates are ignored.
+HDD, SSD, high-end CPU, and card taxonomies default to serialized. A sales manager can override that on one item. Put-away reads the item setting, and it is refused until every piece on a serialized line has a serial. The bench is the usual place to capture them, because that is when the drive or the board is in hand. The serial screen is the one already used for serial labels: scan or type, Enter adds, duplicates are ignored.
 
 Some piles are serialized before anyone knows the SKU. The operator adds the serial on the intake line. `item_id` is empty. When the SKU is approved, the same serial row gains `item_id`. A second in-stock copy of the same serial is refused anywhere in the company.
 
@@ -451,7 +484,7 @@ stateDiagram-v2
   void --> [*]
 ```
 
-`split` and `void` stop that line. Children of a split start again at `logged`. Put-away means the sellable bin is set and, when the SKU is serialized, the serials are present. A line can sit in a holding bin from the moment it is logged.
+`split` and `void` stop that line. Children of a split start again at `logged`. Put-away means the bin has a location. The suffix supplies `HWS.00.00.00` or `HWR.00.00.00` unless the operator scanned a specific code. When the SKU is serialized, put-away is refused until the serial count matches the quantity. A line can sit in a holding bin from the moment it is logged.
 
 ### Work order
 
@@ -477,11 +510,11 @@ stateDiagram-v2
   unknown --> proposed: a SKU was chosen
   proposed --> approved: auditor confirms
   proposed --> unknown: sent back, comment required
-  unknown --> approved: a senior assigns the SKU
+  unknown --> approved: sales operations assigns the SKU
   approved --> [*]
 ```
 
-A grade split does not move an approved parent backwards. The children have their own SKU state. A senior's assign lands on `approved` without a second person.
+A grade split does not move an approved parent backwards. The children have their own SKU state. Sales operations can assign from `unknown` straight to `approved`. A rejection is the edge back to `unknown`, and it requires a comment.
 
 ### Cost allocation
 
@@ -506,7 +539,7 @@ From any bin quantity or any serial, the walk is:
 1. The ledger row or the serial points at an intake line.
 2. That line's `parent_line_id` chain ends at the first count, which still has the incoming tag, the project, and `purchase_order_id`. A split child copies that purchase order, so the quantity still belongs to one order.
 3. The tag names the pallet. A box tag names its pallet tag.
-4. `source_bin_id` and the work task name the server type and the chassis the part came out of.
+4. The work task names the server type. `source_bin_id` is the pallet bin the part came off. The shell line is the server item left on that pallet. A part identified later points at that shell through `parent_line_id`.
 5. On consignment, the intake line's `consignor_vendor_id` is the vendor who receives the placeholder purchase-order row. It was copied from the project and is not rewritten if the project later points at someone else.
 6. Each line, tag, task, serial event, sale row, and comment has the operator's initials and the server time.
 
@@ -607,10 +640,10 @@ Each screen is a phone page first. One primary action. Scan fills the field the 
 | Arrive | Pick or scan the project. Enter how many pallets and boxes. Print. | Incoming tag |
 | Work order | Scan the incoming tag. Add a task per server type and quantity. Record the origin. Scan a code when the container has one. | 62 × 100 mm tag, only when there is no code |
 | Bin log | Scan the incoming tag, confirm the origin, scan the destination container by its code or temporary id, add identifier and quantity. Repeat. | Container tag when it has no code, item |
-| SKU queue | Senior sees proposed lines. Approve, assign, or create. | Item, after approval |
+| SKU queue | Sales operations sees proposed lines. Approve, assign, create, or reject back to unknown with a comment. | Item, after approval |
 | Test bench | Scan the source bin. Enter the split. Scan serials. Scan the new bins. | Bin, item, serial |
 | Project | SKU, quantity, bin, serials. Open a row for the lineage. | Any of the four |
-| Put-away | Scan the bin, scan the location. Waits on the location list. | Bin reprint |
+| Put-away | Scan the bin. The suffix fills `HWS.00.00.00` or `HWR.00.00.00`. Scan a specific location to override. Refused when a serialized item is short of serials. | Bin reprint |
 
 The item label and the serial label are the ones already specified in `docs/labels.md`. A counter-issued bin keeps the 90 mm × 29 mm label in `docs/bin-labels.md`. The incoming tag, and a pull container that has no code, use the serial label's 62 × 100 mm page. The incoming tag shows a large tag ID, a Code 128 of that ID, then the project, the pallet or box number, the received date, and the initials. The uncoded container shows a large temporary id, a Code 128 of that id, then the project, the incoming tag, the server type, the units, and the initials.
 
@@ -620,13 +653,13 @@ Creating a SKU and the pricing screen are desk work. The queue and the allocatio
 
 Each phase is a small pull request. Phase 1 is the smallest slice that puts a known SKU into a bin and proves the ledger. Later phases do not reshape that ledger. Cost waits until a final summary exists, and it never appears on a warehouse payload.
 
-1. **Known SKU into a bin.** Receive a purchase-order line that already has a SKU, scan a bin, post the ledger `in`, refresh `items.quantity`. Scenario 0, quantities only. No cost screen.
+1. **Known SKU into a bin.** Receive a purchase-order line that already has a SKU, suggest a bin on that order that already holds it, post the ledger `in`, refresh `items.quantity`. Scenario 0, quantities only. No cost screen.
 2. **Pricing officer, one allocation per owned purchase order.** The summary is the SKUs traced to that order. The tie is the item-lines total. Approve waits until receiving is complete, unless `pre_agreed_prices` is set. Lock enforces the tie. Consignment is refused. There is no project pool.
 3. **Incoming tags and the bin log.** Projects, tags, unidentified lines, comments, initials, and the four labels. Quantity with no SKU stays out of `items.quantity`.
-4. **SKU audit.** Propose, send back, senior assign, create the missing item, write `item_id` onto the existing ledger rows.
-5. **Work orders and the pull.** Tasks, containers with a required origin and an optional code, a temporary 62 × 100 mm tag when there is no code, pulled lines, remains-in-chassis lines, lineage back to the pallet through the container's origin.
-6. **Test, grade, serials.** The 51-to-31/20 split, serials at intake and at the bench, lineage on the children.
-7. **Put-away to a place.** After the location list is loaded. Nest a bin in a bin or a location. One `bin_events` row. No new inventory rows per unit.
+4. **SKU audit.** Sales operations approves, assigns, or creates the item. A rejection returns the line to `unknown` and requires a comment. Write `item_id` onto the existing ledger rows.
+5. **Work orders and the pull.** Tasks, containers with a required origin and an optional code, a temporary 62 × 100 mm tag when there is no code, pulled lines, one shell line per server on a pallet bin (`-P`), and a later split of that shell into part lines. Lineage goes back to the pallet through the container's origin and through `parent_line_id`.
+6. **Test, grade, serials.** The 51-to-31/20 split. An untested remainder stays on the original SKU and can move bins. Serials at intake and at the bench. The sales manager's per-item override. Lineage on the children. Consolidation suggests a bin that already holds the SKU on this receiving.
+7. **Put-away to a place.** The bin suffix selects `HWS.00.00.00` or `HWR.00.00.00`. A scanned code can be more specific. Put-away is refused when a serialized item has fewer serials than its quantity. One `bin_events` row. No new inventory rows per unit.
 8. **Adjustments after lock.** A grade split moves quantity immediately and holds the dollars until an adjustment. The locked summary stays locked. The adjustment stores the reason, initials, time, and comment, and may link to a vendor price change or a future VRA. The vendor credit is separate from the COGS re-spread.
 9. **Consignor placeholder purchase order.** When a consigned unit sells, add a row to that consignor's one open placeholder, or open one if none exists. COGS is the row's purchase price, recognized at the sale. Depends on sales orders existing.
 
@@ -641,20 +674,23 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 | 2026-10-22 | A grade split after lock is an adjustment. The locked summary is not re-opened. Quantity still moves when the floor posts the split, and the dollars stay unassigned until the adjustment. The adjustment stores a reason, initials, time, and comment, and may link to a vendor price adjustment or a VRA. A VRA is a future entity. A credit against what is owed to the vendor is separate from the COGS re-spread. |
 | 2026-10-22 | Incoming tags print on the 62 × 100 mm roll (DK-1202), as a pallet tag. The tag ID is large, for example `INCOMING AZSIM6903 P001`, with a Code 128 of that same ID. The tag also shows the project, the pallet or box number, the received date, and the initials. It uses the serial-label pipeline: landscape, 94 mm printable width. |
 | 2026-10-22 | In the pull and work-order step, a bin can be any container: a coded bin, a box, a tote, a cart, or a pallet spot. The code is typical and optional, and it is scannable when present. The record requires an origin description, the post-it or a more formal note of the project, incoming tag or pallet, server type, and units, and may attach a document or a photo of that note. If there is no code, the system generates a temporary container ID and prints a 62 × 100 mm tag so the container can be scanned. Lineage uses the origin fields, not the code. |
+| 2026-10-22 | The SKU approver is sales operations. It is an assignment in Users settings, the same kind of assignment as the pricing officer. That assignment approves a proposed SKU, assigns one, and creates the missing item. The warehouse manager does not. |
+| 2026-10-22 | A rejected proposed SKU returns the line to `unknown`. The comment is required. |
+| 2026-10-22 | A server chassis is an item, never a bin. After components are pulled, the servers and the parts left on the pallet are logged as server items, the shell lines, and placed on a pallet bin (`-P`). |
+| 2026-10-22 | The shell is one line until someone identifies the parts. That identification splits the shell into part lines, and each part keeps lineage to the shell. |
+| 2026-10-22 | HDD, SSD, high-end CPUs, and cards are the types that usually require a serial. `taxonomies.serialized` is the default. `items.serialized` is the item's setting, and empty follows the taxonomy. The sales manager can override that setting per item. Put-away is blocked when a serialized item has no serials captured for its quantity. |
+| 2026-10-22 | An untested remainder stays on the original SKU and may move to another bin. The move is an ordinary move and keeps lineage. During receiving, identical SKUs should share a bin. The screen suggests a bin on the same receiving (project, incoming tag, or purchase order) that already holds that SKU. The operator can accept it or choose another. Consolidation keeps each unit's origin. |
+| 2026-10-22 | Put-away does not wait for a location list. A `-B` or `-C` bin defaults to `HWS.00.00.00`. A `-P` bin defaults to `HWR.00.00.00`. `HWS.Row.Bay.Elevation` is Henderson Warehouse Shelves. `HWR.Row.Bay.Elevation.Orientation` is Henderson Warehouse Racking, with orientation `N`, `S`, `E`, `W`, or `C`. A location stores the code, the type (`shelves` or `racking`), and the parsed row, bay, elevation, and orientation. A check per type validates the code. The bin suffix chooses the default. |
 
 ## Open questions
 
-Questions 1, 2, 3, 4, 5, 6, and 7 are answered under Decisions. The numbers below are unchanged.
+Questions 1–14 are answered under Decisions. Questions 15–19 are unchanged. Questions 20–22 were added with the location decision.
 
-8. Confirm the SKU auditor is the warehouse manager already proposed in `docs/roles.md`, rather than a separate auditor title.
-9. A failed proposal: send the line back to `unknown` with a comment, or leave it `proposed` for a second guess?
-10. For a server, is the chassis itself a bin, a single intake line, or both?
-11. Parts that stay in the chassis: one line per part type, or one line for the shell until someone identifies the pieces?
-12. Which taxonomies require a serial before put-away, and which intakes must capture a serial even when the taxonomy does not?
-13. A test that covers only part of a pile: confirm the untested remainder stays on the parent SKU and in the parent bin.
-14. Put-away to a fixed location waits on the locator list. Confirm phase 7 does not invent location codes.
 15. Is the agreed percentage set per consignor, per project, or per row (can it vary by item)?
 16. Who closes an open consignor PO, and when (manually, on a schedule, or at settlement)?
 17. Is net sales price the sale price minus fees and shipping (eBay fees etc.)? Define what is deducted.
 18. How does a return after the row is added get handled: a negative row or a correction?
 19. Can the computed purchase price be overridden manually?
+20. Does orientation (N/S/E/W/C) apply only to racking (HWR), or to shelves too? The defaults have no orientation segment, so is it optional?
+21. What do the -B, -C and -P suffixes stand for exactly (bin, carton?, pallet), and are there others?
+22. Are row/bay/elevation always two digits (00)?
