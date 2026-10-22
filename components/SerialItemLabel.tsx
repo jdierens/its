@@ -1,15 +1,18 @@
 "use client";
 
 import JsBarcode from "jsbarcode";
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { mmToCssPx } from "@/lib/binLabelLayout";
 import {
   SERIAL_BARCODE_MAX_MM,
+  SERIAL_HEAD_GAP_MM,
   SERIAL_LABEL_HEIGHT_MM,
   SERIAL_LABEL_WIDTH_MM,
   serialBarcodePlan,
   serialLabelDescription,
+  serialLabelHeadMode,
   serialLabelQtyText,
+  type SerialHeadMode,
 } from "@/lib/serialLabel";
 
 export type SerialLabelCodeMarkSide = "left" | "right";
@@ -37,9 +40,27 @@ export function SerialItemLabel({
 }: SerialItemLabelProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const skuRef = useRef<HTMLDivElement>(null);
+  const qtyRef = useRef<HTMLDivElement>(null);
   const shownSku = sku.trim() || "No SKU";
   const shownDescription = serialLabelDescription(description);
   const qtyText = serialLabelQtyText(quantity);
+  const [headMode, setHeadMode] = useState<SerialHeadMode>("inline");
+
+  useLayoutEffect(() => {
+    const head = headRef.current;
+    const skuEl = skuRef.current;
+    const qtyEl = qtyRef.current;
+    if (!head || !skuEl || !qtyEl) return;
+    const next = serialLabelHeadMode({
+      headPx: head.clientWidth,
+      skuPx: skuEl.scrollWidth,
+      qtyPx: qtyEl.scrollWidth,
+      gapPx: mmToCssPx(SERIAL_HEAD_GAP_MM),
+    });
+    setHeadMode((current) => (current === next ? current : next));
+  }, [shownSku, qtyText, shownDescription]);
 
   useLayoutEffect(() => {
     const svg = svgRef.current;
@@ -75,12 +96,18 @@ export function SerialItemLabel({
       className="serial-label"
       data-serial={serial}
       data-qty={qtyText}
+      data-sku={shownSku}
+      data-head={headMode}
       style={{ width: `${SERIAL_LABEL_WIDTH_MM}mm`, height: `${SERIAL_LABEL_HEIGHT_MM}mm` }}
     >
-      <div className="serial-label-head">
-        <div className="serial-label-sku">{shownSku}</div>
+      <div className={headMode === "stacked" ? "serial-label-head stacked" : "serial-label-head"} ref={headRef}>
+        <div className="serial-label-sku" ref={skuRef}>
+          {shownSku}
+        </div>
         <div className="serial-label-desc">{shownDescription}</div>
-        <div className="serial-label-qty">{qtyText}</div>
+        <div className="serial-label-qty" ref={qtyRef}>
+          {qtyText}
+        </div>
       </div>
       <div className="serial-label-code-row">
         {codeMarkSide === "left" ? mark : null}
@@ -109,8 +136,8 @@ export const SERIAL_LABEL_PRINT_CSS = `
   padding: 2.2mm 3mm 2.6mm;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 1.4mm;
+  justify-content: center;
+  gap: 2.4mm;
   overflow: hidden;
   background: #fff;
   color: #000;
@@ -119,25 +146,27 @@ export const SERIAL_LABEL_PRINT_CSS = `
 }
 
 .serial-label-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 2mm;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: ${SERIAL_HEAD_GAP_MM}mm;
+  row-gap: 1mm;
+  align-items: start;
+  width: 100%;
   min-width: 0;
 }
 
 .serial-label-sku {
-  flex: 0 1 auto;
-  max-width: 38mm;
+  grid-column: 1;
+  grid-row: 1;
   font-size: 4.4mm;
   font-weight: 700;
   line-height: 1.15;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .serial-label-desc {
-  flex: 1 1 auto;
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   font-size: 3.3mm;
   font-weight: 400;
@@ -148,9 +177,15 @@ export const SERIAL_LABEL_PRINT_CSS = `
   -webkit-box-orient: vertical;
 }
 
+.serial-label-head.stacked .serial-label-desc {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
 .serial-label-qty {
-  flex: 0 0 auto;
-  margin-left: auto;
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
   font-size: 3.8mm;
   font-weight: 700;
   line-height: 1.15;
@@ -160,8 +195,8 @@ export const SERIAL_LABEL_PRINT_CSS = `
 }
 
 .serial-label-code-row {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -174,8 +209,8 @@ export const SERIAL_LABEL_PRINT_CSS = `
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  gap: 1mm;
+  justify-content: center;
+  gap: 1.4mm;
 }
 
 .serial-label-mark {

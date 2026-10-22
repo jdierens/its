@@ -10,6 +10,15 @@ export const SERIAL_QUIET_MODULES = 10;
 /** Bars plus quiet zone stay inside the label after the side padding. */
 export const SERIAL_BARCODE_MAX_MM = 90;
 
+/** Bar height before the quiet zone. A little taller than the old 22 mm so the label is not empty underneath. */
+export const SERIAL_BARCODE_HEIGHT_MM = 28;
+
+/** Side padding on the serial label. The head is the width that remains. */
+export const SERIAL_LABEL_PAD_X_MM = 3;
+
+/** Gap between SKU, description, and quantity on the first line. */
+export const SERIAL_HEAD_GAP_MM = 2;
+
 /** About two lines in the description column, then an ellipsis. */
 export const SERIAL_DESCRIPTION_MAX = 72;
 
@@ -38,7 +47,7 @@ export type SerialBarcodePlan = {
 /** Whole printer dots, at least 4, sized so the bars and quiet zones fit `targetPx`. */
 export function serialBarcodePlan(serial: string, targetPx: number): SerialBarcodePlan {
   const modules = code128SymbolModules(serial) + SERIAL_QUIET_MODULES * 2;
-  const heightPx = Math.round((22 * 96) / 25.4);
+  const heightPx = Math.round((SERIAL_BARCODE_HEIGHT_MM * 96) / 25.4);
   let dots = 6;
   if (targetPx > 0) {
     dots = Math.floor(targetPx / modules / DOT_PX);
@@ -71,6 +80,25 @@ export function serialLabelDescription(value: string): string {
 
 export function serialLabelQtyText(quantity: string): string {
   return `Qty ${labelQuantityCommit(quantity)}`;
+}
+
+export type SerialHeadMode = "inline" | "stacked";
+
+/**
+ * The SKU stays on one line at full width. The description shares that line
+ * while it still has about half the head. A wider SKU moves the description
+ * under the SKU and the quantity.
+ */
+export function serialLabelHeadMode(input: {
+  headPx: number;
+  skuPx: number;
+  qtyPx: number;
+  gapPx: number;
+}): SerialHeadMode {
+  if (input.headPx <= 0) return "inline";
+  const descriptionPx = input.headPx - input.skuPx - input.qtyPx - input.gapPx * 2;
+  if (descriptionPx < input.headPx * 0.5) return "stacked";
+  return "inline";
 }
 
 /** A pipe would add a fifth field. Each value is stored without one. */
