@@ -21,6 +21,7 @@ import {
 import { descriptionSnippet, labelResultApplies } from "@/lib/labelLookup";
 import {
   addSerial,
+  SERIAL_LABEL_SHOW_QTY,
   SERIAL_LABEL_SIZE,
   serialLabelQtyText,
   serialPrintProblem,
@@ -348,7 +349,11 @@ export function LabelsPage() {
     <main className="page">
       <style>{mode === "serial" ? SERIAL_LABEL_PRINT_CSS : LABEL_PRINT_CSS}</style>
       <form className="no-print label-desk" onSubmit={onFind}>
-        <p className="hint">The quantity is printed on the label. It does not change the item&apos;s stock.</p>
+        <p className="hint">
+          {mode === "serial" && !SERIAL_LABEL_SHOW_QTY
+            ? "Each serial is its own page. Printing does not change the item's stock."
+            : "The quantity is printed on the label. It does not change the item's stock."}
+        </p>
         <div className={mode === "serial" ? "label-row serial-on" : "label-row"}>
           <div className="label-kind">
             <span className="label-caption" id="label-kind-caption">
@@ -434,19 +439,21 @@ export function LabelsPage() {
             </label>
           ) : null}
           <div className="label-actions">
-            <label className="label-qty" htmlFor="label-qty">
-              <span className="label-caption">Qty on label</span>
-              <FastInput
-                id="label-qty"
-                size={4}
-                inputMode="numeric"
-                autoComplete="off"
-                value={quantity}
-                transform={labelQuantityDraft}
-                onValue={setQuantity}
-                onBlur={() => setQuantity((current) => labelQuantityCommit(current))}
-              />
-            </label>
+            {mode === "item" || SERIAL_LABEL_SHOW_QTY ? (
+              <label className="label-qty" htmlFor="label-qty">
+                <span className="label-caption">Qty on label</span>
+                <FastInput
+                  id="label-qty"
+                  size={4}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={quantity}
+                  transform={labelQuantityDraft}
+                  onValue={setQuantity}
+                  onBlur={() => setQuantity((current) => labelQuantityCommit(current))}
+                />
+              </label>
+            ) : null}
             <label className="label-copies" htmlFor="label-copies">
               <span className="label-caption">Copies</span>
               <FastInput
@@ -533,8 +540,11 @@ export function LabelsPage() {
               <p>
                 Each page is {SERIAL_LABEL_SIZE}. The 62 mm side is the tape width across the print head, and the
                 100 mm side is the feed, so the page is landscape. Each serial is one page, and copies print that page
-                again. Qty on label is printed on every page and does not change stock. Scan a serial and press Enter
-                to add another, up to 30. The preview below is the same size.
+                again.
+                {SERIAL_LABEL_SHOW_QTY
+                  ? " Qty on label is printed on every page and does not change stock."
+                  : " Printing does not change stock."}{" "}
+                Scan a serial and press Enter to add another, up to 30. The preview below is the same size.
               </p>
             </>
           ) : (
@@ -557,13 +567,15 @@ export function LabelsPage() {
           <div className="no-print label-preview">
             <p className="hint">
               Preview for {item.sku || item.id}. {serialBatch.length} {serialBatch.length === 1 ? "serial" : "serials"}{" "}
-              × {copies} {copies === 1 ? "copy" : "copies"}. Each label prints {serialLabelQtyText(quantity)}.
+              × {copies} {copies === 1 ? "copy" : "copies"}.
+              {SERIAL_LABEL_SHOW_QTY ? ` Each label prints ${serialLabelQtyText(quantity)}.` : null}
             </p>
             <div className="serial-frame">
               <SerialItemLabel
                 sku={item.sku}
                 description={item.description.trim() || item.name}
                 quantity={labelQuantity}
+                showQuantity={SERIAL_LABEL_SHOW_QTY}
                 serial={previewSerial}
               />
             </div>
@@ -576,6 +588,7 @@ export function LabelsPage() {
                   sku={item.sku}
                   description={item.description.trim() || item.name}
                   quantity={labelQuantity}
+                  showQuantity={SERIAL_LABEL_SHOW_QTY}
                   serial={serial}
                 />
               )),

@@ -6,7 +6,9 @@ import {
   SERIAL_BARCODE_MAX_MM,
   SERIAL_DESCRIPTION_MAX,
   SERIAL_HEAD_GAP_MM,
+  SERIAL_HUMAN_FONT_MM,
   SERIAL_LABEL_PAD_X_MM,
+  SERIAL_LABEL_SHOW_QTY,
   SERIAL_LABEL_SIZE,
   SERIAL_LABEL_WIDTH_MM,
   SERIAL_QUIET_MODULES,
@@ -14,6 +16,7 @@ import {
   code128SymbolModules,
   serialBarcodePlan,
   serialLabelDescription,
+  serialHumanFontMm,
   serialLabelHeadMode,
   serialLabelQrPayload,
   serialLabelQtyText,
@@ -55,9 +58,26 @@ test("a SKU that would leave the description under half the line drops it below"
   assert.equal(serialLabelHeadMode({ headPx: head, skuPx: sku, qtyPx: qty, gapPx: gap }), "stacked");
 });
 
-test("barcode bars are tall enough to fill the label and keep a ten-module quiet zone", () => {
-  assert.ok(SERIAL_BARCODE_HEIGHT_MM >= 26);
-  assert.ok(SERIAL_BARCODE_HEIGHT_MM <= 34);
+test("barcode bars are about 30 percent shorter and keep the quiet zone", () => {
+  assert.ok(Math.abs(SERIAL_BARCODE_HEIGHT_MM - 19.6) < 0.001);
+  assert.equal(SERIAL_LABEL_SHOW_QTY, false);
+});
+
+test("the serial under the bars grows by half and shrinks only to fit the label", () => {
+  assert.equal(SERIAL_HUMAN_FONT_MM, 6);
+  assert.equal(serialHumanFontMm({ textWidthPx: 80, maxWidthPx: 200, baseFontMm: 6 }), 6);
+  const fitted = serialHumanFontMm({ textWidthPx: 200, maxWidthPx: 100, baseFontMm: 6 });
+  assert.ok(Math.abs(fitted - 3) < 0.001);
+  assert.ok(fitted <= 6);
+});
+
+test("hiding quantity gives that width to the description", () => {
+  const head = mmToCssPx(SERIAL_LABEL_WIDTH_MM - SERIAL_LABEL_PAD_X_MM * 2);
+  const gap = mmToCssPx(SERIAL_HEAD_GAP_MM);
+  const withQty = head - 73 - 36 - gap * 2;
+  const withoutQty = head - 73 - gap;
+  assert.ok(withoutQty > withQty + 30);
+  assert.equal(serialLabelHeadMode({ headPx: head, skuPx: 73, qtyPx: 0, gapPx: gap }), "inline");
 });
 
 test("quantity is printed as Qty N and stays inside 0 to 9999", () => {
