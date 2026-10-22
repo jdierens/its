@@ -103,7 +103,7 @@ Same shape as `docs/purchase-orders.md`. A code such as `AZSIM6930` is the name 
 
 `vendors` gains `is_consignor` and `consignor_share_percent`. A consignment project requires a vendor with that flag. `consignor_share_percent` is that consignor's general split, a number from 0 to 100. A 75/25 consignor/consignee split is stored as 75 and shown as 75/25. The consignee's figure on screen is 100 minus the stored share.
 
-Optional rows in `consignor_taxonomy_splits` name a different split for one taxonomy: `vendor_id`, `taxonomy_id`, and `consignor_share_percent`. One row per consignor and taxonomy. An SSD or HDD row stored as 60 is the extra data-destruction case, shown as 60/40.
+Optional rows in `consignor_taxonomy_splits` name a different split for one taxonomy: `vendor_id`, `taxonomy_id`, and `consignor_share_percent`. One row per consignor and taxonomy. An SSD row stored as 60 is the extra data-destruction case, shown as 60/40.
 
 Creating a consignment project copies the consignor's general split onto `projects.consignor_share_percent` and copies each taxonomy row into `project_taxonomy_splits` (`project_id`, `taxonomy_id`, `consignor_share_percent`). After that copy, the project's own settings are the ones a sale on the project uses. The project can change its general split, for example from 75 to 50, and it can add or change a taxonomy split, for example NIC cards stored as 0 and shown as 0/100. A later edit to the consignor does not change the project's copy. An untouched copied SSD row stays 60 after the project's general split becomes 50.
 
