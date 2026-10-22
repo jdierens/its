@@ -2,7 +2,7 @@
 
 Design only. Nothing in this note is built, and no migration is applied. Jan reviews it before any coding.
 
-This is the inbound path from the truck to a bin of known SKUs. Purchase orders, the ledger, serials, and settlement math already sketched in `docs/purchase-orders.md` stay in force, except for cost. **Where that note prices a unit at intake or offers several automatic splits of a lot, this note wins:** COGS is assigned only for non-consignment work, only from the purchase-order total, and only on the final summary of received SKUs. A pricing officer types the unit prices. Consignment stays without a cost until a sale creates the consignor's purchase order.
+This is the inbound path from the truck to a bin of known SKUs. Purchase orders, the ledger, serials, and settlement math already sketched in `docs/purchase-orders.md` stay in force, except for cost. **Where that note prices a unit at intake or offers several automatic splits of a lot, this note wins:** COGS for owned goods is assigned only from the purchase order's item-lines total, and only on the final summary of received SKUs. Freight and other non-item costs stay outside that figure. A pricing officer types the unit prices. Consignment stays without a cost until a sale adds a row to that consignor's open placeholder purchase order.
 
 Warehouse roles still see no money. New tables enable row level security and grant `service_role` only. The phone targets are Android Chrome and iOS Safari, with the scanner already described in `docs/mobile.md`.
 
@@ -15,7 +15,7 @@ Warehouse roles still see no money. New tables enable row level security and gra
 | 2 | Goods that need a test or a grade before the SKU is right | Test, then split the pile into the graded SKUs. |
 | 3 | A server | Pull CPU, memory, SSD, HDD, and NIC/HBA cards into bins. |
 | 4 | The chassis after that pull | Motherboard, heatsinks, PSUs, risers, and cables stay inside and still get identified. |
-| 5 | Consignment on one or more projects (`AZSIM6930`, `OHNST6902`) | The same floor work as 1–4. Cost comes later, usually a purchase order to the consignor for a percent of the net sale. |
+| 5 | Consignment on one or more projects (`AZSIM6930`, `OHNST6902`) | The same floor work as 1–4. When a unit sells, a row is added to that consignor's one open placeholder purchase order. The purchase price is the net sale times the agreed percentage. |
 | 6 | Serial numbers | Usually captured on the SKUs that track them. Sometimes captured at intake, before the SKU is known. |
 
 ## What already exists
@@ -51,10 +51,14 @@ erDiagram
   projects ||--o{ incoming_tags : tags
   projects ||--o{ work_orders : directs
   projects ||--o{ intake_lines : counts
-  projects |o--o{ purchase_orders : "owned or settlement"
-  purchase_orders ||--o| cost_allocations : "non-consignment only"
+  vendors ||--o{ projects : "consignor or seller"
+  vendors ||--o| purchase_orders : "one open placeholder"
+  projects |o--o{ purchase_orders : "owned or placeholder"
+  purchase_orders ||--o| cost_allocations : "owned item lines only"
+  purchase_orders ||--o{ consignor_sale_lines : "rows added at sale"
   purchase_orders ||--o{ po_attachments : files
   po_counter ||--o{ purchase_orders : numbers
+  consignor_sale_lines }o--o| projects : "optional project"
   incoming_tags ||--o{ incoming_tags : "box on a pallet"
   incoming_tags ||--o{ intake_lines : arrived
   work_orders ||--o{ work_tasks : contains
@@ -87,7 +91,7 @@ Same shape as `docs/purchase-orders.md`. A code such as `AZSIM6930` is the name 
 | `name` | text |
 | `type` | `consignment`, `owned_lot`, or `takeout` |
 | `basis` | `consigned` or `owned` |
-| `vendor_id` | consignor or seller |
+| `vendor_id` | consignor or seller. On a consignment project this is the consignor a later sale pays |
 | `physical_status` | `received`, `processing`, `processed` |
 | `financial_status` | `open`, `cost_pending`, `costed`, `settling`, `settled` |
 | `status` | `active` or `closed` |
@@ -97,17 +101,40 @@ Same shape as `docs/purchase-orders.md`. A code such as `AZSIM6930` is the name 
 | `notes` | text |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | session, initials snapshot, server clock |
 
-Warehouse screens show the code, the type, the consignor's name, and counts. Share percent and every dollar stay off those payloads.
+`vendors` gains `is_consignor`. A consignment project requires a vendor with that flag. Warehouse screens show the code, the type, the consignor's name, and counts. Share percent and every dollar stay off those payloads.
 
 ### Purchase orders and the counter
 
-The purchase order tables already exist. This flow uses them as they are.
+The purchase order tables already exist. Owned receipts and the pricing officer's allocation use them as they are.
 
-`po_counter` is one row. It hands out the next number. Settlement purchase orders for consignors use that same counter when finance creates them. The floor never sees the counter.
+`po_counter` is one row. It hands out the next number. A consignor placeholder purchase order uses that same counter when the first sale opens it. The floor never sees the counter.
 
 `po_attachments` is the file on the order: `vendor_invoice`, `quote`, `order_confirmation`, or `other`. Bytes live in `po-documents`. Signed URLs exist only for `can_view_financials`.
 
-Columns this flow reads from `purchase_orders`: `id`, `number`, `vendor_id`, `project_id`, `purpose` (`purchase`, `settlement`, `buyout`), `status`, `currency`, `freight_in`, and the order total finance already sees (line extensions plus freight-in). Line prices on the purchase order are the vendor's prices. They are not COGS until a pricing officer allocates the total. See Cost.
+Columns this flow reads from `purchase_orders`: `id`, `number`, `vendor_id`, `project_id`, `purpose` (`purchase`, `settlement`, `buyout`, or `consignor_placeholder`), `status`, `currency`, `freight_in`, `pre_agreed_prices`, the item-lines total, and the grand total finance already sees (item lines plus freight-in and any tax). Vendor line prices are not COGS. Owned COGS is the allocation of the item-lines total. Consignment COGS is the purchase price on a placeholder row. See Cost.
+
+`pre_agreed_prices` is off by default. It is set only when the vendor agreement already names a unit price for individual components. With the flag off, the pricing officer cannot approve until receiving is complete. With the flag on, the officer can enter and approve those unit prices before the last receipt. See Cost.
+
+A placeholder purchase order has its own lifecycle, `placeholder_status`: `open`, `closed`, then `paid`. It does not use the receiving statuses. At most one row per vendor has `purpose = consignor_placeholder` and `placeholder_status = open`.
+
+### Consignor sale rows
+
+One row is one sale of consigned goods, added to the consignor's open placeholder purchase order. Money columns are visible only with `can_view_financials`. Row level security is on. `service_role` is the only grant.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid |
+| `purchase_order_id` | the consignor's placeholder purchase order |
+| `sales_order_line_id` | the sale it came from. Unique, so the same sale cannot be added twice. The sales-order table arrives with sales. The unique constraint is part of this design |
+| `item_id` | the SKU sold, when the sale has one |
+| `description` | item description |
+| `qty` | quantity sold, greater than 0 |
+| `project_id` | optional. `AZSIM6930` or `OHNST6902` when the lineage has a project |
+| `intake_line_id` | the pile the sold unit came from, when lineage has one |
+| `net_sales_price` | money. What is deducted to reach net is an open question |
+| `agreed_percentage` | the share applied to this row. A 75% agreement is stored as 0.75 |
+| `purchase_price` | computed and stored: `net_sales_price × agreed_percentage`. A later edit to the project percent does not rewrite this row. Whether a person may override it is an open question |
+| `operator_id`, `operator_initials`, `occurred_at`, `created_at` | the sale posting, from the session and the server clock |
 
 ### Incoming tags
 
@@ -162,7 +189,8 @@ One line is one product pile: an identifier, a quantity, a bin, and eventually a
 |---|---|
 | `id` | uuid |
 | `project_id` | set on project work. Empty on a plain purchase-order receipt |
-| `purchase_order_id`, `po_line_id` | set when the goods belong to a purchase order |
+| `consignor_vendor_id` | copied from the project when the goods are consigned. A later change to the project does not rewrite it |
+| `purchase_order_id`, `po_line_id` | the purchase order these goods came in on. Required for anything that will be costed from a purchase order. A grade-split child copies it from the parent. Empty on consignment that has no purchase order |
 | `incoming_tag_id` | the pallet or box tag |
 | `work_task_id` | set when a pull produced the line |
 | `parent_line_id` | the line this one was split from. Empty on the first count |
@@ -273,7 +301,7 @@ Cost is not a column on this table.
 | Column | Notes |
 |---|---|
 | `id` | uuid |
-| `entity_type` | `project`, `incoming_tag`, `work_order`, `work_task`, `intake_line`, `serial`, `bin`, `cost_allocation` |
+| `entity_type` | `project`, `incoming_tag`, `work_order`, `work_task`, `intake_line`, `serial`, `bin`, `cost_allocation`, `consignor_sale_line` |
 | `entity_id` | uuid of that row |
 | `body` | text, no short limit |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | who wrote it |
@@ -288,8 +316,9 @@ One allocation prices one non-consignment purchase order. It prices the final su
 | `purchase_order_id` | required. Consignment orders are refused |
 | `project_id` | copied when the order has a project |
 | `state` | `draft`, `approved`, or `locked` |
-| `po_total` | the order total snapshotted when the row is approved |
-| `remainder` | `po_total` minus the sum of line extensions. Zero is the only value that can be approved |
+| `item_lines_total` | the merchandise total snapshotted when the row is approved or locked. Freight, shipping, tax, and other non-item costs are excluded |
+| `remainder` | `item_lines_total` minus the sum of line extensions. Lock requires this to be zero once receiving is complete |
+| `variance_note` | set when a pre-agreed approval is still open and the running extensions do not yet equal the item-lines total |
 | `summary_changed_at` | set when a grade split or a correction changes the received list after approval |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | the pricing officer |
 | `notes` | text. Required on re-open and on an adjustment |
@@ -301,7 +330,7 @@ One allocation prices one non-consignment purchase order. It prices the final su
 | `id` | uuid |
 | `allocation_id` | required |
 | `item_id` | the received SKU. Required |
-| `qty` | the final quantity of that SKU for this purchase order |
+| `qty` | quantity of that SKU traced to this purchase order. It updates as receipts land, until the allocation is locked |
 | `unit_price` | numeric(12,4), zero or greater. What the officer typed |
 | `extension` | numeric(12,2). The dollars posted for the line |
 | `rounding_note` | required when the extension is not the cent rounding of price times quantity |
@@ -309,7 +338,7 @@ One allocation prices one non-consignment purchase order. It prices the final su
 | `supersedes_line_id` | the earlier line this one replaces |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | who priced it |
 
-Approving posts buy transactions for those extensions (`source = po`). It does not post another inventory `in`. Warehouse payloads omit the allocation, the buy, and the remainder.
+Approving posts buy transactions for the extensions of the quantity received so far (`source = po`). It does not post another inventory `in`. A later receipt on a pre-agreed order updates those buys when the officer locks, or when they approve again. Warehouse payloads omit the allocation, the buy, and the remainder.
 
 ## Walkthroughs
 
@@ -317,7 +346,7 @@ Approving posts buy transactions for those extensions (`source = po`). It does n
 
 A purchase order already lists the SKU and the quantity. The clerk scans the PO, confirms the count, scans a bin, and prints the bin label if the bin is new. The line is born approved. The ledger `in` uses that SKU. `items.quantity` updates. No project is required.
 
-The pricing officer later opens the final summary, which is that SKU and the quantity actually received. They type a unit price. The extension has to use up the purchase-order total. The vendor's line price can be copied in as a starting guess. It becomes COGS only when the allocation is approved.
+The pricing officer later opens the summary of SKUs and quantities actually received. They type a unit price. The screen may start from the vendor's line price. That price becomes COGS only when the allocation is approved. By default Approve waits until receiving is complete, and the extensions must equal the item-lines total. A purchase order flagged `pre_agreed_prices` can be priced earlier. See Cost.
 
 ### 1. The product is not a SKU yet
 
@@ -345,9 +374,30 @@ After the pull, the chassis still holds the motherboard, heatsinks, PSUs, risers
 
 ### 5. Consignment
 
-`AZSIM6930` and `OHNST6902` are projects with `basis = consigned`. Situations 1 through 4 are unchanged. The ledger rows are `consigned`. No cost allocation can be created. The pricing officer's list does not offer these projects.
+`AZSIM6930` and `OHNST6902` are projects with `basis = consigned`. Each points at a vendor with `is_consignor` set. Intake copies that vendor onto `consignor_vendor_id`. Situations 1 through 4 are unchanged. The ledger rows are `consigned`. No cost allocation can be created. The pricing officer's list does not offer these projects. Intake has no cost.
 
-When a unit sells, finance generates a purchase order to the consignor, usually for that project's share of the net sale. The order uses `po_counter`, `purpose = settlement`, and stays a draft until someone with `can_edit_financials` approves it. That approval is the moment the unit gets a cost. The floor never sees the percent, the net, or the purchase order. The detailed share and deduction rules stay in `docs/purchase-orders.md`.
+When an item that came from consignor X sells, the sale is walked back to X: serial or bin, intake line, project, consignor. One purchase row is added to that consignor's open placeholder purchase order.
+
+| On the row | Meaning |
+|---|---|
+| Item description | The sold item |
+| Qty sold | How many this sale took |
+| Net sales price | Money. What is deducted to reach net is an open question |
+| Agreed percentage | The share used on this row. Where it is set is an open question |
+| Purchase price | Computed and stored: net sales price × agreed percentage. A 75% agreement multiplies by 0.75 |
+| Project | Optional, such as `AZSIM6930` or `OHNST6902` |
+
+The row stores `sales_order_line_id`, and that value is unique, so the same sale cannot be added twice. The purchase price is written at that moment. A later change to the project's percent does not rewrite it. Whether someone may type a different purchase price is an open question.
+
+The next sale from the same consignor adds another row to that same open purchase order, until the order is closed. If the consignor has no open placeholder, one is opened automatically, `po_counter` issues the number, and the sale row is added to it. A second open placeholder for the same consignor is refused.
+
+The placeholder moves from `open` to `closed` to `paid`. Open accepts new rows. Closed does not. Paid records that the consignor was paid. Who closes it, and whether that is manual, monthly, or when the consignor is paid, is an open question.
+
+COGS for that unit is the purchase price on its row, recognized at the sale. That matches the rule that consignment has no cost at intake.
+
+A return or refund after the row exists is an open question: a negative row on the open purchase order, or a correction of the existing row. This note does not choose one.
+
+Net sales price, the percentage, and the purchase price are money. Only `can_view_financials` receives them. The placeholder order and `consignor_sale_lines` follow the same rule as the other new tables: row level security on, `service_role` only.
 
 ### 6. Serials at SKU level, and sometimes at intake
 
@@ -411,26 +461,28 @@ A grade split does not move an approved parent backwards. The children have thei
 ```mermaid
 stateDiagram-v2
   [*] --> draft
-  draft --> approved: remainder is zero
-  approved --> locked
+  draft --> approved: receiving complete and remainder is zero
+  draft --> approved: pre-agreed prices, receiving still open
+  approved --> locked: receiving complete and remainder is zero
   approved --> draft: re-open, comment required
   locked --> draft: re-open, comment required
   locked --> locked: adjustment entry approved
 ```
 
-Approve and lock can be one action. A locked row stays locked while an adjustment is added beside it.
+Without `pre_agreed_prices`, Approve waits until receiving is complete and the remainder is zero. With the flag, Approve can happen earlier. Lock still waits until receiving is complete and the extensions equal that purchase order's item-lines total. A locked row stays locked while an adjustment is added beside it.
 
 ## Lineage
 
-Every intake line stores the incoming tag, the project, the work task, the source bin, and the parent line. Those four links are the origin.
+Every intake line stores the incoming tag, the project, the purchase order it came in on, the work task, the source bin, and the parent line.
 
 From any bin quantity or any serial, the walk is:
 
 1. The ledger row or the serial points at an intake line.
-2. That line's `parent_line_id` chain ends at the first count, which still has the incoming tag and the project.
+2. That line's `parent_line_id` chain ends at the first count, which still has the incoming tag, the project, and `purchase_order_id`. A split child copies that purchase order, so the quantity still belongs to one order.
 3. The tag names the pallet. A box tag names its pallet tag.
 4. `source_bin_id` and the work task name the server type and the chassis the part came out of.
-5. Each line, tag, task, serial event, and comment has the operator's initials and the server time.
+5. On consignment, the intake line's `consignor_vendor_id` is the vendor who receives the placeholder purchase-order row. It was copied from the project and is not rewritten if the project later points at someone else.
+6. Each line, tag, task, serial event, sale row, and comment has the operator's initials and the server time.
 
 The project screen lists SKU, quantity, bin, and serials, and each row opens this walk. A quantity that has been split shows the children, and each child shows the parent pile and the grade operation. Nothing in the walk is deleted when a line is split or voided. Void keeps the row and the events.
 
@@ -440,11 +492,13 @@ Moving a bin to a location does not break the walk. The product still points at 
 
 ### Who gets a cost, and when
 
-COGS is assigned only for non-consignment projects and non-consignment purchase orders.
+COGS for owned goods is assigned per purchase order, and only for items. A project with several purchase orders gets one allocation each. There is no project-level pool. Each allocation uses that order's item-lines total and only the SKUs whose intake lines name that order.
 
-Consignment stays cost-pending from intake through put-away. The sale-based purchase order to the consignor is the cost. That order is not this allocation.
+The item-lines total is the sum of the merchandise lines. Freight, shipping, tax, and any other landed or non-item cost stay outside it. The grand total on the purchase order can be higher. The allocation does not have to equal that grand total.
 
-For everything else, COGS is the purchase-order total, spread across the **final summary** of received SKUs and quantities. The summary is one row per SKU: the quantity still received against that purchase order after grade splits. Two bins of the same SKU are one row. Intake lines are not cost lines. A parent that was fully split is not on the summary. Its children are.
+Consignment stays without a cost from intake through put-away. At sale, COGS is the purchase price on that unit's row on the consignor's placeholder purchase order. That price is net sales price times the agreed percentage. It is not this allocation.
+
+For an owned purchase order, the summary is one row per SKU: the quantity whose intake line, after every split, still carries that `purchase_order_id`. Two bins of the same SKU on the same order are one row. A SKU that also arrived on a second order is a row on that second allocation, for that second quantity only. Intake lines are not cost lines. A parent that was fully split is not on the summary. Its children are, and they keep the parent's purchase order.
 
 The pricing officer types a unit price on each summary row. The screen may start those prices from the vendor's line prices when the SKU matches. The officer's prices are the ones that post.
 
@@ -453,24 +507,26 @@ The pricing officer types a unit price on each summary row. The screen may start
 | State | What is true |
 |---|---|
 | `draft` | The officer is entering prices. The remainder may be anything. No COGS is posted. |
-| `approved` | The remainder is zero and the buy transactions are posted. The previous approved snapshot remains the cost of record if someone re-opens, until a new draft is approved. |
-| `locked` | The approved figures are frozen. A later change is a re-open or an adjustment entry. |
+| `approved` | Unit prices are accepted. On an ordinary order this happens only after receiving is complete and the remainder is zero, and the buys are posted then. On a pre-agreed order it can happen while receipts are still arriving. The previous approved snapshot remains the cost of record if someone re-opens, until a new draft is approved. |
+| `locked` | Receiving is complete, the extensions equal this order's item-lines total, and the figures are frozen. A later change is a re-open or an adjustment entry. |
 
-The officer can save a draft as often as they like. Approve is refused while the check below fails. Lock is available only from approved. **Approve and lock** does both when the summary is finished.
+The officer can save a draft as often as they like. On an ordinary purchase order, Approve is refused until receiving is complete and the remainder is zero. **Approve and lock** is the normal end of that order.
+
+`pre_agreed_prices` is the exception, used when the vendor agreement already prices individual components. The officer can enter and approve those unit prices before the last receipt. Each new receipt updates the quantities on that order's summary, and the extensions move with them. Lock is still refused until receiving is complete. If the extensions then differ from the item-lines total, the screen shows the variance and the officer resolves it before Lock. Without the flag, none of that early approval is available.
 
 ### The check, rounding, and the remainder
 
 Each line stores a unit price with four decimal places and an extension in cents. The extension starts as the unit price times the quantity, rounded half-up to the cent.
 
-The remainder is the purchase-order total minus the sum of the extensions. Approve is allowed only when the remainder is `0.00`.
+The remainder is this purchase order's item-lines total minus the sum of the extensions. Lock is allowed only when receiving is complete and the remainder is `0.00`. On an ordinary order, Approve uses that same rule. On a pre-agreed order, Approve can precede that check, and the variance stays visible until Lock.
 
 A leftover cent is the officer's to place. They change one line's extension and fill in `rounding_note`. The unit price they typed stays. The extension is what posts. The screen shows the remainder in cents and names the line that absorbed it. The system does not sprinkle pennies by itself.
 
-Example. The purchase-order total is `$1,000.00`. The summary is 3 of SKU A and 1 of SKU B. The officer enters A at `$250.00` (extension `$750.00`) and B at `$249.99` (extension `$249.99`). The remainder is `$0.01`, so Approve stays off. The officer sets B's extension to `$250.00` and notes `rounding`. The remainder is `$0.00`. Approve posts `$750.00` and `$250.00`.
+Example. The item-lines total is `$1,000.00`. Freight on the same order is ignored. The summary is 3 of SKU A and 1 of SKU B, both traced to this purchase order. The officer enters A at `$250.00` (extension `$750.00`) and B at `$249.99` (extension `$249.99`). The remainder is `$0.01`, so Lock stays off. The officer sets B's extension to `$250.00` and notes `rounding`. The remainder is `$0.00`. Lock posts `$750.00` and `$250.00`.
 
 Zero is allowed, so a scrap SKU can sit on the summary at a zero price while the other rows absorb the total. A negative price is refused. Quantities on the summary are greater than zero.
 
-The `po_total` stored on the allocation is copied from the purchase order at approve time. A later edit to the purchase order's total sets `summary_changed_at` and blocks a new use of the old approval until the officer re-opens.
+`item_lines_total` is copied from that purchase order when the allocation is approved or locked. A later edit to the order's item lines sets `summary_changed_at` and blocks a new use of the old approval until the officer re-opens. A change to freight or tax does not.
 
 ### A grade split or a correction after costing
 
@@ -480,14 +536,14 @@ The allocation is marked `summary_changed_at`. The children have no cost. The pa
 
 Two ways to finish:
 
-- **Re-open** returns the allocation to `draft` and requires a comment. The summary is rebuilt from the received SKUs as they are now. Prices copy onto SKUs that are still there. New SKUs start blank. The previous buys stay in force until the new draft is approved. Approval reverses those buys and posts the new extensions. The new sum still has to equal the same purchase-order total.
-- **Adjustment entry**, used when the allocation is locked and the officer is moving dollars without rebuilding the whole summary. New lines with `source = adjustment` take the parent's extension down and put extensions on the children. The adjustment has its own draft and its own approve check: original extensions plus adjustments still equal the purchase-order total. The locked summary lines stay as history. A comment is required.
+- **Re-open** returns the allocation to `draft` and requires a comment. The summary is rebuilt from the SKUs that still trace to this purchase order. Prices copy onto SKUs that are still there. New SKUs start blank. The previous buys stay in force until the new draft is approved. Approval reverses those buys and posts the new extensions. The new sum still has to equal this order's item-lines total.
+- **Adjustment entry**, used when the allocation is locked and the officer is moving dollars without rebuilding the whole summary. New lines with `source = adjustment` take the parent's extension down and put extensions on the children. The adjustment has its own draft and its own approve check: original extensions plus adjustments still equal this order's item-lines total. The locked summary lines stay as history. A comment is required.
 
 A wrong price, with the SKU list unchanged, uses the same two paths. Re-open when the officer will retype the summary. An adjustment when they are posting a delta under the lock.
 
 ### Who can see it
 
-`can_view_financials` is required to read unit prices, extensions, the remainder, the purchase-order total, freight, attachments, and buy transactions. The clerk and the warehouse manager do not have that capability. Their intake, work order, test, and put-away payloads omit those fields on the server. Hiding a column in the browser is not the control.
+`can_view_financials` is required to read unit prices, extensions, the remainder, the item-lines total, freight, the placeholder purchase price, attachments, and buy transactions. The clerk and the warehouse manager do not have that capability. Their intake, work order, test, and put-away payloads omit those fields on the server. Hiding a column in the browser is not the control.
 
 The pricing officer, admin, and staff have `can_view_financials`. Writing an allocation uses a new capability, `can_allocate_cogs`, held by the pricing officer and by admin and staff. The officer does not receive trucks and does not send purchase orders.
 
@@ -495,9 +551,9 @@ The pricing officer, admin, and staff have `can_view_financials`. Writing an all
 
 The screen lives on Pricing, which is still a placeholder. It is a desk screen. The phone flows do not gain a cost field.
 
-The list shows non-consignment purchase orders that have a received summary: number, vendor, project code when there is one, order total, summary status (ready, or changed since approval), allocation state, and the remainder. Consignment projects are absent. Opening one shows the final summary: SKU, name, quantity, unit price, extension, and the remainder against the purchase-order total. Bins and serials are a disclosure under the row so the officer can see where the quantity sits. They are not part of the math.
+The list is one row per non-consignment purchase order, including each order on a shared project: number, vendor, project code when there is one, the pre-agreed flag, whether receiving is complete, the item-lines total, allocation state, and the remainder. Consignment projects are absent. There is no combined project total to allocate. Opening an order shows only the SKUs traced to its intake lines: SKU, name, quantity, unit price, extension, and the remainder against that order's item-lines total. Freight and the grand total sit beside the tie figure so the officer can see they are excluded. Bins and serials are a disclosure under the row. They are not part of the math.
 
-**Save draft** stores the prices. **Approve** runs the check. **Lock** freezes an approved allocation. **Approve and lock** is the normal end. **Re-open** and **New adjustment** ask for a comment, then land on a draft the officer can edit. A changed summary shows a banner that the received list no longer matches the approved lines.
+**Save draft** stores the prices. **Approve** follows the rule for that order: after receiving is complete, or earlier when `pre_agreed_prices` is set. **Lock** is available once receiving is complete and the remainder is zero. **Approve and lock** is the normal end of an ordinary order. **Re-open** and **New adjustment** ask for a comment, then land on a draft the officer can edit. A changed summary shows a banner that the received list for this purchase order no longer matches the approved lines. A pre-agreed order that is still receiving shows the running variance.
 
 ## Screens, in the order the floor uses them
 
@@ -522,20 +578,27 @@ Creating a SKU and the pricing screen are desk work. The queue and the allocatio
 Each phase is a small pull request. Phase 1 is the smallest slice that puts a known SKU into a bin and proves the ledger. Later phases do not reshape that ledger. Cost waits until a final summary exists, and it never appears on a warehouse payload.
 
 1. **Known SKU into a bin.** Receive a purchase-order line that already has a SKU, scan a bin, post the ledger `in`, refresh `items.quantity`. Scenario 0, quantities only. No cost screen.
-2. **Pricing officer, for a finished non-consignment purchase order.** Final summary, draft, the remainder check, approve, lock. Scenario 0 can be costed as soon as the receipt is marked final. Consignment is refused.
+2. **Pricing officer, one allocation per owned purchase order.** The summary is the SKUs traced to that order. The tie is the item-lines total. Approve waits until receiving is complete, unless `pre_agreed_prices` is set. Lock enforces the tie. Consignment is refused. There is no project pool.
 3. **Incoming tags and the bin log.** Projects, tags, unidentified lines, comments, initials, and the four labels. Quantity with no SKU stays out of `items.quantity`.
 4. **SKU audit.** Propose, send back, senior assign, create the missing item, write `item_id` onto the existing ledger rows.
 5. **Work orders and the pull.** Tasks, server-type bins, pulled lines, remains-in-chassis lines, lineage back to the pallet.
 6. **Test, grade, serials.** The 51-to-31/20 split, serials at intake and at the bench, lineage on the children.
 7. **Put-away to a place.** After the location list is loaded. Nest a bin in a bin or a location. One `bin_events` row. No new inventory rows per unit.
 8. **Re-open and adjustments.** Required once grade splits can happen after phase 2 has posted COGS. The unassigned-dollar hold and both repair paths.
-9. **Consignment purchase order at sale.** Still cost-pending until then. Depends on sales existing. The share math stays the settlement design in `docs/purchase-orders.md`.
+9. **Consignor placeholder purchase order.** When a consigned unit sells, add a row to that consignor's one open placeholder, or open one if none exists. COGS is the row's purchase price, recognized at the sale. Depends on sales orders existing.
+
+## Decisions
+
+| Date | Decision |
+|---|---|
+| 2026-10-22 | COGS covers items only. An allocation ties to that purchase order's item-lines total. Freight, shipping, tax, and any other landed or non-item cost stay out of the figure. |
+| 2026-10-22 | The default is that prices are approved after receiving is complete. A purchase order can be flagged `pre_agreed_prices` when the vendor agreement already prices individual components. With that flag the officer can enter and approve unit prices before receiving finishes. Quantities on the summary keep updating as receipts land. The extension-equals-item-lines-total check is enforced at final lock, and any variance is left for the officer to resolve. Without the flag, approval stays blocked until receiving is complete. |
+| 2026-10-22 | When a project has several purchase orders, each order is priced separately. Each gets its own allocation, tied to its own item-lines total and to the SKUs traced to that order's intake. There is no project-level pool. Intake lines carry the purchase order they came in on, and a grade split copies it onto the children. |
 
 ## Open questions
 
-1. Is the purchase-order total that COGS must tie to the grand total (merchandise plus freight-in), or the merchandise subtotal only? Do other landed costs join that figure, stay out, or wait for a later pool?
-2. May a pricing officer approve an allocation when the purchase order is only partly received, or only after the receipt is marked complete?
-3. When a project has several non-consignment purchase orders, is each order allocated onto the SKUs that trace to it, or is one pool of those totals allocated across the whole project summary?
+Questions 1, 2, and 3 are answered under Decisions. The numbers below are unchanged.
+
 4. Is the pricing officer a new role with `can_allocate_cogs` and `can_view_financials`, and should Approve and Lock be the same person?
 5. After a locked allocation, which path is the default when a grade split changes the summary: re-open the whole summary, or an adjustment entry that leaves the lock in place?
 6. Incoming tags: stay on the 90 mm × 29 mm bin roll, or move to the 62 mm × 100 mm roll when the words need more room?
@@ -547,3 +610,8 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 12. Which taxonomies require a serial before put-away, and which intakes must capture a serial even when the taxonomy does not?
 13. A test that covers only part of a pile: confirm the untested remainder stays on the parent SKU and in the parent bin.
 14. Put-away to a fixed location waits on the locator list. Confirm phase 7 does not invent location codes.
+15. Is the agreed percentage set per consignor, per project, or per row (can it vary by item)?
+16. Who closes an open consignor PO, and when (manually, on a schedule, or at settlement)?
+17. Is net sales price the sale price minus fees and shipping (eBay fees etc.)? Define what is deducted.
+18. How does a return after the row is added get handled: a negative row or a correction?
+19. Can the computed purchase price be overridden manually?
