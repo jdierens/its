@@ -20,7 +20,7 @@ Warehouse roles still see no money. New tables enable row level security and gra
 
 ## What already exists
 
-Items are one row per SKU. `items.quantity` is a cache. This design makes it the sum of ledger rows that already have a SKU. Bins today carry a reference such as `20000-P` and a type letter `P`, `C`, or `B`. They nest: a bin sits in another bin or at a location. `bin_events` stays the history. `current_location_id` is replaced by `parent_bin_id` and `location_id` as in `docs/purchase-orders.md`. Put-away uses the location codes under Bins and locations. It does not wait for a longer list.
+Items are one row per SKU. `items.quantity` is a cache. This design makes it the sum of ledger rows that already have a SKU. Bins today carry a five-digit reference and one suffix: `20000-P` is a pallet bin, `20014-B` a box bin, and a `C` suffix a crate bin. Those three suffixes are the only ones. They nest: a bin sits in another bin or at a location. `bin_events` stays the history. `current_location_id` is replaced by `parent_bin_id` and `location_id` as in `docs/purchase-orders.md`. Put-away uses the location codes under Bins and locations. It does not wait for a longer list.
 
 `po_counter` issues the next purchase-order number. `po_attachments` holds the vendor PDF (invoice, quote, order confirmation, or other) in the private `po-documents` bucket. A role without `can_view_financials` receives neither the file nor a signed URL.
 
@@ -42,7 +42,7 @@ Some lines go to test. Probing and wiping happen there. Serials are captured on 
 
 The project ends as a list of SKUs, quantities, bins, and serials where the SKU has them. Each quantity can be walked back to the project, the incoming tag, the pallet, the server or container it came out of, and the person who logged it. That walk uses the container's origin fields, not its code.
 
-The last physical step is put-away: the bin is placed at a location. A `-B` or `-C` bin defaults to `HWS.00.00.00`. A `-P` bin defaults to `HWR.00.00.00`. The operator can scan a more specific code. Put-away does not wait for another list. A serialized item cannot be put away until each piece has a serial.
+The last physical step is put-away: the bin is placed at a location. A box (`-B`) or a crate (`-C`) defaults to `HWS.00.00.00`. A pallet (`-P`) defaults to `HWR.00.00.00`. The operator can scan a more specific code. Put-away does not wait for another list. A serialized item cannot be put away until each piece has a serial.
 
 ## Domain model
 
@@ -137,7 +137,7 @@ One row is one sale of consigned goods, added to the consignor's open placeholde
 | `priced_at` | when the purchase price was stored. The row locks at that moment |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | the sale posting, from the session and the server clock |
 
-The share comes from the consignor, with a project override and a taxonomy rate beside it. It is never stored on the item. `vendors.consignor_share_percent` is the default. `projects.consignor_share_percent` is the optional project override. A taxonomy may set `consignor_share_percent` for that taxonomy. When the row is created it copies the resolved share into `agreed_percentage`. A later change to any of those rates does not rewrite the copy. The proposed order is project and taxonomy, then project, then consignor and taxonomy, then the consignor default. Which source wins when more than one is set is open question 23.
+The share comes from the consignor, with a project override and a taxonomy rate beside it. It is never stored on the item. `vendors.consignor_share_percent` is the default. `projects.consignor_share_percent` is the optional project override. A taxonomy may set `consignor_share_percent` for that taxonomy. When the row is created it copies the resolved share into `agreed_percentage`. A later change to any of those rates does not rewrite the copy. The first match wins: project and taxonomy, then the project, then the consignor and taxonomy, then the consignor default.
 
 An item with `consignment_excluded` set is not a consignment item. A sale of it does not add a placeholder row. The flag is not a percentage.
 
@@ -276,7 +276,7 @@ Put-away is refused when the item is serialized and the line has fewer captured 
 
 Keep `bins` and `bin_events`. Add the nesting columns from `docs/purchase-orders.md`. In the pull and work-order step, a bin is any container: a coded bin, a box, a tote, a cart, or a pallet spot. The same table holds both the counter-issued warehouse bins and these containers.
 
-A bin issued from the bin counter still has a required `reference` (`20014-B`) and a `type` of `P`, `C`, or `B`. That reference is its code. Those labels stay the 90 mm × 29 mm labels in `docs/bin-labels.md`. The counter is not used when a pull container has no code, and a temporary id is not a `20000-P` reference.
+A bin issued from the bin counter still has a required `reference` and a `type` of `B`, `C`, or `P`. The reference is five digits, a hyphen, and that letter: `20014-B` is a box bin, a `C` suffix is a crate bin, and `20000-P` is a pallet bin. No other suffix is valid. The reference matches `^\d{5}-[BCP]$`. Those labels stay the 90 mm × 29 mm labels in `docs/bin-labels.md`. The counter is not used when a pull container has no code, and a temporary id is not a warehouse reference.
 
 A container opened for a pull stores the origin on that row. The code is a separate, optional field. The same physical code can be used again later. That later pull is a new row with the same code, and the earlier row keeps the origin it was logged with. Intake lines point at the row they were logged into. Scanning a code finds the open container with that code, the one that still holds this pull.
 
@@ -284,7 +284,7 @@ A container opened for a pull stores the origin on that row. The code is a separ
 |---|---|
 | `id` | uuid |
 | `container_kind` | `bin`, `box`, `tote`, `cart`, or `pallet_spot`. Existing warehouse bins are `bin` |
-| `number`, `type`, `reference` | the counter-issued warehouse code when this row is one of those bins. `reference` such as `20014-B` stays unique |
+| `number`, `type`, `reference` | the counter-issued warehouse code when this row is one of those bins. `type` is `B` box, `C` crate, or `P` pallet. `reference` matches `^\d{5}-[BCP]$` and stays unique |
 | `code` | optional. The mark on the physical container, scanned when it is present. Not unique, and not the lineage key. A counter-issued bin copies its `reference` here |
 | `coded_bin_id` | set when `code` is an existing warehouse bin. Points at that bin so the goods can still be found by the printed reference |
 | `temporary_id` | set only when `code` is empty. Unique. A generated scan target. Not taken from `bin_counter`. Not used for lineage |
@@ -316,14 +316,26 @@ A pull container must have a `code` or a `temporary_id`, so it can be scanned. W
 | `row` | the row segment, parsed from the code |
 | `bay` | the bay segment |
 | `elevation` | the elevation segment, in feet |
-| `orientation` | `N`, `S`, `E`, `W`, or `C`. Empty when the code has no orientation segment |
+| `orientation` | racking only. `N`, `S`, `E`, `W`, or `C` (centre). Empty on shelves, and empty on the default `HWR.00.00.00`. A real pallet slot has one |
 | `description` | text. Henderson Warehouse Shelves, or Henderson Warehouse Racking |
 
-`HWS.Row.Bay.Elevation` is Henderson Warehouse Shelves, then the row, the bay, and the elevation in feet. `HWR.Row.Bay.Elevation.Orientation` is Henderson Warehouse Racking, then the row, the bay, the elevation in feet, and an orientation.
+`HWS.Row.Bay.Elevation` is Henderson Warehouse Shelves, then the row, the bay, and the elevation in feet. `HWR.Row.Bay.Elevation.Orientation` is Henderson Warehouse Racking, then the row, the bay, the elevation in feet, and an orientation. Row, bay, and elevation are always two digits.
 
-A check follows the type. A shelves code starts with `HWS` and has row, bay, and elevation. A racking code starts with `HWR` and has row, bay, and elevation, plus an orientation when that segment is present. The two defaults are valid: `HWS.00.00.00` and `HWR.00.00.00`. Whether orientation belongs only on racking, and whether it may be left off, is an open question. Whether row, bay, and elevation are always two digits is an open question. Until those are answered, the check accepts the defaults and a racking code that adds one orientation letter.
+Orientation is for racking only. A shelves code never has one. `HWR.00.00.00` is the default and has no position. A real pallet slot has one letter: `N`, `S`, `E`, `W`, or `C` for centre.
 
-The bin suffix picks the default. A reference ending in `-B` or `-C` uses `HWS.00.00.00`. A reference ending in `-P` uses `HWR.00.00.00`. What those three letters stand for, and whether more suffixes exist, is an open question. The operator can scan a different code that passes the check. Put-away writes `location_id` and does not wait for more locations to be loaded.
+A bay is typically 98 inches wide. A 42 inch pallet takes two positions on one bay elevation, `N`/`S` or `E`/`W`. A 32 inch Euro pallet takes three, `N`/`C`/`S` or `E`/`C`/`W`. That is the capacity of a bay elevation: two positions or three, depending on the pallet.
+
+The check is one regex per kind.
+
+| Kind | Pattern |
+|---|---|
+| Shelves | `^HWS\.\d{2}\.\d{2}\.\d{2}$` |
+| Racking | `^HWR\.\d{2}\.\d{2}\.\d{2}(\.[NSEWC])?$` |
+| Bin reference | `^\d{5}-[BCP]$` |
+
+The two defaults pass: `HWS.00.00.00` and `HWR.00.00.00`.
+
+The bin suffix picks the default. A box (`-B`) or a crate (`-C`) uses `HWS.00.00.00`. A pallet (`-P`) uses `HWR.00.00.00`. The operator can scan a different code that passes the check for its type. Put-away writes `location_id` and does not wait for more locations to be loaded.
 
 ### Bin consolidation
 
@@ -450,7 +462,7 @@ When an item that came from consignor X sells, the sale is walked back to X: ser
 | Item description | The sold item |
 | Qty sold | How many this sale took |
 | Net sales price | Typed by the sales manager. The fees and shipping behind that number are outside ITS. The row can be saved before this is known |
-| Consignor share | Snapshotted onto the row from the consignor default, the project override, or a taxonomy rate. A 75/25 split is 0.75. Not a per-item rate |
+| Consignor share | Snapshotted onto the row. First match: project and taxonomy, then project, then consignor and taxonomy, then the consignor default. A 75/25 split is 0.75. Not a per-item rate |
 | Purchase price | Computed once the net is entered: net times the snapshotted share, half-up to the cent. $100.00 at 0.75 is $75.00. Not typed |
 | Project | Optional, such as `AZSIM6930` or `OHNST6902` |
 
@@ -695,12 +707,11 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 | 2026-10-22 | Net sales price is typed by the sales manager from figures ITS does not have. ITS does not calculate fees or shipping. A row may be saved pending that net. The purchase price is computed only once the net is entered. |
 | 2026-10-22 | Returns and corrections edit the row until the purchase price is stored. Each edit records who, when, the old values, the new values, and a comment. After that price, the row is locked and a change is an adjustment, the same pattern as a post-lock grade split. |
 | 2026-10-22 | Purchase price is the net sales price times the consignor's share, rounded half-up to the cent. A 75/25 consignor/consignee split on a $100.00 net sale is a purchase price of $75.00. The stored percentage is the consignor's share. The price is computed. It is not overridden by hand. |
+| 2026-10-22 | Orientation applies to racking (`HWR`) only, never to shelves (`HWS`). A bay is typically 98 inches wide. A 42 inch pallet takes two positions on a bay elevation (`N`/`S` or `E`/`W`). A 32 inch Euro pallet takes three (`N`/`C`/`S` or `E`/`C`/`W`). `C` is centre. The letter is optional on the default `HWR.00.00.00` and present on a real pallet slot. |
+| 2026-10-22 | Bin suffixes are a five-digit number plus one letter, and only three exist. `00000-B` is a box bin, `00000-C` is a crate bin, and `00000-P` is a pallet bin. A box or a crate defaults to `HWS.00.00.00`. A pallet defaults to `HWR.00.00.00`. |
+| 2026-10-22 | Row, bay, and elevation are always two digits. Shelves match `^HWS\.\d{2}\.\d{2}\.\d{2}$`. Racking matches `^HWR\.\d{2}\.\d{2}\.\d{2}(\.[NSEWC])?$`. A bin reference matches `^\d{5}-[BCP]$`. |
+| 2026-10-22 | Consignor share resolution uses the first match: project and taxonomy, then the project, then the consignor and taxonomy, then the consignor default. Each sale row snapshots that resolved share. |
 
 ## Open questions
 
-Questions 1–19 are answered under Decisions. Questions 20–22 are unchanged. Question 23 was added with the consignor-share decision.
-
-20. Does orientation (N/S/E/W/C) apply only to racking (HWR), or to shelves too? The defaults have no orientation segment, so is it optional?
-21. What do the -B, -C and -P suffixes stand for exactly (bin, carton?, pallet), and are there others?
-22. Are row/bay/elevation always two digits (00)?
-23. When both a project override and a taxonomy rate exist, which wins? Proposed resolution order: project+taxonomy, then project, then consignor+taxonomy, then consignor default.
+Questions 1–23 are answered under Decisions. There are none open for now.
