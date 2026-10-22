@@ -1417,6 +1417,26 @@ button.danger {
     padding: 0.48rem 0.7rem;
   }
 
+  .app-shell.collapsed .sidebar-user {
+    margin-right: 0.7rem;
+    margin-left: 0.7rem;
+    padding-right: 0.45rem;
+    padding-left: 0.45rem;
+  }
+
+  .app-shell.collapsed .sidebar-user form {
+    display: block;
+  }
+
+  .app-shell.collapsed button.sidebar-signout,
+  button.sidebar-signout {
+    justify-content: flex-start;
+    width: auto;
+    height: auto;
+    min-height: 44px;
+    padding: 0.35rem 0.45rem;
+  }
+
   .app-shell.collapsed .nav-group-label {
     height: auto;
     margin: 0.95rem 1.2rem 0.28rem;
@@ -2602,31 +2622,53 @@ p.error {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.sidebar-user form {
+  display: block;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  background-image: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 .sidebar-user-name {
   display: block;
-  margin: 0.15rem 0.25rem 0.4rem;
-  color: #c5d0dc;
+  margin: 0.15rem 0.25rem 0.2rem;
+  color: var(--sidebar-muted);
   font-size: 0.78rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebar-signout {
-  display: flex;
+button.sidebar-signout {
+  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  width: 100%;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  width: auto;
+  max-width: 100%;
   margin: 0;
-  padding: 0.4rem 0.55rem;
-  color: #c5d0dc;
-  border-color: rgba(255, 255, 255, 0.12);
+  padding: 0.28rem 0.4rem;
   background: transparent;
+  background-image: none;
+  color: var(--sidebar-muted);
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
-.sidebar-signout:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
+button.sidebar-signout:hover {
+  background: rgba(255, 255, 255, 0.08);
+  background-image: none;
+  color: var(--sidebar-muted);
 }
 
 .app-shell.collapsed .sidebar-user {
@@ -2636,10 +2678,16 @@ p.error {
   padding-left: 0;
 }
 
+.app-shell.collapsed .sidebar-user form {
+  display: flex;
+  justify-content: center;
+}
+
 .app-shell.collapsed .sidebar-signout {
   justify-content: center;
-  padding-right: 0;
-  padding-left: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
 }
 
 .lens-shots,
