@@ -262,7 +262,7 @@ export function LabelsPage() {
         <p className="hint">The quantity is printed on the label. It does not change the item&apos;s stock.</p>
         <div className="label-row">
           <label className="label-query" htmlFor="label-search">
-            SKU, name, or description
+            <span className="label-caption">Search</span>
             <span className="label-query-box">
               <FastInput
                 id="label-search"
@@ -306,7 +306,7 @@ export function LabelsPage() {
             </span>
           </label>
           <label className="label-qty" htmlFor="label-qty">
-            Qty on label
+            <span className="label-caption">Qty on label</span>
             <FastInput
               id="label-qty"
               inputMode="numeric"
@@ -318,7 +318,7 @@ export function LabelsPage() {
             />
           </label>
           <label className="label-copies" htmlFor="label-copies">
-            Copies
+            <span className="label-caption">Copies</span>
             <FastInput
               id="label-copies"
               inputMode="numeric"
