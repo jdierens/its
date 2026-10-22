@@ -32,15 +32,15 @@ Every live write stores `operator_id` from the session and `occurred_at` plus `c
 
 A truck arrives. Each pallet and each loose box gets an incoming tag, for example `INCOMING AZSIM6903 P001`. The tag is a label, not a SKU and not a bin number.
 
-A work order tells the team what to pull. Parts land in bins. The clerk's tag on the bin names the source, the server type, and the count. Pallet X with 12 Type 1 servers and 8 Type 2 servers gets two bins: `Pallet X - Type 1 Server - 12 units` and `Pallet X - Type 2 Server - 8 units`. Those words are the caption. The scannable identity is still the bin reference (`20014-B`).
+A work order tells the team what to pull. Parts land in a container. In this step a container is any of these: a coded bin, a box, a tote, a cart, or a pallet spot. It usually has a code, and that code can be scanned. A code is optional. What the record must have is the origin: where the pulled items came from. On the floor that origin is a post-it or a more formal note. It names the project, the incoming tag or pallet, the server type, and the units. Pallet X with 12 Type 1 servers and 8 Type 2 servers gets two containers. One origin is project `AZSIM6903`, tag `INCOMING AZSIM6903 P001`, Type 1 Server, 12 units. The other is the same pallet and Type 2 Server, 8 units. A photo or a scan of the note can be attached. If a container has no code, the system generates a temporary container ID and prints a 62 × 100 mm tag so the container can be scanned. Lineage uses the origin fields. It does not use the code.
 
-An operator opens that bin and logs the header, then the lines. The header is the project, the incoming pallet, the server type, and the quantity from the clerk's tag. Each line is a product identifier, a quantity, and the bin that holds it. The operator may not know the SKU. A guessed SKU waits for audit. A senior can assign the SKU directly. If no SKU exists, someone with `can_edit_items` creates one.
+An operator opens that container and logs the header, then the lines. The header is the container's origin: the project, the incoming pallet, the server type, and the quantity. Each line is a product identifier, a quantity, and the container that holds it. The operator may not know the SKU. A guessed SKU waits for audit. A senior can assign the SKU directly. If no SKU exists, someone with `can_edit_items` creates one.
 
 Labels are one tap away on that screen: incoming tag, bin, item, and serial.
 
 Some lines go to test. Probing and wiping happen there. Serials are captured on that bench when the SKU tracks them. The SKU can change from an untested identity to a graded one, and the bin can change with it. Fifty-one of item X in box B become 31 of grade A (SKU 1A in box B1) and 20 of grade B (SKU 1B in box B2).
 
-The project ends as a list of SKUs, quantities, bins, and serials where the SKU has them. Each quantity can be walked back to the project, the incoming tag, the pallet, the server or bin it came out of, and the person who logged it.
+The project ends as a list of SKUs, quantities, bins, and serials where the SKU has them. Each quantity can be walked back to the project, the incoming tag, the pallet, the server or container it came out of, and the person who logged it. That walk uses the container's origin fields, not its code.
 
 The last physical step is put-away: the bin is placed at a warehouse or office location. That list is not in this note. Jan will send it. Until then a bin can be labeled and filled and has no fixed place.
 
@@ -138,7 +138,9 @@ One row is one sale of consigned goods, added to the consignor's open placeholde
 
 ### Incoming tags
 
-The paper on the pallet or the box before anyone knows the SKUs.
+The paper on the pallet or the box before anyone knows the SKUs. It is a pallet tag, printed on the 62 × 100 mm DK-1202 roll, the same stock as the serial label. The page is landscape. The printable width inside the padding is 94 mm, the same convention as `docs/labels.md`. The print path is the serial-label pipeline.
+
+The large line is the tag ID, for example `INCOMING AZSIM6903 P001`. A Code 128 barcode encodes that same ID. Under it: the project, the pallet or box number, the received date, and the operator's initials.
 
 | Column | Notes |
 |---|---|
@@ -147,8 +149,7 @@ The paper on the pallet or the box before anyone knows the SKUs.
 | `purchase_order_id` | set when the truck is a known purchase order with no project |
 | `kind` | `pallet` or `box` |
 | `sequence` | `P001`, `B002`, unique inside the project |
-| `label` | the words printed, `INCOMING AZSIM6903 P001` |
-| `code` | the barcode, `IN-AZSIM6903-P001`, unique |
+| `label` | the tag ID, unique. Printed large and encoded in the Code 128 barcode. Example: `INCOMING AZSIM6903 P001` |
 | `parent_tag_id` | a box tag can name its pallet tag |
 | `bin_id` | set when this physical object is also a bin, or when the goods have moved into one |
 | `notes` | text |
@@ -176,7 +177,7 @@ A work order is the instruction. Tasks are the pulls.
 | `work_order_id` | required |
 | `server_type` | `Type 1`, `Type 2`, free text until a catalog exists |
 | `server_qty` | the count on the clerk's tag, 12 or 8 |
-| `bin_id` | the bin that receives the pull |
+| `bin_id` | the container that receives the pull. Its origin is this task's project, incoming tag, server type, and quantity |
 | `instructions` | text |
 | `state` | `open`, `done`, or `cancelled` |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | who finished the task |
@@ -198,7 +199,7 @@ One line is one product pile: an identifier, a quantity, a bin, and eventually a
 | `line_kind` | `whole`, `pulled`, or `remains` |
 | `identifier` | what the operator typed or scanned: part, model, or a description |
 | `qty` | greater than 0 |
-| `bin_id` | where this pile sits |
+| `bin_id` | the container this pile sits in. Lineage reads that container's origin, not its code |
 | `item_id` | empty until the SKU is approved |
 | `proposed_item_id` | the guess waiting for audit |
 | `sku_state` | `unknown`, `proposed`, or `approved` |
@@ -260,9 +261,35 @@ Same shape as `docs/purchase-orders.md`. `taxonomies.serialized` defaults false.
 
 ### Bins and locations
 
-Keep `bins` and `bin_events`. Add the nesting columns from `docs/purchase-orders.md`.
+Keep `bins` and `bin_events`. Add the nesting columns from `docs/purchase-orders.md`. In the pull and work-order step, a bin is any container: a coded bin, a box, a tote, a cart, or a pallet spot. The same table holds both the counter-issued warehouse bins and these containers.
 
-`bins` keeps `number`, `type` (`P`, `C`, `B`), `reference`, `notes`, `printed_count`, `last_printed_at`, `created_at`, `created_by`. Add `parent_bin_id`, `location_id`, and a check that at most one of those is set. `notes` holds the clerk's caption (`Pallet X - Type 1 Server - 12 units`) so a reprint can show it.
+A bin issued from the bin counter still has a required `reference` (`20014-B`) and a `type` of `P`, `C`, or `B`. That reference is its code. Those labels stay the 90 mm × 29 mm labels in `docs/bin-labels.md`. The counter is not used when a pull container has no code, and a temporary id is not a `20000-P` reference.
+
+A container opened for a pull stores the origin on that row. The code is a separate, optional field. The same physical code can be used again later. That later pull is a new row with the same code, and the earlier row keeps the origin it was logged with. Intake lines point at the row they were logged into. Scanning a code finds the open container with that code, the one that still holds this pull.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid |
+| `container_kind` | `bin`, `box`, `tote`, `cart`, or `pallet_spot`. Existing warehouse bins are `bin` |
+| `number`, `type`, `reference` | the counter-issued warehouse code when this row is one of those bins. `reference` such as `20014-B` stays unique |
+| `code` | optional. The mark on the physical container, scanned when it is present. Not unique, and not the lineage key. A counter-issued bin copies its `reference` here |
+| `coded_bin_id` | set when `code` is an existing warehouse bin. Points at that bin so the goods can still be found by the printed reference |
+| `temporary_id` | set only when `code` is empty. Unique. A generated scan target. Not taken from `bin_counter`. Not used for lineage |
+| `origin_description` | required on a pull container. The post-it or the formal note, in words |
+| `origin_project_id` | the project the pull came from |
+| `origin_incoming_tag_id` | the incoming pallet or box |
+| `origin_server_type` | `Type 1`, free text, copied from the task |
+| `origin_qty` | the units on that note, 12 or 8 |
+| `origin_file_path` | optional. A document or a photo of the note |
+| `origin_file_kind` | `document` or `photo`. Empty when there is no file |
+| `parent_bin_id`, `location_id` | nesting. At most one is set |
+| `notes`, `printed_count`, `last_printed_at`, `created_at`, `created_by` | unchanged |
+
+The file lives in the private `bin-documents` bucket. It is a warehouse note, not a vendor bill, so `can_view_financials` is not required to read it. A clerk with `can_add_photos` can attach it. Row level security is on. `service_role` is the only grant.
+
+Lineage reads `origin_project_id`, `origin_incoming_tag_id`, `origin_server_type`, and `origin_qty`. Assigning a code later does not change those fields.
+
+A pull container must have a `code` or a `temporary_id`, so it can be scanned. When the temporary id is created, the work-order screen prints one 62 × 100 mm tag on the DK-1202 roll, through the serial-label pipeline: landscape, 94 mm printable width. The large line and the Code 128 are the temporary id. Under them: the project, the incoming tag, the server type, the units, and the initials.
 
 `locations`: `id`, unique `code`, `description`. No rows until Jan's list arrives.
 
@@ -364,9 +391,9 @@ If the SKUs 1A and 1B are new, they are created and audited before the split is 
 
 ### 3. Pulling a server apart
 
-Pallet X is tag `INCOMING AZSIM6903 P001` and holds 12 Type 1 servers and 8 Type 2 servers. The work order `Pull Pallet X` has two tasks. Each task prints a bin label whose caption is `Pallet X - Type 1 Server - 12 units` or `Pallet X - Type 2 Server - 8 units`.
+Pallet X is tag `INCOMING AZSIM6903 P001` and holds 12 Type 1 servers and 8 Type 2 servers. The work order `Pull Pallet X` has two tasks. Each task opens a container and records the origin: project `AZSIM6903`, that incoming tag, the server type, and 12 or 8 units. A container that already has a code is scanned. A container with no code gets a temporary id and a 62 × 100 mm tag. The origin note can be photographed or attached.
 
-The operator scans the pallet tag, confirms the server type and the 12, then adds lines: a CPU identifier and a quantity, memory, SSDs, HDDs, NIC and HBA cards. Each line has its own bin, which may be the task bin or a smaller box inside it. `line_kind` is `pulled`. `source_bin_id` is the server's bin when the chassis itself has one. Identifiers that are not SKUs follow situation 1.
+The operator scans the pallet tag, confirms the server type and the 12, then adds lines: a CPU identifier and a quantity, memory, SSDs, HDDs, NIC and HBA cards. Each line has its own container, which may be the task container or a smaller box inside it. `line_kind` is `pulled`. `source_bin_id` is the server's container when the chassis itself has one. Identifiers that are not SKUs follow situation 1.
 
 ### 4. What stays in the chassis
 
@@ -465,8 +492,7 @@ stateDiagram-v2
   draft --> approved: pre-agreed prices, receiving still open
   approved --> locked: receiving complete and remainder is zero
   approved --> draft: re-open, comment required
-  locked --> draft: re-open, comment required
-  locked --> locked: adjustment entry approved
+  locked --> locked: grade split posts an adjustment
 ```
 
 Without `pre_agreed_prices`, Approve waits until receiving is complete and the remainder is zero. With the flag, Approve can happen earlier. Lock still waits until receiving is complete and the extensions equal that purchase order's item-lines total. A locked row stays locked while an adjustment is added beside it.
@@ -508,7 +534,7 @@ The pricing officer types a unit price on each summary row. The screen may start
 |---|---|
 | `draft` | The officer is entering prices. The remainder may be anything. No COGS is posted. |
 | `approved` | Unit prices are accepted. On an ordinary order this happens only after receiving is complete and the remainder is zero, and the buys are posted then. On a pre-agreed order it can happen while receipts are still arriving. The previous approved snapshot remains the cost of record if someone re-opens, until a new draft is approved. |
-| `locked` | Receiving is complete, the extensions equal this order's item-lines total, and the figures are frozen. A later change is a re-open or an adjustment entry. |
+| `locked` | Receiving is complete, the extensions equal this order's item-lines total, and the figures are frozen. A grade split after this does not return the summary to draft. The dollars move by an adjustment. |
 
 The officer can save a draft as often as they like. On an ordinary purchase order, Approve is refused until receiving is complete and the remainder is zero. **Approve and lock** is the normal end of that order.
 
@@ -526,20 +552,31 @@ Example. The item-lines total is `$1,000.00`. Freight on the same order is ignor
 
 Zero is allowed, so a scrap SKU can sit on the summary at a zero price while the other rows absorb the total. A negative price is refused. Quantities on the summary are greater than zero.
 
-`item_lines_total` is copied from that purchase order when the allocation is approved or locked. A later edit to the order's item lines sets `summary_changed_at` and blocks a new use of the old approval until the officer re-opens. A change to freight or tax does not.
+`item_lines_total` is copied from that purchase order when the allocation is approved or locked. A later edit to the order's item lines sets `summary_changed_at`. A change to freight or tax does not. On a locked allocation that flag waits for an adjustment. It does not unlock the summary.
 
-### A grade split or a correction after costing
+### A grade split after lock
 
 Quantity moves when the floor posts the split. Dollars do not move by themselves.
 
-The allocation is marked `summary_changed_at`. The children have no cost. The parent's posted amount is held as unassigned dollars on that allocation, visible on the pricing screen only, so a SKU with nothing left in the bin is not still carrying COGS.
+The allocation is marked `summary_changed_at` and stays `locked`. The children have no cost. The parent's posted amount is held as unassigned dollars on that allocation, visible on the pricing screen only, so a SKU with nothing left in the bin is not still carrying COGS.
 
-Two ways to finish:
+The pricing officer posts an adjustment. The locked summary lines stay as they were. New lines with `source = adjustment` take the parent's extension down and put extensions on the children. Original extensions plus adjustments still equal this order's item-lines total. That is the COGS re-spread.
 
-- **Re-open** returns the allocation to `draft` and requires a comment. The summary is rebuilt from the SKUs that still trace to this purchase order. Prices copy onto SKUs that are still there. New SKUs start blank. The previous buys stay in force until the new draft is approved. Approval reverses those buys and posts the new extensions. The new sum still has to equal this order's item-lines total.
-- **Adjustment entry**, used when the allocation is locked and the officer is moving dollars without rebuilding the whole summary. New lines with `source = adjustment` take the parent's extension down and put extensions on the children. The adjustment has its own draft and its own approve check: original extensions plus adjustments still equal this order's item-lines total. The locked summary lines stay as history. A comment is required.
+`cost_adjustments` is the record of that posting. Row level security on, `service_role` only. Money fields follow `can_view_financials`.
 
-A wrong price, with the SKU list unchanged, uses the same two paths. Re-open when the officer will retype the summary. An adjustment when they are posting a delta under the lock.
+| Column | Notes |
+|---|---|
+| `id` | uuid |
+| `allocation_id` | the locked allocation. Posting this row does not change `state` |
+| `reason` | why the dollars moved. A lower grade is the usual case |
+| `comment` | text |
+| `vendor_price_adjustment_id` | optional. A price change agreed with the vendor. The document is not built yet. The link can be empty |
+| `vra_id` | optional. A vendor return authorization. A future entity. Empty until that exists |
+| `operator_id`, `operator_initials`, `occurred_at`, `created_at` | who posted it, from the session and the server clock |
+
+A lower grade often leads to a lower price from the vendor, or to a vendor return authorization. Either of those can change what is owed on the purchase order. That credit is a purchasing document. It is not the COGS re-spread. The adjustment may link to it. Linking does not change the item-lines total and does not rewrite the locked summary. If finance later changes the item lines because of the credit, that is a separate edit, and the tie is checked again on the next adjustment.
+
+Before lock, the officer can still re-open an approved allocation to retype prices. That path is not used once the summary is locked.
 
 ### Who can see it
 
@@ -559,7 +596,7 @@ The screen lives on Pricing, which is still a placeholder. It is a desk screen. 
 
 The list is one row per non-consignment purchase order, including each order on a shared project: number, vendor, project code when there is one, the pre-agreed flag, whether receiving is complete, the item-lines total, allocation state, and the remainder. Consignment projects are absent. There is no combined project total to allocate. Opening an order shows only the SKUs traced to its intake lines: SKU, name, quantity, unit price, extension, and the remainder against that order's item-lines total. Freight and the grand total sit beside the tie figure so the officer can see they are excluded. Bins and serials are a disclosure under the row. They are not part of the math.
 
-**Save draft** stores the prices. **Approve** follows the rule for that order: after receiving is complete, or earlier when `pre_agreed_prices` is set. **Lock** is available once receiving is complete and the remainder is zero. The same pricing officer may approve and lock. **Approve and lock** is the normal end of an ordinary order. **Re-open** and **New adjustment** ask for a comment, then land on a draft the officer can edit. A changed summary shows a banner that the received list for this purchase order no longer matches the approved lines. A pre-agreed order that is still receiving shows the running variance.
+**Save draft** stores the prices. **Approve** follows the rule for that order: after receiving is complete, or earlier when `pre_agreed_prices` is set. **Lock** is available once receiving is complete and the remainder is zero. The same pricing officer may approve and lock. **Approve and lock** is the normal end of an ordinary order. **Re-open** is available only while the allocation is approved and not yet locked. **New adjustment** is the action after lock, including after a grade split. A changed summary on a locked order shows a banner and stays locked. A pre-agreed order that is still receiving shows the running variance.
 
 ## Screens, in the order the floor uses them
 
@@ -568,14 +605,14 @@ Each screen is a phone page first. One primary action. Scan fills the field the 
 | Screen | Fewest steps | Labels from here |
 |---|---|---|
 | Arrive | Pick or scan the project. Enter how many pallets and boxes. Print. | Incoming tag |
-| Work order | Scan the incoming tag. Add a task per server type and quantity. Print a bin for each task. | Bin, with the clerk's caption |
-| Bin log | Scan the tag, confirm type and quantity, scan the destination bin, add identifier and quantity. Repeat. | Bin, item |
+| Work order | Scan the incoming tag. Add a task per server type and quantity. Record the origin. Scan a code when the container has one. | 62 × 100 mm tag, only when there is no code |
+| Bin log | Scan the incoming tag, confirm the origin, scan the destination container by its code or temporary id, add identifier and quantity. Repeat. | Container tag when it has no code, item |
 | SKU queue | Senior sees proposed lines. Approve, assign, or create. | Item, after approval |
 | Test bench | Scan the source bin. Enter the split. Scan serials. Scan the new bins. | Bin, item, serial |
 | Project | SKU, quantity, bin, serials. Open a row for the lineage. | Any of the four |
 | Put-away | Scan the bin, scan the location. Waits on the location list. | Bin reprint |
 
-The item label and the serial label are the ones already specified in `docs/labels.md`. The bin label is the one in `docs/bin-labels.md`, plus the caption line when it is printed from a work order. The incoming tag is new: the same 90 mm × 29 mm roll as the bin label, a Code 128 of `IN-AZSIM6903-P001`, and one line of words, `INCOMING AZSIM6903 P001`.
+The item label and the serial label are the ones already specified in `docs/labels.md`. A counter-issued bin keeps the 90 mm × 29 mm label in `docs/bin-labels.md`. The incoming tag, and a pull container that has no code, use the serial label's 62 × 100 mm page. The incoming tag shows a large tag ID, a Code 128 of that ID, then the project, the pallet or box number, the received date, and the initials. The uncoded container shows a large temporary id, a Code 128 of that id, then the project, the incoming tag, the server type, the units, and the initials.
 
 Creating a SKU and the pricing screen are desk work. The queue and the allocation list can be opened on a phone to read. The clerk's phone does not offer Create SKU, and no phone in the warehouse offers a price.
 
@@ -587,10 +624,10 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 2. **Pricing officer, one allocation per owned purchase order.** The summary is the SKUs traced to that order. The tie is the item-lines total. Approve waits until receiving is complete, unless `pre_agreed_prices` is set. Lock enforces the tie. Consignment is refused. There is no project pool.
 3. **Incoming tags and the bin log.** Projects, tags, unidentified lines, comments, initials, and the four labels. Quantity with no SKU stays out of `items.quantity`.
 4. **SKU audit.** Propose, send back, senior assign, create the missing item, write `item_id` onto the existing ledger rows.
-5. **Work orders and the pull.** Tasks, server-type bins, pulled lines, remains-in-chassis lines, lineage back to the pallet.
+5. **Work orders and the pull.** Tasks, containers with a required origin and an optional code, a temporary 62 × 100 mm tag when there is no code, pulled lines, remains-in-chassis lines, lineage back to the pallet through the container's origin.
 6. **Test, grade, serials.** The 51-to-31/20 split, serials at intake and at the bench, lineage on the children.
 7. **Put-away to a place.** After the location list is loaded. Nest a bin in a bin or a location. One `bin_events` row. No new inventory rows per unit.
-8. **Re-open and adjustments.** Required once grade splits can happen after phase 2 has posted COGS. The unassigned-dollar hold and both repair paths.
+8. **Adjustments after lock.** A grade split moves quantity immediately and holds the dollars until an adjustment. The locked summary stays locked. The adjustment stores the reason, initials, time, and comment, and may link to a vendor price change or a future VRA. The vendor credit is separate from the COGS re-spread.
 9. **Consignor placeholder purchase order.** When a consigned unit sells, add a row to that consignor's one open placeholder, or open one if none exists. COGS is the row's purchase price, recognized at the sale. Depends on sales orders existing.
 
 ## Decisions
@@ -601,14 +638,14 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 | 2026-10-22 | The default is that prices are approved after receiving is complete. A purchase order can be flagged `pre_agreed_prices` when the vendor agreement already prices individual components. With that flag the officer can enter and approve unit prices before receiving finishes. Quantities on the summary keep updating as receipts land. The extension-equals-item-lines-total check is enforced at final lock, and any variance is left for the officer to resolve. Without the flag, approval stays blocked until receiving is complete. |
 | 2026-10-22 | When a project has several purchase orders, each order is priced separately. Each gets its own allocation, tied to its own item-lines total and to the SKUs traced to that order's intake. There is no project-level pool. Intake lines carry the purchase order they came in on, and a grade split copies it onto the children. |
 | 2026-10-22 | Pricing officer is a role assigned in Users settings. It grants `can_allocate_cogs` and `can_view_financials`. At least one approved user must hold it. The migration turns it on for the approved admin, Jan, and the server blocks removing or disabling the last one. The same person may approve and lock. This is part of phase 1 in `docs/roles.md`. |
+| 2026-10-22 | A grade split after lock is an adjustment. The locked summary is not re-opened. Quantity still moves when the floor posts the split, and the dollars stay unassigned until the adjustment. The adjustment stores a reason, initials, time, and comment, and may link to a vendor price adjustment or a VRA. A VRA is a future entity. A credit against what is owed to the vendor is separate from the COGS re-spread. |
+| 2026-10-22 | Incoming tags print on the 62 × 100 mm roll (DK-1202), as a pallet tag. The tag ID is large, for example `INCOMING AZSIM6903 P001`, with a Code 128 of that same ID. The tag also shows the project, the pallet or box number, the received date, and the initials. It uses the serial-label pipeline: landscape, 94 mm printable width. |
+| 2026-10-22 | In the pull and work-order step, a bin can be any container: a coded bin, a box, a tote, a cart, or a pallet spot. The code is typical and optional, and it is scannable when present. The record requires an origin description, the post-it or a more formal note of the project, incoming tag or pallet, server type, and units, and may attach a document or a photo of that note. If there is no code, the system generates a temporary container ID and prints a 62 × 100 mm tag so the container can be scanned. Lineage uses the origin fields, not the code. |
 
 ## Open questions
 
-Questions 1, 2, 3, and 4 are answered under Decisions. The numbers below are unchanged.
+Questions 1, 2, 3, 4, 5, 6, and 7 are answered under Decisions. The numbers below are unchanged.
 
-5. After a locked allocation, which path is the default when a grade split changes the summary: re-open the whole summary, or an adjustment entry that leaves the lock in place?
-6. Incoming tags: stay on the 90 mm × 29 mm bin roll, or move to the 62 mm × 100 mm roll when the words need more room?
-7. Confirm the bin barcode stays the reference (`20014-B`) and the clerk's words (`Pallet X - Type 1 Server - 12 units`) are a caption on that same label.
 8. Confirm the SKU auditor is the warehouse manager already proposed in `docs/roles.md`, rather than a separate auditor title.
 9. A failed proposal: send the line back to `unknown` with a comment, or leave it `proposed` for a second guess?
 10. For a server, is the chassis itself a bin, a single intake line, or both?
