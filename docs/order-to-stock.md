@@ -96,12 +96,18 @@ Same shape as `docs/purchase-orders.md`. A code such as `AZSIM6930` is the name 
 | `financial_status` | `open`, `cost_pending`, `costed`, `settling`, `settled` |
 | `status` | `active` or `closed` |
 | `model` | `revenue_share` or `negotiated` on consignment. Empty when owned |
-| `consignor_share_percent` | optional override of the consignor's default share. Empty means this project sets no rate of its own. A 75/25 consignor/consignee split is stored as 0.75. Money. Hidden from the floor. Never a per-item rate |
+| `consignor_share_percent` | the project's own general split, copied from the consignor when the project is created. A number from 0 to 100. A 75/25 split is stored as 75 and shown as 75/25. Money. Hidden from the floor. An item never has its own split |
 | `settlement_cadence` | `per_sale`, `periodic`, or `negotiated_batch` |
 | `notes` | text |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | session, initials snapshot, server clock |
 
-`vendors` gains `is_consignor` and `consignor_share_percent`. A consignment project requires a vendor with that flag. The vendor percent is the default consignor share. A 75/25 consignor/consignee split is stored as 0.75. A project may override it. A taxonomy may carry its own share. An item never carries a share. An item may be excluded from consignment, and then it is not a consignment item. Warehouse screens show the code, the type, the consignor's name, and counts. Share percent and every dollar stay off those payloads.
+`vendors` gains `is_consignor` and `consignor_share_percent`. A consignment project requires a vendor with that flag. `consignor_share_percent` is that consignor's general split, a number from 0 to 100. A 75/25 consignor/consignee split is stored as 75 and shown as 75/25. The consignee's figure on screen is 100 minus the stored share.
+
+Optional rows in `consignor_taxonomy_splits` name a different split for one taxonomy: `vendor_id`, `taxonomy_id`, and `consignor_share_percent`. One row per consignor and taxonomy. An SSD or HDD row stored as 60 is the extra data-destruction case, shown as 60/40.
+
+Creating a consignment project copies the consignor's general split onto `projects.consignor_share_percent` and copies each taxonomy row into `project_taxonomy_splits` (`project_id`, `taxonomy_id`, `consignor_share_percent`). After that copy, the project's own settings are the ones a sale on the project uses. The project can change its general split, for example from 75 to 50, and it can add or change a taxonomy split, for example NIC cards stored as 0 and shown as 0/100. A later edit to the consignor does not change the project's copy. An untouched copied SSD row stays 60 after the project's general split becomes 50.
+
+An item never carries a share. An item may be excluded from consignment, and then it is not a consignment item. Warehouse screens show the code, the type, the consignor's name, and counts. Share percent and every dollar stay off those payloads.
 
 ### Purchase orders and the counter
 
@@ -132,16 +138,16 @@ One row is one sale of consigned goods, added to the consignor's open placeholde
 | `project_id` | optional. `AZSIM6930` or `OHNST6902` when the lineage has a project |
 | `intake_line_id` | the pile the sold unit came from, when lineage has one |
 | `net_sales_price` | money, empty until the sales manager types it. ITS does not compute fees or shipping. Empty means the row is pending |
-| `agreed_percentage` | the consignor's share, snapshotted when the row is created. A 75/25 split is stored as 0.75. Later rate changes do not rewrite it. Not typed on the row |
-| `purchase_price` | empty until the net is entered. Then `net_sales_price × agreed_percentage`, rounded half-up to the cent. A $100.00 net at 0.75 is $75.00. Not typed |
+| `consignor_share_percent` | the resolved consignor share, snapshotted when the row is created. A number from 0 to 100. A 75/25 split is stored as 75. Later rate changes do not rewrite it. Not typed on the row |
+| `purchase_price` | empty until the net is entered. Then `net_sales_price × consignor_share_percent / 100`, rounded half-up to the cent. A $100.00 net at 75 is $75.00. A share of 0 is $0.00, and that price is valid. Not typed |
 | `priced_at` | when the purchase price was stored. The row locks at that moment |
 | `operator_id`, `operator_initials`, `occurred_at`, `created_at` | the sale posting, from the session and the server clock |
 
-The share comes from the consignor, with a project override and a taxonomy rate beside it. It is never stored on the item. `vendors.consignor_share_percent` is the default. `projects.consignor_share_percent` is the optional project override. A taxonomy may set `consignor_share_percent` for that taxonomy. When the row is created it copies the resolved share into `agreed_percentage`. A later change to any of those rates does not rewrite the copy. The first match wins: project and taxonomy, then the project, then the consignor and taxonomy, then the consignor default.
+A sale that names a project uses that project's settings. If `project_taxonomy_splits` has a row for the item's taxonomy, that percent is the share. Otherwise the project's general `consignor_share_percent` is the share. A sale with no project uses the consignor the same way: the consignor's taxonomy split when one exists, otherwise the consignor's general split. The row stores that percent in `consignor_share_percent`. A later change to the consignor or the project does not rewrite the row.
 
 An item with `consignment_excluded` set is not a consignment item. A sale of it does not add a placeholder row. The flag is not a percentage.
 
-Before `priced_at`, the sales manager may edit the row, including a return or a correction. Each edit writes an audit row: who, when, the old values, the new values, and a comment. After `priced_at` the row is locked. A later return or correction is an adjustment, the same pattern as a grade split after a locked allocation. The locked row stays. The adjustment stores a reason, a comment, the initials, and the time, and any corrected net. Its purchase price is still the snapshotted share times that net, rounded half-up to the cent. Nobody types the purchase price.
+Before `priced_at`, the sales manager may edit the row, including a return or a correction. Each edit writes an audit row: who, when, the old values, the new values, and a comment. After `priced_at` the row is locked. A later return or correction is an adjustment, the same pattern as a grade split after a locked allocation. The locked row stays. The adjustment stores a reason, a comment, the initials, and the time, and any corrected net. Its purchase price is still that net times the snapshotted share, divided by 100, rounded half-up to the cent. A share of 0 stays $0.00. Nobody types the purchase price.
 
 ### Incoming tags
 
@@ -462,11 +468,11 @@ When an item that came from consignor X sells, the sale is walked back to X: ser
 | Item description | The sold item |
 | Qty sold | How many this sale took |
 | Net sales price | Typed by the sales manager. The fees and shipping behind that number are outside ITS. The row can be saved before this is known |
-| Consignor share | Snapshotted onto the row. First match: project and taxonomy, then project, then consignor and taxonomy, then the consignor default. A 75/25 split is 0.75. Not a per-item rate |
-| Purchase price | Computed once the net is entered: net times the snapshotted share, half-up to the cent. $100.00 at 0.75 is $75.00. Not typed |
+| Consignor share | Snapshotted onto the row as a number from 0 to 100, shown as consignor/consignee. With a project: that project's taxonomy split, or its general split when the taxonomy has none. With no project: the consignor's taxonomy split, or the consignor's general split. A 75/25 split is stored as 75. Not a per-item rate |
+| Purchase price | Computed once the net is entered: net times the snapshotted share, divided by 100, half-up to the cent. $100.00 at 75 is $75.00. A 0/100 split is $0.00, and that is valid. Not typed |
 | Project | Optional, such as `AZSIM6930` or `OHNST6902` |
 
-The row stores `sales_order_line_id`, and that value is unique, so the same sale cannot be added twice. The share is copied onto the row when the row is created. A later change to the consignor, the project, or the taxonomy does not rewrite it. The purchase price stays empty until the sales manager enters the net. There is no manual override of that price.
+The row stores `sales_order_line_id`, and that value is unique, so the same sale cannot be added twice. The share is copied onto the row when the row is created. A later change to the consignor or to the project does not rewrite it. The purchase price stays empty until the sales manager enters the net. There is no manual override of that price. A stored share of 0 produces a purchase price of $0.00.
 
 An item marked excluded is skipped. No row is added, because that item is not on consignment.
 
@@ -476,7 +482,7 @@ The sales manager closes the open placeholder. The close follows a conversation 
 
 COGS for that unit is the purchase price on its row, recognized when the net is entered and the price is stored. That matches the rule that consignment has no cost at intake. A pending row has no COGS yet.
 
-Until that price is stored, a return or a correction is an edit of the row. Each edit records who, when, the old values, the new values, and a comment. Once the price is stored, the row is locked. A later return or correction is an adjustment. The locked figures stay. The adjustment carries the reason, the comment, the initials, and the time. A corrected net still multiplies by the snapshotted share and rounds half-up to the cent.
+Until that price is stored, a return or a correction is an edit of the row. Each edit records who, when, the old values, the new values, and a comment. Once the price is stored, the row is locked. A later return or correction is an adjustment. The locked figures stay. The adjustment carries the reason, the comment, the initials, and the time. A corrected net still multiplies by the snapshotted share, divides by 100, and rounds half-up to the cent.
 
 Net sales price, the share, and the purchase price are money. Only `can_view_financials` receives them. The placeholder order and `consignor_sale_lines` follow the same rule as the other new tables: row level security on, `service_role` only.
 
@@ -576,7 +582,7 @@ COGS for owned goods is assigned per purchase order, and only for items. A proje
 
 The item-lines total is the sum of the merchandise lines. Freight, shipping, tax, and any other landed or non-item cost stay outside it. The grand total on the purchase order can be higher. The allocation does not have to equal that grand total.
 
-Consignment stays without a cost from intake through put-away. At sale, COGS is the purchase price on that unit's row on the consignor's placeholder purchase order. That price is the net the sales manager typed times the consignor share snapshotted on the row, rounded half-up to the cent. It is empty until the net is entered. It is not this allocation, and it is not typed by hand.
+Consignment stays without a cost from intake through put-away. At sale, COGS is the purchase price on that unit's row on the consignor's placeholder purchase order. That price is the net the sales manager typed, times the consignor share snapshotted on the row, divided by 100, and rounded half-up to the cent. A share of 0 is a purchase price of $0.00. The price is empty until the net is entered. It is not this allocation, and it is not typed by hand.
 
 For an owned purchase order, the summary is one row per SKU: the quantity whose intake line, after every split, still carries that `purchase_order_id`. Two bins of the same SKU on the same order are one row. A SKU that also arrived on a second order is a row on that second allocation, for that second quantity only. Intake lines are not cost lines. A parent that was fully split is not on the summary. Its children are, and they keep the parent's purchase order.
 
@@ -702,15 +708,15 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 | 2026-10-22 | HDD, SSD, high-end CPUs, and cards are the types that usually require a serial. `taxonomies.serialized` is the default. `items.serialized` is the item's setting, and empty follows the taxonomy. The sales manager can override that setting per item. Put-away is blocked when a serialized item has no serials captured for its quantity. |
 | 2026-10-22 | An untested remainder stays on the original SKU and may move to another bin. The move is an ordinary move and keeps lineage. During receiving, identical SKUs should share a bin. The screen suggests a bin on the same receiving (project, incoming tag, or purchase order) that already holds that SKU. The operator can accept it or choose another. Consolidation keeps each unit's origin. |
 | 2026-10-22 | Put-away does not wait for a location list. A `-B` or `-C` bin defaults to `HWS.00.00.00`. A `-P` bin defaults to `HWR.00.00.00`. `HWS.Row.Bay.Elevation` is Henderson Warehouse Shelves. `HWR.Row.Bay.Elevation.Orientation` is Henderson Warehouse Racking, with orientation `N`, `S`, `E`, `W`, or `C`. A location stores the code, the type (`shelves` or `racking`), and the parsed row, bay, elevation, and orientation. A check per type validates the code. The bin suffix chooses the default. |
-| 2026-10-22 | The consignor share defaults on the consignor. A project may override it, and a taxonomy may define its own rate. It is never set per item. An item may be excluded from consignment, and then it is not a consignment item. Each placeholder row snapshots the resolved share so a later rate change does not rewrite it. |
+| 2026-10-22 | A consignor has a general split and optional per-taxonomy splits, stored as the consignor's share from 0 to 100 and shown as consignor/consignee. A new consignment project copies those settings. After the copy, the project's own general split and taxonomy splits rule, and a later edit to the consignor does not change that copy. An item never has its own split. An excluded item is not a consignment item. Each sale row snapshots the resolved share. |
 | 2026-10-22 | The sales manager closes an open consignor purchase order, after aligning with the consignor. It is often monthly, and the dollar volume can make it sooner or later. The close is manual. The open order can show its age and its running total as a prompt. |
 | 2026-10-22 | Net sales price is typed by the sales manager from figures ITS does not have. ITS does not calculate fees or shipping. A row may be saved pending that net. The purchase price is computed only once the net is entered. |
 | 2026-10-22 | Returns and corrections edit the row until the purchase price is stored. Each edit records who, when, the old values, the new values, and a comment. After that price, the row is locked and a change is an adjustment, the same pattern as a post-lock grade split. |
-| 2026-10-22 | Purchase price is the net sales price times the consignor's share, rounded half-up to the cent. A 75/25 consignor/consignee split on a $100.00 net sale is a purchase price of $75.00. The stored percentage is the consignor's share. The price is computed. It is not overridden by hand. |
+| 2026-10-22 | Purchase price is the net sales price times the stored consignor share, divided by 100, rounded half-up to the cent. A 75/25 split is stored as 75, and a $100.00 net sale is a purchase price of $75.00. A 0/100 split is stored as 0 and the purchase price is $0.00, which is valid. The price is computed. It is not overridden by hand. |
 | 2026-10-22 | Orientation applies to racking (`HWR`) only, never to shelves (`HWS`). A bay is typically 98 inches wide. A 42 inch pallet takes two positions on a bay elevation (`N`/`S` or `E`/`W`). A 32 inch Euro pallet takes three (`N`/`C`/`S` or `E`/`C`/`W`). `C` is centre. The letter is optional on the default `HWR.00.00.00` and present on a real pallet slot. |
 | 2026-10-22 | Bin suffixes are a five-digit number plus one letter, and only three exist. `00000-B` is a box bin, `00000-C` is a crate bin, and `00000-P` is a pallet bin. A box or a crate defaults to `HWS.00.00.00`. A pallet defaults to `HWR.00.00.00`. |
 | 2026-10-22 | Row, bay, and elevation are always two digits. Shelves match `^HWS\.\d{2}\.\d{2}\.\d{2}$`. Racking matches `^HWR\.\d{2}\.\d{2}\.\d{2}(\.[NSEWC])?$`. A bin reference matches `^\d{5}-[BCP]$`. |
-| 2026-10-22 | Consignor share resolution uses the first match: project and taxonomy, then the project, then the consignor and taxonomy, then the consignor default. Each sale row snapshots that resolved share. |
+| 2026-10-22 | A sale with a project uses that project's taxonomy split when the item's taxonomy has one, and otherwise the project's general split. A copied SSD split of 60 stays 60 after the project's general split changes to 50. A sale with no project uses the consignor's taxonomy split when one exists, and otherwise the consignor's general split. The row snapshots that share. |
 
 ## Open questions
 
