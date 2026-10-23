@@ -9,7 +9,7 @@ import { errorText } from "@/lib/errors";
 import { fetchBinLabelTemplates } from "@/lib/labelActions";
 import { emptyBinLabelTemplates, type BinLabelTemplates } from "@/lib/labelTemplates";
 import { fetchBinDetail, moveBinToLocation } from "@/lib/receivingActions";
-import type { BinCycleView, BinDetail, StockEventRow } from "@/lib/stockReceive";
+import { cycleEventParts, type BinCycleView, type BinDetail, type StockEventRow } from "@/lib/stockReceive";
 
 function missingMigration(message: string): boolean {
   return /schema cache|does not exist|Could not find the function/i.test(message);
@@ -22,16 +22,18 @@ function when(iso: string | null): string {
   return date.toLocaleString();
 }
 
-function eventLine(event: StockEventRow): string {
-  if (event.eventType === "receive_into_bin") {
-    const sku = event.sku ?? "item";
-    return `Received ${event.qty ?? ""} ${sku}`.replace(/\s+/g, " ").trim();
-  }
-  if (event.eventType === "move_bin_location") {
-    const from = event.fromLocationCode ?? "nowhere";
-    return `Moved from ${from} to ${event.toLocationCode ?? ""}`.trim();
-  }
-  return event.eventType;
+function CycleEvent({ event }: { event: StockEventRow }) {
+  const parts = cycleEventParts(event);
+  return (
+    <li className="cycle-event">
+      <span className="cycle-event-verb">{parts.verb}</span>
+      <span className="cycle-event-qty">{parts.qty}</span>
+      <span className="cycle-event-detail">{parts.detail}</span>
+      <span className="cycle-event-meta">
+        {event.operatorInitials} · {when(event.occurredAt)}
+      </span>
+    </li>
+  );
 }
 
 function CycleCard({ cycle }: { cycle: BinCycleView }) {
@@ -76,10 +78,7 @@ function CycleCard({ cycle }: { cycle: BinCycleView }) {
       {cycle.events.length > 0 ? (
         <ol className="cycle-events">
           {cycle.events.map((event) => (
-            <li key={event.id}>
-              {eventLine(event)}
-              {event.comment ? ` — ${event.comment}` : ""} · {event.operatorInitials} · {when(event.occurredAt)}
-            </li>
+            <CycleEvent key={event.id} event={event} />
           ))}
         </ol>
       ) : (
@@ -223,9 +222,7 @@ export function BinView({ reference }: { reference: string }) {
                 <h2>Moves while empty</h2>
                 <ol className="cycle-events">
                   {detail.looseEvents.map((event) => (
-                    <li key={event.id}>
-                      {eventLine(event)} · {event.operatorInitials} · {when(event.occurredAt)}
-                    </li>
+                    <CycleEvent key={event.id} event={event} />
                   ))}
                 </ol>
               </>

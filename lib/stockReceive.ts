@@ -110,6 +110,36 @@ export function keepExistingCycleDefault(snapshot: string): string {
   return snapshot;
 }
 
+export function cycleEventParts(event: {
+  eventType: string;
+  qty: number | null;
+  sku: string | null;
+  itemName: string | null;
+  comment: string | null;
+  fromLocationCode: string | null;
+  toLocationCode: string | null;
+}): { verb: string; qty: string; detail: string } {
+  const comment = event.comment ? ` — ${event.comment}` : "";
+  if (event.eventType === "receive_into_bin") {
+    const sku = event.sku ?? "item";
+    const name = event.itemName ? ` ${event.itemName}` : "";
+    return {
+      verb: "Received",
+      qty: event.qty == null ? "" : String(event.qty),
+      detail: `× ${sku}${name}${comment}`,
+    };
+  }
+  if (event.eventType === "move_bin_location") {
+    const from = event.fromLocationCode ?? "nowhere";
+    return {
+      verb: "Moved",
+      qty: "",
+      detail: `from ${from} to ${event.toLocationCode ?? ""}${comment}`.trim(),
+    };
+  }
+  return { verb: event.eventType, qty: "", detail: comment.trim() };
+}
+
 export function initialsFromPerson(name: string | null, email: string | null): string {
   const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
   const fromName = words.map((word) => word[0] ?? "").join("").toUpperCase();
@@ -185,6 +215,7 @@ export type StockEventRow = {
   comment: string | null;
   qty: number | null;
   sku: string | null;
+  itemName: string | null;
   project: string | null;
   incomingTag: string | null;
   fromLocationCode: string | null;
@@ -306,6 +337,7 @@ function eventFromJson(value: unknown): StockEventRow | null {
     comment: textOrNull(value.comment),
     qty: qty != null && Number.isFinite(qty) ? qty : null,
     sku: textOrNull(value.sku),
+    itemName: textOrNull(value.item_name),
     project: textOrNull(value.project),
     incomingTag: textOrNull(value.incoming_tag),
     fromLocationCode: textOrNull(value.from_location_code),

@@ -6,6 +6,7 @@ import {
   assignNewBinLocation,
   closesCycle,
   consolidationTargets,
+  cycleEventParts,
   cycleOpens,
   initialsFromPerson,
   keepExistingCycleDefault,
@@ -120,6 +121,24 @@ describe("put-away defaults", () => {
     assert.equal(assignNewBinLocation(seeded, "P"), "HWR.00.00.00");
     assert.equal(keepExistingLocation("HWS.03.01.02"), "HWS.03.01.02");
     assert.equal(keepExistingCycleDefault("HWS.00.00.00"), "HWS.00.00.00");
+  });
+});
+
+describe("cycle events", () => {
+  it("reads as a quantity, a sku, and the item name", () => {
+    const parts = cycleEventParts({
+      eventType: "receive_into_bin",
+      qty: 4,
+      sku: "1001",
+      itemName: "16GB DDR4 ECC",
+      comment: null,
+      fromLocationCode: null,
+      toLocationCode: null,
+    });
+    assert.equal(parts.verb, "Received");
+    assert.equal(parts.qty, "4");
+    assert.equal(parts.detail, "× 1001 16GB DDR4 ECC");
+    assert.equal(`${parts.verb} ${parts.qty} ${parts.detail}`, "Received 4 × 1001 16GB DDR4 ECC");
   });
 });
 

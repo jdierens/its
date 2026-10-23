@@ -21,12 +21,40 @@ function rpcError(error: { message?: string } | null): never {
   throw new Error(errorText(error));
 }
 
+async function attachItemNames(detail: BinDetail): Promise<BinDetail> {
+  const skus = [
+    ...new Set(
+      detail.cycles.flatMap((cycle) =>
+        cycle.events.map((event) => event.sku).filter((sku): sku is string => Boolean(sku)),
+      ),
+    ),
+  ];
+  if (skus.length === 0) return detail;
+  const { data, error } = await (await getSupabase()).from("items").select("sku, name").in("sku", skus);
+  if (error || !data) return detail;
+  const names = new Map(
+    data.map((row) => [String(row.sku ?? ""), String(row.name ?? "").trim()] as const),
+  );
+  return {
+    ...detail,
+    cycles: detail.cycles.map((cycle) => ({
+      ...cycle,
+      events: cycle.events.map((event) => ({
+        ...event,
+        itemName: event.itemName ?? (event.sku ? names.get(event.sku) || null : null),
+      })),
+    })),
+  };
+}
+
 export async function fetchBinDetail(reference: string): Promise<BinDetail | null> {
   const { data, error } = await (await getSupabase()).rpc("fetch_bin_detail", {
     p_reference: reference,
   });
   if (error) rpcError(error);
-  return binDetailFromJson(data);
+  const detail = binDetailFromJson(data);
+  if (!detail) return null;
+  return attachItemNames(detail);
 }
 
 export async function suggestBins(itemId: string, project: string): Promise<BinSuggestion[]> {

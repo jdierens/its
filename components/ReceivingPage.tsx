@@ -669,19 +669,16 @@ export function ReceivingPage() {
           {confirmed ? (
             <p className="hint">
               {confirmed.reference}
-              {confirmed.locationCode ? ` is at ${confirmed.locationCode}` : " has no location yet"}.{" "}
+              {confirmed.locationCode ? ` is at ${confirmed.locationCode}` : " has no location yet"}
+              {created ? ", and its label is printed" : ""}.{" "}
               {openCycle
                 ? `Open cycle${openCycle.project ? ` for ${openCycle.project}` : ""}${openCycle.originDescription ? `. ${openCycle.originDescription}` : ""}.`
                 : "Empty. The next save opens a cycle."}
             </p>
           ) : null}
 
-          {created ? (
+          {created && !receipt ? (
             <div className="label-preview">
-              <p className="hint">
-                {created.reference} printed
-                {created.locationCode ? ` and placed at ${created.locationCode}` : ""}.
-              </p>
               <div className="label-frame">
                 <BinLabel reference={created.reference} type={created.type} layout={templates[created.type]} />
               </div>
