@@ -55,7 +55,7 @@ function CycleCard({ cycle }: { cycle: BinCycleView }) {
           </div>
         ) : null}
         <div>
-          <dt>Origin</dt>
+          <dt>Originating system</dt>
           <dd>{cycle.originDescription ?? "—"}</dd>
         </div>
         <div>
@@ -63,7 +63,7 @@ function CycleCard({ cycle }: { cycle: BinCycleView }) {
           <dd>{cycle.project ?? "—"}</dd>
         </div>
         <div>
-          <dt>Incoming tag</dt>
+          <dt>Incoming bin</dt>
           <dd>{cycle.incomingTag ?? "—"}</dd>
         </div>
         <div>
