@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, Fragment, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
 import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
+import { ReceiptRowEditor } from "@/components/ReceiptRowEditor";
 import { reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, type BinType } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
@@ -17,7 +18,6 @@ import {
   labelShownText,
 } from "@/lib/labelDeskSelection";
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
-import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import type { BinLabelTemplates, LabelTemplateId } from "@/lib/labelTemplates";
 import { emptyBinLabelTemplates, qrLabelPayload } from "@/lib/labelTemplates";
 import { fetchPutawaySetting, type LocationRow } from "@/lib/locationSettings";
@@ -26,8 +26,11 @@ import {
   fetchBinDetail,
   listReceivingEntries,
   receiveIntoBin,
+  receivingClerkInitials,
+  searchReceivingScan,
   suggestBins,
 } from "@/lib/receivingActions";
+import { scanSearchNote } from "@/lib/receivingScan";
 import {
   RECEIVING_DATE_EDITABLE,
   beginReceiptSave,
@@ -90,6 +93,12 @@ export function ReceivingPage() {
   const [entries, setEntries] = useState<ReceivingEntry[]>([]);
   const [entriesNext, setEntriesNext] = useState<number | null>(null);
   const [entriesLoading, setEntriesLoading] = useState(false);
+  const [listStamp, setListStamp] = useState(0);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [phoneLayout, setPhoneLayout] = useState(false);
+  const [editorInitials, setEditorInitials] = useState("");
+  const [scanRaw, setScanRaw] = useState<string | null>(null);
+  const [scanNote, setScanNote] = useState<string | null>(null);
   const [binMode, setBinMode] = useState<"existing" | "new">("existing");
   const [binCode, setBinCode] = useState("");
   const [binHeld, setBinHeld] = useState(0);
@@ -119,6 +128,13 @@ export function ReceivingPage() {
   useEffect(() => {
     setReceivedOn(warehouseToday());
     setPageOrigin(window.location.origin);
+    void receivingClerkInitials()
+      .then(setEditorInitials)
+      .catch(() => setEditorInitials(""));
+    const media = window.matchMedia("(max-width: 800px)");
+    const applyLayout = () => setPhoneLayout(media.matches);
+    applyLayout();
+    media.addEventListener("change", applyLayout);
     void Promise.all([fetchLabelTemplate(), fetchBinLabelTemplates()])
       .then(([itemChoice, binChoice]) => {
         setItemTemplate(itemChoice);
@@ -131,6 +147,7 @@ export function ReceivingPage() {
         setDefaultIds(setting.defaults);
       })
       .catch(() => undefined);
+    return () => media.removeEventListener("change", applyLayout);
   }, []);
 
   useEffect(() => {
@@ -185,7 +202,7 @@ export function ReceivingPage() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [project]);
+  }, [project, listStamp]);
 
   async function loadMoreEntries() {
     if (entriesNext == null) return;
@@ -202,7 +219,7 @@ export function ReceivingPage() {
     }
   }
 
-  function choose(next: LabelItem) {
+  function choose(next: LabelItem, rawScan: string | null = null) {
     const shown = labelShownText(next);
     holdQuery.current = shown;
     typed.current = shown;
@@ -214,6 +231,7 @@ export function ReceivingPage() {
     setActive(-1);
     setSettledQuery("");
     setError(null);
+    if (rawScan) setComment((current) => (current.trim() ? current : rawScan));
   }
 
   async function runSearch(raw: string, submitted: boolean) {
@@ -221,6 +239,8 @@ export function ReceivingPage() {
     if (!query) {
       setItem(null);
       setMatches([]);
+      setScanRaw(null);
+      setScanNote(null);
       setError("Enter a SKU, name, or description.");
       return;
     }
@@ -228,9 +248,13 @@ export function ReceivingPage() {
     setSearching(true);
     setError(null);
     try {
-      const result = await searchItemsForLabel(query);
+      const result = await searchReceivingScan(query);
       if (id !== requestId.current) return;
       if (!submitted && typed.current.trim() !== query) return;
+      const found = Boolean(result.exact || result.matches.length > 0);
+      const rawScan = result.tried.length > 1 ? result.scanRaw : null;
+      setScanRaw(rawScan);
+      setScanNote(scanSearchNote({ token: result.token, tried: result.tried, found }));
       const outcome = labelSearchOutcome({
         submitted,
         exact: result.exact,
@@ -239,7 +263,7 @@ export function ReceivingPage() {
       });
       setSettledQuery(query);
       if (outcome.type === "select") {
-        choose(outcome.item);
+        choose(outcome.item, rawScan);
         return;
       }
       if (outcome.type === "empty" || outcome.type === "missing") {
@@ -417,6 +441,7 @@ export function ReceivingPage() {
         receivedOn,
         originQty: originParsed.qty,
         clientRequestId: claim.requestId,
+        scanRaw,
       });
       const printedOn = todayLabel(new Date());
       const savedItem = item;
@@ -439,6 +464,8 @@ export function ReceivingPage() {
       setCreated(null);
       setQty("1");
       setComment("");
+      setScanRaw(null);
+      setScanNote(null);
       setFocusSku((current) => current + 1);
       const page = await listReceivingEntries(project, 0);
       setEntries(page.rows);
@@ -611,11 +638,18 @@ export function ReceivingPage() {
               setMatches([]);
               setTruncated(false);
               setActive(-1);
+              setScanRaw(null);
+              setScanNote(null);
               setError(null);
             }}
             onKeyDown={onSearchKey}
           />
           </label>
+          {scanNote ? (
+            <p className="hint" id="receive-scan-note">
+              {scanNote}
+            </p>
+          ) : null}
           {listOpen ? (
             <ul className="label-results" id="receive-results" role="listbox">
               {matches.map((match, index) => (
@@ -841,7 +875,8 @@ export function ReceivingPage() {
           <p className="hint">
             {project.trim()
               ? `Receipts for ${project.trim()}, newest first.`
-              : "Receipts with no project, newest first."}
+              : "Receipts with no project, newest first."}{" "}
+            Tap a row to correct it. Every edit records initials.
           </p>
           {entries.length === 0 ? (
             <p className="hint">{entriesLoading ? "Loading receipts…" : "No receipts for this project yet."}</p>
@@ -852,29 +887,66 @@ export function ReceivingPage() {
                   <thead>
                     <tr>
                       <th>Date</th>
+                      <th>Initials</th>
+                      <th>Project</th>
+                      <th>Incoming bin</th>
+                      <th>Originating system</th>
+                      <th className="num">Originating system qty</th>
                       <th>SKU</th>
-                      <th>Bin</th>
+                      <th>Item name</th>
                       <th className="num">Qty</th>
                       <th>Comment</th>
-                      <th>By</th>
-                      <th>Incoming bin</th>
-                      <th>Orig. system</th>
-                      <th className="num">Orig. qty</th>
                     </tr>
                   </thead>
                   <tbody>
                     {entries.map((entry) => (
-                      <tr key={entry.id}>
-                        <td>{formatReceivedOn(entry.receivedOn)}</td>
-                        <td className="sku">{entry.sku}</td>
-                        <td className="sku">{entry.bin}</td>
-                        <td className="num">{entry.qty}</td>
-                        <td>{entry.comment ?? ""}</td>
-                        <td>{entry.receivedBy}</td>
-                        <td>{entry.incomingBin ?? ""}</td>
-                        <td>{entry.originatingSystem ?? ""}</td>
-                        <td className="num">{entry.originQty ?? ""}</td>
-                      </tr>
+                      <Fragment key={entry.id}>
+                        <tr
+                          className="receive-row"
+                          tabIndex={0}
+                          aria-label={`Edit receipt ${entry.sku}`}
+                          onClick={() => setEditingId(entry.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setEditingId(entry.id);
+                            }
+                          }}
+                        >
+                          <td>
+                            {formatReceivedOn(entry.receivedOn)}
+                            {entry.edited ? (
+                              <span className="receive-edited" title={entry.editedBy ? `Edited by ${entry.editedBy}` : "Edited"}>
+                                edited
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="initials">{entry.initials}</td>
+                          <td title={entry.project ?? undefined}>{entry.project ?? ""}</td>
+                          <td title={entry.incomingBin ?? undefined}>{entry.incomingBin ?? ""}</td>
+                          <td title={entry.originatingSystem ?? undefined}>{entry.originatingSystem ?? ""}</td>
+                          <td className="num">{entry.originQty ?? ""}</td>
+                          <td className="sku" title={entry.sku}>{entry.sku}</td>
+                          <td title={entry.itemName}>{entry.itemName}</td>
+                          <td className="num">{entry.qty}</td>
+                          <td title={entry.comment ?? undefined}>{entry.comment ?? ""}</td>
+                        </tr>
+                        {!phoneLayout && editingId === entry.id ? (
+                          <tr className="receive-edit-row">
+                            <td colSpan={10}>
+                              <ReceiptRowEditor
+                                entry={entry}
+                                initials={editorInitials}
+                                onCancel={() => setEditingId(null)}
+                                onSaved={() => {
+                                  setEditingId(null);
+                                  setListStamp((current) => current + 1);
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -882,24 +954,47 @@ export function ReceivingPage() {
               <ul className="receive-cards">
                 {entries.map((entry) => (
                   <li key={`card-${entry.id}`} className="receive-card-row">
-                    <div className="receive-card-top">
-                      <span className="sku">{entry.sku || "—"}</span>
-                      <span className="num">{entry.qty}</span>
-                    </div>
-                    <div className="receive-card-meta">
-                      <span className="sku">{entry.bin}</span>
-                      <span>{formatReceivedOn(entry.receivedOn)}</span>
-                    </div>
-                    {entry.comment ? <p>{entry.comment}</p> : null}
-                    <p className="receive-card-origin">
-                      {[
-                        entry.incomingBin,
-                        entry.originatingSystem,
-                        entry.originQty == null ? "" : `orig qty ${entry.originQty}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
+                    {phoneLayout && editingId === entry.id ? (
+                      <ReceiptRowEditor
+                        entry={entry}
+                        initials={editorInitials}
+                        onCancel={() => setEditingId(null)}
+                        onSaved={() => {
+                          setEditingId(null);
+                          setListStamp((current) => current + 1);
+                        }}
+                      />
+                    ) : (
+                      <button type="button" className="receive-card-open" onClick={() => setEditingId(entry.id)}>
+                        <dl>
+                          <dt>Date</dt>
+                          <dd>{formatReceivedOn(entry.receivedOn)}</dd>
+                          <dt>Initials</dt>
+                          <dd className="initials">{entry.initials}</dd>
+                          <dt>Project</dt>
+                          <dd>{entry.project ?? ""}</dd>
+                          <dt>Incoming bin</dt>
+                          <dd>{entry.incomingBin ?? ""}</dd>
+                          <dt>Originating system</dt>
+                          <dd>{entry.originatingSystem ?? ""}</dd>
+                          <dt>Originating system qty</dt>
+                          <dd className="num">{entry.originQty ?? ""}</dd>
+                          <dt>SKU</dt>
+                          <dd className="sku">{entry.sku}</dd>
+                          <dt>Item name</dt>
+                          <dd>{entry.itemName}</dd>
+                          <dt>Qty</dt>
+                          <dd className="num">{entry.qty}</dd>
+                          <dt>Comment</dt>
+                          <dd>{entry.comment ?? ""}</dd>
+                        </dl>
+                        {entry.edited ? (
+                          <span className="receive-edited" title={entry.editedBy ? `Edited by ${entry.editedBy}` : "Edited"}>
+                            edited
+                          </span>
+                        ) : null}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

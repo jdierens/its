@@ -22,9 +22,7 @@ export function warehouseToday(now = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-export function receivingDateToStore(input: string | null | undefined, now = new Date()): string {
-  const today = warehouseToday(now);
-  if (!RECEIVING_DATE_EDITABLE) return today;
+export function parseReceiptDate(input: string | null | undefined): string {
   const value = (input ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Enter a receiving date.");
   const [year, month, day] = value.split("-").map(Number);
@@ -34,6 +32,11 @@ export function receivingDateToStore(input: string | null | undefined, now = new
   }
   if (year < 2000 || year > 2100) throw new Error("Enter a receiving date.");
   return value;
+}
+
+export function receivingDateToStore(input: string | null | undefined, now = new Date()): string {
+  if (!RECEIVING_DATE_EDITABLE) return warehouseToday(now);
+  return parseReceiptDate(input);
 }
 
 export type ReceiptSaveGate = {
@@ -68,15 +71,27 @@ export function originQtyInput(value: string): { ok: true; qty: number | null } 
 export type ReceivingEntry = {
   id: string;
   receivedOn: string;
-  sku: string;
-  bin: string;
-  qty: number;
-  comment: string | null;
-  receivedBy: string;
+  initials: string;
+  project: string | null;
   incomingBin: string | null;
   originatingSystem: string | null;
   originQty: number | null;
+  sku: string;
+  itemName: string;
+  itemId: string;
+  qty: number;
+  comment: string | null;
+  edited: boolean;
+  editedBy: string | null;
 };
+
+/** Two-letter initials are shown in capitals. A longer value already stored on a receipt is left as written. */
+export function receiptInitials(value: unknown): string {
+  const raw = value == null ? "" : String(value).trim();
+  const letters = raw.toUpperCase();
+  if (/^[A-Z]{2}$/.test(letters)) return letters;
+  return raw;
+}
 
 function textOrNull(value: unknown): string | null {
   if (value == null) return null;
@@ -100,14 +115,18 @@ export function receivingEntryForViewer(row: Record<string, unknown>, canViewMon
   return {
     id: String(source.id ?? ""),
     receivedOn,
-    sku: joinedText(source.items, "sku"),
-    bin: joinedText(source.bins, "reference"),
-    qty: Number.isFinite(qty) ? qty : 0,
-    comment: textOrNull(source.comment),
-    receivedBy: String(source.operator_initials ?? ""),
+    initials: receiptInitials(source.operator_initials),
+    project: textOrNull(source.project),
     incomingBin: textOrNull(source.incoming_tag),
     originatingSystem: textOrNull(source.origin_description),
     originQty: originQty != null && Number.isFinite(originQty) ? originQty : null,
+    sku: textOrNull(source.sku) || joinedText(source.items, "sku"),
+    itemName: textOrNull(source.item_name) || joinedText(source.items, "name"),
+    itemId: textOrNull(source.item_id) ?? "",
+    qty: Number.isFinite(qty) ? qty : 0,
+    comment: textOrNull(source.comment),
+    edited: source.edited === true,
+    editedBy: textOrNull(source.editor_initials),
   };
 }
 
