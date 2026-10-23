@@ -24,7 +24,7 @@ The suffix sets the type: B box, C crate, P pallet. A 1–4 digit code is zero-p
 
 A location must already exist. Import looks up `locations.code`. It does not call `resolve_location`, so it does not create a place. A blank location uses `bin_default_locations` for that suffix. An unknown code is an error.
 
-The number is unique across suffixes. `20000-B` already on file makes `20000-C` an error. The same code is reported as already exists and is skipped. A repeated code or number in the file is an error on the later row. The first row is classified normally.
+The number is unique across suffixes. `20000-B` already on file makes `20000-C` an error (`20000 is already used by 20000-B.`), and that database check runs before the in-file duplicate check. The same code is reported as already exists and is skipped. An exact repeat of a code in the file is `Duplicate in file.` A different suffix on a number already used by an earlier row in the file is `<n> is used by <code> in row X`.
 
 Nothing imported has an open cycle, stock, or a printed label. `created_by_initials` is recorded the same way receiving records it. Each new bin gets a `bin_events` row of type `created` and a `stock_events` row of type `bin_imported` with `source` `import`.
 

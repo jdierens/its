@@ -1,6 +1,6 @@
 "use server";
 
-import { binCreatedLabel, isBinType } from "@/lib/bins";
+import { isBinType } from "@/lib/bins";
 import { reprintBin } from "@/lib/binActions";
 import {
   classifyBinRows,
@@ -273,10 +273,10 @@ async function exportBins(headers: string[]): Promise<DataExport> {
       project: cycle?.project ?? "",
       origin: cycle?.origin ?? "",
       qty: String(cycle ? (qtyByCycle.get(cycle.id) ?? 0) : 0),
-      created_at: binCreatedLabel(String(row.created_at ?? "")),
+      created_at: compactStamp(String(row.created_at ?? "")),
       created_by_initials: String(row.created_by_initials ?? ""),
       printed_count: String(row.printed_count ?? 0),
-      last_printed_at: row.last_printed_at ? binCreatedLabel(String(row.last_printed_at)) : "",
+      last_printed_at: row.last_printed_at ? compactStamp(String(row.last_printed_at)) : "",
     };
     return headers.map((header) => values[header] ?? "");
   });
@@ -323,6 +323,22 @@ async function exportLocations(headers: string[]): Promise<DataExport> {
     headers,
     rows,
   };
+}
+
+function compactStamp(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "2-digit",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+    .format(date)
+    .replace(/[\u202f\u00a0]/g, " ")
+    .replace(",", "");
 }
 
 function chunks<T>(values: T[], size: number): T[][] {

@@ -63,10 +63,27 @@ function inputsFrom(sheet: SheetTable, mapping: ColumnMapping): MappedInput[] {
     .filter((row) => row.code || row.location || row.note || row.type);
 }
 
+const EXPORT_LABELS: Record<string, string> = {
+  code: "Code",
+  type: "Type",
+  location: "Location",
+  project: "Project",
+  origin: "Origin",
+  qty: "Qty",
+  created_at: "Created",
+  created_by_initials: "By",
+  printed_count: "Printed",
+  last_printed_at: "Last printed",
+};
+
 function statusLabel(status: string): string {
   if (status === "new") return "New";
-  if (status === "exists") return "Already exists";
+  if (status === "exists") return "Exists";
   return "Error";
+}
+
+function numericExport(header: string): boolean {
+  return header === "qty" || header === "printed_count";
 }
 
 export function DataBinsPage() {
@@ -86,6 +103,8 @@ export function DataBinsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showMap, setShowMap] = useState(false);
+  const [fileName, setFileName] = useState("");
+  const [showExport, setShowExport] = useState(false);
 
   const sheet = sheets.find((item) => item.name === sheetName) ?? sheets[0] ?? null;
   const missing = sheet ? missingRequired(columns, mapping) : [];
@@ -145,6 +164,7 @@ export function DataBinsPage() {
     if (!file) return;
     setError(null);
     setMessage(null);
+    setFileName(file.name);
     setBusy(true);
     try {
       const parsed = await parseSpreadsheet(await file.arrayBuffer(), file.name);
@@ -281,10 +301,7 @@ export function DataBinsPage() {
 
       <section className="card data-card" id="data-template">
         <h2>Template</h2>
-        <p>
-          The header row uses the ITS column names. Required columns are marked. One sample row follows the header.
-        </p>
-        <p className="sku data-sample">12345-B, HWS.01.02.03, existing shelf box</p>
+        <p>The header row uses the ITS column names. Required columns are marked. One sample row follows the header.</p>
         <div className="data-scroll">
           <table>
             <thead>
@@ -324,31 +341,35 @@ export function DataBinsPage() {
 
       <section className="card data-card" id="data-import">
         <h2>Import</h2>
-        <div className="desk-fields data-split">
-          <label>
-            <span>Spreadsheet</span>
-            <input
-              id="data-file"
-              type="file"
-              accept=".csv,.txt,.xlsx,.xls,text/csv"
-              disabled={busy}
-              onChange={(event) => void onFile(event.target.files?.[0] ?? null)}
-            />
-          </label>
-          <label>
-            <span>Or paste rows</span>
+        <div className="data-import-row">
+          <div className="data-file-field">
+            <span className="data-label">Spreadsheet</span>
+            <label className="button secondary file-button">
+              Choose file
+              <input
+                id="data-file"
+                type="file"
+                accept=".csv,.txt,.xlsx,.xls,text/csv"
+                disabled={busy}
+                onChange={(event) => void onFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            <span className="hint">{fileName || "CSV or Excel"}</span>
+          </div>
+          <div className="desk-fields data-paste-field">
+            <label htmlFor="data-paste">
+              <span>Or paste rows</span>
+            </label>
             <textarea
               id="data-paste"
               value={paste}
               disabled={busy}
               onChange={(event) => setPaste(event.target.value)}
             />
-          </label>
-        </div>
-        <div className="actions">
-          <button type="button" className="secondary" disabled={busy || paste.trim() === ""} onClick={onPaste}>
-            Use pasted rows
-          </button>
+            <button type="button" className="secondary" disabled={busy || paste.trim() === ""} onClick={onPaste}>
+              Use pasted rows
+            </button>
+          </div>
         </div>
         <p className="hint">CSV may use commas, semicolons, or tabs, with or without a UTF-8 BOM. Excel uses the first sheet unless you pick another.</p>
       </section>
@@ -370,50 +391,46 @@ export function DataBinsPage() {
               </label>
             </div>
           ) : null}
-          <div className="data-scroll">
-            <table className="data-map">
-              <thead>
-                <tr>
-                  <th>ITS field</th>
-                  <th>Source column</th>
-                  <th>Sample values</th>
-                </tr>
-              </thead>
-              <tbody>
-                {columns.map((column) => {
-                  const source = mapping[column.key] ?? "";
-                  const unmatched = column.required && !source;
-                  return (
-                    <tr key={column.key} className={unmatched ? "data-unmapped" : ""}>
-                      <td>
-                        <span className="sku">{column.key}</span>
-                        {column.required ? <span className="data-required"> Required</span> : <span className="hint"> Optional</span>}
-                      </td>
-                      <td>
-                        <select
-                          aria-label={`Source column for ${column.key}`}
-                          value={source}
-                          onChange={(event) =>
-                            setMapping((current) => ({
-                              ...current,
-                              [column.key]: event.target.value || null,
-                            }))
-                          }
-                        >
-                          <option value="">Not mapped</option>
-                          {sheet.headers.map((header) => (
-                            <option key={header} value={header}>
-                              {header}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>{source ? sampleValues(sheet.rows, sheet.headers, source).join(", ") : ""}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="data-map-rows">
+            <div className="data-map-head">ITS field</div>
+            <div className="data-map-head">Source column</div>
+            <div className="data-map-head">Sample values</div>
+            {columns.map((column) => {
+              const source = mapping[column.key] ?? "";
+              const unmatched = column.required && !source;
+              return (
+                <div key={column.key} className={unmatched ? "data-map-row data-unmapped" : "data-map-row"}>
+                  <div className="data-map-field">
+                    <span className="sku">{column.key}</span>
+                    {column.required ? (
+                      <span className="data-required"> Required</span>
+                    ) : (
+                      <span className="hint"> Optional</span>
+                    )}
+                  </div>
+                  <select
+                    aria-label={`Source column for ${column.key}`}
+                    value={source}
+                    onChange={(event) =>
+                      setMapping((current) => ({
+                        ...current,
+                        [column.key]: event.target.value || null,
+                      }))
+                    }
+                  >
+                    <option value="">Not mapped</option>
+                    {sheet.headers.map((header) => (
+                      <option key={header} value={header}>
+                        {header}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="data-map-sample">
+                    {source ? sampleValues(sheet.rows, sheet.headers, source).join(", ") : ""}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           {ignored.length > 0 ? (
             <p className="hint">Ignored columns: {ignored.join(", ")}. They are not imported.</p>
@@ -440,18 +457,16 @@ export function DataBinsPage() {
         <section className="card data-card" id="data-preview">
           <h2>{result?.committed ? "Import result" : "Preview"}</h2>
           {message ? <p className="banner ok">{message}</p> : null}
-          <p className="hint">
-            {result?.committed
-              ? result.counterBumped
-                ? `The next bin number moved from ${result.counterBefore} to ${result.counterAfter}.`
-                : `The next bin number stays at ${result.counterAfter}.`
-              : errorCount > 0
+          {result?.committed ? null : (
+            <p className="hint">
+              {errorCount > 0
                 ? `Nothing is written while a row has an error. The next bin number stays at ${preview.counter.before}.`
                 : preview.counter.bumped
                   ? `The next bin number will move from ${preview.counter.before} to ${preview.counter.after}.`
                   : `The next bin number stays at ${preview.counter.before}.`}
-          </p>
-          <div className="data-scroll">
+            </p>
+          )}
+          <div className="data-scroll data-preview-table">
             <table>
               <thead>
                 <tr>
@@ -470,13 +485,29 @@ export function DataBinsPage() {
                     <td className="sku">{row.code}</td>
                     <td className="sku">{row.location}</td>
                     <td>{row.note}</td>
-                    <td>{statusLabel(row.status)}</td>
-                    <td>{row.reason ?? ""}</td>
+                    <td>
+                      <span className={`data-pill data-pill-${row.status}`}>{statusLabel(row.status)}</span>
+                    </td>
+                    <td className={row.status === "error" ? "data-required" : ""}>{row.reason ?? ""}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <ul className="data-preview-cards">
+            {preview.rows.map((row) => (
+              <li key={`card-${row.row}-${row.code}`} className="data-preview-card">
+                <div className="data-preview-card-top">
+                  <span className="sku">{row.code}</span>
+                  <span className={`data-pill data-pill-${row.status}`}>{statusLabel(row.status)}</span>
+                </div>
+                {row.location ? <div className="sku">{row.location}</div> : null}
+                {row.reason ? (
+                  <p className={row.status === "error" ? "data-reason" : "hint"}>{row.reason}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
           {result?.committed ? null : (
             <div className="data-commit">
               <label className="data-check">
@@ -508,17 +539,31 @@ export function DataBinsPage() {
       <section className="card data-card" id="data-export">
         <h2>Export</h2>
         <p className="hint">
-          Code, type, current location, open-cycle project, origin, quantity, and created and printed info.
-          {exported?.truncated ? " Showing the first 5000 bins." : ""}
+          Code, type, location, project, origin, quantity, and created and printed info.
+          {exported?.truncated ? " The file includes the first 5000 bins." : ""}
         </p>
-        {exported ? (
-          <div className="data-scroll">
+        <div className="actions">
+          <button type="button" className="secondary" disabled={!exported} onClick={downloadExport}>
+            Download CSV
+          </button>
+          <button
+            id="data-show-export"
+            type="button"
+            className="secondary"
+            disabled={!exported}
+            onClick={() => setShowExport((current) => !current)}
+          >
+            {showExport ? "Hide table" : "Show table"}
+          </button>
+        </div>
+        {showExport && exported ? (
+          <div className="data-export-scroll">
             <table>
               <thead>
                 <tr>
                   {exported.headers.map((header) => (
-                    <th key={header} className={header === "qty" || header === "printed_count" ? "num" : ""}>
-                      {header}
+                    <th key={header} className={numericExport(header) ? "num" : ""}>
+                      {EXPORT_LABELS[header] ?? header}
                     </th>
                   ))}
                 </tr>
@@ -526,33 +571,23 @@ export function DataBinsPage() {
               <tbody>
                 {exported.rows.map((row, index) => (
                   <tr key={`${row[0]}-${index}`}>
-                    {row.map((value, cell) => (
-                      <td
-                        key={`${exported.headers[cell]}-${cell}`}
-                        className={
-                          exported.headers[cell] === "qty" || exported.headers[cell] === "printed_count"
-                            ? "num"
-                            : exported.headers[cell] === "code" || exported.headers[cell] === "location"
-                              ? "sku"
-                              : ""
-                        }
-                      >
-                        {value}
-                      </td>
-                    ))}
+                    {row.map((value, cell) => {
+                      const header = exported.headers[cell] ?? "";
+                      return (
+                        <td
+                          key={`${header}-${cell}`}
+                          className={numericExport(header) ? "num" : header === "code" || header === "location" ? "sku" : ""}
+                        >
+                          {value}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : (
-          <p className="hint">Loading bins…</p>
-        )}
-        <div className="actions">
-          <button type="button" className="secondary" disabled={!exported} onClick={downloadExport}>
-            Download CSV
-          </button>
-        </div>
+        ) : null}
       </section>
 
       <div className="print-sheet">

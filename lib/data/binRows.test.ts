@@ -55,11 +55,41 @@ test("bin rows are classified before anything is written", () => {
       ["error", "Unknown location NOWHERE.", "NOWHERE"],
       ["error", "Duplicate in file.", "HWS.01.02.03"],
       ["exists", "Already exists.", ""],
-      ["error", "Duplicate in file.", "HWS.01.02.03"],
+      ["error", "20000 is already used by 20000-B.", "HWS.01.02.03"],
       ["new", null, "HWR.00.00.00"],
     ],
   );
   assert.deepEqual(result.counter, { before: 20001, after: 20053, bumped: true });
+});
+
+test("an existing number is checked before an in-file duplicate", () => {
+  const result = classifyBinRows(
+    [
+      { code: "12345-B", location: "HWS.01.02.03", note: "" },
+      { code: "20000-B", location: "", note: "" },
+      { code: "20000-P", location: "HWS.01.02.03", note: "" },
+      { code: "20000-B", location: "", note: "" },
+    ],
+    context,
+  );
+  assert.deepEqual(
+    result.rows.map((row) => row.reason),
+    [null, "Already exists.", "20000 is already used by 20000-B.", "Duplicate in file."],
+  );
+
+  const fresh = classifyBinRows(
+    [
+      { code: "20010-B", location: "HWS.01.02.03", note: "" },
+      { code: "20010-B", location: "HWS.01.02.03", note: "" },
+      { code: "20011-C", location: "HWS.01.02.03", note: "" },
+      { code: "20011-P", location: "HWS.01.02.03", note: "" },
+    ],
+    context,
+  );
+  assert.deepEqual(
+    fresh.rows.map((row) => row.reason),
+    [null, "Duplicate in file.", null, "20011 is used by 20011-C in row 3."],
+  );
 });
 
 test("a different suffix on a number that already exists is an error", () => {

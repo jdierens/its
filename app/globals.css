@@ -4041,6 +4041,11 @@ input.num-input {
   min-width: 0;
 }
 
+.data-page > .card {
+  overflow: visible;
+  height: auto;
+}
+
 .data-page h2 {
   margin: 0 0 0.35rem;
   font-size: 1.05rem;
@@ -4053,7 +4058,7 @@ input.num-input {
 }
 
 .data-card {
-  padding: 1rem 1.1rem 1.15rem;
+  padding: 1rem 1.1rem 1.35rem;
   min-width: 0;
 }
 
@@ -4065,11 +4070,45 @@ input.num-input {
   margin: 0 0 0.75rem;
 }
 
-.data-split {
+.data-import-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.75rem;
-  align-items: end;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem 1rem;
+  align-items: start;
+  margin-bottom: 0.75rem;
+}
+
+.data-file-field,
+.data-paste-field {
+  display: grid;
+  gap: 0.3rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.data-label,
+.data-paste-field label > span {
+  display: block;
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+.data-file-field .file-button {
+  justify-self: start;
+  flex: none;
+  width: auto;
+  min-height: 44px;
+}
+
+.data-paste-field textarea {
+  min-height: 5.5rem;
+  width: 100%;
+}
+
+.data-paste-field > button {
+  justify-self: start;
 }
 
 .data-sheet {
@@ -4079,13 +4118,44 @@ input.num-input {
 
 .data-scroll {
   overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
   margin: 0 0 0.75rem;
 }
 
-.data-map select,
+.data-map-rows {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.7fr) minmax(11rem, 1fr) minmax(0, 1.5fr);
+  gap: 0.55rem 0.75rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.data-map-row {
+  display: contents;
+}
+
+.data-map-head {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.data-map-rows select,
 .data-sheet select {
   width: 100%;
-  min-width: 8rem;
+  min-width: 0;
+}
+
+.data-map-sample {
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.data-map-row.data-unmapped .data-map-field {
+  color: var(--danger-ink);
 }
 
 .data-required {
@@ -4119,11 +4189,108 @@ input.num-input {
 .data-page th.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.data-pill {
+  display: inline-block;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.data-pill-new {
+  background: #e5f6ea;
+  color: #146c36;
+}
+
+.data-pill-exists {
+  background: #eef0f3;
+  color: #4b5563;
+}
+
+.data-pill-error {
+  background: var(--danger-bg);
+  color: var(--danger-ink);
+}
+
+.data-reason {
+  margin: 0.15rem 0 0;
+  color: var(--danger-ink);
+  font-weight: 600;
+}
+
+.data-preview-cards {
+  display: none;
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.data-preview-card {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.data-preview-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.data-preview-card p {
+  margin: 0;
+}
+
+.data-export-scroll {
+  overflow-x: scroll;
+  overflow-y: auto;
+  max-width: 100%;
+  max-height: 24rem;
+  min-width: 0;
+  margin-top: 0.85rem;
+  padding-bottom: 0.15rem;
+  scrollbar-color: #64748b #e8ecf3;
+  scrollbar-width: auto;
+}
+
+.data-export-scroll::-webkit-scrollbar {
+  height: 12px;
+}
+
+.data-export-scroll::-webkit-scrollbar-track {
+  background: #e8ecf3;
+  border-radius: 6px;
+}
+
+.data-export-scroll::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border-radius: 6px;
+}
+
+.data-export-scroll table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.data-export-scroll th,
+.data-export-scroll td {
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.data-export-scroll th {
+  color: var(--muted);
 }
 
 @media (max-width: 800px) {
-  .data-cards,
-  .data-split {
+  .data-cards {
     grid-template-columns: 1fr;
   }
 
@@ -4133,8 +4300,33 @@ input.num-input {
     min-height: 44px;
   }
 
-  .data-page input[type="file"] {
-    height: auto;
-    min-height: 44px;
+  .data-map-head {
+    display: none;
+  }
+
+  .data-map-rows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.85rem;
+  }
+
+  .data-map-row {
+    display: grid;
+    gap: 0.3rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .data-map-sample {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .data-preview-table {
+    display: none;
+  }
+
+  .data-preview-cards {
+    display: grid;
   }
 }

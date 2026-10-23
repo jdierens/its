@@ -79,31 +79,43 @@ export function classifyBinRows(rows: BinImportRow[], context: BinImportContext)
   counter: CounterBump;
 } {
   const seenCodes = new Set<string>();
-  const seenNumbers = new Set<number>();
+  const seenNumbers = new Map<number, { code: string; row: number }>();
   const classified: ClassifiedBinRow[] = rows.map((row, index) => {
     const code = row.code.trim().toUpperCase();
     const location = row.location.trim().toUpperCase();
     const note = row.note.trim();
-    const base = { row: index + 1, code, location, note };
+    const rowNumber = index + 1;
+    const base = { row: rowNumber, code, location, note };
 
     if (!BIN_CODE_PATTERN.test(code)) {
       return { ...base, status: "error" as const, reason: CODE_ERROR };
     }
     const number = Number(code.slice(0, 5));
     if (number < 1) return { ...base, status: "error" as const, reason: CODE_ERROR };
-    if (seenCodes.has(code) || seenNumbers.has(number)) {
-      return { ...base, status: "error" as const, reason: "Duplicate in file." };
-    }
     if (note.length > 2000) return { ...base, status: "error" as const, reason: "Note is too long." };
 
     const existing = context.existingByNumber.get(number);
     if (existing) {
-      if (existing === code) {
-        seenCodes.add(code);
-        seenNumbers.add(number);
-        return { ...base, status: "exists" as const, reason: "Already exists." };
+      if (existing !== code) {
+        return { ...base, status: "error" as const, reason: `${number} is already used by ${existing}.` };
       }
-      return { ...base, status: "error" as const, reason: `${number} is already used by ${existing}.` };
+      if (seenCodes.has(code)) {
+        return { ...base, status: "error" as const, reason: "Duplicate in file." };
+      }
+      seenCodes.add(code);
+      return { ...base, status: "exists" as const, reason: "Already exists." };
+    }
+
+    if (seenCodes.has(code)) {
+      return { ...base, status: "error" as const, reason: "Duplicate in file." };
+    }
+    const earlier = seenNumbers.get(number);
+    if (earlier) {
+      return {
+        ...base,
+        status: "error" as const,
+        reason: `${number} is used by ${earlier.code} in row ${earlier.row}.`,
+      };
     }
 
     const suffix = code.slice(-1) as "B" | "C" | "P";
@@ -119,7 +131,7 @@ export function classifyBinRows(rows: BinImportRow[], context: BinImportContext)
     }
 
     seenCodes.add(code);
-    seenNumbers.add(number);
+    seenNumbers.set(number, { code, row: rowNumber });
     return { ...base, location: resolved, status: "new" as const, reason: null };
   });
 
