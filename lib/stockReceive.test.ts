@@ -38,8 +38,10 @@ describe("receiving bin codes", () => {
     assert.equal(parseReceivingBinCode("020000-P"), null);
     assert.equal(parseReceivingBinCode("20000-X"), null);
     assert.equal(parseReceivingBinCode("00000-B"), null);
-    assert.equal(typedBinCodeError("20014-C", "B"), "A bin code is five digits, a hyphen, and B, C, or P.");
+    assert.equal(typedBinCodeError("20014-C", "B"), "Code 20014-C is a crate, but Box is selected.");
+    assert.equal(typedBinCodeError("10099-C", "B"), "Code 10099-C is a crate, but Box is selected.");
     assert.equal(typedBinCodeError("20014-B", "B"), null);
+    assert.equal(typedBinCodeError("10099", "B"), "A bin code is five digits, a hyphen, and B, C, or P.");
   });
 
   it("refuses a next number that is not five digits", () => {
