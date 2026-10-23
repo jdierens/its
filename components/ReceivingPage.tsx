@@ -361,9 +361,12 @@ export function ReceivingPage() {
   }
 
   async function onCreate() {
-    const code = codeMode === "typed" ? codeTyped.current.trim() : null;
+    const raw = codeMode === "typed" ? codeTyped.current.trim() : "";
+    const parsed = raw ? parseReceivingBinCode(raw) : null;
+    const type = parsed?.type ?? suffix;
+    if (parsed && parsed.type !== suffix) setSuffix(parsed.type);
     if (codeMode === "typed") {
-      const problem = typedBinCodeError(code ?? "", suffix);
+      const problem = typedBinCodeError(raw, type);
       if (problem) {
         setError(problem);
         return;
@@ -372,7 +375,7 @@ export function ReceivingPage() {
     setBusy(true);
     setError(null);
     try {
-      const bin = await createReceivingBin(suffix, code ? code.toUpperCase() : null);
+      const bin = await createReceivingBin(type, raw ? raw.toUpperCase() : null);
       setCreated(bin);
       binTyped.current = bin.reference;
       setBinCode(bin.reference);
@@ -769,8 +772,14 @@ export function ReceivingPage() {
                     disabled={busy || codeMode === "next"}
                     onDraft={(value) => {
                       codeTyped.current = value;
+                      const parsed = parseReceivingBinCode(value);
+                      if (parsed) setSuffix(parsed.type);
                     }}
-                    onValue={setTypedCode}
+                    onValue={(value) => {
+                      setTypedCode(value);
+                      const parsed = parseReceivingBinCode(value);
+                      if (parsed) setSuffix(parsed.type);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
                         event.preventDefault();
@@ -823,7 +832,7 @@ export function ReceivingPage() {
               <p className="hint">
                 {codeMode === "next"
                   ? `The next number from the shared counter, with suffix -${suffix}.${defaultCode ? ` It is placed at ${defaultCode}.` : ""}`
-                  : `Type a five-digit code, then Create. Suffix -${suffix}.`}
+                  : `Type a code such as 10099-${suffix}. A suffix of -B, -C, or -P sets the type.`}
               </p>
             </div>
           ) : null}
