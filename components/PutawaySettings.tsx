@@ -147,7 +147,7 @@ export function PutawaySettings() {
             <div className="receive-row receive-defaults">
               {SUFFIXES.map((suffix) => (
                 <label key={suffix.type} htmlFor={`default-${suffix.type}`}>
-                  {suffix.label}
+                  <span>{suffix.label}</span>
                   <select
                     id={`default-${suffix.type}`}
                     value={defaults[suffix.type]}
@@ -203,7 +203,7 @@ export function PutawaySettings() {
           <form onSubmit={onAddType}>
             <div className="receive-row">
               <label htmlFor="location-type-name">
-                Name
+                <span>Name</span>
                 <input
                   id="location-type-name"
                   value={typeName}
@@ -213,7 +213,7 @@ export function PutawaySettings() {
                 />
               </label>
               <label htmlFor="location-type-prefix">
-                Prefix
+                <span>Prefix</span>
                 <input
                   id="location-type-prefix"
                   value={prefix}
@@ -224,48 +224,48 @@ export function PutawaySettings() {
                 />
               </label>
             </div>
-            <label htmlFor="location-type-pattern">
-              Pattern
-              <input
-                id="location-type-pattern"
-                value={pattern}
-                disabled={!canEdit || saving}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="^LAB-.+$"
-                onChange={(event) => setPattern(event.target.value)}
-              />
-            </label>
-            <span className="hint">
-              The prefix is stored in capitals, and the pattern must include it, start with ^, and
-              end with $.
-            </span>
-            <div className="actions">
+            <div className="field-with-action">
+              <label htmlFor="location-type-pattern">
+                <span>Pattern</span>
+                <input
+                  id="location-type-pattern"
+                  value={pattern}
+                  disabled={!canEdit || saving}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="^LAB-.+$"
+                  onChange={(event) => setPattern(event.target.value)}
+                />
+              </label>
               <button type="submit" className="secondary" disabled={!canEdit || saving}>
                 Add location type
               </button>
             </div>
+            <span className="hint">
+              The prefix is stored in capitals, and the pattern must include it, start with ^, and
+              end with $.
+            </span>
           </form>
           <form onSubmit={onAddLocation}>
-            <label htmlFor="location-code-add">
-              Location code
-              <input
-                id="location-code-add"
-                value={locationCode}
-                disabled={!canEdit || saving}
-                autoComplete="off"
-                autoCapitalize="characters"
-                onChange={(event) => setLocationCode(event.target.value)}
-              />
-            </label>
-            <span className="hint">
-              The code must match one type. It then shows up in the default lists above.
-            </span>
-            <div className="actions">
+            <div className="field-with-action">
+              <label htmlFor="location-code-add">
+                <span>Location code</span>
+                <input
+                  id="location-code-add"
+                  value={locationCode}
+                  disabled={!canEdit || saving}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  onChange={(event) => setLocationCode(event.target.value)}
+                />
+              </label>
               <button type="submit" className="secondary" disabled={!canEdit || saving}>
                 Add location
               </button>
             </div>
+            <span className="hint">
+              The code must match one type. It then shows up in the default lists above.
+            </span>
           </form>
         </>
       ) : null}

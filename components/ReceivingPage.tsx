@@ -96,6 +96,7 @@ export function ReceivingPage() {
   const [error, setError] = useState<string | null>(null);
   const [printJob, setPrintJob] = useState<PrintJob | null>(null);
   const [printStamp, setPrintStamp] = useState(0);
+  const savedPanel = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setPageOrigin(window.location.origin);
@@ -138,6 +139,11 @@ export function ReceivingPage() {
     if (printStamp === 0) return;
     window.print();
   }, [printStamp]);
+
+  useEffect(() => {
+    if (!receipt) return;
+    savedPanel.current?.scrollIntoView({ block: "start" });
+  }, [receipt]);
 
   function choose(next: LabelItem) {
     const shown = labelShownText(next);
@@ -331,9 +337,23 @@ export function ReceivingPage() {
         incomingTag,
       });
       const printedOn = todayLabel(new Date());
-      setReceipt({ result, item, qty: parsed, printedOn });
+      const savedItem = item;
+      setReceipt({ result, item: savedItem, qty: parsed, printedOn });
       const detail = await fetchBinDetail(reference);
       setConfirmed(detail);
+      typed.current = "";
+      holdQuery.current = null;
+      setHeld((current) => current + 1);
+      setEdited(false);
+      setIdentifier("");
+      setItem(null);
+      setMatches([]);
+      setTruncated(false);
+      setActive(-1);
+      setSettledQuery("");
+      setSuggestions([]);
+      setQty("1");
+      setComment("");
     } catch (saveError) {
       setError(errorText(saveError));
     } finally {
@@ -374,17 +394,38 @@ export function ReceivingPage() {
       : "";
 
   return (
-    <main className="page receiving-page">
+    <main className="page receiving-page desk-fields">
       <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
       <div className="no-print">
         <p className="page-note">Scan a known SKU into a bin. Saving posts the quantity on that bin&apos;s cycle.</p>
+        {receipt ? (
+          <section className="receive-saved" id="receive-saved" ref={savedPanel} aria-label="Saved receipt">
+            <p className="banner ok" role="status">
+              Saved {receipt.qty} of {receipt.item.sku || receipt.item.name} into {receipt.result.reference}.{" "}
+              {receipt.result.cycleOpened ? "A new cycle is open." : "Joined the open cycle."}{" "}
+              <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
+            </p>
+            <div className="receive-actions">
+              <button
+                type="button"
+                onClick={() => void printBinLabel(receipt.result.reference, receipt.result.type)}
+              >
+                Print bin label
+              </button>
+              <button type="button" onClick={printItemLabel}>
+                Print item label
+              </button>
+            </div>
+          </section>
+        ) : null}
         <form
           onSubmit={(event) => {
             event.preventDefault();
             selectOrSearch();
           }}
         >
-          <label htmlFor="receive-sku">SKU, name, or description</label>
+          <label htmlFor="receive-sku">
+            <span>SKU, name, or description</span>
           <FastInput
             id="receive-sku"
             value={identifier}
@@ -424,6 +465,7 @@ export function ReceivingPage() {
             }}
             onKeyDown={onSearchKey}
           />
+          </label>
           {listOpen ? (
             <ul className="label-results" id="receive-results" role="listbox">
               {matches.map((match, index) => (
@@ -457,7 +499,7 @@ export function ReceivingPage() {
         <form onSubmit={onSave}>
           <div className="receive-row">
             <label htmlFor="receive-project">
-              Project
+              <span>Project</span>
               <input
                 id="receive-project"
                 value={project}
@@ -467,7 +509,7 @@ export function ReceivingPage() {
               />
             </label>
             <label htmlFor="receive-tag">
-              Incoming tag
+              <span>Incoming tag</span>
               <input
                 id="receive-tag"
                 value={incomingTag}
@@ -478,7 +520,7 @@ export function ReceivingPage() {
             </label>
           </div>
           <label htmlFor="receive-origin">
-            Origin
+            <span>Origin</span>
             <input
               id="receive-origin"
               value={origin}
@@ -527,9 +569,9 @@ export function ReceivingPage() {
           </div>
 
           {binMode === "existing" ? (
-            <div className="receive-row">
+            <div className="field-with-action">
               <label htmlFor="receive-bin">
-                Bin code
+                <span>Bin code</span>
                 <FastInput
                   id="receive-bin"
                   value={binCode}
@@ -553,11 +595,9 @@ export function ReceivingPage() {
                   }}
                 />
               </label>
-              <div className="receive-actions">
-                <button type="button" className="secondary" disabled={busy} onClick={() => void confirmBin(binTyped.current || binCode)}>
-                  Look up
-                </button>
-              </div>
+              <button type="button" className="secondary" disabled={busy} onClick={() => void confirmBin(binTyped.current || binCode)}>
+                Look up
+              </button>
             </div>
           ) : (
             <div>
@@ -582,40 +622,47 @@ export function ReceivingPage() {
                 </button>
               </div>
               {codeMode === "typed" ? (
-                <label htmlFor="receive-new-code">
-                  Code
-                  <FastInput
-                    id="receive-new-code"
-                    value={typedCode}
-                    syncKey={codeHeld}
-                    autoComplete="off"
-                    autoCapitalize="characters"
-                    spellCheck={false}
-                    placeholder={`20000-${suffix}`}
-                    disabled={busy}
-                    onDraft={(value) => {
-                      codeTyped.current = value;
-                    }}
-                    onValue={setTypedCode}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void onCreate();
-                      }
-                    }}
-                  />
-                </label>
+                <div className="field-with-action">
+                  <label htmlFor="receive-new-code">
+                    <span>Code</span>
+                    <FastInput
+                      id="receive-new-code"
+                      value={typedCode}
+                      syncKey={codeHeld}
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                      placeholder={`20000-${suffix}`}
+                      disabled={busy}
+                      onDraft={(value) => {
+                        codeTyped.current = value;
+                      }}
+                      onValue={setTypedCode}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void onCreate();
+                        }
+                      }}
+                    />
+                  </label>
+                  <button type="button" disabled={busy} onClick={() => void onCreate()}>
+                    Create and print
+                  </button>
+                </div>
               ) : (
-                <p className="hint">
-                  The next number from the shared counter, with suffix -{suffix}.
-                  {defaultCode ? ` It is placed at ${defaultCode}.` : ""}
-                </p>
+                <>
+                  <p className="hint">
+                    The next number from the shared counter, with suffix -{suffix}.
+                    {defaultCode ? ` It is placed at ${defaultCode}.` : ""}
+                  </p>
+                  <div className="actions">
+                    <button type="button" disabled={busy} onClick={() => void onCreate()}>
+                      Create and print
+                    </button>
+                  </div>
+                </>
               )}
-              <div className="receive-actions">
-                <button type="button" disabled={busy} onClick={() => void onCreate()}>
-                  Create and print
-                </button>
-              </div>
             </div>
           )}
 
@@ -643,9 +690,10 @@ export function ReceivingPage() {
 
           <div className="receive-save">
             <label className="receive-qty" htmlFor="receive-qty">
-              Qty
+              <span>Qty</span>
               <input
                 id="receive-qty"
+                className="num-input"
                 value={qty}
                 inputMode="numeric"
                 autoComplete="off"
@@ -654,7 +702,7 @@ export function ReceivingPage() {
               />
             </label>
             <label htmlFor="receive-comment">
-              Comment
+              <span>Comment</span>
               <input
                 id="receive-comment"
                 value={comment}
@@ -675,25 +723,8 @@ export function ReceivingPage() {
             </button>
           </div>
         </form>
-
         {receipt ? (
-          <section className="label-preview" aria-label="Print labels">
-            <p className="banner ok" role="status">
-              Saved {receipt.qty} of {receipt.item.sku || receipt.item.name} into {receipt.result.reference}.{" "}
-              {receipt.result.cycleOpened ? "A new cycle is open." : "Joined the open cycle."}{" "}
-              <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
-            </p>
-            <div className="receive-actions">
-              <button
-                type="button"
-                onClick={() => void printBinLabel(receipt.result.reference, receipt.result.type)}
-              >
-                Print bin label
-              </button>
-              <button type="button" onClick={printItemLabel}>
-                Print item label
-              </button>
-            </div>
+          <div className="receive-saved" aria-label="Label previews">
             <div className="label-frame">
               <BinLabel
                 reference={receipt.result.reference}
@@ -715,7 +746,7 @@ export function ReceivingPage() {
                 printedOn={receipt.printedOn}
               />
             </div>
-          </section>
+          </div>
         ) : null}
       </div>
       <div className="print-sheet">

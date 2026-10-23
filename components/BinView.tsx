@@ -38,7 +38,7 @@ function CycleCard({ cycle }: { cycle: BinCycleView }) {
   return (
     <article className="cycle-card">
       <h3>{cycle.status === "open" ? "Open cycle" : "Closed cycle"}</h3>
-      <dl className="bin-facts">
+      <dl className="cycle-facts">
         <div>
           <dt>Opened</dt>
           <dd>
@@ -165,7 +165,7 @@ export function BinView({ reference }: { reference: string }) {
   const typeName = detail ? binTypeLabel(detail.type) : basic ? binTypeLabel(basic.type) : "";
 
   return (
-    <main className="page bin-view">
+    <main className="page bin-view desk-fields">
       <style>{BIN_LABEL_PRINT_CSS}</style>
       <div className="no-print">
         <p className="bin-reference">{reference}</p>
@@ -177,7 +177,7 @@ export function BinView({ reference }: { reference: string }) {
         ) : null}
         {missing ? <p className="banner error">No bin is numbered {reference}.</p> : null}
         {basic && !detail ? (
-          <dl className="bin-facts">
+          <dl className="bin-stats">
             <div>
               <dt>Number</dt>
               <dd>{basic.number}</dd>
@@ -194,22 +194,42 @@ export function BinView({ reference }: { reference: string }) {
         ) : null}
         {detail ? (
           <>
-            <dl className="bin-facts">
+            <dl className="bin-stats">
               <div>
                 <dt>Current location</dt>
                 <dd>{detail.locationCode ?? "No location yet"}</dd>
               </div>
               <div>
                 <dt>Printed</dt>
-                <dd className="num">{detail.printedCount}</dd>
+                <dd>{detail.printedCount}</dd>
               </div>
-              {detail.createdByInitials ? (
-                <div>
-                  <dt>Created by</dt>
-                  <dd>{detail.createdByInitials}</dd>
-                </div>
-              ) : null}
+              <div>
+                <dt>Created by</dt>
+                <dd>{detail.createdByInitials ?? "—"}</dd>
+              </div>
             </dl>
+            <h2 id="bin-cycles">Cycles</h2>
+            {detail.cycles.length === 0 ? (
+              <p className="hint">No cycles yet.</p>
+            ) : (
+              <div className="cycle-list">
+                {detail.cycles.map((cycle) => (
+                  <CycleCard key={cycle.id} cycle={cycle} />
+                ))}
+              </div>
+            )}
+            {detail.looseEvents.length > 0 ? (
+              <>
+                <h2>Moves while empty</h2>
+                <ol className="cycle-events">
+                  {detail.looseEvents.map((event) => (
+                    <li key={event.id}>
+                      {eventLine(event)} · {event.operatorInitials} · {when(event.occurredAt)}
+                    </li>
+                  ))}
+                </ol>
+              </>
+            ) : null}
             <h2>Contents</h2>
             {detail.contents.length === 0 ? (
               <p className="hint">Empty. The next receipt opens a new cycle.</p>
@@ -234,25 +254,25 @@ export function BinView({ reference }: { reference: string }) {
               </table>
             )}
             <form onSubmit={onMove}>
-              <label htmlFor="bin-move-location">
-                Move to location
-                <input
-                  id="bin-move-location"
-                  value={locationCode}
-                  autoComplete="off"
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                  disabled={busy}
-                  placeholder="HWS.00.00.00"
-                  onChange={(event) => setLocationCode(event.target.value)}
-                />
-              </label>
-              <span className="hint">Scan a location code. It must match one location type.</span>
-              <div className="actions">
+              <div className="field-with-action">
+                <label htmlFor="bin-move-location">
+                  <span>Move to location</span>
+                  <input
+                    id="bin-move-location"
+                    value={locationCode}
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    disabled={busy}
+                    placeholder="HWS.00.00.00"
+                    onChange={(event) => setLocationCode(event.target.value)}
+                  />
+                </label>
                 <button type="submit" disabled={busy}>
                   Move
                 </button>
               </div>
+              <span className="hint">Scan a location code. It must match one location type.</span>
             </form>
             <div className="receive-actions">
               <button type="button" className="secondary" onClick={() => setPrintStamp((current) => current + 1)}>
@@ -263,28 +283,6 @@ export function BinView({ reference }: { reference: string }) {
             <div className="label-frame">
               <BinLabel reference={detail.reference} type={detail.type} layout={templates[detail.type]} />
             </div>
-            <h2>Cycles</h2>
-            {detail.cycles.length === 0 ? (
-              <p className="hint">No cycles yet.</p>
-            ) : (
-              <div className="cycle-list">
-                {detail.cycles.map((cycle) => (
-                  <CycleCard key={cycle.id} cycle={cycle} />
-                ))}
-              </div>
-            )}
-            {detail.looseEvents.length > 0 ? (
-              <>
-                <h2>Moves while empty</h2>
-                <ol className="cycle-events">
-                  {detail.looseEvents.map((event) => (
-                    <li key={event.id}>
-                      {eventLine(event)} · {event.operatorInitials} · {when(event.occurredAt)}
-                    </li>
-                  ))}
-                </ol>
-              </>
-            ) : null}
           </>
         ) : null}
       </div>

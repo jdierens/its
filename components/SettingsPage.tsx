@@ -99,68 +99,75 @@ export function SettingsPage() {
   }
 
   return (
-    <main className="page">
+    <main className="page settings-page desk-fields">
       <p className="page-note">App settings. These are not credentials.</p>
       {loading ? <p className="muted">Loading settings…</p> : null}
       <form onSubmit={onSubmit}>
-        <label htmlFor="pricing-window">Pricing/sales window (days)</label>
-        <input
-          id="pricing-window"
-          value={days}
-          inputMode="numeric"
-          autoComplete="off"
-          disabled={loading}
-          onChange={(event) => {
-            setDays(event.target.value);
-            setSaved(false);
-          }}
-        />
+        <label htmlFor="pricing-window">
+          <span>Pricing/sales window (days)</span>
+          <input
+            id="pricing-window"
+            className="num-input"
+            value={days}
+            inputMode="numeric"
+            autoComplete="off"
+            disabled={loading}
+            onChange={(event) => {
+              setDays(event.target.value);
+              setSaved(false);
+            }}
+          />
+        </label>
         <span className="hint">
           Item sales totals count buys and sells in this many days. The default is 90.
         </span>
         <fieldset className="label-settings">
           <legend>Labels</legend>
-          <label htmlFor="label-template">Item</label>
-          <select
-            id="label-template"
-            aria-label="Item label template"
-            value={template}
-            disabled={loading}
-            onChange={(event) => {
-              setTemplate(event.target.value as LabelTemplateId);
-              setSaved(false);
-            }}
-          >
-            {LABEL_TEMPLATES.map((choice) => (
-              <option key={choice.id} value={choice.id}>
-                {choice.label}
-              </option>
-            ))}
-          </select>
+          <label htmlFor="label-template">
+            <span>Item</span>
+            <select
+              id="label-template"
+              aria-label="Item label template"
+              value={template}
+              disabled={loading}
+              onChange={(event) => {
+                setTemplate(event.target.value as LabelTemplateId);
+                setSaved(false);
+              }}
+            >
+              {LABEL_TEMPLATES.map((choice) => (
+                <option key={choice.id} value={choice.id}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <span className="hint">
             Barcode (current) is the default 90 × 29 mm Code 128 label. QR code is the same size,
             with the SKU under the symbol. Print label on an item uses this choice.
           </span>
           {BIN_TEMPLATE_SETTINGS.map((setting) => (
             <div key={setting.key}>
-              <label htmlFor={setting.key}>{setting.label}</label>
-              <select
-                id={setting.key}
-                aria-label={`${setting.label} label template`}
-                value={binTemplates[setting.type]}
-                disabled={loading}
-                onChange={(event) => {
-                  const value = event.target.value as LabelTemplateId;
-                  setBinTemplates((current) => ({ ...current, [setting.type]: value }));
-                  setSaved(false);
-                }}
-              >
-                {BIN_LABEL_TEMPLATES.map((choice) => (
-                  <option key={choice.id} value={choice.id}>
-                    {choice.label}
-                  </option>
-                ))}
-              </select>
+              <label htmlFor={setting.key}>
+                <span>{setting.label}</span>
+                <select
+                  id={setting.key}
+                  aria-label={`${setting.label} label template`}
+                  value={binTemplates[setting.type]}
+                  disabled={loading}
+                  onChange={(event) => {
+                    const value = event.target.value as LabelTemplateId;
+                    setBinTemplates((current) => ({ ...current, [setting.type]: value }));
+                    setSaved(false);
+                  }}
+                >
+                  {BIN_LABEL_TEMPLATES.map((choice) => (
+                    <option key={choice.id} value={choice.id}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           ))}
           <span className="hint">
@@ -170,24 +177,29 @@ export function SettingsPage() {
             reference.
           </span>
           <div>
-            <label htmlFor="label-template-location">Rack location</label>
+            <label htmlFor="label-template-location">
+              <span>Rack location</span>
+            </label>
             <p className="muted" id="label-template-location">
               Coming soon
             </p>
           </div>
         </fieldset>
-        <label htmlFor="bin-next-number">Next bin number</label>
-        <input
-          id="bin-next-number"
-          value={nextNumber}
-          inputMode="numeric"
-          autoComplete="off"
-          disabled={loading}
-          onChange={(event) => {
-            setNextNumber(event.target.value);
-            setSaved(false);
-          }}
-        />
+        <label htmlFor="bin-next-number">
+          <span>Next bin number</span>
+          <input
+            id="bin-next-number"
+            className="num-input"
+            value={nextNumber}
+            inputMode="numeric"
+            autoComplete="off"
+            disabled={loading}
+            onChange={(event) => {
+              setNextNumber(event.target.value);
+              setSaved(false);
+            }}
+          />
+        </label>
         <span className="hint">
           {highestIssued == null
             ? "No bin number has been issued. The next number starts at 20000 and can be any whole number of at least 1."
