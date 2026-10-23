@@ -1,7 +1,7 @@
 "use server";
 
 import { authRequired } from "@/lib/authRequired";
-import { ensureAppUser, listAppUsers, readAppUser, updateAppUser, type StoredAppUser } from "@/lib/appUserRecord";
+import { ensureAppUser, listAppUsers, readAppUser, updateAppUser, updateAppUserInitials, type StoredAppUser } from "@/lib/appUserRecord";
 import type { AppRole, AppStatus } from "@/lib/authDomain";
 import { sessionUser } from "@/lib/sessionUser";
 
@@ -9,6 +9,7 @@ export type AppUser = {
   id: string;
   email: string;
   name: string;
+  initials: string;
   role: AppRole;
   status: AppStatus;
   createdAt: string;
@@ -30,6 +31,7 @@ function toUser(row: StoredAppUser): AppUser {
     id: row.id,
     email: row.email,
     name: row.name ?? "",
+    initials: row.initials,
     role: asRole(row.role),
     status: asStatus(row.status),
     createdAt: row.created_at,
@@ -53,6 +55,13 @@ export async function fetchAppUsers(): Promise<AppUser[]> {
   const actor = await readAppUser(session.id);
   if (!actor || actor.status !== "approved") throw new Error("This account cannot change data.");
   return (await listAppUsers()).map(toUser);
+}
+
+export async function setAppUserInitials(id: string, initials: string): Promise<void> {
+  if (!authRequired()) throw new Error("Sign-in is turned off.");
+  const session = await sessionUser();
+  if (!session) throw new Error("Sign in required.");
+  await updateAppUserInitials({ actorId: session.id, id, initials });
 }
 
 export async function setAppUser(id: string, role: AppRole, status: AppStatus): Promise<void> {

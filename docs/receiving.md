@@ -22,7 +22,7 @@ A bin that already holds stock keeps the cycle it opened with. The receipt line 
 
 The first line row is the Existing/New control, a bin code about ten characters wide with its lookup, and the quantity. The comment is the next row, full width. On a phone the header fields stack. The bin control, code, and quantity stay on one compact row.
 
-Saving does not change `items.quantity`. The button stays disabled while that click is saving. The click sends one `client_request_id`. A second click during the save is ignored, and a repeat of the same id returns the line already written instead of inserting another. After a save, the header stays filled, the line fields clear, and the cursor returns to the SKU. The success note and print buttons sit in the page above the line. The receipt is the first row in Recent entries for that project.
+The receipt stores the signed-in person's two initials. With sign-in off, that value is `OP`. Saving does not change `items.quantity`. The button stays disabled while that click is saving. The click sends one `client_request_id`. A second click during the save is ignored, and a repeat of the same id returns the line already written instead of inserting another. After a save, the header stays filled, the line fields clear, and the cursor returns to the SKU. The success note and print buttons sit in the page above the line. The receipt is the first row in Recent entries for that project.
 
 ## Recent entries
 

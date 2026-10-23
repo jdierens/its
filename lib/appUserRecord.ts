@@ -1,5 +1,6 @@
 import type { AppRole, AppStatus } from "@/lib/authDomain";
 import { errorText } from "@/lib/errors";
+import { initialsFromPerson, twoLetterInitials } from "@/lib/stockReceive";
 import { requireServiceSupabase } from "@/lib/supabaseAdmin";
 
 const COMPANY_EMAIL = /^[^\s@]+@deepdiscountservers\.com$/;
@@ -8,19 +9,21 @@ export type StoredAppUser = {
   id: string;
   email: string;
   name: string | null;
+  initials: string;
   role: string;
   status: string;
   created_at: string;
   approved_by: string | null;
 };
 
-const COLUMNS = "id, email, name, role, status, created_at, approved_by";
+const COLUMNS = "id, email, name, initials, role, status, created_at, approved_by";
 
 function asStored(row: Record<string, unknown>): StoredAppUser {
   return {
     id: String(row.id),
     email: String(row.email),
     name: row.name == null ? null : String(row.name),
+    initials: String(row.initials ?? ""),
     role: String(row.role),
     status: String(row.status),
     created_at: String(row.created_at),
@@ -114,7 +117,14 @@ export async function ensureAppUser(input: {
   if (!row) {
     const inserted = await supabase
       .from("app_users")
-      .insert({ id: input.id, email, name, role: "read_only", status: "pending" })
+      .insert({
+        id: input.id,
+        email,
+        name,
+        initials: initialsFromPerson(name, email),
+        role: "read_only",
+        status: "pending",
+      })
       .select(COLUMNS)
       .single();
     if (inserted.error) {
@@ -166,5 +176,23 @@ export async function updateAppUser(input: {
   };
   if (input.status === "approved" && current.status !== "approved") patch.approved_by = input.actorId;
   const updated = await supabase.from("app_users").update(patch).eq("id", input.id);
+  if (updated.error) throw new Error(errorText(updated.error));
+}
+
+export async function updateAppUserInitials(input: {
+  actorId: string;
+  id: string;
+  initials: string;
+}): Promise<void> {
+  const supabase = requireServiceSupabase();
+  const actor = await readAppUser(input.actorId);
+  if (!actor || actor.role !== "admin" || actor.status !== "approved") {
+    throw new Error("Only an approved admin can change users.");
+  }
+  const initials = twoLetterInitials(input.initials);
+  if (!initials) throw new Error("Operator initials must be 2 letters.");
+  const current = await readAppUser(input.id);
+  if (!current) throw new Error("Unknown user.");
+  const updated = await supabase.from("app_users").update({ initials }).eq("id", input.id);
   if (updated.error) throw new Error(errorText(updated.error));
 }

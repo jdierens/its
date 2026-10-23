@@ -22,5 +22,6 @@ export async function operatorInitials(): Promise<string> {
   const session = await sessionUser();
   if (!session) throw new Error("Sign in required.");
   const user = await readAppUser(session.id);
+  if (user?.initials && /^[A-Z]{2}$/.test(user.initials)) return user.initials;
   return initialsFromPerson(user?.name ?? null, session.email);
 }
