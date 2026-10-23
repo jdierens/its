@@ -36,6 +36,26 @@ export function receivingDateToStore(input: string | null | undefined, now = new
   return value;
 }
 
+export type ReceiptSaveGate = {
+  inFlight: boolean;
+  requestId: string | null;
+};
+
+/** One click owns one request id. A second click while that save is in flight does nothing. A failed save keeps the id so a retry cannot write a second line. */
+export function beginReceiptSave(
+  gate: ReceiptSaveGate,
+  nextId: string,
+): { ok: true; gate: ReceiptSaveGate; requestId: string } | { ok: false; gate: ReceiptSaveGate } {
+  if (gate.inFlight) return { ok: false, gate };
+  const requestId = gate.requestId ?? nextId;
+  return { ok: true, gate: { inFlight: true, requestId }, requestId };
+}
+
+export function finishReceiptSave(gate: ReceiptSaveGate, saved: boolean): ReceiptSaveGate {
+  if (saved) return { inFlight: false, requestId: null };
+  return { inFlight: false, requestId: gate.requestId };
+}
+
 export function originQtyInput(value: string): { ok: true; qty: number | null } | { ok: false } {
   const trimmed = value.trim();
   if (!trimmed) return { ok: true, qty: null };

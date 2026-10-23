@@ -30,9 +30,12 @@ import {
 } from "@/lib/receivingActions";
 import {
   RECEIVING_DATE_EDITABLE,
+  beginReceiptSave,
+  finishReceiptSave,
   formatReceivedOn,
   originQtyInput,
   warehouseToday,
+  type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
 import {
@@ -106,6 +109,9 @@ export function ReceivingPage() {
   const [defaultIds, setDefaultIds] = useState<Record<BinType, string>>({ B: "", C: "", P: "" });
   const [pageOrigin, setPageOrigin] = useState("");
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveGate = useRef<ReceiptSaveGate>({ inFlight: false, requestId: null });
+  const [focusSku, setFocusSku] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [printJob, setPrintJob] = useState<PrintJob | null>(null);
   const [printStamp, setPrintStamp] = useState(0);
@@ -152,6 +158,11 @@ export function ReceivingPage() {
     if (printStamp === 0) return;
     window.print();
   }, [printStamp]);
+
+  useEffect(() => {
+    if (focusSku === 0) return;
+    document.getElementById("receive-sku")?.focus();
+  }, [focusSku]);
 
   useEffect(() => {
     let cancelled = false;
@@ -354,32 +365,45 @@ export function ReceivingPage() {
     }
   }
 
+  function releaseSave(saved: boolean) {
+    saveGate.current = finishReceiptSave(saveGate.current, saved);
+    setSaving(false);
+  }
+
   async function onSave(event: FormEvent) {
     event.preventDefault();
+    const claim = beginReceiptSave(saveGate.current, crypto.randomUUID());
+    if (!claim.ok) return;
+    saveGate.current = claim.gate;
     if (!item) {
+      releaseSave(false);
       setError("Choose an item.");
       return;
     }
     const reference = confirmed?.reference;
     if (!reference) {
+      releaseSave(false);
       setError("Scan an existing bin, or create one.");
       return;
     }
     const parsed = parseQty(qty);
     if (parsed == null) {
+      releaseSave(false);
       setError("Enter a whole number of at least 1.");
       return;
     }
     const originParsed = originQtyInput(originQty);
     if (!originParsed.ok) {
+      releaseSave(false);
       setError("Originating system qty is a whole number from 0 to 1000000.");
       return;
     }
     if (RECEIVING_DATE_EDITABLE && !/^\d{4}-\d{2}-\d{2}$/.test(receivedOn)) {
+      releaseSave(false);
       setError("Enter a receiving date.");
       return;
     }
-    setBusy(true);
+    setSaving(true);
     setError(null);
     try {
       const result = await receiveIntoBin({
@@ -392,15 +416,16 @@ export function ReceivingPage() {
         incomingTag,
         receivedOn,
         originQty: originParsed.qty,
+        clientRequestId: claim.requestId,
       });
       const printedOn = todayLabel(new Date());
       const savedItem = item;
       setReceipt({ result, item: savedItem, qty: parsed, printedOn });
-      const detail = await fetchBinDetail(reference);
-      setConfirmed(detail);
       typed.current = "";
       holdQuery.current = null;
+      binTyped.current = "";
       setHeld((current) => current + 1);
+      setBinHeld((current) => current + 1);
       setEdited(false);
       setIdentifier("");
       setItem(null);
@@ -409,15 +434,19 @@ export function ReceivingPage() {
       setActive(-1);
       setSettledQuery("");
       setSuggestions([]);
+      setBinCode("");
+      setConfirmed(null);
+      setCreated(null);
       setQty("1");
       setComment("");
+      setFocusSku((current) => current + 1);
       const page = await listReceivingEntries(project, 0);
       setEntries(page.rows);
       setEntriesNext(page.nextOffset);
+      releaseSave(true);
     } catch (saveError) {
       setError(errorText(saveError));
-    } finally {
-      setBusy(false);
+      releaseSave(false);
     }
   }
 
@@ -453,26 +482,6 @@ export function ReceivingPage() {
       <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
       <div className="no-print">
         <p className="page-note">The header is the receipt. The line is one SKU into one bin.</p>
-        {receipt ? (
-          <section className="receive-saved" id="receive-saved" aria-label="Saved receipt">
-            <p className="banner ok" role="status">
-              Saved {receipt.qty} of {receipt.item.sku || receipt.item.name} into {receipt.result.reference}.{" "}
-              {receipt.result.cycleOpened ? "A new cycle is open." : "Joined the open cycle."}{" "}
-              <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
-            </p>
-            <div className="receive-actions">
-              <button
-                type="button"
-                onClick={() => void printBinLabel(receipt.result.reference, receipt.result.type)}
-              >
-                Print bin label
-              </button>
-              <button type="button" onClick={printItemLabel}>
-                Print item label
-              </button>
-            </div>
-          </section>
-        ) : null}
         <section className="card receive-card" id="receive-header">
           <h2>Receipt</h2>
           <div className="receive-header-grid">
@@ -519,7 +528,7 @@ export function ReceivingPage() {
               />
             </label>
             <label htmlFor="receive-origin-qty">
-              <span>Originating system qty</span>
+              <span>Orig. system qty</span>
               <input
                 id="receive-origin-qty"
                 className="num-input"
@@ -535,6 +544,27 @@ export function ReceivingPage() {
             A bin that already has stock keeps the cycle it opened with. Each saved line stores this header, including the receiving date.
           </p>
         </section>
+
+        {receipt ? (
+          <section className="receive-saved" id="receive-saved" aria-label="Saved receipt">
+            <p className="banner ok" role="status">
+              Saved {receipt.qty} of {receipt.item.sku || receipt.item.name} into {receipt.result.reference}.{" "}
+              {receipt.result.cycleOpened ? "A new cycle is open." : "Joined the open cycle."}{" "}
+              <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
+            </p>
+            <div className="receive-actions">
+              <button
+                type="button"
+                onClick={() => void printBinLabel(receipt.result.reference, receipt.result.type)}
+              >
+                Print bin label
+              </button>
+              <button type="button" onClick={printItemLabel}>
+                Print item label
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <section className="card receive-card" id="receive-line">
           <h2>Line</h2>
@@ -799,8 +829,8 @@ export function ReceivingPage() {
             </p>
           ) : null}
           <div className="actions">
-            <button id="receive-save" type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save receipt"}
+            <button id="receive-save" type="submit" disabled={busy || saving}>
+              {saving ? "Saving…" : "Save receipt"}
             </button>
           </div>
         </form>
@@ -826,10 +856,10 @@ export function ReceivingPage() {
                       <th>Bin</th>
                       <th className="num">Qty</th>
                       <th>Comment</th>
-                      <th>Received by</th>
+                      <th>By</th>
                       <th>Incoming bin</th>
-                      <th>Originating system</th>
-                      <th className="num">Originating system qty</th>
+                      <th>Orig. system</th>
+                      <th className="num">Orig. qty</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -856,14 +886,17 @@ export function ReceivingPage() {
                       <span className="sku">{entry.sku || "—"}</span>
                       <span className="num">{entry.qty}</span>
                     </div>
-                    <div className="sku">{entry.bin}</div>
-                    <p>
-                      {formatReceivedOn(entry.receivedOn)}
-                      {entry.receivedBy ? ` · ${entry.receivedBy}` : ""}
-                    </p>
+                    <div className="receive-card-meta">
+                      <span className="sku">{entry.bin}</span>
+                      <span>{formatReceivedOn(entry.receivedOn)}</span>
+                    </div>
                     {entry.comment ? <p>{entry.comment}</p> : null}
-                    <p className="hint">
-                      {[entry.incomingBin, entry.originatingSystem, entry.originQty == null ? "" : String(entry.originQty)]
+                    <p className="receive-card-origin">
+                      {[
+                        entry.incomingBin,
+                        entry.originatingSystem,
+                        entry.originQty == null ? "" : `orig qty ${entry.originQty}`,
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </p>

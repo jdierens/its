@@ -1486,6 +1486,7 @@ form.dialog {
 
 .shell-content {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
 }
@@ -3830,8 +3831,13 @@ nextjs-portal {
 }
 
 .receive-saved {
-  margin: 0 0 1rem;
-  padding: 0.85rem 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem 0.75rem;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
   overflow: visible;
   background: var(--card);
   border: 1px solid rgba(255, 255, 255, 0.85);
@@ -3840,7 +3846,8 @@ nextjs-portal {
 }
 
 .receive-saved .banner {
-  margin: 0 0 0.7rem;
+  margin: 0;
+  flex: 1 1 16rem;
 }
 
 .cycle-facts {
@@ -3900,15 +3907,6 @@ nextjs-portal {
   font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
-}
-
-.receive-saved {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  margin: 0;
-  padding: 0.35rem 0 0.7rem;
-  background: var(--bg);
 }
 
 .receive-actions {
@@ -4005,14 +4003,30 @@ nextjs-portal {
 
 .receiving-page {
   display: grid;
-  gap: 1rem;
+  gap: 0.85rem;
+  min-width: 0;
+  max-width: 100%;
   font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.receiving-page .no-print {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.receiving-page .page-note {
+  margin: 0;
+}
+
+.receiving-page #receive-line form {
+  gap: 0.55rem;
 }
 
 .receiving-page .receive-card {
   overflow: visible;
   height: auto;
-  padding: 1rem 1.1rem 1.2rem;
+  padding: 0.75rem 0.9rem 0.8rem;
 }
 
 .receiving-page .receive-card h2 {
@@ -4022,9 +4036,25 @@ nextjs-portal {
 
 .receive-header-grid {
   display: grid;
-  grid-template-columns: minmax(8rem, 1.2fr) 11rem minmax(8rem, 1.1fr) minmax(8rem, 1.2fr) 8.5rem;
-  gap: 0.75rem 1rem;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 9.5rem) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 7.5rem);
+  gap: 0.55rem 0.7rem;
   align-items: end;
+}
+
+.receive-header-grid > label {
+  min-width: 0;
+}
+
+.receive-header-grid label > span {
+  white-space: nowrap;
+}
+
+.receive-header-grid input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .receive-line-row {
@@ -4108,13 +4138,48 @@ nextjs-portal {
 }
 
 .receive-table-scroll {
-  overflow-x: auto;
+  overflow: hidden;
   max-width: 100%;
   margin-top: 0.75rem;
 }
 
+.receive-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
 .receive-table th,
-.receive-table td,
+.receive-table td {
+  padding: 0.4rem 0.35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receive-table th {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+.receive-table th:nth-child(1),
+.receive-table td:nth-child(1) { width: 11%; }
+.receive-table th:nth-child(2),
+.receive-table td:nth-child(2) { width: 8%; }
+.receive-table th:nth-child(3),
+.receive-table td:nth-child(3) { width: 11%; }
+.receive-table th:nth-child(4),
+.receive-table td:nth-child(4) { width: 6%; }
+.receive-table th:nth-child(5),
+.receive-table td:nth-child(5) { width: 16%; }
+.receive-table th:nth-child(6),
+.receive-table td:nth-child(6) { width: 6%; }
+.receive-table th:nth-child(7),
+.receive-table td:nth-child(7) { width: 16%; }
+.receive-table th:nth-child(8),
+.receive-table td:nth-child(8) { width: 15%; }
+.receive-table th:nth-child(9),
+.receive-table td:nth-child(9) { width: 11%; }
+
 .receive-cards .num {
   white-space: nowrap;
 }
@@ -4141,7 +4206,8 @@ nextjs-portal {
   border-bottom: 1px solid var(--line);
 }
 
-.receive-card-top {
+.receive-card-top,
+.receive-card-meta {
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
@@ -4149,6 +4215,12 @@ nextjs-portal {
 
 .receive-card-row p {
   margin: 0;
+}
+
+.receive-card-origin {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
 }
 
 .receiving-page .label-frame + .label-frame {

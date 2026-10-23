@@ -105,6 +105,7 @@ export async function receiveIntoBin(input: {
   incomingTag: string;
   receivedOn: string;
   originQty: number | null;
+  clientRequestId: string;
 }): Promise<ReceiptResult> {
   const initials = await operatorInitials();
   const receivedOn = receivingDateToStore(input.receivedOn);
@@ -119,6 +120,7 @@ export async function receiveIntoBin(input: {
     p_incoming_tag: input.incomingTag,
     p_received_on: receivedOn,
     p_origin_qty: input.originQty,
+    p_client_request_id: input.clientRequestId,
   });
   if (error) rpcError(error);
   return receiptFromJson(data);

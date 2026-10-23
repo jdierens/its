@@ -25,8 +25,6 @@ create index stock_events_project_received_idx
   on public.stock_events (project, received_on desc, occurred_at desc)
   where event_type = 'receive_into_bin';
 
-drop function public.receive_into_bin(text, uuid, integer, text, text, text, text, text);
-
 create or replace function public.receive_into_bin(
   p_reference text,
   p_item_id uuid,
@@ -212,5 +210,48 @@ comment on function public.receive_into_bin(text, uuid, integer, text, text, tex
 
 revoke all on function public.receive_into_bin(text, uuid, integer, text, text, text, text, text, date, integer) from public, anon, authenticated;
 grant execute on function public.receive_into_bin(text, uuid, integer, text, text, text, text, text, date, integer) to service_role;
+
+-- The live site still calls the eight-argument function. Keep it until a later
+-- cleanup migration, after this form is the only caller. It stores today's
+-- warehouse date and leaves the originating quantity blank.
+create or replace function public.receive_into_bin(
+  p_reference text,
+  p_item_id uuid,
+  p_qty integer,
+  p_initials text,
+  p_comment text,
+  p_project text,
+  p_origin text,
+  p_incoming_tag text
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_today date;
+begin
+  v_today := (now() at time zone 'America/Los_Angeles')::date;
+  return public.receive_into_bin(
+    p_reference,
+    p_item_id,
+    p_qty,
+    p_initials,
+    p_comment,
+    p_project,
+    p_origin,
+    p_incoming_tag,
+    v_today,
+    null
+  );
+end;
+$$;
+
+comment on function public.receive_into_bin(text, uuid, integer, text, text, text, text, text) is
+  'Compatibility wrapper for the previous receive signature. Stores today in America/Los_Angeles and a blank originating quantity. Calls the ten-argument function.';
+
+revoke all on function public.receive_into_bin(text, uuid, integer, text, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.receive_into_bin(text, uuid, integer, text, text, text, text, text) to service_role;
 
 notify pgrst, 'reload schema';

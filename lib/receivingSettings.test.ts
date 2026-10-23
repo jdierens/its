@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   RECEIVING_DATE_EDITABLE,
   formatReceivedOn,
+  beginReceiptSave,
+  finishReceiptSave,
   originQtyInput,
   receivingDateToStore,
   receivingEntryForViewer,
@@ -17,6 +19,25 @@ describe("receiving date", () => {
     assert.equal(receivingDateToStore("2026-10-01", morning), "2026-10-01");
     assert.throws(() => receivingDateToStore("10/01/2026", morning), /receiving date/);
     assert.throws(() => receivingDateToStore("2026-02-31", morning), /receiving date/);
+  });
+});
+
+describe("one save click", () => {
+  it("keeps a single request id until the receipt is stored", () => {
+    const first = beginReceiptSave({ inFlight: false, requestId: null }, "click-1");
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    assert.equal(first.requestId, "click-1");
+    const doubled = beginReceiptSave(first.gate, "click-2");
+    assert.equal(doubled.ok, false);
+    const retry = beginReceiptSave(finishReceiptSave(first.gate, false), "click-2");
+    assert.equal(retry.ok, true);
+    if (!retry.ok) return;
+    assert.equal(retry.requestId, "click-1");
+    const again = beginReceiptSave(finishReceiptSave(retry.gate, true), "click-3");
+    assert.equal(again.ok, true);
+    if (!again.ok) return;
+    assert.equal(again.requestId, "click-3");
   });
 });
 
