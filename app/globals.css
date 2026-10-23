@@ -1275,15 +1275,18 @@ form.dialog {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding-bottom: 0.6rem;
+  padding-bottom: 0.35rem;
 }
 
 .sidebar-foot {
+  position: relative;
+  z-index: 1;
   flex: none;
+  background: var(--sidebar);
 }
 
 .nav-group-label {
-  margin: 0.95rem 1.2rem 0.28rem;
+  margin: 0.62rem 1.2rem 0.18rem;
   color: #8b98a8;
   font-size: 0.68rem;
   font-weight: 600;
@@ -1295,8 +1298,8 @@ form.dialog {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  margin: 0.12rem 0.65rem;
-  padding: 0.48rem 0.7rem;
+  margin: 0.04rem 0.65rem;
+  padding: 0.32rem 0.7rem;
   border-radius: 8px;
   color: #e7edf3;
   font-size: 0.92rem;
@@ -3829,6 +3832,7 @@ nextjs-portal {
 .receive-saved {
   margin: 0 0 1rem;
   padding: 0.85rem 0.9rem;
+  overflow: visible;
   background: var(--card);
   border: 1px solid rgba(255, 255, 255, 0.85);
   border-radius: var(--radius-card);
@@ -4016,4 +4020,17 @@ nextjs-portal {
     background: #fff;
     background-image: none;
   }
+}
+
+/* Number inputs keep Plus Jakarta Sans proportional figures. Tabular
+   figures on these controls swap in a wide typewriter-style 1. */
+.desk-fields input.num-input,
+.receiving-page .receive-qty input,
+input.num-input {
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  font-variant-numeric: normal;
+  font-feature-settings: normal;
+  font-variant-ligatures: normal;
 }

@@ -96,7 +96,6 @@ export function ReceivingPage() {
   const [error, setError] = useState<string | null>(null);
   const [printJob, setPrintJob] = useState<PrintJob | null>(null);
   const [printStamp, setPrintStamp] = useState(0);
-  const savedPanel = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setPageOrigin(window.location.origin);
@@ -139,11 +138,6 @@ export function ReceivingPage() {
     if (printStamp === 0) return;
     window.print();
   }, [printStamp]);
-
-  useEffect(() => {
-    if (!receipt) return;
-    savedPanel.current?.scrollIntoView({ block: "start" });
-  }, [receipt]);
 
   function choose(next: LabelItem) {
     const shown = labelShownText(next);
@@ -387,11 +381,6 @@ export function ReceivingPage() {
   const openCycle = confirmed?.cycles.find((cycle) => cycle.status === "open") ?? null;
   const defaultCode = locations.find((location) => location.id === defaultIds[suffix])?.code;
   const listOpen = matches.length > 0;
-  const receiptCode = receipt ? barcodeValue(receipt.item.sku, receipt.item.id) : "";
-  const receiptPayload =
-    receipt && itemTemplate === "qr" && pageOrigin
-      ? qrLabelPayload(pageOrigin, receipt.item.id, receipt.item.sku)
-      : "";
 
   return (
     <main className="page receiving-page desk-fields">
@@ -399,7 +388,7 @@ export function ReceivingPage() {
       <div className="no-print">
         <p className="page-note">Scan a known SKU into a bin. Saving posts the quantity on that bin&apos;s cycle.</p>
         {receipt ? (
-          <section className="receive-saved" id="receive-saved" ref={savedPanel} aria-label="Saved receipt">
+          <section className="receive-saved" id="receive-saved" aria-label="Saved receipt">
             <p className="banner ok" role="status">
               Saved {receipt.qty} of {receipt.item.sku || receipt.item.name} into {receipt.result.reference}.{" "}
               {receipt.result.cycleOpened ? "A new cycle is open." : "Joined the open cycle."}{" "}
@@ -720,31 +709,6 @@ export function ReceivingPage() {
             </button>
           </div>
         </form>
-        {receipt ? (
-          <div className="receive-saved" aria-label="Label previews">
-            <div className="label-frame">
-              <BinLabel
-                reference={receipt.result.reference}
-                type={receipt.result.type}
-                layout={templates[receipt.result.type]}
-              />
-            </div>
-            <div className="label-frame">
-              <PrintedLabel
-                template={itemTemplate}
-                name={receipt.item.name}
-                description={receipt.item.description}
-                code={itemTemplate === "qr" ? receiptPayload : receiptCode}
-                sku={receipt.item.sku}
-                itemId={receipt.item.id}
-                origin={pageOrigin}
-                quantity={String(receipt.qty)}
-                shortCode={receipt.item.shortCode}
-                printedOn={receipt.printedOn}
-              />
-            </div>
-          </div>
-        ) : null}
       </div>
       <div className="print-sheet">
         {printJob?.kind === "bin" ? (
