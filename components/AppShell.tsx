@@ -8,6 +8,7 @@ import {
   Building,
   ClipboardList,
   Contact,
+  Database,
   Aperture,
   ArrowLeft,
   Menu,
@@ -40,6 +41,7 @@ import { revisionBeside, revisionTooltip } from "@/components/AppRevision";
 import { ScanListener } from "@/components/ScanListener";
 import { SignedInUser } from "@/components/SignedInUser";
 import { fetchCurrentAppUser, type AppUser } from "@/lib/appUsers";
+import { authRequired } from "@/lib/authRequired";
 import { isNavActive, NAV_GROUPS, pageMetaFor, type PageMeta } from "@/lib/nav";
 import { isPublicPath } from "@/lib/publicPaths";
 
@@ -60,6 +62,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/warehouse/bins": Boxes,
   "/pricing": BadgeDollarSign,
   "/admin/users": Users,
+  "/admin/data": Database,
   "/admin/settings": Settings,
   "/admin/integrations": Plug,
   "/admin/integrations/quickbooks": Landmark,
@@ -168,7 +171,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const groups = NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => item.href !== "/admin/users" || account?.role === "admin"),
+    items: group.items.filter((item) => {
+      if (item.href === "/admin/users") return account?.role === "admin";
+      if (item.href === "/admin/data") return !authRequired() || account?.role === "admin";
+      return true;
+    }),
   })).filter((group) => group.items.length > 0);
 
   const shellClass = [

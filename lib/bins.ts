@@ -10,7 +10,7 @@ export const BIN_PRINT_MAX = 100;
 export const BIN_COPY_MAX = 50;
 export const DEFAULT_BIN_NEXT_NUMBER = 20000;
 
-const REFERENCE = /^(\d+)-([PCB])$/;
+const REFERENCE = /^(\d{1,5})-([PCB])$/;
 
 export type BinRecord = {
   id: string;
@@ -51,11 +51,14 @@ export function parseBinReference(
 ): { number: number; type: BinType; reference: string } | null {
   const match = value.trim().toUpperCase().match(REFERENCE);
   if (!match) return null;
-  const number = Number(match[1]);
-  if (!Number.isSafeInteger(number) || number < 1 || String(number) !== match[1]) return null;
+  const digits = match[1];
+  const number = Number(digits);
+  if (!Number.isSafeInteger(number) || number < 1) return null;
+  if (digits !== String(number) && digits.length !== 5) return null;
   const type = match[2];
   if (!isBinType(type)) return null;
-  return { number, type, reference: formatBinReference(number, type) };
+  const reference = digits.length === 5 ? `${digits}-${type}` : formatBinReference(number, type);
+  return { number, type, reference };
 }
 
 export function nextNumberError(proposed: number, highestIssued: number | null): string | null {
