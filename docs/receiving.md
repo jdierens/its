@@ -30,7 +30,7 @@ The receipt stores the signed-in person's two initials. With sign-in off, that v
 
 The table lists `receive_into_bin` rows for the project in the header, newest `received_on` first, then the time the row was written. The first page is 20 rows. Scrolling to the bottom and choosing Load more asks the server for the next page.
 
-Columns follow the receipt, in this order: Date, Initials, Project, Incoming bin, Originating system, Originating system qty, SKU, Item name, Qty, Comment. Qty is right-aligned. Initials are the two letters stored on that receipt, shown in capitals. A longer value written before that rule is shown as stored. A phone lists the same fields in the same order, label then value.
+Columns follow the receipt, in this order: Date, Initials, Project, Incoming bin, Originating system, Originating system qty, SKU, Item name, Qty, Comment. Each receipt is one table row with those ten cells. Qty is right-aligned. A long item name stays in its cell, truncated, and the full name is the cell title. Initials are the two letters stored on that receipt, shown in capitals. A longer value written before that rule is shown as stored. Below 800px the table is hidden and the same fields render as cards, label then value.
 
 The server returns those fields. It does not send item prices. A role without `can_view_financials` has those price fields removed before the response is built, including prices nested on the item.
 

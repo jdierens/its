@@ -911,7 +911,7 @@ export function ReceivingPage() {
                     {entries.map((entry) => (
                       <Fragment key={entry.id}>
                         <tr
-                          className="receive-row"
+                          className="receipt-line"
                           tabIndex={0}
                           aria-label={`Edit receipt ${entry.sku}`}
                           onClick={() => setEditingId(entry.id)}
