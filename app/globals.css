@@ -4200,14 +4200,22 @@ nextjs-portal {
 }
 
 .receive-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   table-layout: auto;
 }
 
 .receive-table th,
 .receive-table td {
-  padding: 0.35rem 0.16rem;
+  padding: 3px 6px;
   vertical-align: bottom;
+}
+
+.receive-table td {
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
 }
 
 .receive-table th {
@@ -4243,19 +4251,24 @@ nextjs-portal {
   min-width: 3.25rem;
 }
 
-.receive-table td.clip {
-  width: auto;
+.receive-table td.item {
+  width: 60ch;
+  min-width: 60ch;
+  max-width: 60ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 0;
-  min-width: 4rem;
 }
 
-.receive-table th.clip {
-  width: auto;
-  max-width: 0;
-  min-width: 4rem;
+.receive-table th.note,
+.receive-table td.note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receive-table td.note {
+  min-width: 16ch;
 }
 
 .receive-table td.initials,

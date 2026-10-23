@@ -902,9 +902,9 @@ export function ReceivingPage() {
                       <th className="origin">Orig. system</th>
                       <th className="num fit">Orig. qty</th>
                       <th className="fit">SKU</th>
-                      <th className="clip">Item name</th>
+                      <th className="item">Item name</th>
                       <th className="num fit">Qty</th>
-                      <th className="clip">Comment</th>
+                      <th className="note">Comment</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -936,9 +936,9 @@ export function ReceivingPage() {
                           <td className="origin">{entry.originatingSystem ?? ""}</td>
                           <td className="fit num">{entry.originQty ?? ""}</td>
                           <td className="fit sku">{entry.sku}</td>
-                          <td className="clip" title={entry.itemName}>{entry.itemName}</td>
+                          <td className="item" title={entry.itemName}>{entry.itemName}</td>
                           <td className="fit num">{entry.qty}</td>
-                          <td className="clip" title={entry.comment ?? undefined}>{entry.comment ?? ""}</td>
+                          <td className="note" title={entry.comment ?? undefined}>{entry.comment ?? ""}</td>
                         </tr>
                         {!phoneLayout && editingId === entry.id ? (
                           <tr className="receive-edit-row">
