@@ -16,6 +16,7 @@ import {
   type LabelTemplateId,
 } from "@/lib/labelTemplates";
 import { parseWindowDays } from "@/lib/pricing/quotes";
+import { PutawaySettings } from "@/components/PutawaySettings";
 
 export function SettingsPage() {
   const [days, setDays] = useState("90");
@@ -209,6 +210,7 @@ export function SettingsPage() {
           </button>
         </div>
       </form>
+      <PutawaySettings />
     </main>
   );
 }

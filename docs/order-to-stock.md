@@ -42,7 +42,7 @@ Some lines go to test. Probing and wiping happen there. Serials are captured on 
 
 The project ends as a list of SKUs, quantities, bins, and serials where the SKU has them. Each quantity can be walked back to the project, the incoming tag, the pallet, the server or container it came out of, and the person who logged it. That walk uses the container's origin fields, not its code.
 
-The last physical step is put-away: the bin is placed at a location. A box (`-B`) or a crate (`-C`) defaults to `HWS.00.00.00`. A pallet (`-P`) defaults to `HWR.00.00.00`. The operator can scan a more specific code. Put-away does not wait for another list. A serialized item cannot be put away until each piece has a serial.
+The last physical step is put-away: the bin is placed at a location. The default for each suffix is a setting, seeded with `HWS.00.00.00` for a box (`-B`) or a crate (`-C`) and `HWR.00.00.00` for a pallet (`-P`). The operator can scan a more specific code. Put-away does not wait for another list. A serialized item cannot be put away until each piece has a serial.
 
 ## Domain model
 
@@ -284,7 +284,17 @@ Keep `bins` and `bin_events`. Add the nesting columns from `docs/purchase-orders
 
 A bin issued from the bin counter still has a required `reference` and a `type` of `B`, `C`, or `P`. The reference is five digits, a hyphen, and that letter: `20014-B` is a box bin, a `C` suffix is a crate bin, and `20000-P` is a pallet bin. No other suffix is valid. The reference matches `^\d{5}-[BCP]$`. Those labels stay the 90 mm × 29 mm labels in `docs/bin-labels.md`. The counter is not used when a pull container has no code, and a temporary id is not a warehouse reference.
 
-A container opened for a pull stores the origin on that row. The code is a separate, optional field. The same physical code can be used again later. That later pull is a new row with the same code, and the earlier row keeps the origin it was logged with. Intake lines point at the row they were logged into. Scanning a code finds the open container with that code, the one that still holds this pull.
+A warehouse bin is one row per physical code. `reference` is unique and is the label. That row holds the code and the bin's current location. It does not hold the origin of the goods. Each use of the bin is a bin cycle. The cycle stores the origin description, the project, and the incoming tag. Intake lines and ledger rows point at the cycle. A cycle opens on the first receive into an empty bin and closes when the quantity in that cycle reaches 0. The next receive opens a new cycle on the same bin row. The earlier cycle keeps the origin it was logged with. Scanning a code finds the bin, and the open cycle when the bin still holds stock. The history view lists every cycle, the open one first. A reused code is a new cycle, not a new bin row.
+
+| Column | Notes |
+|---|---|
+| `id` | uuid. This is the lineage key |
+| `bin_id` | the physical bin. One open cycle per bin |
+| `status` | `open` or `closed`. `closed_at` is set when the quantity reaches 0 |
+| `origin_description`, `project`, `incoming_tag` | copied onto the cycle when it opens, then left as they are |
+| `default_location_id` | the put-away setting for that suffix at the moment the cycle opened |
+| `opened_location_id` | where the bin was when the cycle opened |
+| `opened_at`, `closed_at`, `opened_by_initials` | who opened it |
 
 | Column | Notes |
 |---|---|
@@ -292,7 +302,7 @@ A container opened for a pull stores the origin on that row. The code is a separ
 | `container_kind` | `bin`, `box`, `tote`, `cart`, or `pallet_spot`. Existing warehouse bins are `bin` |
 | `number`, `type`, `reference` | the counter-issued warehouse code when this row is one of those bins. `type` is `B` box, `C` crate, or `P` pallet. `reference` matches `^\d{5}-[BCP]$` and stays unique |
 | `code` | optional. The mark on the physical container, scanned when it is present. Not unique, and not the lineage key. A counter-issued bin copies its `reference` here |
-| `coded_bin_id` | set when `code` is an existing warehouse bin. Points at that bin so the goods can still be found by the printed reference |
+| `coded_bin_id` | set when `code` is an existing warehouse bin. Points at that bin. The lineage key is the cycle on that bin, not a second bin row |
 | `temporary_id` | set only when `code` is empty. Unique. A generated scan target. Not taken from `bin_counter`. Not used for lineage |
 | `origin_description` | required on a pull container. The post-it or the formal note, in words |
 | `origin_project_id` | the project the pull came from |
@@ -306,19 +316,31 @@ A container opened for a pull stores the origin on that row. The code is a separ
 
 The file lives in the private `bin-documents` bucket. It is a warehouse note, not a vendor bill, so `can_view_financials` is not required to read it. A clerk with `can_add_photos` can attach it. Row level security is on. `service_role` is the only grant.
 
-Lineage reads `origin_project_id`, `origin_incoming_tag_id`, `origin_server_type`, and `origin_qty`. Assigning a code later does not change those fields.
+Lineage reads `origin_project_id`, `origin_incoming_tag_id`, `origin_server_type`, and `origin_qty`. Assigning a code later does not change those fields. On a coded warehouse bin, the cycle holds the origin, the project, and the incoming tag, and that cycle is what later rows point at.
 
 A pull container must have a `code` or a `temporary_id`, so it can be scanned. When the temporary id is created, the work-order screen prints one 62 × 100 mm tag on the DK-1202 roll, through the serial-label pipeline: landscape, 94 mm printable width. The large line and the Code 128 are the temporary id. Under them: the project, the incoming tag, the server type, the units, and the initials.
 
 `bin_events` keeps `created`, `printed`, `reprinted`, and `moved`. A move gains `operator_id`, `operator_initials`, `occurred_at`, `from_parent_bin_id`, and `to_parent_bin_id`.
 
-`locations` holds the warehouse places a bin can be put away to. The two defaults are rows in this table. Put-away can use them immediately.
+`locations` holds the places a bin can be put away to. A location type is a name, a prefix, and a pattern. Shelves and racking are seeded. An admin can add another type, and then add codes that match it. This note does not invent an office-lab code.
+
+`location_types` columns:
+
+| Column | Notes |
+|---|---|
+| `id` | uuid |
+| `slug` | stable key. `shelves` and `racking` are seeded |
+| `name` | Henderson Warehouse Shelves, Henderson Warehouse Racking, or a name an admin adds |
+| `prefix` | capitals. `HWS`, `HWR`, or a prefix an admin adds |
+| `pattern` | the code must match. Anchored, and it includes the prefix |
+
+The two seeded places are rows in `locations`. Put-away can use them immediately. The default for each bin suffix is a setting that points at one of those rows. It is seeded `HWS.00.00.00` for `-B` and `-C`, and `HWR.00.00.00` for `-P`. An admin changes it on Settings by picking a location that already exists. The new value is used when a bin is created and is recorded on a cycle when that cycle opens. Bins and cycles that already exist keep the location they were given.
 
 | Column | Notes |
 |---|---|
 | `id` | uuid |
 | `code` | unique. `HWS.00.00.00` or `HWR.01.04.06.N` |
-| `type` | `shelves` or `racking` |
+| `location_type_id` | shelves, racking, or a type an admin added |
 | `row` | the row segment, parsed from the code |
 | `bay` | the bay segment |
 | `elevation` | the elevation segment, in feet |
@@ -341,11 +363,11 @@ The check is one regex per kind.
 
 The two defaults pass: `HWS.00.00.00` and `HWR.00.00.00`.
 
-The bin suffix picks the default. A box (`-B`) or a crate (`-C`) uses `HWS.00.00.00`. A pallet (`-P`) uses `HWR.00.00.00`. The operator can scan a different code that passes the check for its type. Put-away writes `location_id` and does not wait for more locations to be loaded.
+A scanned code is accepted when it matches exactly one location type and starts with that type's prefix. Shelves and racking still store row, bay, elevation, and orientation. Another type stores the code and the type. The operator can scan a code that passes that check. Put-away writes the bin's current location and does not wait for a locator list to be loaded first.
 
 ### Bin consolidation
 
-During receiving, identical SKUs should share a bin. When a line has an item, the screen looks for a bin already holding that SKU on the same receiving. The receiving is the project, or the incoming tag, or the purchase order when the receipt has no project. The screen suggests that bin. The operator accepts it or chooses another.
+During receiving, identical SKUs should share a bin. When a line has an item, the screen looks for a bin already holding that SKU on the same receiving. The receiving is the project, or the incoming tag, or the purchase order when the receipt has no project. The screen suggests that bin. An empty bin is not suggested. The operator accepts a suggestion or chooses another bin, including an empty one, by scanning it.
 
 Accepting the suggestion sets this line's bin. It does not delete the other line or rewrite its origin. Each unit still walks back through its own intake line, tag, project, and purchase order. A later move of an untested remainder uses the same ledger move and leaves that origin in place.
 
@@ -511,7 +533,7 @@ stateDiagram-v2
   void --> [*]
 ```
 
-`split` and `void` stop that line. Children of a split start again at `logged`. Put-away means the bin has a location. The suffix supplies `HWS.00.00.00` or `HWR.00.00.00` unless the operator scanned a specific code. When the SKU is serialized, put-away is refused until the serial count matches the quantity. A line can sit in a holding bin from the moment it is logged.
+`split` and `void` stop that line. Children of a split start again at `logged`. Put-away means the bin has a location. A new bin is placed at the default setting for its suffix, seeded `HWS.00.00.00` or `HWR.00.00.00`, unless the operator scanned a specific code. When the SKU is serialized, put-away is refused until the serial count matches the quantity. A line can sit in a holding bin from the moment it is logged.
 
 ### Work order
 
@@ -670,7 +692,7 @@ Each screen is a phone page first. One primary action. Scan fills the field the 
 | SKU queue | Sales operations sees proposed lines. Approve, assign, create, or reject back to unknown with a comment. | Item, after approval |
 | Test bench | Scan the source bin. Enter the split. Scan serials. Scan the new bins. | Bin, item, serial |
 | Project | SKU, quantity, bin, serials. Open a row for the lineage. | Any of the four |
-| Put-away | Scan the bin. The suffix fills `HWS.00.00.00` or `HWR.00.00.00`. Scan a specific location to override. Refused when a serialized item is short of serials. | Bin reprint |
+| Put-away | Scan the bin. It is already at the default location for its suffix. Scan a specific location to move it. Refused when a serialized item is short of serials. | Bin reprint |
 
 The item label and the serial label are the ones already specified in `docs/labels.md`. A counter-issued bin keeps the 90 mm × 29 mm label in `docs/bin-labels.md`. The incoming tag, and a pull container that has no code, use the serial label's 62 × 100 mm page. The incoming tag shows a large tag ID, a Code 128 of that ID, then the project, the pallet or box number, the received date, and the initials. The uncoded container shows a large temporary id, a Code 128 of that id, then the project, the incoming tag, the server type, the units, and the initials.
 
@@ -680,13 +702,13 @@ Creating a SKU and the pricing screen are desk work. The queue and the allocatio
 
 Each phase is a small pull request. Phase 1 is the smallest slice that puts a known SKU into a bin and proves the ledger. Later phases do not reshape that ledger. Cost waits until a final summary exists, and it never appears on a warehouse payload.
 
-1. **Known SKU into a bin.** Receive a purchase-order line that already has a SKU, suggest a bin on that order that already holds it, post the ledger `in`, refresh `items.quantity`. Scenario 0, quantities only. No cost screen.
+1. **Known SKU into a bin.** Built in this slice. Scan or type a SKU, scan an existing bin or create one and print its 90 × 29 mm label, post `receive_into_bin` on `stock_events` for that bin cycle, and move the bin to a scanned location. Suggest a bin on the same project that already holds that SKU. An empty bin is not suggested. After save, print the bin label or the item label from this page. Quantity lives on `bin_contents`. This slice does not write `items.quantity` or `inventory_movements`. No work orders, unknown SKUs, grade splits, serial capture, consignment, or cost. The migration is reviewed and applied by hand.
 2. **Pricing officer, one allocation per owned purchase order.** The summary is the SKUs traced to that order. The tie is the item-lines total. Approve waits until receiving is complete, unless `pre_agreed_prices` is set. Lock enforces the tie. Consignment is refused. There is no project pool.
 3. **Incoming tags and the bin log.** Projects, tags, unidentified lines, comments, initials, and the four labels. Quantity with no SKU stays out of `items.quantity`.
 4. **SKU audit.** Sales operations approves, assigns, or creates the item. A rejection returns the line to `unknown` and requires a comment. Write `item_id` onto the existing ledger rows.
 5. **Work orders and the pull.** Tasks, containers with a required origin and an optional code, a temporary 62 × 100 mm tag when there is no code, pulled lines, one shell line per server on a pallet bin (`-P`), and a later split of that shell into part lines. Lineage goes back to the pallet through the container's origin and through `parent_line_id`.
 6. **Test, grade, serials.** The 51-to-31/20 split. An untested remainder stays on the original SKU and can move bins. Serials at intake and at the bench. The sales manager's per-item override. Lineage on the children. Consolidation suggests a bin that already holds the SKU on this receiving.
-7. **Put-away to a place.** The bin suffix selects `HWS.00.00.00` or `HWR.00.00.00`. A scanned code can be more specific. Put-away is refused when a serialized item has fewer serials than its quantity. One `bin_events` row. No new inventory rows per unit.
+7. **Put-away to a place.** Phase 1 already places a new bin at the default for its suffix and moves it when a location is scanned. This phase adds the refusal when a serialized item has fewer serials than its quantity. No new inventory rows per unit.
 8. **Adjustments after lock.** A grade split moves quantity immediately and holds the dollars until an adjustment. The locked summary stays locked. The adjustment stores the reason, initials, time, and comment, and may link to a vendor price change or a future VRA. The vendor credit is separate from the COGS re-spread.
 9. **Consignor placeholder purchase order.** When a consigned unit sells, add a row to that consignor's one open placeholder, or open one if none exists. Snapshot the consignor share. The sales manager enters the net, and the purchase price is computed then. Edits before that price are audited. After it, a correction is an adjustment. The sales manager closes the placeholder by hand. Depends on sales orders existing.
 
@@ -707,16 +729,18 @@ Each phase is a small pull request. Phase 1 is the smallest slice that puts a kn
 | 2026-10-22 | The shell is one line until someone identifies the parts. That identification splits the shell into part lines, and each part keeps lineage to the shell. |
 | 2026-10-22 | HDD, SSD, high-end CPUs, and cards are the types that usually require a serial. `taxonomies.serialized` is the default. `items.serialized` is the item's setting, and empty follows the taxonomy. The sales manager can override that setting per item. Put-away is blocked when a serialized item has no serials captured for its quantity. |
 | 2026-10-22 | An untested remainder stays on the original SKU and may move to another bin. The move is an ordinary move and keeps lineage. During receiving, identical SKUs should share a bin. The screen suggests a bin on the same receiving (project, incoming tag, or purchase order) that already holds that SKU. The operator can accept it or choose another. Consolidation keeps each unit's origin. |
-| 2026-10-22 | Put-away does not wait for a location list. A `-B` or `-C` bin defaults to `HWS.00.00.00`. A `-P` bin defaults to `HWR.00.00.00`. `HWS.Row.Bay.Elevation` is Henderson Warehouse Shelves. `HWR.Row.Bay.Elevation.Orientation` is Henderson Warehouse Racking, with orientation `N`, `S`, `E`, `W`, or `C`. A location stores the code, the type (`shelves` or `racking`), and the parsed row, bay, elevation, and orientation. A check per type validates the code. The bin suffix chooses the default. |
+| 2026-10-22 | Put-away does not wait for a location list. The seeded defaults are `HWS.00.00.00` for `-B` and `-C`, and `HWR.00.00.00` for `-P`. `HWS.Row.Bay.Elevation` is Henderson Warehouse Shelves. `HWR.Row.Bay.Elevation.Orientation` is Henderson Warehouse Racking, with orientation `N`, `S`, `E`, `W`, or `C`. A location stores the code, the type, and, for shelves and racking, the parsed row, bay, elevation, and orientation. See 2026-10-23 for the setting and for other location types. |
 | 2026-10-22 | A consignor has a general split and optional per-taxonomy splits, stored as the consignor's share from 0 to 100 and shown as consignor/consignee. A new consignment project copies those settings. After the copy, the project's own general split and taxonomy splits rule, and a later edit to the consignor does not change that copy. An item never has its own split. An excluded item is not a consignment item. Each sale row snapshots the resolved share. |
 | 2026-10-22 | The sales manager closes an open consignor purchase order, after aligning with the consignor. It is often monthly, and the dollar volume can make it sooner or later. The close is manual. The open order can show its age and its running total as a prompt. |
 | 2026-10-22 | Net sales price is typed by the sales manager from figures ITS does not have. ITS does not calculate fees or shipping. A row may be saved pending that net. The purchase price is computed only once the net is entered. |
 | 2026-10-22 | Returns and corrections edit the row until the purchase price is stored. Each edit records who, when, the old values, the new values, and a comment. After that price, the row is locked and a change is an adjustment, the same pattern as a post-lock grade split. |
 | 2026-10-22 | Purchase price is the net sales price times the stored consignor share, divided by 100, rounded half-up to the cent. A 75/25 split is stored as 75, and a $100.00 net sale is a purchase price of $75.00. A 0/100 split is stored as 0 and the purchase price is $0.00, which is valid. The price is computed. It is not overridden by hand. |
 | 2026-10-22 | Orientation applies to racking (`HWR`) only, never to shelves (`HWS`). A bay is typically 98 inches wide. A 42 inch pallet takes two positions on a bay elevation (`N`/`S` or `E`/`W`). A 32 inch Euro pallet takes three (`N`/`C`/`S` or `E`/`C`/`W`). `C` is centre. The letter is optional on the default `HWR.00.00.00` and present on a real pallet slot. |
-| 2026-10-22 | Bin suffixes are a five-digit number plus one letter, and only three exist. `00000-B` is a box bin, `00000-C` is a crate bin, and `00000-P` is a pallet bin. A box or a crate defaults to `HWS.00.00.00`. A pallet defaults to `HWR.00.00.00`. |
+| 2026-10-22 | Bin suffixes are a five-digit number plus one letter, and only three exist. `00000-B` is a box bin, `00000-C` is a crate bin, and `00000-P` is a pallet bin. The put-away setting is seeded `HWS.00.00.00` for a box or a crate and `HWR.00.00.00` for a pallet. |
 | 2026-10-22 | Row, bay, and elevation are always two digits. Shelves match `^HWS\.\d{2}\.\d{2}\.\d{2}$`. Racking matches `^HWR\.\d{2}\.\d{2}\.\d{2}(\.[NSEWC])?$`. A bin reference matches `^\d{5}-[BCP]$`. |
 | 2026-10-22 | A sale with a project uses that project's taxonomy split when the item's taxonomy has one, and otherwise the project's general split. A copied SSD split of 60 stays 60 after the project's general split changes to 50. A sale with no project uses the consignor's taxonomy split when one exists, and otherwise the consignor's general split. The row snapshots that share. |
+| 2026-10-23 | A reused physical bin code is a new cycle on the same bin row. The row keeps the code and the current location. The cycle keeps the origin, the project, and the lineage. A cycle opens on the first receive into an empty bin and closes when its quantity reaches 0. |
+| 2026-10-23 | The default put-away location for `-B`, `-C`, and `-P` is an admin setting that points at a location row. It is seeded `HWS.00.00.00`, `HWS.00.00.00`, and `HWR.00.00.00`. Changing it affects bins created after the change and cycles opened after the change. A location type is a prefix and a pattern. Shelves (`HWS`) and racking (`HWR`) are seeded. An admin can add other types. No lab code is invented here. |
 
 ## Open questions
 

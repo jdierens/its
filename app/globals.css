@@ -3695,6 +3695,91 @@ h1 {
   }
 }
 
+.receive-row,
+.receive-save,
+.receive-defaults {
+  display: grid;
+  gap: 0.9rem;
+  align-items: end;
+}
+
+.receive-row,
+.receive-save {
+  grid-template-columns: 1fr 1fr;
+}
+
+.receive-save {
+  grid-template-columns: 8rem 1fr;
+}
+
+.receive-defaults {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.receive-qty input,
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.receive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.receive-actions button,
+.receiving-page .actions button,
+.putaway-settings .actions button {
+  min-height: 44px;
+}
+
+.putaway-settings {
+  margin-top: 1.5rem;
+}
+
+.putaway-settings h2,
+.putaway-settings h3,
+.bin-view h2 {
+  margin: 0.2rem 0;
+}
+
+.putaway-settings code {
+  overflow-wrap: anywhere;
+}
+
+.cycle-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.cycle-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.8rem;
+  background: var(--card);
+}
+
+.cycle-card h3 {
+  margin: 0 0 0.4rem;
+}
+
+.cycle-events {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.receiving-page .label-frame + .label-frame {
+  margin-top: 0.8rem;
+}
+
+@media (max-width: 800px) {
+  .receive-defaults {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media print {
   body {
     background: #fff;
