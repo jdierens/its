@@ -4255,8 +4255,19 @@ nextjs-portal {
   white-space: normal;
 }
 
-.receive-row {
+/* .receive-row is the receipt form grid. Recent entries use this row. */
+tr.receipt-line {
+  display: table-row;
   cursor: pointer;
+}
+
+tr.receipt-line > td {
+  display: table-cell;
+}
+
+tr.receipt-line:hover td,
+tr.receipt-line:focus-visible td {
+  background: rgba(15, 23, 42, 0.04);
 }
 
 .receive-edited {
