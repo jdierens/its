@@ -6,6 +6,7 @@ import {
   beginReceiptSave,
   finishReceiptSave,
   originQtyInput,
+  receiptInitials,
   receivingDateToStore,
   receivingEntryForViewer,
   warehouseToday,
@@ -59,13 +60,14 @@ describe("recent receiving rows", () => {
       occurred_at: "2026-10-23T01:00:00Z",
       qty: 4,
       comment: "shelf box",
-      operator_initials: "OP",
+      project: "AZSIM6903",
+      operator_initials: " jd ",
       incoming_tag: "INCOMING AZSIM6903 P001",
       origin_description: "AZSIM",
       origin_qty: 12,
       unit_cost: "18.00",
+      item_id: "item-1",
       items: { sku: "1001", unit_cost: "18.00", name: "Widget" },
-      bins: { reference: "20014-B" },
     };
     const hidden = receivingEntryForViewer(row, false);
     assert.equal(JSON.stringify(hidden).includes("18.00"), false);
@@ -73,18 +75,25 @@ describe("recent receiving rows", () => {
     assert.deepEqual(hidden, {
       id: "evt-1",
       receivedOn: "2026-10-22",
-      sku: "1001",
-      bin: "20014-B",
-      qty: 4,
-      comment: "shelf box",
-      receivedBy: "OP",
+      initials: "JD",
+      project: "AZSIM6903",
       incomingBin: "INCOMING AZSIM6903 P001",
       originatingSystem: "AZSIM",
       originQty: 12,
+      sku: "1001",
+      itemName: "Widget",
+      itemId: "item-1",
+      qty: 4,
+      comment: "shelf box",
+      edited: false,
+      editedBy: null,
     });
     const shown = receivingEntryForViewer(row, true);
     assert.equal(shown.sku, "1001");
+    assert.equal(shown.itemName, "Widget");
     assert.equal(shown.originQty, 12);
+    assert.equal(receiptInitials("OP"), "OP");
+    assert.equal(receiptInitials("JAN"), "JAN");
     assert.equal(formatReceivedOn("2026-10-22"), "10/22/26");
   });
 });

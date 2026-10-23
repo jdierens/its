@@ -4,8 +4,12 @@ import { authRequired } from "@/lib/authRequired";
 import { readAppUser } from "@/lib/appUserRecord";
 import { errorText } from "@/lib/errors";
 import { canViewFinancials } from "@/lib/export/access";
+import { searchItemsForLabel } from "@/lib/labelLookupServer";
+import type { LabelItem } from "@/lib/types";
+import { scanTokensInSearchOrder } from "@/lib/receivingScan";
 import {
   RECEIVING_PAGE_SIZE,
+  parseReceiptDate,
   receivingDateToStore,
   receivingEntryForViewer,
   type ReceivingEntry,
@@ -30,6 +34,14 @@ import { getSupabase } from "@/lib/supabase";
 function rpcError(error: { message?: string } | null): never {
   throw new Error(errorText(error));
 }
+
+function missingSchema(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "PGRST202" || error.code === "PGRST205" || error.code === "42P01";
+}
+
+const RECEIPT_COLUMNS =
+  "id, received_on, occurred_at, project, incoming_tag, origin_description, origin_qty, sku, item_name, item_id, qty, comment, operator_initials, edited, editor_initials";
 
 async function attachItemNames(detail: BinDetail): Promise<BinDetail> {
   const skus = [
@@ -95,6 +107,36 @@ async function viewerCanSeeMoney(): Promise<boolean> {
   return Boolean(user && canViewFinancials(user.role));
 }
 
+export async function receivingClerkInitials(): Promise<string> {
+  return operatorInitials();
+}
+
+export type ReceivingScanResult = {
+  scanRaw: string;
+  token: string | null;
+  tried: string[];
+  exact: LabelItem | null;
+  matches: LabelItem[];
+  truncated: boolean;
+};
+
+export async function searchReceivingScan(raw: string): Promise<ReceivingScanResult> {
+  const scanRaw = raw.trim().slice(0, 500);
+  const tokens = scanTokensInSearchOrder(scanRaw).slice(0, 8);
+  if (tokens.length === 0) {
+    return { scanRaw, token: null, tried: [], exact: null, matches: [], truncated: false };
+  }
+  const tried: string[] = [];
+  for (const token of tokens) {
+    tried.push(token);
+    const result = await searchItemsForLabel(token.slice(0, 200));
+    if (result.exact || result.matches.length > 0) {
+      return { scanRaw, token, tried, exact: result.exact, matches: result.matches, truncated: result.truncated };
+    }
+  }
+  return { scanRaw, token: tokens[0] ?? null, tried, exact: null, matches: [], truncated: false };
+}
+
 export async function receiveIntoBin(input: {
   reference: string;
   itemId: string;
@@ -106,10 +148,12 @@ export async function receiveIntoBin(input: {
   receivedOn: string;
   originQty: number | null;
   clientRequestId: string;
+  scanRaw?: string | null;
 }): Promise<ReceiptResult> {
   const initials = await operatorInitials();
   const receivedOn = receivingDateToStore(input.receivedOn);
-  const { data, error } = await (await getSupabase()).rpc("receive_into_bin", {
+  const supabase = await getSupabase();
+  const payload = {
     p_reference: input.reference,
     p_item_id: input.itemId,
     p_qty: input.qty,
@@ -121,9 +165,46 @@ export async function receiveIntoBin(input: {
     p_received_on: receivedOn,
     p_origin_qty: input.originQty,
     p_client_request_id: input.clientRequestId,
-  });
+    p_scan_raw: input.scanRaw?.trim() || null,
+  };
+  let { data, error } = await supabase.rpc("receive_into_bin", payload);
+  if (error && missingSchema(error)) {
+    const { p_scan_raw: _scan, ...legacy } = payload;
+    ({ data, error } = await supabase.rpc("receive_into_bin", legacy));
+  }
   if (error) rpcError(error);
   return receiptFromJson(data);
+}
+
+export async function editReceipt(input: {
+  eventId: string;
+  receivedOn: string;
+  project: string;
+  incomingTag: string;
+  origin: string;
+  originQty: number | null;
+  comment: string;
+  qty: number;
+  itemId: string;
+  confirmed: boolean;
+}): Promise<void> {
+  const initials = await operatorInitials();
+  if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
+  const receivedOn = parseReceiptDate(input.receivedOn);
+  const { error } = await (await getSupabase()).rpc("edit_receipt", {
+    p_event_id: input.eventId,
+    p_initials: initials,
+    p_received_on: receivedOn,
+    p_project: input.project,
+    p_incoming_tag: input.incomingTag,
+    p_origin: input.origin,
+    p_origin_qty: input.originQty,
+    p_comment: input.comment,
+    p_qty: input.qty,
+    p_item_id: input.itemId,
+    p_confirmed: input.confirmed,
+  });
+  if (error) rpcError(error);
 }
 
 export async function listReceivingEntries(
@@ -134,10 +215,28 @@ export async function listReceivingEntries(
   const supabase = await getSupabase();
   const money = await viewerCanSeeMoney();
   const trimmed = project.trim();
+  let viewed = supabase.from("receipt_lines").select(RECEIPT_COLUMNS);
+  viewed = trimmed ? viewed.eq("project", trimmed) : viewed.is("project", null);
+  const corrected = await viewed
+    .order("received_on", { ascending: false, nullsFirst: false })
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, from + RECEIVING_PAGE_SIZE);
+  if (!corrected.error) {
+    const raw = Array.isArray(corrected.data) ? corrected.data : [];
+    const page = raw
+      .slice(0, RECEIVING_PAGE_SIZE)
+      .map((row) => receivingEntryForViewer(row as Record<string, unknown>, money));
+    return {
+      rows: page,
+      nextOffset: raw.length > RECEIVING_PAGE_SIZE ? from + RECEIVING_PAGE_SIZE : null,
+    };
+  }
+  if (!missingSchema(corrected.error)) rpcError(corrected.error);
   let query = supabase
     .from("stock_events")
     .select(
-      "id, received_on, occurred_at, qty, comment, operator_initials, incoming_tag, origin_description, origin_qty, items(sku), bins(reference)",
+      "id, item_id, received_on, occurred_at, project, qty, comment, operator_initials, incoming_tag, origin_description, origin_qty, items(sku, name)",
     )
     .eq("event_type", "receive_into_bin");
   query = trimmed ? query.eq("project", trimmed) : query.is("project", null);

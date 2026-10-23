@@ -4204,7 +4204,11 @@ nextjs-portal {
 
 .receive-table th,
 .receive-table td {
-  padding: 0.4rem 0.35rem;
+  padding: 0.4rem 0.3rem;
+  vertical-align: bottom;
+}
+
+.receive-table td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4212,27 +4216,110 @@ nextjs-portal {
 
 .receive-table th {
   font-size: 0.72rem;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: break-word;
+  hyphens: manual;
 }
 
 .receive-table th:nth-child(1),
-.receive-table td:nth-child(1) { width: 11%; }
+.receive-table td:nth-child(1) { width: 8%; }
 .receive-table th:nth-child(2),
-.receive-table td:nth-child(2) { width: 8%; }
+.receive-table td:nth-child(2) { width: 7%; }
 .receive-table th:nth-child(3),
-.receive-table td:nth-child(3) { width: 11%; }
+.receive-table td:nth-child(3) { width: 10%; }
 .receive-table th:nth-child(4),
-.receive-table td:nth-child(4) { width: 6%; }
+.receive-table td:nth-child(4) { width: 12%; }
 .receive-table th:nth-child(5),
-.receive-table td:nth-child(5) { width: 16%; }
+.receive-table td:nth-child(5) { width: 12%; }
 .receive-table th:nth-child(6),
-.receive-table td:nth-child(6) { width: 6%; }
+.receive-table td:nth-child(6) { width: 10%; }
 .receive-table th:nth-child(7),
-.receive-table td:nth-child(7) { width: 16%; }
+.receive-table td:nth-child(7) { width: 8%; }
 .receive-table th:nth-child(8),
-.receive-table td:nth-child(8) { width: 15%; }
+.receive-table td:nth-child(8) { width: 14%; }
 .receive-table th:nth-child(9),
-.receive-table td:nth-child(9) { width: 11%; }
+.receive-table td:nth-child(9) { width: 6%; }
+.receive-table th:nth-child(10),
+.receive-table td:nth-child(10) { width: 13%; }
+
+.receive-table td.initials,
+.receive-card-row dd.initials,
+.receive-edit input.initials {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.receive-table td:first-child {
+  white-space: normal;
+}
+
+.receive-row {
+  cursor: pointer;
+}
+
+.receive-edited {
+  display: inline-block;
+  margin-left: 0.35rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.receive-edit {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.35rem 0 0.2rem;
+}
+
+.receive-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 0.75rem;
+}
+
+.receive-edit-grid label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.receive-edit-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.receive-edit input.num-input {
+  text-align: right;
+}
+
+.receive-confirm {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.receive-confirm p {
+  margin: 0;
+}
+
+button.receive-card-open {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.15rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  color: inherit;
+  font-weight: 400;
+  text-align: left;
+  min-height: 44px;
+  cursor: pointer;
+}
 
 .receive-cards .num {
   white-space: nowrap;
@@ -4254,27 +4341,31 @@ nextjs-portal {
 }
 
 .receive-card-row {
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.45rem 0;
+  padding: 0.55rem 0;
   border-bottom: 1px solid var(--line);
 }
 
-.receive-card-top,
-.receive-card-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.receive-card-row p {
+.receive-card-row dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 0.18rem 0.65rem;
   margin: 0;
+  align-items: baseline;
 }
 
-.receive-card-origin {
+.receive-card-row dt {
+  margin: 0;
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.3;
+}
+
+.receive-card-row dd {
+  margin: 0;
+  text-align: right;
+  font-size: 0.86rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .receiving-page .label-frame + .label-frame {
@@ -4308,6 +4399,14 @@ nextjs-portal {
 
   .receive-table-scroll {
     display: none;
+  }
+
+  .receive-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .receive-edit .actions button {
+    min-height: 44px;
   }
 
   .receive-cards {

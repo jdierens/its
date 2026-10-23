@@ -28,9 +28,23 @@ The receipt stores the signed-in person's two initials. With sign-in off, that v
 
 ## Recent entries
 
-The table lists `receive_into_bin` rows for the project in the header, newest `received_on` first, then the time the row was written. The first page is 20 rows. Load more asks the server for the next page. Column headings are shortened so the date and originating quantity stay on screen. On a phone each row is a card: SKU and quantity, then bin and date, then the comment, then the incoming bin, originating system, and originating quantity as “orig qty 8”.
+The table lists `receive_into_bin` rows for the project in the header, newest `received_on` first, then the time the row was written. The first page is 20 rows. Scrolling to the bottom and choosing Load more asks the server for the next page.
 
-The server returns date, SKU, bin, quantity, comment, received by, incoming bin, originating system, and originating system qty. It does not send item prices. A role without `can_view_financials` has those price fields removed before the response is built, including prices nested on the item.
+Columns follow the receipt, in this order: Date, Initials, Project, Incoming bin, Originating system, Originating system qty, SKU, Item name, Qty, Comment. Qty is right-aligned. Initials are the two letters stored on that receipt, shown in capitals. A longer value written before that rule is shown as stored. A phone lists the same fields in the same order, label then value.
+
+The server returns those fields. It does not send item prices. A role without `can_view_financials` has those price fields removed before the response is built, including prices nested on the item.
+
+Tap a row to correct it. The same form opens on a phone. Date, project, incoming bin, originating system, originating system qty, and comment are header corrections. The ledger row is not updated. Each save writes `stock_event_edits` with who, when, and the old and new values. The row then shows the corrected values and an edited marker. A qty or SKU change asks for confirmation, then posts a `receipt_adjustment` and moves `bin_contents` through `adjust_bin_cycle_qty`. That adjustment cannot take the bin below 0. Initials are required on every edit. They are the signed-in person's two letters, or `OP` when sign-in is off.
+
+Apply `supabase/migrations/20261023070123_receipt_edits.sql` before corrections. It is additive. Row level security is on, and the table and functions are granted to `service_role` only. It has not been applied.
+
+## Scanning a line
+
+The SKU field splits the text on spaces and searches the longest token first. When two tokens are the same length, the one with both letters and digits is first. `KR M393A8G40BB4-CWE 2349` searches `M393A8G40BB4-CWE`, then `2349`, then `KR`. The line under the field says which token was used. If that token misses, the next token is tried.
+
+The full scan is stored on `stock_events.scan_raw`. When the comment is blank, that same text is stored as the comment so the country of origin and the date code stay on the line. Apply `supabase/migrations/20261023070124_receipt_scan_raw.sql` for the column. It is additive and has not been applied. Until it is applied, a save still keeps the scan in the comment when that field was blank.
+
+Country of origin and date code are not their own columns yet. A later migration can add nullable `country_of_origin` and `date_code` on `stock_events` and fill them on insert from the tokens that were not the search hit: a two-letter token as the country, and a four-digit token as the YYWW date code, only when that reading is unambiguous. `scan_raw` stays, so older lines can be read back without rewriting the ledger. Those values belong on the receipt, not on the item, because the same part ships under many date codes.
 
 ## Migrations
 
