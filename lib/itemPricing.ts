@@ -1,7 +1,15 @@
 "use server";
 
 import { errorText } from "@/lib/errors";
-import { asMoney, SALES_WINDOW_KEY, type PriceQuoteSource, type TransactionSource, type TransactionType } from "@/lib/pricing/quotes";
+import {
+  asMoney,
+  SALES_WINDOW_KEY,
+  type PriceQuoteRow,
+  type PriceQuoteRowSource,
+  type PriceQuoteSource,
+  type TransactionSource,
+  type TransactionType,
+} from "@/lib/pricing/quotes";
 import { getSupabase } from "@/lib/supabase";
 
 export type ItemPrices = {
@@ -18,7 +26,7 @@ export type ItemPrices = {
 
 export type PriceQuote = {
   id: string;
-  source: PriceQuoteSource;
+  source: PriceQuoteRowSource;
   price: number;
   currency: string;
   qty: number | null;
@@ -87,20 +95,7 @@ export async function saveItemPrices(
   if (error) throw new Error(errorText(error));
 }
 
-type QuoteRow = {
-  id: string;
-  source: PriceQuoteSource;
-  price: number | string;
-  currency: string;
-  qty: number | string | null;
-  condition: string | null;
-  vendor_id: string | null;
-  seller_name: string | null;
-  url: string | null;
-  notes: string | null;
-  captured_at: string;
-  captured_by: string | null;
-  outlier: boolean;
+type QuoteRow = PriceQuoteRow & {
   vendors: { display_name: string } | { display_name: string }[] | null;
 };
 
