@@ -24,6 +24,8 @@ test("bin references are number-type and share one counter format", () => {
     reference: "20000-P",
   });
   assert.equal(parseBinReference("10001-C")?.reference, "10001-C");
+  assert.equal(parseBinReference("01234-B")?.reference, "01234-B");
+  assert.equal(parseBinReference("01234-B")?.number, 1234);
   assert.equal(parseBinReference("020000-P"), null);
   assert.equal(parseBinReference("20000-X"), null);
   assert.equal(parseBinReference("20000"), null);

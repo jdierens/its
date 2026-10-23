@@ -107,6 +107,11 @@ export const NAV_GROUPS: NavGroup[] = [
         description: "Manufacturer names and aliases.",
       },
       {
+        label: "Data management",
+        href: "/admin/data",
+        description: "Import and export tables such as bins and locations.",
+      },
+      {
         label: "Users",
         href: "/admin/users",
         description: "Manage who can sign in and what they can do.",
@@ -275,6 +280,19 @@ export function pageMetaFor(pathname: string): PageMeta {
         { label: "Taxonomies & Fields", href: "/taxonomies" },
         { label: "Fields" },
       ],
+    };
+  }
+
+  if (pathname === "/admin/data/bins") {
+    return {
+      title: "Bins",
+      crumbs: [
+        { label: "Admin" },
+        { label: "Data management", href: "/admin/data" },
+        { label: "Bins" },
+      ],
+      backHref: "/admin/data",
+      backLabel: "Data management",
     };
   }
 
