@@ -895,16 +895,16 @@ export function ReceivingPage() {
                 <table className="receive-table">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Initials</th>
-                      <th>Project</th>
-                      <th>Incoming bin</th>
-                      <th>Originating system</th>
-                      <th className="num">Originating system qty</th>
-                      <th>SKU</th>
-                      <th>Item name</th>
-                      <th className="num">Qty</th>
-                      <th>Comment</th>
+                      <th className="fit">Date</th>
+                      <th className="fit">Init.</th>
+                      <th className="fit">Project</th>
+                      <th className="fit">Incoming bin</th>
+                      <th className="origin">Orig. system</th>
+                      <th className="num fit">Orig. qty</th>
+                      <th className="fit">SKU</th>
+                      <th className="clip">Item name</th>
+                      <th className="num fit">Qty</th>
+                      <th className="clip">Comment</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -922,7 +922,7 @@ export function ReceivingPage() {
                             }
                           }}
                         >
-                          <td>
+                          <td className="fit">
                             {formatReceivedOn(entry.receivedOn)}
                             {entry.edited ? (
                               <span className="receive-edited" title={entry.editedBy ? `Edited by ${entry.editedBy}` : "Edited"}>
@@ -930,15 +930,15 @@ export function ReceivingPage() {
                               </span>
                             ) : null}
                           </td>
-                          <td className="initials">{entry.initials}</td>
-                          <td title={entry.project ?? undefined}>{entry.project ?? ""}</td>
-                          <td title={entry.incomingBin ?? undefined}>{entry.incomingBin ?? ""}</td>
-                          <td title={entry.originatingSystem ?? undefined}>{entry.originatingSystem ?? ""}</td>
-                          <td className="num">{entry.originQty ?? ""}</td>
-                          <td className="sku" title={entry.sku}>{entry.sku}</td>
-                          <td title={entry.itemName}>{entry.itemName}</td>
-                          <td className="num">{entry.qty}</td>
-                          <td title={entry.comment ?? undefined}>{entry.comment ?? ""}</td>
+                          <td className="fit initials">{entry.initials}</td>
+                          <td className="fit">{entry.project ?? ""}</td>
+                          <td className="fit">{entry.incomingBin ?? ""}</td>
+                          <td className="origin">{entry.originatingSystem ?? ""}</td>
+                          <td className="fit num">{entry.originQty ?? ""}</td>
+                          <td className="fit sku">{entry.sku}</td>
+                          <td className="clip" title={entry.itemName}>{entry.itemName}</td>
+                          <td className="fit num">{entry.qty}</td>
+                          <td className="clip" title={entry.comment ?? undefined}>{entry.comment ?? ""}</td>
                         </tr>
                         {!phoneLayout && editingId === entry.id ? (
                           <tr className="receive-edit-row">
