@@ -24,9 +24,17 @@ import { fetchPutawaySetting, type LocationRow } from "@/lib/locationSettings";
 import {
   createReceivingBin,
   fetchBinDetail,
+  listReceivingEntries,
   receiveIntoBin,
   suggestBins,
 } from "@/lib/receivingActions";
+import {
+  RECEIVING_DATE_EDITABLE,
+  formatReceivedOn,
+  originQtyInput,
+  warehouseToday,
+  type ReceivingEntry,
+} from "@/lib/receivingSettings";
 import {
   parseReceivingBinCode,
   typedBinCodeError,
@@ -72,8 +80,13 @@ export function ReceivingPage() {
   const [settledQuery, setSettledQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [project, setProject] = useState("");
+  const [receivedOn, setReceivedOn] = useState("");
   const [incomingTag, setIncomingTag] = useState("");
   const [origin, setOrigin] = useState("");
+  const [originQty, setOriginQty] = useState("");
+  const [entries, setEntries] = useState<ReceivingEntry[]>([]);
+  const [entriesNext, setEntriesNext] = useState<number | null>(null);
+  const [entriesLoading, setEntriesLoading] = useState(false);
   const [binMode, setBinMode] = useState<"existing" | "new">("existing");
   const [binCode, setBinCode] = useState("");
   const [binHeld, setBinHeld] = useState(0);
@@ -98,6 +111,7 @@ export function ReceivingPage() {
   const [printStamp, setPrintStamp] = useState(0);
 
   useEffect(() => {
+    setReceivedOn(warehouseToday());
     setPageOrigin(window.location.origin);
     void Promise.all([fetchLabelTemplate(), fetchBinLabelTemplates()])
       .then(([itemChoice, binChoice]) => {
@@ -138,6 +152,44 @@ export function ReceivingPage() {
     if (printStamp === 0) return;
     window.print();
   }, [printStamp]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      setEntriesLoading(true);
+      void listReceivingEntries(project, 0)
+        .then((page) => {
+          if (cancelled) return;
+          setEntries(page.rows);
+          setEntriesNext(page.nextOffset);
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) setError(errorText(cause));
+        })
+        .finally(() => {
+          if (!cancelled) setEntriesLoading(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [project]);
+
+  async function loadMoreEntries() {
+    if (entriesNext == null) return;
+    setEntriesLoading(true);
+    setError(null);
+    try {
+      const page = await listReceivingEntries(project, entriesNext);
+      setEntries((current) => [...current, ...page.rows]);
+      setEntriesNext(page.nextOffset);
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setEntriesLoading(false);
+    }
+  }
 
   function choose(next: LabelItem) {
     const shown = labelShownText(next);
@@ -318,6 +370,15 @@ export function ReceivingPage() {
       setError("Enter a whole number of at least 1.");
       return;
     }
+    const originParsed = originQtyInput(originQty);
+    if (!originParsed.ok) {
+      setError("Originating system qty is a whole number from 0 to 1000000.");
+      return;
+    }
+    if (RECEIVING_DATE_EDITABLE && !/^\d{4}-\d{2}-\d{2}$/.test(receivedOn)) {
+      setError("Enter a receiving date.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -329,6 +390,8 @@ export function ReceivingPage() {
         project,
         origin,
         incomingTag,
+        receivedOn,
+        originQty: originParsed.qty,
       });
       const printedOn = todayLabel(new Date());
       const savedItem = item;
@@ -348,6 +411,9 @@ export function ReceivingPage() {
       setSuggestions([]);
       setQty("1");
       setComment("");
+      const page = await listReceivingEntries(project, 0);
+      setEntries(page.rows);
+      setEntriesNext(page.nextOffset);
     } catch (saveError) {
       setError(errorText(saveError));
     } finally {
@@ -386,7 +452,7 @@ export function ReceivingPage() {
     <main className="page receiving-page desk-fields">
       <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
       <div className="no-print">
-        <p className="page-note">Scan a known SKU into a bin. Saving posts the quantity on that bin&apos;s cycle.</p>
+        <p className="page-note">The header is the receipt. The line is one SKU into one bin.</p>
         {receipt ? (
           <section className="receive-saved" id="receive-saved" aria-label="Saved receipt">
             <p className="banner ok" role="status">
@@ -407,6 +473,71 @@ export function ReceivingPage() {
             </div>
           </section>
         ) : null}
+        <section className="card receive-card" id="receive-header">
+          <h2>Receipt</h2>
+          <div className="receive-header-grid">
+            <label htmlFor="receive-project">
+              <span>Project</span>
+              <input
+                id="receive-project"
+                value={project}
+                autoComplete="off"
+                disabled={busy}
+                onChange={(event) => setProject(event.target.value)}
+              />
+            </label>
+            <label htmlFor="receive-date">
+              <span>Receiving date</span>
+              <input
+                id="receive-date"
+                type={RECEIVING_DATE_EDITABLE ? "date" : "text"}
+                value={receivedOn}
+                readOnly={!RECEIVING_DATE_EDITABLE}
+                autoComplete="off"
+                disabled={busy}
+                onChange={(event) => setReceivedOn(event.target.value)}
+              />
+            </label>
+            <label htmlFor="receive-incoming">
+              <span>Incoming bin</span>
+              <input
+                id="receive-incoming"
+                value={incomingTag}
+                autoComplete="off"
+                disabled={busy}
+                onChange={(event) => setIncomingTag(event.target.value)}
+              />
+            </label>
+            <label htmlFor="receive-origin">
+              <span>Originating system</span>
+              <input
+                id="receive-origin"
+                value={origin}
+                autoComplete="off"
+                disabled={busy}
+                onChange={(event) => setOrigin(event.target.value)}
+              />
+            </label>
+            <label htmlFor="receive-origin-qty">
+              <span>Originating system qty</span>
+              <input
+                id="receive-origin-qty"
+                className="num-input"
+                value={originQty}
+                inputMode="numeric"
+                autoComplete="off"
+                disabled={busy}
+                onChange={(event) => setOriginQty(event.target.value)}
+              />
+            </label>
+          </div>
+          <p className="hint">
+            A bin that already has stock keeps the cycle it opened with. Each saved line stores this header, including the receiving date.
+          </p>
+        </section>
+
+        <section className="card receive-card" id="receive-line">
+          <h2>Line</h2>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -486,42 +617,6 @@ export function ReceivingPage() {
         </form>
 
         <form onSubmit={onSave}>
-          <div className="receive-row">
-            <label htmlFor="receive-project">
-              <span>Project</span>
-              <input
-                id="receive-project"
-                value={project}
-                autoComplete="off"
-                disabled={busy}
-                onChange={(event) => setProject(event.target.value)}
-              />
-            </label>
-            <label htmlFor="receive-tag">
-              <span>Incoming tag</span>
-              <input
-                id="receive-tag"
-                value={incomingTag}
-                autoComplete="off"
-                disabled={busy}
-                onChange={(event) => setIncomingTag(event.target.value)}
-              />
-            </label>
-          </div>
-          <label htmlFor="receive-origin">
-            <span>Origin</span>
-            <input
-              id="receive-origin"
-              value={origin}
-              autoComplete="off"
-              disabled={busy}
-              onChange={(event) => setOrigin(event.target.value)}
-            />
-          </label>
-          <span className="hint">
-            Project, tag, and origin are stored when a cycle opens. A bin that already has stock
-            keeps the cycle it opened with.
-          </span>
           {item && suggestions.length > 0 ? (
             <div>
               <p className="hint">This SKU is already in these bins on this project.</p>
@@ -548,49 +643,100 @@ export function ReceivingPage() {
             <p className="hint">No bin on this project already holds that SKU. An empty bin is not suggested.</p>
           ) : null}
 
-          <div className="label-segments" role="group" aria-label="Bin">
-            <button type="button" aria-pressed={binMode === "existing"} onClick={() => setBinMode("existing")}>
-              Existing bin
-            </button>
-            <button type="button" aria-pressed={binMode === "new"} onClick={() => setBinMode("new")}>
-              New bin
-            </button>
+          <div className="receive-line-row">
+            <div className="receive-toggle-field">
+              <span id="receive-bin-mode-label">Bin</span>
+              <div className="label-segments receive-segments" role="group" aria-labelledby="receive-bin-mode-label">
+                <button type="button" aria-pressed={binMode === "existing"} onClick={() => setBinMode("existing")}>
+                  Existing
+                </button>
+                <button type="button" aria-pressed={binMode === "new"} onClick={() => setBinMode("new")}>
+                  New
+                </button>
+              </div>
+            </div>
+            {binMode === "existing" ? (
+              <div className="receive-code-field">
+                <label htmlFor="receive-bin">Code</label>
+                <div className="receive-code-controls">
+                  <FastInput
+                    id="receive-bin"
+                    className="receive-bin-code"
+                    value={binCode}
+                    syncKey={binHeld}
+                    maxLength={10}
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    disabled={busy}
+                    onDraft={(value) => {
+                      binTyped.current = value;
+                    }}
+                    onValue={(value) => {
+                      setBinCode(value);
+                      if (confirmed && value.trim().toUpperCase() !== confirmed.reference) setConfirmed(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void confirmBin(binTyped.current);
+                      }
+                    }}
+                  />
+                  <button type="button" className="secondary" disabled={busy} onClick={() => void confirmBin(binTyped.current || binCode)}>
+                    Look up
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="receive-code-field">
+                <label htmlFor="receive-new-code">Code</label>
+                <div className="receive-code-controls">
+                  <FastInput
+                    id="receive-new-code"
+                    className="receive-bin-code"
+                    value={codeMode === "next" ? "" : typedCode}
+                    syncKey={codeHeld}
+                    maxLength={10}
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    placeholder={codeMode === "next" ? "Next" : `20000-${suffix}`}
+                    disabled={busy || codeMode === "next"}
+                    onDraft={(value) => {
+                      codeTyped.current = value;
+                    }}
+                    onValue={setTypedCode}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void onCreate();
+                      }
+                    }}
+                  />
+                  <button type="button" className="secondary" disabled={busy} onClick={() => void onCreate()}>
+                    Create
+                  </button>
+                </div>
+              </div>
+            )}
+            <label className="receive-line-qty" htmlFor="receive-qty">
+              <span>Qty</span>
+              <input
+                id="receive-qty"
+                className="num-input"
+                value={qty}
+                inputMode="numeric"
+                autoComplete="off"
+                disabled={busy}
+                onChange={(event) => setQty(event.target.value)}
+              />
+            </label>
           </div>
 
-          {binMode === "existing" ? (
-            <div className="field-with-action">
-              <label htmlFor="receive-bin">
-                <span>Bin code</span>
-                <FastInput
-                  id="receive-bin"
-                  value={binCode}
-                  syncKey={binHeld}
-                  autoComplete="off"
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                  disabled={busy}
-                  onDraft={(value) => {
-                    binTyped.current = value;
-                  }}
-                  onValue={(value) => {
-                    setBinCode(value);
-                    if (confirmed && value.trim().toUpperCase() !== confirmed.reference) setConfirmed(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void confirmBin(binTyped.current);
-                    }
-                  }}
-                />
-              </label>
-              <button type="button" className="secondary" disabled={busy} onClick={() => void confirmBin(binTyped.current || binCode)}>
-                Look up
-              </button>
-            </div>
-          ) : (
-            <div>
-              <div className="label-segments" role="group" aria-label="Bin suffix">
+          {binMode === "new" ? (
+            <div className="receive-new-options">
+              <div className="label-segments receive-segments" role="group" aria-label="Bin suffix">
                 {BIN_TYPES.map((type) => (
                   <button
                     key={type.id}
@@ -602,7 +748,7 @@ export function ReceivingPage() {
                   </button>
                 ))}
               </div>
-              <div className="label-segments" role="group" aria-label="Bin code source">
+              <div className="label-segments receive-segments" role="group" aria-label="Bin code source">
                 <button type="button" aria-pressed={codeMode === "next"} onClick={() => setCodeMode("next")}>
                   Next free code
                 </button>
@@ -610,50 +756,13 @@ export function ReceivingPage() {
                   Type a code
                 </button>
               </div>
-              {codeMode === "typed" ? (
-                <div className="field-with-action">
-                  <label htmlFor="receive-new-code">
-                    <span>Code</span>
-                    <FastInput
-                      id="receive-new-code"
-                      value={typedCode}
-                      syncKey={codeHeld}
-                      autoComplete="off"
-                      autoCapitalize="characters"
-                      spellCheck={false}
-                      placeholder={`20000-${suffix}`}
-                      disabled={busy}
-                      onDraft={(value) => {
-                        codeTyped.current = value;
-                      }}
-                      onValue={setTypedCode}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void onCreate();
-                        }
-                      }}
-                    />
-                  </label>
-                  <button type="button" disabled={busy} onClick={() => void onCreate()}>
-                    Create and print
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <p className="hint">
-                    The next number from the shared counter, with suffix -{suffix}.
-                    {defaultCode ? ` It is placed at ${defaultCode}.` : ""}
-                  </p>
-                  <div className="actions">
-                    <button type="button" disabled={busy} onClick={() => void onCreate()}>
-                      Create and print
-                    </button>
-                  </div>
-                </>
-              )}
+              <p className="hint">
+                {codeMode === "next"
+                  ? `The next number from the shared counter, with suffix -${suffix}.${defaultCode ? ` It is placed at ${defaultCode}.` : ""}`
+                  : `Type a five-digit code, then Create. Suffix -${suffix}.`}
+              </p>
             </div>
-          )}
+          ) : null}
 
           {confirmed ? (
             <p className="hint">
@@ -674,41 +783,109 @@ export function ReceivingPage() {
             </div>
           ) : null}
 
-          <div className="receive-save">
-            <label className="receive-qty" htmlFor="receive-qty">
-              <span>Qty</span>
-              <input
-                id="receive-qty"
-                className="num-input"
-                value={qty}
-                inputMode="numeric"
-                autoComplete="off"
-                disabled={busy}
-                onChange={(event) => setQty(event.target.value)}
-              />
-            </label>
-            <label htmlFor="receive-comment">
-              <span>Comment</span>
-              <input
-                id="receive-comment"
-                value={comment}
-                autoComplete="off"
-                disabled={busy}
-                onChange={(event) => setComment(event.target.value)}
-              />
-            </label>
-          </div>
+          <label className="receive-comment" htmlFor="receive-comment">
+            <span>Comment</span>
+            <input
+              id="receive-comment"
+              value={comment}
+              autoComplete="off"
+              disabled={busy}
+              onChange={(event) => setComment(event.target.value)}
+            />
+          </label>
           {error ? (
             <p className="banner error" role="alert">
               {error}
             </p>
           ) : null}
           <div className="actions">
-            <button type="submit" disabled={busy}>
+            <button id="receive-save" type="submit" disabled={busy}>
               {busy ? "Saving…" : "Save receipt"}
             </button>
           </div>
         </form>
+        </section>
+
+        <section className="card receive-card" id="receive-recent">
+          <h2>Recent entries</h2>
+          <p className="hint">
+            {project.trim()
+              ? `Receipts for ${project.trim()}, newest first.`
+              : "Receipts with no project, newest first."}
+          </p>
+          {entries.length === 0 ? (
+            <p className="hint">{entriesLoading ? "Loading receipts…" : "No receipts for this project yet."}</p>
+          ) : (
+            <>
+              <div className="receive-table-scroll">
+                <table className="receive-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>SKU</th>
+                      <th>Bin</th>
+                      <th className="num">Qty</th>
+                      <th>Comment</th>
+                      <th>Received by</th>
+                      <th>Incoming bin</th>
+                      <th>Originating system</th>
+                      <th className="num">Originating system qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{formatReceivedOn(entry.receivedOn)}</td>
+                        <td className="sku">{entry.sku}</td>
+                        <td className="sku">{entry.bin}</td>
+                        <td className="num">{entry.qty}</td>
+                        <td>{entry.comment ?? ""}</td>
+                        <td>{entry.receivedBy}</td>
+                        <td>{entry.incomingBin ?? ""}</td>
+                        <td>{entry.originatingSystem ?? ""}</td>
+                        <td className="num">{entry.originQty ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <ul className="receive-cards">
+                {entries.map((entry) => (
+                  <li key={`card-${entry.id}`} className="receive-card-row">
+                    <div className="receive-card-top">
+                      <span className="sku">{entry.sku || "—"}</span>
+                      <span className="num">{entry.qty}</span>
+                    </div>
+                    <div className="sku">{entry.bin}</div>
+                    <p>
+                      {formatReceivedOn(entry.receivedOn)}
+                      {entry.receivedBy ? ` · ${entry.receivedBy}` : ""}
+                    </p>
+                    {entry.comment ? <p>{entry.comment}</p> : null}
+                    <p className="hint">
+                      {[entry.incomingBin, entry.originatingSystem, entry.originQty == null ? "" : String(entry.originQty)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {entriesNext != null ? (
+                <div className="actions">
+                  <button
+                    id="receive-load-more"
+                    type="button"
+                    className="secondary"
+                    disabled={entriesLoading}
+                    onClick={() => void loadMoreEntries()}
+                  >
+                    {entriesLoading ? "Loading…" : "Load more"}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </section>
       </div>
       <div className="print-sheet">
         {printJob?.kind === "bin" ? (
