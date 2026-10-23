@@ -140,14 +140,31 @@ export function cycleEventParts(event: {
   return { verb: event.eventType, qty: "", detail: comment.trim() };
 }
 
+const JAN_EMAIL = "jan@deepdiscountservers.com";
+
+function firstLetter(word: string): string {
+  return (word.match(/[A-Za-z]/)?.[0] ?? "").toUpperCase();
+}
+
+/** Two letters. Jan is JD. A first and last name use those initials. Otherwise the first two letters of the email. */
 export function initialsFromPerson(name: string | null, email: string | null): string {
+  const normalizedEmail = (email ?? "").trim().toLowerCase();
+  if (normalizedEmail === JAN_EMAIL) return "JD";
   const words = (name ?? "").trim().split(/\s+/).filter(Boolean);
-  const fromName = words.map((word) => word[0] ?? "").join("").toUpperCase();
-  if (fromName) return fromName.slice(0, 12);
-  const local = (email ?? "").split("@")[0] ?? "";
-  const compact = local.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-  if (compact) return compact.slice(0, 12);
+  if (words.length >= 2) {
+    const first = firstLetter(words[0]);
+    const last = firstLetter(words[words.length - 1]);
+    if (first && last) return `${first}${last}`;
+  }
+  const local = normalizedEmail.split("@")[0] ?? "";
+  const letters = local.replace(/[^A-Za-z]/g, "").toUpperCase();
+  if (letters.length >= 2) return letters.slice(0, 2);
   return "OP";
+}
+
+export function twoLetterInitials(value: string): string | null {
+  const text = value.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(text) ? text : null;
 }
 
 export function locationTypeInputError(input: {

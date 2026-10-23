@@ -9,6 +9,7 @@ import {
   cycleEventParts,
   cycleOpens,
   initialsFromPerson,
+  twoLetterInitials,
   keepExistingCycleDefault,
   keepExistingLocation,
   locationCodeError,
@@ -143,9 +144,14 @@ describe("cycle events", () => {
 });
 
 describe("initials", () => {
-  it("uses the name, then the email", () => {
-    assert.equal(initialsFromPerson("Jan Dierens", "jan@example.com"), "JD");
-    assert.equal(initialsFromPerson(null, "ada.lovelace@example.com"), "ADALOVELACE");
+  it("is exactly two letters", () => {
+    assert.equal(initialsFromPerson("Jan", "jan@deepdiscountservers.com"), "JD");
+    assert.equal(initialsFromPerson("Jan Dierens", "someone@example.com"), "JD");
+    assert.equal(initialsFromPerson("Mayuko Tanaka", "mayuko.tanaka@deepdiscountservers.com"), "MT");
+    assert.equal(initialsFromPerson(null, "ada.lovelace@example.com"), "AD");
     assert.equal(initialsFromPerson("  ", ""), "OP");
+    assert.equal(twoLetterInitials(" jd "), "JD");
+    assert.equal(twoLetterInitials("J"), null);
+    assert.equal(twoLetterInitials("J1"), null);
   });
 });

@@ -2958,6 +2958,60 @@ p.error {
   white-space: nowrap;
 }
 
+.users-page {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.user-initials-card,
+.user-card {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: start;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.user-initials {
+  display: grid;
+  gap: 0.3rem;
+  width: 4.75rem;
+  margin: 0;
+}
+
+.user-initials input {
+  width: 100%;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.users-table-wrap .user-initials > span {
+  display: none;
+}
+
+.users-cards {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.user-card p {
+  margin: 0;
+}
+
+@media (max-width: 800px) {
+  .users-table-wrap {
+    display: none;
+  }
+
+  .users-cards {
+    display: grid;
+    gap: 0.75rem;
+  }
+}
+
 .sidebar-user {
   margin: 0.35rem 0.7rem 0.15rem;
   padding: 0.35rem 0.45rem 0.15rem;

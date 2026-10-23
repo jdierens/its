@@ -10,6 +10,8 @@ The first sign-in creates a pending row in `app_users`. Pending and disabled peo
 
 **Admin > Users** (admins only) approves an account, sets admin, staff, or read only, or disables it. An admin cannot remove their own access, and the last approved admin stays. Read only is recorded and does not block saves yet. That wait is phase 2, below.
 
+Each person has two initials on `app_users.initials`. Jan is `JD`. Anyone else with a first and last name gets those two letters. A name with one word uses the first two letters of the email. New stock, bin, and import rows copy that value through `operator_initials`, which accepts only `^[A-Z]{2}$`. Initials already stored on bins, cycles, and events stay as they were. An admin edits the two letters on the users screen. The field is two characters, and what you type is shown in capitals.
+
 Creating or editing an item, changing its taxonomy, saving a price quote, or recording a transaction stores the signed-in user id when the request has a session. Bins do the same when that table is present. A request with no user, which is how the copy deployed today writes, leaves those columns empty.
 
 ## Google Cloud and Supabase Auth
