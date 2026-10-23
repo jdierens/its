@@ -33,10 +33,13 @@ export function parseReceivingBinCode(
   return { number, type, reference: `${digits}-${type}` };
 }
 
+const BIN_KIND: Record<BinType, string> = { B: "box", C: "crate", P: "pallet" };
+
 export function typedBinCodeError(value: string, suffix: BinType): string | null {
   const parsed = parseReceivingBinCode(value);
-  if (!parsed || parsed.type !== suffix) {
-    return "A bin code is five digits, a hyphen, and B, C, or P.";
+  if (!parsed) return "A bin code is five digits, a hyphen, and B, C, or P.";
+  if (parsed.type !== suffix) {
+    return `Code ${parsed.reference} is a ${BIN_KIND[parsed.type]}, but ${binTypeLabel(suffix)} is selected.`;
   }
   return null;
 }
