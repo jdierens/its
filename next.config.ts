@@ -27,6 +27,7 @@ const sha = process.env.VERCEL_GIT_COMMIT_SHA || gitValue("git rev-parse HEAD") 
 const ref = process.env.VERCEL_GIT_COMMIT_REF || gitValue("git rev-parse --abbrev-ref HEAD") || "dev";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
     NEXT_PUBLIC_GIT_SHA: sha,

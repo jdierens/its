@@ -114,7 +114,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         label: "Settings",
         href: "/admin/settings",
-        description: "Pricing window, labels, bin numbers, and other app settings.",
+        description: "Pricing window, labels, bin numbers, and put-away defaults.",
       },
       {
         label: "Integrations",

@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/components/ComingSoon";
+import { ReceivingPage } from "@/components/ReceivingPage";
 
-export default function ReceivingPage() {
-  return <ComingSoon description="Receive purchase orders into inventory." />;
+export default function Page() {
+  return <ReceivingPage />;
 }

@@ -104,6 +104,25 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   useEffect(() => {
+    if (!drawerOpen) return;
+    function closeIfOutside(event: Event) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const sidebar = document.querySelector(".sidebar");
+      const toggle = document.querySelector(".nav-toggle");
+      if (sidebar?.contains(target) || toggle?.contains(target)) return;
+      event.preventDefault();
+      setDrawerOpen(false);
+    }
+    document.addEventListener("pointerdown", closeIfOutside);
+    document.addEventListener("touchstart", closeIfOutside, { passive: false });
+    return () => {
+      document.removeEventListener("pointerdown", closeIfOutside);
+      document.removeEventListener("touchstart", closeIfOutside);
+    };
+  }, [drawerOpen]);
+
+  useEffect(() => {
     if (isPublicPath(pathname) || pathname === "/login" || pathname === "/waiting") return;
     let cancelled = false;
     fetchCurrentAppUser()
@@ -169,6 +188,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             type="button"
             className="shell-backdrop"
             aria-label="Close menu"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              setDrawerOpen(false);
+            }}
             onClick={() => setDrawerOpen(false)}
           />
         ) : null}
@@ -223,29 +246,31 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             ))}
           </nav>
-          <SignedInUser label={account?.name || account?.email || ""} />
-          <div className="sidebar-legal">
-            <Link href="/privacy" title="Privacy Policy">
-              Privacy
-            </Link>
-            <Link href="/terms" title="Terms of Use">
-              Terms
-            </Link>
+          <div className="sidebar-foot">
+            <SignedInUser label={account?.name || account?.email || ""} />
+            <div className="sidebar-legal">
+              <Link href="/privacy" title="Privacy Policy">
+                Privacy
+              </Link>
+              <Link href="/terms" title="Terms of Use">
+                Terms
+              </Link>
+            </div>
+            <button
+              type="button"
+              className="sidebar-collapse"
+              aria-pressed={collapsed}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={toggleCollapsed}
+            >
+              {collapsed ? (
+                <PanelLeftOpen size={18} strokeWidth={1.75} aria-hidden />
+              ) : (
+                <PanelLeftClose size={18} strokeWidth={1.75} aria-hidden />
+              )}
+              <span className="nav-label">{collapsed ? "Expand" : "Collapse"}</span>
+            </button>
           </div>
-          <button
-            type="button"
-            className="sidebar-collapse"
-            aria-pressed={collapsed}
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={toggleCollapsed}
-          >
-            {collapsed ? (
-              <PanelLeftOpen size={18} strokeWidth={1.75} aria-hidden />
-            ) : (
-              <PanelLeftClose size={18} strokeWidth={1.75} aria-hidden />
-            )}
-            <span className="nav-label">{collapsed ? "Expand" : "Collapse"}</span>
-          </button>
         </aside>
         <div className="shell-body">
           <header className="shell-top no-print">
