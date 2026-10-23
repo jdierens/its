@@ -4192,67 +4192,90 @@ nextjs-portal {
 }
 
 .receive-table-scroll {
-  overflow: hidden;
-  max-width: 100%;
+  display: block;
+  width: 0;
+  min-width: 100%;
+  overflow-x: auto;
   margin-top: 0.75rem;
 }
 
 .receive-table {
-  width: 100%;
-  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
 }
 
 .receive-table th,
 .receive-table td {
-  padding: 0.4rem 0.3rem;
+  padding: 3px 6px;
   vertical-align: bottom;
 }
 
 .receive-table td {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
 }
 
 .receive-table th {
   font-size: 0.72rem;
   letter-spacing: 0.01em;
   line-height: 1.2;
+  text-transform: none;
   white-space: normal;
-  overflow-wrap: break-word;
-  hyphens: manual;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
 }
 
-.receive-table th:nth-child(1),
-.receive-table td:nth-child(1) { width: 8%; }
-.receive-table th:nth-child(2),
-.receive-table td:nth-child(2) { width: 7%; }
-.receive-table th:nth-child(3),
-.receive-table td:nth-child(3) { width: 10%; }
-.receive-table th:nth-child(4),
-.receive-table td:nth-child(4) { width: 12%; }
-.receive-table th:nth-child(5),
-.receive-table td:nth-child(5) { width: 12%; }
-.receive-table th:nth-child(6),
-.receive-table td:nth-child(6) { width: 10%; }
-.receive-table th:nth-child(7),
-.receive-table td:nth-child(7) { width: 8%; }
-.receive-table th:nth-child(8),
-.receive-table td:nth-child(8) { width: 14%; }
-.receive-table th:nth-child(9),
-.receive-table td:nth-child(9) { width: 6%; }
-.receive-table th:nth-child(10),
-.receive-table td:nth-child(10) { width: 13%; }
+.receive-table th.fit,
+.receive-table td.fit,
+.receive-table th.origin,
+.receive-table td.origin {
+  width: 1%;
+}
+
+.receive-table td.fit,
+.receive-table td.origin {
+  white-space: nowrap;
+}
+
+.receive-table th.origin,
+.receive-table td.origin {
+  min-width: 12ch;
+}
+
+.receive-table th.num.fit,
+.receive-table td.num.fit {
+  min-width: 3.25rem;
+}
+
+.receive-table td.item {
+  width: 60ch;
+  min-width: 60ch;
+  max-width: 60ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receive-table th.note,
+.receive-table td.note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receive-table td.note {
+  min-width: 16ch;
+}
 
 .receive-table td.initials,
 .receive-card-row dd.initials,
 .receive-edit input.initials {
   font-weight: 600;
   letter-spacing: 0.04em;
-}
-
-.receive-table td:first-child {
-  white-space: normal;
 }
 
 /* .receive-row is the receipt form grid. Recent entries use this row. */
