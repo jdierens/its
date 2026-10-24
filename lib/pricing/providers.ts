@@ -7,7 +7,6 @@ import {
 } from "@/lib/pricing/quotes";
 
 export const EBAY_APP_SCOPE = "https://api.ebay.com/oauth/api_scope";
-export const EBAY_BROWSE_SCOPE = "https://api.ebay.com/oauth/api_scope/buy.browse";
 export const EBAY_INSIGHTS_SCOPE = "https://api.ebay.com/oauth/api_scope/buy.marketplace.insights";
 
 const LISTED_LIMIT = 25;
@@ -58,7 +57,7 @@ async function ebayListed(query: string, env: PricingEnv, fetchImpl?: typeof fet
   const ready = ebayReady(env);
   if (!ready.ok) return { ...base, status: "error", message: ready.message };
   try {
-    const token = await applicationToken(ready, `${EBAY_APP_SCOPE} ${EBAY_BROWSE_SCOPE}`, fetchImpl);
+    const token = await applicationToken(ready, EBAY_APP_SCOPE, fetchImpl);
     const url = new URL(`${apiBase(ready.environment)}/buy/browse/v1/item_summary/search`);
     url.searchParams.set("q", query);
     url.searchParams.set("limit", String(LISTED_LIMIT));

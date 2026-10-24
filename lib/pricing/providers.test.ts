@@ -13,9 +13,9 @@ test("listed prices run, sold prices stay off, and BrokerBin stays off without a
     const url = String(input);
     if (url.includes("/identity/v1/oauth2/token")) {
       const body = String(init?.body ?? "");
-      assert.match(body, /client_credentials/);
-      assert.match(body, /api_scope/);
-      assert.match(body, /buy\.browse/);
+      const fields = new URLSearchParams(body);
+      assert.equal(fields.get("grant_type"), "client_credentials");
+      assert.equal(fields.get("scope"), "https://api.ebay.com/oauth/api_scope");
       return json({ access_token: "app-token", expires_in: 7200 });
     }
     assert.match(url, /item_summary\/search/);
@@ -48,10 +48,15 @@ test("listed prices run, sold prices stay off, and BrokerBin stays off without a
 
 test("Marketplace Insights runs only when the flag is on", async () => {
   const urls: string[] = [];
-  const fetchImpl: typeof fetch = async (input) => {
+  const scopes: string[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
     const url = String(input);
     urls.push(url);
-    if (url.includes("/oauth2/token")) return json({ access_token: "insights-token", expires_in: 7200 });
+    if (url.includes("/oauth2/token")) {
+      const fields = new URLSearchParams(String(init?.body ?? ""));
+      scopes.push(fields.get("scope") ?? "");
+      return json({ access_token: "insights-token", expires_in: 7200 });
+    }
     return json({
       itemSales: [{ title: "Sold", lastSoldPrice: { value: "22.00", currency: "USD" }, totalSoldQuantity: 2 }],
     });
@@ -68,6 +73,10 @@ test("Marketplace Insights runs only when the flag is on", async () => {
   assert.equal(broker?.status, "ran");
   assert.match(broker?.message ?? "", /not connected/);
   assert.ok(urls.some((url) => url.includes("item_sales/search")));
+  assert.deepEqual(scopes, [
+    "https://api.ebay.com/oauth/api_scope",
+    "https://api.ebay.com/oauth/api_scope/buy.marketplace.insights",
+  ]);
 });
 
 test("a missing eBay key is an error and does not call the network", async () => {
