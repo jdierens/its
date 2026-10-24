@@ -5363,3 +5363,135 @@ input.num-input {
     min-height: 1.25rem;
   }
 }
+
+.kit-panel .code-badge {
+  margin-left: 0.35rem;
+}
+
+.kit-page h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+.kit-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.kit-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.kit-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.kit-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kit-table th,
+.kit-table td {
+  padding: 0.4rem 0.35rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.kit-table input {
+  width: 100%;
+  min-width: 4rem;
+}
+
+.kit-add,
+.kit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.kit-choices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.kit-check {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+}
+
+.kit-check input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.kit-swapped td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.kit-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.kit-tabs button {
+  min-height: 44px;
+}
+
+@media (max-width: 800px) {
+  .kit-panel input,
+  .kit-panel select,
+  .kit-panel textarea {
+    font-size: 16px;
+  }
+
+  .kit-panel button,
+  .kit-actions button,
+  .kit-tabs button {
+    min-height: 44px;
+  }
+
+  .kit-table thead {
+    display: none;
+  }
+
+  .kit-table,
+  .kit-table tbody,
+  .kit-table tr,
+  .kit-table td {
+    display: block;
+    width: auto;
+  }
+
+  .kit-table tr {
+    padding: 0.35rem 0 0.65rem;
+  }
+
+  .kit-table td {
+    border: none;
+    padding: 0.2rem 0;
+  }
+
+  .kit-table td[data-label]:not([data-label=""])::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.15rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  .kit-table input {
+    min-width: 0;
+  }
+}

@@ -154,6 +154,7 @@ export function ItemsTable() {
   const condition = conditionParam === "New" || conditionParam === "Used" ? conditionParam : "";
   const typeParam = params.get("type") ?? "";
   const itemType = isItemType(typeParam) ? typeParam : "";
+  const genericOnly = params.get("generic") === "1";
   const manufacturerId = params.get("mfr") ?? "";
   const sort = parseItemSort(params.get("sort"), params.get("dir"));
   const page = parseItemPage(params.get("page"));
@@ -238,7 +239,7 @@ export function ItemsTable() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchItemList({ tax, q, condition, manufacturerId, itemType, sort: sort.column, dir: sort.ascending ? "asc" : "desc", page })
+    fetchItemList({ tax, q, condition, manufacturerId, itemType, generic: genericOnly ? "1" : null, sort: sort.column, dir: sort.ascending ? "asc" : "desc", page })
       .then((result) => {
         if (cancelled) return;
         setRows(result.rows);
@@ -268,7 +269,7 @@ export function ItemsTable() {
     return () => {
       cancelled = true;
     };
-  }, [tax, q, condition, manufacturerId, itemType, sort.column, sort.ascending, page, pathname, router]);
+  }, [tax, q, condition, manufacturerId, itemType, genericOnly, sort.column, sort.ascending, page, pathname, router]);
 
   useEffect(() => {
     if (!active || editing) return;
@@ -573,6 +574,14 @@ export function ItemsTable() {
           ))}
         </select>
         <select
+          aria-label="Filter generic parts"
+          value={genericOnly ? "1" : ""}
+          onChange={(event) => setParam("generic", event.target.value)}
+        >
+          <option value="">All parts</option>
+          <option value="1">Generic only</option>
+        </select>
+        <select
           aria-label="Filter by manufacturer"
           value={manufacturers.some((maker) => maker.id === manufacturerId) ? manufacturerId : ""}
           onChange={(event) => setParam("mfr", event.target.value)}
@@ -852,6 +861,11 @@ export function ItemsTable() {
                           >
                             {item.productUrl}
                           </a>
+                        ) : column.id === "name" ? (
+                          <span>
+                            {displayValue(item, column.id, countries)}
+                            {item.isGeneric ? <span className="code-badge">Generic</span> : null}
+                          </span>
                         ) : (
                           displayValue(item, column.id, countries)
                         )}
