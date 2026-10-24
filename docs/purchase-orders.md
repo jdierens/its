@@ -188,7 +188,7 @@ Test results hang off the serial (the unit), not off the SKU. A later listing ro
 | Column | Notes |
 |---|---|
 | `id` | uuid |
-| `number` | unique, from a PO counter, same idea as `sku_counter` |
+| `number` | unique text. `reserve_purchase_order_number()` returns `PO` plus the integer, with no hyphen, for example `PO6304`. The purchase-order screen shows that stored value |
 | `vendor_id` | seller or consignor |
 | `project_id` | nullable |
 | `purpose` | `purchase`, `settlement`, `buyout` |
@@ -212,6 +212,10 @@ Freight-in is stored for a later landed-cost allocation. That allocation is not 
 `po_shipments` is one tracking number on the order: `carrier` (`UPS`, `FedEx`, `USPS`, `DHL`, `Freight`, or `Other`) and `tracking_number`. A purchase order can have several, because it can arrive in more than one shipment. Tracking can be added after the order is sent. A later receipt references `po_shipments.id`, and saving the list again keeps that id when the carrier and number stay the same. Parcel carriers open a tracking page. Freight and Other do not. Tracking is not money.
 
 `po_attachments` stores PDF files on the order. The type is `vendor_invoice`, `quote`, `order_confirmation`, or `other`. There is no customer-document type. The bytes live in the private `po-documents` bucket. The server creates a signed URL for someone who can see money. A role without `can_view_financials` receives no attachment rows and no signed URL. That is true for every current type: a vendor invoice and a quote are the bill and the offer, an order confirmation repeats those prices, and an unlabeled file may be an invoice. Row level security is on, and only `service_role` can read the table. The bucket has no anon or authenticated policy.
+
+## Go-live number
+
+`supabase/migrations/20261024080000_po_number_format.sql` replaces the hyphenated number with `PO` plus the integer. The go-live step in that file sets `po_counter.next_number` to 6304 when the counter is still below 6304. The first purchase order issued after that step is `PO6304`. The statement does not renumber or delete purchase orders that already exist. A test row such as `PO-1` keeps the number it has. Remove or renumber those test rows separately if they should not stay.
 
 `po_lines.line_kind` is `known` or `lot`.
 
