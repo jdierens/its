@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, ScanBarcode, Shapes, Trash2 } from "lucide-react";
+import { Camera, Copy, ScanBarcode, Shapes, Trash2 } from "lucide-react";
 import {
   AttributeValueField,
   attributeValueError,
@@ -14,7 +14,7 @@ import { ChangeTaxonomyDialog } from "@/components/ChangeTaxonomyDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CountrySelect } from "@/components/CountrySelect";
 import { FastArea, FastInput } from "@/components/FastField";
-import { ItemGallery, type PendingImage } from "@/components/ItemGallery";
+import { ITEM_CAMERA_INPUT_ID, ItemGallery, type PendingImage } from "@/components/ItemGallery";
 import { ItemRecipe } from "@/components/ItemRecipe";
 import { UsedInKits } from "@/components/UsedInKits";
 import { setItemGeneric } from "@/lib/kits";
@@ -817,6 +817,9 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         {mode === "edit" && itemId ? (
           <>
             <ToolbarButton icon={Copy} label="Duplicate" href={`/items/new?from=${itemId}`} disabled={saving || deleting} />
+            <label className="icon-button" htmlFor={ITEM_CAMERA_INPUT_ID} title="Take photo" aria-label="Take photo">
+              <Camera size={18} strokeWidth={1.75} aria-hidden />
+            </label>
             <ToolbarButton icon={ScanBarcode} label="Print label" onClick={() => void onPrint()} disabled={saving || deleting} />
             <ToolbarButton
               icon={Shapes}
