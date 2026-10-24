@@ -71,6 +71,7 @@ export type ItemListRow = {
   msrp: string | null;
   updatedAt: string;
   fields: Record<string, string>;
+  isGeneric: boolean;
 };
 
 export type ItemList = {
@@ -111,6 +112,7 @@ export type ItemDetail = {
   ccats: string;
   coo: string;
   notes: string;
+  isGeneric: boolean;
   attributes: Record<string, string>;
   attributeLinks: { id: string; name: string; value: string }[];
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, ChevronsLeft, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Plus } from "lucide-react";
 import { ItemExportMenu } from "@/components/ItemExportMenu";
 import { ItemsIconButton } from "@/components/ItemsIconButton";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -25,6 +25,7 @@ import { ITEM_TYPES, SEEDED_UNITS, countryLabel, isItemType, NEW_CONDITION_NOTES
 import {
   ITEM_PAGE_SIZE,
   isSortableColumn,
+  lastItemPage,
   parseItemPage,
   parseItemSort,
   toggleItemSort,
@@ -153,6 +154,7 @@ export function ItemsTable() {
   const condition = conditionParam === "New" || conditionParam === "Used" ? conditionParam : "";
   const typeParam = params.get("type") ?? "";
   const itemType = isItemType(typeParam) ? typeParam : "";
+  const genericOnly = params.get("generic") === "1";
   const manufacturerId = params.get("mfr") ?? "";
   const sort = parseItemSort(params.get("sort"), params.get("dir"));
   const page = parseItemPage(params.get("page"));
@@ -237,7 +239,7 @@ export function ItemsTable() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchItemList({ tax, q, condition, manufacturerId, itemType, sort: sort.column, dir: sort.ascending ? "asc" : "desc", page })
+    fetchItemList({ tax, q, condition, manufacturerId, itemType, generic: genericOnly ? "1" : null, sort: sort.column, dir: sort.ascending ? "asc" : "desc", page })
       .then((result) => {
         if (cancelled) return;
         setRows(result.rows);
@@ -267,7 +269,7 @@ export function ItemsTable() {
     return () => {
       cancelled = true;
     };
-  }, [tax, q, condition, manufacturerId, itemType, sort.column, sort.ascending, page, pathname, router]);
+  }, [tax, q, condition, manufacturerId, itemType, genericOnly, sort.column, sort.ascending, page, pathname, router]);
 
   useEffect(() => {
     if (!active || editing) return;
@@ -572,6 +574,14 @@ export function ItemsTable() {
           ))}
         </select>
         <select
+          aria-label="Filter generic parts"
+          value={genericOnly ? "1" : ""}
+          onChange={(event) => setParam("generic", event.target.value)}
+        >
+          <option value="">All parts</option>
+          <option value="1">Generic only</option>
+        </select>
+        <select
           aria-label="Filter by manufacturer"
           value={manufacturers.some((maker) => maker.id === manufacturerId) ? manufacturerId : ""}
           onChange={(event) => setParam("mfr", event.target.value)}
@@ -596,24 +606,32 @@ export function ItemsTable() {
           {loading && rows.length === 0 ? "Loading items…" : itemRange(listPage, matched, total)}
         </p>
         <div className="items-actions">
-          <ItemsIconButton
-            label="First page"
-            icon={ChevronsLeft}
-            disabled={listPage <= 1 || loading}
-            onClick={() => setPage(1)}
-          />
-          <ItemsIconButton
-            label="Previous page"
-            icon={ChevronLeft}
-            disabled={listPage <= 1 || loading}
-            onClick={() => setPage(listPage - 1)}
-          />
-          <ItemsIconButton
-            label="Next page"
-            icon={ChevronRight}
-            disabled={loading || listPage * ITEM_PAGE_SIZE >= matched}
-            onClick={() => setPage(listPage + 1)}
-          />
+          <nav className="items-pager" aria-label="Pages">
+            <ItemsIconButton
+              label="First page"
+              icon={ChevronsLeft}
+              disabled={listPage <= 1 || loading}
+              onClick={() => setPage(1)}
+            />
+            <ItemsIconButton
+              label="Previous page"
+              icon={ChevronLeft}
+              disabled={listPage <= 1 || loading}
+              onClick={() => setPage(listPage - 1)}
+            />
+            <ItemsIconButton
+              label="Next page"
+              icon={ChevronRight}
+              disabled={loading || listPage >= lastItemPage(matched)}
+              onClick={() => setPage(listPage + 1)}
+            />
+            <ItemsIconButton
+              label="Last page"
+              icon={ChevronsRight}
+              disabled={loading || listPage >= lastItemPage(matched)}
+              onClick={() => setPage(lastItemPage(matched))}
+            />
+          </nav>
           <ItemExportMenu
             tax={tax}
             q={q}
@@ -842,6 +860,11 @@ export function ItemsTable() {
                           >
                             {item.productUrl}
                           </a>
+                        ) : column.id === "name" ? (
+                          <span>
+                            {displayValue(item, column.id, countries)}
+                            {item.isGeneric ? <span className="code-badge">Generic</span> : null}
+                          </span>
                         ) : (
                           displayValue(item, column.id, countries)
                         )}

@@ -90,6 +90,7 @@ type ItemRow = {
   ccats: string | null;
   coo: string | null;
   item_type: string | null;
+  is_generic?: boolean | null;
   manufacturers: EmbeddedAttribute;
   item_attributes: ItemAttributeRow[] | null;
 };
@@ -125,6 +126,7 @@ type ListRow = {
   ccats: string | null;
   coo: string | null;
   item_type: string | null;
+  is_generic?: boolean | null;
   updated_at: string | null;
   ecommerce_price?: unknown;
   market_price?: unknown;
@@ -136,7 +138,7 @@ type ListRow = {
 };
 
 const LIST_DETAIL =
-  "id, sku, name, item_type, quantity, manufacturer_id, model, part_number, oem_name, oem_part_number, product_url, unit, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
+  "id, sku, name, item_type, is_generic, quantity, manufacturer_id, model, part_number, oem_name, oem_part_number, product_url, unit, condition, condition_note, eccn, us_hts, ccats, coo, updated_at, manufacturers(name), taxonomies(name, short_code), item_images(storage_path, sort_order), item_attributes(value, attributes(name))";
 
 const PRICE_COLUMNS = ["ecommerce_price", "market_price", "msrp"] as const;
 
@@ -275,6 +277,7 @@ export async function resolveItemQuery(input: {
   condition?: string | null;
   manufacturerId?: string | null;
   itemType?: string | null;
+  generic?: string | null;
 }): Promise<ResolvedItemQuery> {
   const supabase = await getSupabase();
   const tax = input.tax?.trim().toUpperCase() ?? "";
@@ -425,6 +428,28 @@ export async function resolveItemQuery(input: {
     }
   }
 
+  if (input.generic === "1") {
+    let genericQuery = supabase.from("items").select("id").eq("is_generic", true);
+    if (taxonomyId) genericQuery = genericQuery.eq("taxonomy_id", taxonomyId);
+    const genericRows = await genericQuery;
+    if (genericRows.error) throw new Error(errorText(genericRows.error));
+    const genericIds = new Set((genericRows.data ?? []).map((row) => String(row.id)));
+    const next = ids ? ids.filter((id) => genericIds.has(id)) : [...genericIds];
+    if (next.length === 0) {
+      return {
+        taxonomyId,
+        columns,
+        ids: [],
+        condition,
+        manufacturerId: manufacturerId || null,
+        itemType,
+        unknownTax: false,
+        empty: true,
+      };
+    }
+    ids = next;
+  }
+
   return {
     taxonomyId,
     columns,
@@ -443,6 +468,7 @@ export async function fetchItemList(input: {
   condition?: string | null;
   manufacturerId?: string | null;
   itemType?: string | null;
+  generic?: string | null;
   sort?: string | null;
   dir?: string | null;
   page?: number | null;
@@ -452,7 +478,7 @@ export async function fetchItemList(input: {
   if (counted.error) throw new Error(errorText(counted.error));
   const total = counted.count ?? 0;
 
-  const resolved = await resolveItemQuery(input);
+  const resolved = await resolveItemQuery({ ...input, generic: input.generic });
   if (resolved.unknownTax) return { rows: [], total, matched: 0, page: 1, columns: [], pricing: false, unknownTax: true };
   if (resolved.empty) return { rows: [], total, matched: 0, page: 1, columns: resolved.columns, pricing: false, unknownTax: false };
 
@@ -609,6 +635,7 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
     msrp: moneyText(item.msrp),
     updatedAt: item.updated_at ?? "",
     fields,
+    isGeneric: Boolean(item.is_generic),
   };
 }
 
@@ -669,7 +696,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
   const { data, error } = await (await getSupabase())
     .from("items")
     .select(
-      "id, sku, name, description, notes, item_type, quantity, taxonomy_id, manufacturer_id, model, part_number, oem_name, oem_part_number, product_url, unit, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
+      "id, sku, name, description, notes, item_type, is_generic, quantity, taxonomy_id, manufacturer_id, model, part_number, oem_name, oem_part_number, product_url, unit, condition, condition_note, eccn, us_hts, ccats, coo, manufacturers(name), item_attributes(value, attribute_id, attributes(name))",
     )
     .eq("id", id)
     .maybeSingle();
@@ -713,6 +740,7 @@ export async function fetchItem(id: string): Promise<ItemDetail | null> {
     ccats: item.ccats ?? "",
     coo: item.coo ?? "",
     notes: item.notes ?? "",
+    isGeneric: Boolean(item.is_generic),
     attributes,
     attributeLinks,
   };
