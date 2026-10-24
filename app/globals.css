@@ -1827,8 +1827,22 @@ button.danger {
   min-width: 12rem;
 }
 
-.items-search {
+.items-search-wrap {
+  display: flex;
+  flex-direction: column;
+  align-self: flex-start;
+  gap: 0.1rem;
   width: min(320px, 100%);
+  min-width: 0;
+}
+
+.items-search {
+  width: 100%;
+}
+
+.items-search-note {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .items-toolbar .button {
@@ -2964,6 +2978,7 @@ tr.quote-latest td {
   }
 
   .items-toolbar select,
+  .items-search-wrap,
   .items-search,
   .items-count {
     width: 100%;

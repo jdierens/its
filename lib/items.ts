@@ -3,6 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ebayPresenceForItems, itemIdsMatchingEbayItemId } from "@/lib/ebay/listings";
 import { errorText } from "@/lib/errors";
+import { itemListQueryToken } from "@/lib/itemListQuery";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { signedImageUrls } from "@/lib/images";
@@ -368,8 +369,9 @@ export async function resolveItemQuery(input: {
   }
 
   let ids: string[] | null = null;
-  if (q) {
-    const pattern = likePattern(q);
+  const searchText = itemListQueryToken(q);
+  if (searchText) {
+    const pattern = likePattern(searchText);
     const textQueries = (["sku", "name", "description", "model", "part_number", "oem_name", "oem_part_number", "product_url"] as const).map((column) => {
       let query = supabase.from("items").select("id").ilike(column, pattern);
       if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);

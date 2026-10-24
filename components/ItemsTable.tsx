@@ -11,6 +11,7 @@ import { BulkEditBar, type BulkField } from "@/components/BulkEditBar";
 import { CellEditor } from "@/components/CellEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { errorText } from "@/lib/errors";
+import { itemListSearchNote } from "@/lib/itemListQuery";
 import {
   cellKeyAction,
   editedLabel,
@@ -536,6 +537,7 @@ export function ItemsTable() {
   }
 
   const knownTax = choices.some((choice) => choice.shortCode === tax);
+  const searchNote = itemListSearchNote(q);
   const visibleIds = rows.map((row) => row.id);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
 
@@ -595,15 +597,18 @@ export function ItemsTable() {
             </option>
           ))}
         </select>
-        <QueryField
-          inputRef={searchRef}
-          className="items-search"
-          type="search"
-          aria-label="Search items"
-          placeholder="Search SKU, name, manufacturer, model, part number, eBay item id"
-          value={q}
-          onCommit={commitSearch}
-        />
+        <div className="items-search-wrap">
+          <QueryField
+            inputRef={searchRef}
+            className="items-search"
+            type="search"
+            aria-label="Search items"
+            placeholder="Search SKU, name, manufacturer, model, part number, eBay item id"
+            value={q}
+            onCommit={commitSearch}
+          />
+          {searchNote ? <p className="hint items-search-note">{searchNote}</p> : null}
+        </div>
         <p className="items-count">
           {loading && rows.length === 0 ? "Loading items…" : itemRange(listPage, matched, total)}
         </p>
