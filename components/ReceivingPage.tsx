@@ -7,6 +7,7 @@ import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { ReceiptRowEditor } from "@/components/ReceiptRowEditor";
+import { ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, type BinType } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
@@ -27,9 +28,11 @@ import {
   listReceivingEntries,
   receiveIntoBin,
   receivingClerkInitials,
+  recentReceivingProjects,
   searchReceivingScan,
   suggestBins,
 } from "@/lib/receivingActions";
+import { distinctRecentProjects, projectToRestore, readStoredProject, writeStoredProject } from "@/lib/receivingProjects";
 import { scanSearchNote } from "@/lib/receivingScan";
 import {
   RECEIVING_DATE_EDITABLE,
@@ -86,6 +89,9 @@ export function ReceivingPage() {
   const [settledQuery, setSettledQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [project, setProject] = useState("");
+  const [recentProjects, setRecentProjects] = useState<string[]>([]);
+  const [projectReady, setProjectReady] = useState(false);
+  const [projectStorageKey, setProjectStorageKey] = useState<string | null>(null);
   const [receivedOn, setReceivedOn] = useState("");
   const [incomingTag, setIncomingTag] = useState("");
   const [origin, setOrigin] = useState("");
@@ -151,6 +157,30 @@ export function ReceivingPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    void recentReceivingProjects()
+      .then((recent) => {
+        if (cancelled) return;
+        setRecentProjects(recent.projects);
+        setProjectStorageKey(recent.storageKey);
+        const stored = readStoredProject(window.localStorage, recent.storageKey);
+        setProject(projectToRestore(stored, recent.latest));
+        setProjectReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setProjectReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!projectReady || !projectStorageKey) return;
+    writeStoredProject(window.localStorage, projectStorageKey, project);
+  }, [project, projectReady, projectStorageKey]);
+
+  useEffect(() => {
     if (!item) {
       setSuggestions([]);
       return;
@@ -182,6 +212,7 @@ export function ReceivingPage() {
   }, [focusSku]);
 
   useEffect(() => {
+    if (!projectReady) return;
     let cancelled = false;
     const handle = window.setTimeout(() => {
       setEntriesLoading(true);
@@ -202,7 +233,7 @@ export function ReceivingPage() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [project, listStamp]);
+  }, [project, listStamp, projectReady]);
 
   async function loadMoreEntries() {
     if (entriesNext == null) return;
@@ -470,9 +501,24 @@ export function ReceivingPage() {
       setScanRaw(null);
       setScanNote(null);
       setFocusSku((current) => current + 1);
+      if (project.trim()) {
+        setRecentProjects((current) =>
+          distinctRecentProjects([{ project }, ...current.map((name) => ({ project: name }))]),
+        );
+      }
       const page = await listReceivingEntries(project, 0);
       setEntries(page.rows);
       setEntriesNext(page.nextOffset);
+      void recentReceivingProjects()
+        .then((recent) => {
+          setRecentProjects((current) =>
+            distinctRecentProjects([
+              ...current.map((name) => ({ project: name })),
+              ...recent.projects.map((name) => ({ project: name })),
+            ]),
+          );
+        })
+        .catch(() => undefined);
       releaseSave(true);
     } catch (saveError) {
       setError(errorText(saveError));
@@ -515,16 +561,12 @@ export function ReceivingPage() {
         <section className="card receive-card" id="receive-header">
           <h2>Receipt</h2>
           <div className="receive-header-grid">
-            <label htmlFor="receive-project">
-              <span>Project</span>
-              <input
-                id="receive-project"
-                value={project}
-                autoComplete="off"
-                disabled={busy}
-                onChange={(event) => setProject(event.target.value)}
-              />
-            </label>
+            <ReceivingProjectField
+              value={project}
+              projects={recentProjects}
+              disabled={busy || !projectReady}
+              onChange={setProject}
+            />
             <label htmlFor="receive-date">
               <span>Receiving date</span>
               <input
@@ -888,7 +930,9 @@ export function ReceivingPage() {
             Tap a row to correct it. Every edit records initials.
           </p>
           {entries.length === 0 ? (
-            <p className="hint">{entriesLoading ? "Loading receipts…" : "No receipts for this project yet."}</p>
+            <p className="hint">
+              {!projectReady || entriesLoading ? "Loading receipts…" : "No receipts for this project yet."}
+            </p>
           ) : (
             <>
               <div className="receive-table-scroll">

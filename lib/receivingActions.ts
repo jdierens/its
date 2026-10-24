@@ -8,6 +8,12 @@ import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import type { LabelItem } from "@/lib/types";
 import { scanTokensInSearchOrder } from "@/lib/receivingScan";
 import {
+  RECENT_PROJECT_SCAN,
+  distinctRecentProjects,
+  recentProjectStorageKey,
+  type RecentProjectRow,
+} from "@/lib/receivingProjects";
+import {
   RECEIVING_PAGE_SIZE,
   parseReceiptDate,
   receivingDateToStore,
@@ -109,6 +115,45 @@ async function viewerCanSeeMoney(): Promise<boolean> {
 
 export async function receivingClerkInitials(): Promise<string> {
   return operatorInitials();
+}
+
+export type RecentReceivingProjects = {
+  storageKey: string;
+  projects: string[];
+  latest: string | null;
+};
+
+export async function recentReceivingProjects(): Promise<RecentReceivingProjects> {
+  const initials = await operatorInitials();
+  const session = authRequired() ? await sessionUser() : null;
+  const storageKey = recentProjectStorageKey(session?.id ?? null, initials);
+  const projects = await projectsForOperator(initials);
+  return { storageKey, projects, latest: projects[0] ?? null };
+}
+
+async function projectsForOperator(initials: string): Promise<string[]> {
+  const supabase = await getSupabase();
+  const viewed = await supabase
+    .from("receipt_lines")
+    .select("project")
+    .eq("operator_initials", initials)
+    .order("received_on", { ascending: false, nullsFirst: false })
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(RECENT_PROJECT_SCAN);
+  if (!viewed.error) return distinctRecentProjects((viewed.data ?? []) as RecentProjectRow[]);
+  if (!missingSchema(viewed.error)) rpcError(viewed.error);
+  const legacy = await supabase
+    .from("stock_events")
+    .select("project")
+    .eq("event_type", "receive_into_bin")
+    .eq("operator_initials", initials)
+    .order("received_on", { ascending: false, nullsFirst: false })
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(RECENT_PROJECT_SCAN);
+  if (legacy.error) rpcError(legacy.error);
+  return distinctRecentProjects((legacy.data ?? []) as RecentProjectRow[]);
 }
 
 export type ReceivingScanResult = {
