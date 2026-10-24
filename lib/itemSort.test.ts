@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   itemSortRequest,
+  lastItemPage,
   parseItemPage,
   parseItemSort,
   toggleItemSort,
@@ -44,4 +45,12 @@ test("prices and numeric attributes sort as numbers, and text attributes do not"
   assert.equal(parseItemPage("3"), 3);
   assert.equal(parseItemPage("0"), 1);
   assert.equal(parseItemPage("nope"), 1);
+});
+
+test("the last page follows the filtered count", () => {
+  assert.equal(lastItemPage(0), 1);
+  assert.equal(lastItemPage(1), 1);
+  assert.equal(lastItemPage(100), 1);
+  assert.equal(lastItemPage(101), 2);
+  assert.equal(lastItemPage(250), 3);
 });

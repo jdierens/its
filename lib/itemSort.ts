@@ -68,6 +68,12 @@ export function parseItemPage(value: string | null): number {
   return page;
 }
 
+/** Last page of a filtered item list. The page query already counted those rows. */
+export function lastItemPage(matched: number): number {
+  if (!Number.isFinite(matched) || matched < 1) return 1;
+  return Math.ceil(matched / ITEM_PAGE_SIZE);
+}
+
 export function itemSortRequest(sort: ItemSort, dataType: DataType | null): ItemSortRequest {
   if (sort.column.startsWith("attr:")) {
     const attribute = sort.column.slice(5);
