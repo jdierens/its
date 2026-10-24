@@ -4778,3 +4778,223 @@ input.num-input {
     display: grid;
   }
 }
+
+.so-page {
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.so-page input,
+.so-page select,
+.so-page textarea {
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.so-page label {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.so-page label.so-check {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 44px;
+  margin: 0 0 0.9rem;
+  color: var(--ink);
+}
+
+.so-page input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  justify-self: start;
+}
+
+.so-page fieldset {
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 12px;
+  margin: 0 0 0.9rem;
+  padding: 0.85rem;
+  min-width: 0;
+}
+
+.so-page legend {
+  padding: 0 0.35rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.so-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.85rem;
+}
+
+.so-grid,
+.so-addresses,
+.so-line-money,
+.so-file-add {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 0.85rem;
+}
+
+.so-addresses {
+  align-items: start;
+}
+
+.so-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.so-line,
+.so-note {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.so-line-head,
+.so-allocation,
+.so-file-list li,
+.so-events li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.so-page input.num-input,
+.so-page .num,
+.so-cards .num,
+.so-table-scroll th.num,
+.so-table-scroll td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.so-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.so-page button.combo-option,
+.so-page button.suggestion,
+.so-page button.secondary {
+  background-image: none;
+}
+
+.so-page button.suggestion {
+  background-color: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  border: 1px solid var(--input-border);
+  font-weight: 500;
+  min-height: 44px;
+}
+
+.so-page button.combo-option {
+  background-color: transparent;
+  background-image: none;
+  color: var(--ink);
+  font-weight: 500;
+  min-height: 44px;
+}
+
+.so-file-list,
+.so-events,
+.so-cards {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.so-gap {
+  color: var(--danger-ink);
+}
+
+.so-cards {
+  display: none;
+}
+
+.so-card {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.so-card dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 0.2rem 0.65rem;
+  margin: 0.35rem 0 0;
+}
+
+.so-card dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.so-card dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.so-page input:disabled,
+.so-page select:disabled,
+.so-page textarea:disabled {
+  color: var(--ink);
+  opacity: 1;
+}
+
+@media (max-width: 800px) {
+  .so-page input,
+  .so-page select,
+  .so-page textarea {
+    font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .so-page textarea {
+    min-height: 6rem;
+  }
+
+  .so-page button,
+  .so-page .button,
+  .so-page a.button {
+    min-height: 44px;
+  }
+
+  .so-grid,
+  .so-addresses,
+  .so-line-money,
+  .so-file-add {
+    grid-template-columns: 1fr;
+  }
+
+  .so-table-scroll {
+    display: none;
+  }
+
+  .so-cards {
+    display: grid;
+  }
+
+  .so-page input[type="checkbox"] {
+    width: 1.25rem;
+    height: 1.25rem;
+    min-height: 1.25rem;
+  }
+}

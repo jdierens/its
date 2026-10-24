@@ -1,0 +1,281 @@
+export const INCOTERMS = ["EXW", "FCA", "FOB", "CIF", "DAP", "DDP"] as const;
+
+export const SO_CURRENCIES = ["USD", "EUR", "GBP", "HKD"] as const;
+
+export const SO_LINE_KINDS = [
+  { id: "product", label: "Product" },
+  { id: "kit", label: "Kit" },
+  { id: "freight", label: "Freight" },
+  { id: "fee", label: "Fee" },
+  { id: "service", label: "Service" },
+  { id: "discount", label: "Discount" },
+  { id: "other", label: "Other" },
+] as const;
+
+export type SoLineKind = (typeof SO_LINE_KINDS)[number]["id"];
+
+/** A product line is the only kind that must point at an item. */
+export function lineRequiresItem(lineKind: string): boolean {
+  return (lineKind || "product") === "product";
+}
+
+export const SO_NOTE_KINDS = [
+  { id: "warranty", label: "Warranty" },
+  { id: "shipping_instruction", label: "Shipping instruction" },
+  { id: "accounting_contact", label: "Accounting contact" },
+  { id: "payment", label: "Payment" },
+  { id: "packing", label: "Packing" },
+  { id: "other", label: "Other" },
+] as const;
+
+export type SoNoteKind = (typeof SO_NOTE_KINDS)[number]["id"];
+
+export type SoAddress = {
+  line1: string;
+  line2: string;
+  city: string;
+  countrySubDivisionCode: string;
+  postalCode: string;
+  country: string;
+  attention: string;
+  phone: string;
+};
+
+export type SoAllocationInput = {
+  itemId: string;
+  qty: string;
+};
+
+export type SoLineInput = {
+  lineKind: string;
+  customerPartNumber: string;
+  customerDescription: string;
+  qty: string;
+  unitPrice: string;
+  condition: string;
+  allocations: SoAllocationInput[];
+};
+
+export type SoNoteInput = {
+  kind: string;
+  customerText: string;
+  response: string;
+  counterText: string;
+};
+
+export type SoDraftInput = {
+  id: string | null;
+  customerId: string;
+  customerPo: string;
+  reference: string;
+  channel: string;
+  orderDate: string;
+  shipDate: string;
+  billTo: SoAddress;
+  shipTo: SoAddress;
+  terms: string;
+  incoterms: string;
+  shipMethod: string;
+  carrierAccount: string;
+  currency: string;
+  salesRep: string;
+  exportNotes: string;
+  internalNotes: string;
+  paymentRequirement: string;
+  paymentMethod: string;
+  paymentDate: string;
+  paymentRef: string;
+  ebayTransactionFee: string;
+  ebayLabelFee: string;
+  ebayAdFee: string;
+  ebayOrderEarnings: string;
+  lines: SoLineInput[];
+  notes: SoNoteInput[];
+  saveAddressToCustomer: boolean;
+};
+
+export function emptyAddress(): SoAddress {
+  return {
+    line1: "",
+    line2: "",
+    city: "",
+    countrySubDivisionCode: "",
+    postalCode: "",
+    country: "",
+    attention: "",
+    phone: "",
+  };
+}
+
+export function partPrefix(value: string): string {
+  return value.toUpperCase().replace(/[\s/-]/g, "");
+}
+
+/** Customer part is a prefix of the item part after the same normalization. */
+export function partMatches(customerPart: string, itemPart: string): boolean {
+  const prefix = partPrefix(customerPart);
+  if (prefix.length < 3) return false;
+  return partPrefix(itemPart).startsWith(prefix);
+}
+
+export function lineExtension(qty: string, unitPrice: string): string | null {
+  const quantity = Number(qty);
+  const price = Number(unitPrice);
+  if (!Number.isFinite(quantity) || !Number.isFinite(price) || quantity <= 0 || price < 0) return null;
+  return (Math.round(quantity * price * 100) / 100).toFixed(2);
+}
+
+export function allocationsCover(qty: string, allocations: SoAllocationInput[]): boolean {
+  const quantity = Number(qty);
+  if (!Number.isFinite(quantity) || quantity <= 0) return false;
+  const sum = allocations.reduce((total, row) => total + (Number(row.qty) || 0), 0);
+  return Math.round(sum * 100) === Math.round(quantity * 100) && allocations.every((row) => row.itemId && Number(row.qty) > 0);
+}
+
+export function addressFromRecord(value: unknown): SoAddress {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const text = (key: string) => (typeof row[key] === "string" ? row[key] : "");
+  return {
+    line1: text("line1"),
+    line2: text("line2"),
+    city: text("city"),
+    countrySubDivisionCode: text("countrySubDivisionCode"),
+    postalCode: text("postalCode"),
+    country: text("country"),
+    attention: text("attention"),
+    phone: text("phone"),
+  };
+}
+
+/** Display form of the integer so_number. Drafts have none. */
+export function formatSalesOrderNumber(value: number | string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) return null;
+  return `SO${numeric}`;
+}
+
+/** Accepts 27766 or SO27766. */
+export function parseSalesOrderNumber(value: string): number | null {
+  const trimmed = value.trim().toUpperCase().replace(/^SO/, "");
+  if (!/^[0-9]+$/.test(trimmed)) return null;
+  const numeric = Number(trimmed);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) return null;
+  return numeric;
+}
+
+/** Matches so_invoices.number: seq 1 is INV plus the SO number, then INV27766-2. */
+export function invoiceNumber(soNumber: number, seq: number): string | null {
+  if (!Number.isSafeInteger(soNumber) || soNumber < 1 || !Number.isSafeInteger(seq) || seq < 1) return null;
+  return seq === 1 ? `INV${soNumber}` : `INV${soNumber}-${seq}`;
+}
+
+export function salesOrderStatusLabel(status: string): string {
+  return status
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+export function pacificToday(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(now);
+}
+
+export function formatSalesMoney(amount: number | null, currency: string): string {
+  if (amount == null || !Number.isFinite(amount)) return "";
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD" }).format(amount);
+  } catch {
+    return amount.toFixed(2);
+  }
+}
+
+export function salesOrderTotal(lines: { extPrice: string }[]): number | null {
+  let sum = 0;
+  let any = false;
+  for (const line of lines) {
+    if (!line.extPrice.trim()) continue;
+    const value = Number(line.extPrice);
+    if (!Number.isFinite(value)) continue;
+    any = true;
+    sum += value;
+  }
+  return any ? Math.round(sum * 100) / 100 : null;
+}
+
+export function hideSalesMoney<
+  T extends {
+    unitPrice?: string;
+    extPrice?: string;
+    total?: number | null;
+    internalNotes?: string;
+    ebayTransactionFee?: string;
+    ebayLabelFee?: string;
+    ebayAdFee?: string;
+    ebayOrderEarnings?: string;
+  },
+>(row: T, canViewMoney: boolean): T {
+  if (canViewMoney) return row;
+  return {
+    ...row,
+    ...(row.unitPrice !== undefined ? { unitPrice: "" } : {}),
+    ...(row.extPrice !== undefined ? { extPrice: "" } : {}),
+    ...(row.total !== undefined ? { total: null } : {}),
+    ...(row.internalNotes !== undefined ? { internalNotes: "" } : {}),
+    ...(row.ebayTransactionFee !== undefined ? { ebayTransactionFee: "" } : {}),
+    ...(row.ebayLabelFee !== undefined ? { ebayLabelFee: "" } : {}),
+    ...(row.ebayAdFee !== undefined ? { ebayAdFee: "" } : {}),
+    ...(row.ebayOrderEarnings !== undefined ? { ebayOrderEarnings: "" } : {}),
+  };
+}
+
+/** JSON body for write_sales_order. The number is not sent; approval assigns it. */
+export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown> {
+  return {
+    id: input.id,
+    customer_id: input.customerId,
+    customer_po: input.customerPo,
+    reference: input.reference,
+    channel: input.channel,
+    order_date: input.orderDate,
+    ship_date: input.shipDate,
+    bill_to: input.billTo,
+    ship_to: input.shipTo,
+    terms: input.terms,
+    incoterms: input.incoterms,
+    ship_method: input.shipMethod,
+    carrier_account: input.carrierAccount,
+    currency: input.currency,
+    sales_rep: input.salesRep,
+    export_notes: input.exportNotes,
+    internal_notes: input.internalNotes,
+    payment_requirement: input.paymentRequirement || "terms",
+    payment_method: input.paymentMethod,
+    payment_date: input.paymentDate,
+    payment_ref: input.paymentRef,
+    ebay_transaction_fee: input.ebayTransactionFee,
+    ebay_label_fee: input.ebayLabelFee,
+    ebay_ad_fee: input.ebayAdFee,
+    ebay_order_earnings: input.ebayOrderEarnings,
+    lines: input.lines.map((line) => ({
+      line_kind: line.lineKind || "product",
+      customer_part_number: line.customerPartNumber,
+      customer_description: line.customerDescription,
+      qty: line.qty,
+      unit_price: line.unitPrice,
+      condition: line.condition,
+      allocations: line.allocations
+        .filter((row) => row.itemId && Number(row.qty) > 0)
+        .map((row) => ({ item_id: row.itemId, qty: row.qty })),
+    })),
+    notes: input.notes
+      .filter((note) => note.customerText.trim())
+      .map((note) => ({
+        kind: note.kind || "other",
+        customer_text: note.customerText,
+        response: note.response,
+        counter_text: note.counterText,
+      })),
+  };
+}
