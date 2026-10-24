@@ -2,6 +2,7 @@ import { MAX_IMAGE_BYTES } from "@/lib/imageFiles";
 
 export const JPEG_QUALITY = 0.92;
 export const LISTING_LONG_SIDE = 1600;
+export const REMOVED_ALPHA_THRESHOLD = 24;
 
 export type PixelRect = { x: number; y: number; w: number; h: number };
 
@@ -158,6 +159,31 @@ export function cropCanvas(source: HTMLCanvasElement, rect: PixelRect): HTMLCanv
   const context = next.getContext("2d");
   if (!context) throw new Error("Could not crop the photo.");
   context.drawImage(source, x, y, width, height, 0, 0, width, height);
+  return next;
+}
+
+export function cleanRemovedAlphaPixels(data: Uint8ClampedArray, threshold = REMOVED_ALPHA_THRESHOLD): void {
+  const limit = Math.min(255, Math.max(1, Math.round(threshold)));
+  for (let index = 0; index < data.length; index += 4) {
+    if (data[index + 3] < limit) {
+      data[index] = 0;
+      data[index + 1] = 0;
+      data[index + 2] = 0;
+      data[index + 3] = 0;
+    }
+  }
+}
+
+export function cleanRemovedAlpha(source: HTMLCanvasElement, threshold = REMOVED_ALPHA_THRESHOLD): HTMLCanvasElement {
+  const next = document.createElement("canvas");
+  next.width = source.width;
+  next.height = source.height;
+  const context = next.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Could not clean the photo.");
+  context.drawImage(source, 0, 0);
+  const image = context.getImageData(0, 0, next.width, next.height);
+  cleanRemovedAlphaPixels(image.data, threshold);
+  context.putImageData(image, 0, 0);
   return next;
 }
 

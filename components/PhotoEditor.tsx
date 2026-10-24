@@ -10,6 +10,7 @@ import {
   autoImproveCanvas,
   canvasFromBlob,
   centeredCrop,
+  cleanRemovedAlpha,
   cloneCanvas,
   cropCanvas,
   exportForListing,
@@ -234,7 +235,7 @@ export function PhotoEditor({ itemId, imageId }: PhotoEditorProps) {
           setProgress(`${label}… ${percent}%`);
         },
       });
-      let next = await canvasFromBlob(removed);
+      let next = cleanRemovedAlpha(await canvasFromBlob(removed));
       if (background === "white") next = flattenOnWhite(next);
       bump(next);
       setProgress(null);
