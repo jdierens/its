@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, Plus } from "lucide-react";
 import { ItemExportMenu } from "@/components/ItemExportMenu";
 import { ItemsIconButton } from "@/components/ItemsIconButton";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -25,7 +25,6 @@ import { ITEM_TYPES, SEEDED_UNITS, countryLabel, isItemType, NEW_CONDITION_NOTES
 import {
   ITEM_PAGE_SIZE,
   isSortableColumn,
-  lastItemPage,
   parseItemPage,
   parseItemSort,
   toggleItemSort,
@@ -606,32 +605,24 @@ export function ItemsTable() {
           {loading && rows.length === 0 ? "Loading items…" : itemRange(listPage, matched, total)}
         </p>
         <div className="items-actions">
-          <nav className="items-pager" aria-label="Pages">
-            <ItemsIconButton
-              label="First page"
-              icon={ChevronsLeft}
-              disabled={listPage <= 1 || loading}
-              onClick={() => setPage(1)}
-            />
-            <ItemsIconButton
-              label="Previous page"
-              icon={ChevronLeft}
-              disabled={listPage <= 1 || loading}
-              onClick={() => setPage(listPage - 1)}
-            />
-            <ItemsIconButton
-              label="Next page"
-              icon={ChevronRight}
-              disabled={loading || listPage >= lastItemPage(matched)}
-              onClick={() => setPage(listPage + 1)}
-            />
-            <ItemsIconButton
-              label="Last page"
-              icon={ChevronsRight}
-              disabled={loading || listPage >= lastItemPage(matched)}
-              onClick={() => setPage(lastItemPage(matched))}
-            />
-          </nav>
+          <ItemsIconButton
+            label="First page"
+            icon={ChevronsLeft}
+            disabled={listPage <= 1 || loading}
+            onClick={() => setPage(1)}
+          />
+          <ItemsIconButton
+            label="Previous page"
+            icon={ChevronLeft}
+            disabled={listPage <= 1 || loading}
+            onClick={() => setPage(listPage - 1)}
+          />
+          <ItemsIconButton
+            label="Next page"
+            icon={ChevronRight}
+            disabled={loading || listPage * ITEM_PAGE_SIZE >= matched}
+            onClick={() => setPage(listPage + 1)}
+          />
           <ItemExportMenu
             tax={tax}
             q={q}

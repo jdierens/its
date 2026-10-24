@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  emitKitSql,
   planKitImport,
   readGenericsCsv,
   readKitsCsv,
@@ -16,6 +17,7 @@ type Args = {
   generics: string;
   out: string;
   apply: boolean;
+  emitSql: boolean;
   db: string;
 };
 
@@ -39,10 +41,18 @@ function readArgs(): Args {
   const db = arg("--db") ?? process.env.KITS_DATABASE_URL ?? "";
   if (!kits || !recipes || !generics) {
     throw new Error(
-      "Usage: node --experimental-strip-types --import ./test/register.mjs scripts/import-kits.ts --kits kits.csv --recipes recipes.csv --generics generics.csv [--out dir] [--db conninfo] [--apply]",
+      "Usage: node --experimental-strip-types --import ./test/register.mjs scripts/import-kits.ts --kits kits.csv --recipes recipes.csv --generics generics.csv [--out dir] [--emit-sql | --db conninfo] [--apply]",
     );
   }
-  return { kits, recipes, generics, out, apply: process.argv.includes("--apply"), db };
+  return {
+    kits,
+    recipes,
+    generics,
+    out,
+    apply: process.argv.includes("--apply"),
+    emitSql: process.argv.includes("--emit-sql"),
+    db,
+  };
 }
 
 function psql(db: string, sql: string): string {
@@ -188,13 +198,27 @@ function buildRollback(plan: ImportPlan, known: Map<string, StoredItem>): string
 
 function main() {
   const args = readArgs();
-  if (!args.db) throw new Error("Pass --db with a local conninfo. This script does not pick a remote database.");
-  if (/supabase\.co|amazonaws\.com/i.test(args.db)) {
-    throw new Error("Refusing a remote database.");
-  }
   const kits = readKitsCsv(readFileSync(args.kits, "utf8"));
   const recipes = readRecipesCsv(readFileSync(args.recipes, "utf8"));
   const generics = readGenericsCsv(readFileSync(args.generics, "utf8"));
+  const csvIssues = [...kits.issues, ...recipes.issues];
+  mkdirSync(args.out, { recursive: true });
+  if (args.emitSql) {
+    if (csvIssues.length > 0) {
+      writeFileSync(resolve(args.out, "issues.json"), `${JSON.stringify(csvIssues, null, 2)}\n`);
+      throw new Error(`Import stopped with ${csvIssues.length} problem${csvIssues.length === 1 ? "" : "s"}. See ${args.out}/issues.json`);
+    }
+    const files = emitKitSql({ kits: kits.rows, recipes: recipes.rows, generics });
+    writeFileSync(resolve(args.out, "apply.sql"), files.applySql);
+    writeFileSync(resolve(args.out, "rollback.sql"), files.rollbackSql);
+    writeFileSync(resolve(args.out, "verify.sql"), files.verifySql);
+    console.log(`Wrote ${args.out}/apply.sql, rollback.sql, and verify.sql. Nothing was written to the database.`);
+    return;
+  }
+  if (!args.db) throw new Error("Pass --db with a local conninfo, or pass --emit-sql to write SQL files only. This script does not pick a remote database.");
+  if (/supabase\.co|amazonaws\.com/i.test(args.db)) {
+    throw new Error("Refusing a remote database.");
+  }
   const skus = [...new Set([
     ...kits.rows.map((row) => row.sku),
     ...recipes.rows.map((row) => row.componentSku),

@@ -8,6 +8,12 @@ test("kit names keep slashes", () => {
   assert.equal(keepKitName(name).includes("\\"), false);
 });
 
+test("product names keep backslashes", () => {
+  const name = "MEM\\PC4-2400T-R\\32G\\2Rx4";
+  assert.equal(keepKitName(`  ${name}  `), name);
+  assert.equal(name.includes("/"), false);
+});
+
 test("a server kit takes condition from its one chassis and the server ECCN", () => {
   const defaults = kitFieldDefaults("KIT/SRV", [
     { id: "cpu", longCode: "CPU/PRC", condition: "New", eccn: "3A001" },
@@ -46,4 +52,5 @@ test("a generic component still needs a physical part", () => {
   assert.equal(genericStillNeedsPart({ plannedGeneric: true, hasActual: true, actualGeneric: true }), true);
   assert.equal(genericStillNeedsPart({ plannedGeneric: true, hasActual: true, actualGeneric: false }), false);
   assert.equal(genericStillNeedsPart({ plannedGeneric: false, hasActual: false, actualGeneric: null }), false);
+  assert.equal(genericStillNeedsPart({ plannedGeneric: false, hasActual: true, actualGeneric: true }), true);
 });
