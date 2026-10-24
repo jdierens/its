@@ -10,7 +10,10 @@ export const PRICE_QUOTE_SOURCES = [
 
 export type PriceQuoteSource = (typeof PRICE_QUOTE_SOURCES)[number];
 
-export const QUOTE_SOURCE_LABELS: Record<PriceQuoteSource, string> = {
+/** Stored `source` values. `web_listed` is research-only and is not offered on Add quote. */
+export type PriceQuoteRowSource = PriceQuoteSource | "web_listed";
+
+export const QUOTE_SOURCE_LABELS: Record<PriceQuoteRowSource, string> = {
   ebay_listed: "eBay listed",
   ebay_sold: "eBay sold",
   brokerbin: "BrokerBin",
@@ -18,6 +21,41 @@ export const QUOTE_SOURCE_LABELS: Record<PriceQuoteSource, string> = {
   reseller_listed: "Reseller listed",
   buyback: "Buyback",
   manual: "Manual",
+  web_listed: "Web listed",
+};
+
+export type PriceQuoteConditionClass = "New" | "New Open Box" | "Refurbished" | "Used" | "For Parts";
+
+export type PriceQuoteListingType = "asking" | "sold" | "quote" | "offer";
+
+/** `public.price_quotes` after market-research columns. `item_id` is null until exactly one item matches. */
+export type PriceQuoteRow = {
+  id: string;
+  item_id: string | null;
+  source: PriceQuoteRowSource;
+  price: number | string;
+  currency: string;
+  qty: number | string | null;
+  condition: string | null;
+  condition_class: PriceQuoteConditionClass | null;
+  condition_note: string | null;
+  part_number: string | null;
+  part_number_norm: string | null;
+  manufacturer_id: string | null;
+  manufacturer_name: string | null;
+  model: string | null;
+  taxonomy_id: string | null;
+  listing_type: PriceQuoteListingType | null;
+  shipping: number | string | null;
+  listing_date: string | null;
+  vendor_id: string | null;
+  seller_name: string | null;
+  url: string | null;
+  notes: string | null;
+  captured_at: string;
+  captured_by: string | null;
+  raw: unknown;
+  outlier: boolean;
 };
 
 export const TRANSACTION_SOURCES = ["manual", "qbo", "ebay"] as const;
