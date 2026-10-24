@@ -5043,3 +5043,103 @@ input.num-input {
     font-size: 16px;
   }
 }
+
+.move-page {
+  display: grid;
+  gap: 0.85rem;
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.move-page .page-note {
+  margin: 0;
+}
+
+.move-card {
+  overflow: visible;
+  height: auto;
+  padding: 0.75rem 0.9rem 0.85rem;
+}
+
+.move-card h2 {
+  margin: 0 0 0.7rem;
+  font-size: 1.05rem;
+}
+
+.move-card form {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.move-path {
+  margin: 0.75rem 0 0.2rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.move-summary {
+  margin: 0.75rem 0 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.move-register,
+.move-actions,
+.move-done {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.move-tree,
+.move-items {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.move-items li {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.move-page label.move-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 44px;
+  margin: 0;
+  color: var(--ink);
+}
+
+.move-choice input {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  margin: 0;
+}
+
+.move-qty {
+  width: 5.5rem;
+  flex: none;
+}
+
+.move-page .move-actions button,
+.move-page .move-register button,
+.move-page #move-source > button,
+.move-page #move-confirm {
+  min-height: 44px;
+}
+
+@media (max-width: 800px) {
+  .move-page input,
+  .move-page select {
+    font-size: 16px;
+  }
+
+  .move-items li {
+    align-items: stretch;
+  }
+}
