@@ -3028,7 +3028,8 @@ tr.quote-latest td {
   color: var(--ink);
 }
 
-.file-button input {
+.file-button input,
+.camera-capture-input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -3037,6 +3038,11 @@ tr.quote-latest td {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+.page-toolbar label.icon-button {
+  margin: 0;
+  cursor: pointer;
 }
 
 .scan-video {

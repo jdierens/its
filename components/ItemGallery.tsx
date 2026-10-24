@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import Link from "next/link";
 import { memo, useEffect, useState, type DragEvent, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { compressImage } from "@/lib/compressImage";
 import { errorText } from "@/lib/errors";
@@ -11,6 +12,9 @@ import { imageFileError } from "@/lib/imageFiles";
 import { deleteItemImage, fetchItemImages, reorderItemImages } from "@/lib/images";
 import { uploadItemImages } from "@/lib/imageUpload";
 import type { ItemImage } from "@/lib/types";
+
+/** The item toolbar and the gallery button both use this camera input. */
+export const ITEM_CAMERA_INPUT_ID = "item-take-photo";
 
 export type PendingImage = {
   key: string;
@@ -210,19 +214,10 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
             }}
           />
         </label>
-        <label className="button file-button">
+        <label className="button file-button" htmlFor={ITEM_CAMERA_INPUT_ID}>
           Take photo
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            disabled={busy}
-            onChange={(event) => {
-              void addFiles(event.target.files, true);
-              event.target.value = "";
-            }}
-          />
         </label>
+        <CameraCapture busy={busy} onPick={(files) => void addFiles(files, true)} />
       </div>
       {editorHref ? (
         <p className="hint">
@@ -322,6 +317,28 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
     </fieldset>
   );
 });
+
+function CameraCapture({ busy, onPick }: { busy: boolean; onPick: (files: FileList | null) => void }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return createPortal(
+    <input
+      id={ITEM_CAMERA_INPUT_ID}
+      className="camera-capture-input"
+      type="file"
+      accept="image/*"
+      capture="environment"
+      disabled={busy}
+      tabIndex={-1}
+      onChange={(event) => {
+        onPick(event.target.files);
+        event.target.value = "";
+      }}
+    />,
+    document.body,
+  );
+}
 
 function Thumb({ tile, primary }: { tile: Tile; primary: boolean }) {
   return (
