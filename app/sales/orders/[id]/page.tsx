@@ -2,7 +2,7 @@ import Link from "next/link";
 import { SalesOrderForm } from "@/components/SalesOrderForm";
 import { errorText } from "@/lib/errors";
 import { pacificToday } from "@/lib/salesOrderDraft";
-import { listSalesLookups, loadSalesOrder } from "@/lib/salesOrders";
+import { listSalesLookups, loadSalesOrder, suggestSalesOrderNumber } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +13,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
 
   try {
     const [order, lookups] = await Promise.all([loadSalesOrder(id), listSalesLookups()]);
+    const suggestedNumber = order?.status === "draft" ? await suggestSalesOrderNumber() : null;
     if (!order) {
       return (
         <main className="page so-page">
@@ -30,6 +31,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
         canEdit={access.canEdit}
         showMoney={access.canViewMoney}
         today={order.orderDate || pacificToday()}
+        suggestedNumber={suggestedNumber}
       />
     );
   } catch (error) {

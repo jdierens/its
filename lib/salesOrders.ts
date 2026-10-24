@@ -5,6 +5,7 @@ import { errorText } from "@/lib/errors";
 import type { PostalAddress } from "@/lib/qbo/map";
 import {
   addressFromRecord,
+  formatSalesOrderNumber,
   hideSalesMoney,
   partMatches,
   partPrefix,
@@ -242,7 +243,7 @@ export async function listSalesOrders(): Promise<SalesOrderListItem[]> {
     const item = hideSalesMoney(
       {
         id: String(row.id),
-        number: row.so_number ? String(row.so_number) : "Draft",
+        number: formatSalesOrderNumber(row.so_number) ?? "Draft",
         customerName: String(customer?.display_name ?? ""),
         status: String(row.status),
         orderDate: dateValue(row.order_date),
@@ -331,7 +332,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
 
   return {
     id: String(data.id),
-    number: data.so_number ? String(data.so_number) : null,
+    number: formatSalesOrderNumber(data.so_number),
     status: String(data.status),
     customerId: String(data.customer_id ?? ""),
     customerName: String(customer?.display_name ?? ""),
@@ -387,18 +388,28 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   return { id, addressWarning };
 }
 
-export async function approveSalesOrder(id: string): Promise<{ soNumber: string }> {
+export async function suggestSalesOrderNumber(): Promise<number> {
+  const { data, error } = await (await getSupabase()).rpc("suggest_sales_order_number");
+  if (error) throw new Error(salesError(error));
+  const numeric = Number(data);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) throw new Error("Could not suggest a sales order number.");
+  return numeric;
+}
+
+export async function approveSalesOrder(id: string, soNumber: number): Promise<{ soNumber: string }> {
   const access = await salesPageAccess();
   if (!access.canEdit || !access.canViewMoney) throw new Error(EDIT_DENIED);
   if (!UUID.test(id)) throw new Error("Sales order not found.");
+  if (!Number.isSafeInteger(soNumber) || soNumber < 1) throw new Error("Enter a sales order number.");
   const { data, error } = await (await getSupabase()).rpc("approve_sales_order", {
     p_order: id,
     p_initials: await operatorInitials(),
     p_operator_id: await salesOperatorId(),
+    p_number: soNumber,
   });
   if (error) throw new Error(salesError(error));
   const row = rpcRow(data);
-  return { soNumber: String(row.so_number ?? "") };
+  return { soNumber: formatSalesOrderNumber(row.so_number) ?? "" };
 }
 
 export async function cancelSalesOrder(id: string): Promise<void> {
@@ -480,7 +491,7 @@ function salesError(error: { message?: string }): string {
     return MIGRATION;
   }
   const match = textValue.match(
-    /Choose a customer\.|Sales rep initials are 2 letters\.|That sales order can no longer be edited\.|Sales order not found\.|Enter a quantity above 0\.|Only a draft can be approved\.|Enter the order date\.|Enter a bill-to address\.|Enter a ship-to address\.|Choose terms\.|Choose a ship method\.|Enter the sales rep initials\.|Add a line before approving\.|Line \d+ must be allocated to SKUs that add up to the quantity\.|Sales order number .+ is already used\.|That sales order is already \w+\./,
+    /Choose a customer\.|Sales rep initials are 2 letters\.|That sales order can no longer be edited\.|Sales order not found\.|Enter a quantity above 0\.|Only a draft can be approved\.|Enter the order date\.|Enter a bill-to address\.|Enter a ship-to address\.|Choose terms\.|Choose a ship method\.|Enter the sales rep initials\.|Enter a sales order number\.|Add a line before approving\.|Line \d+ must be allocated to SKUs that add up to the quantity\.|Sales order number SO\d+ is already used\.|That sales order is already \w+\./,
   );
   if (match) return match[0];
   if (textValue.includes("so_lines_text_check")) return "Enter a part number or a description.";

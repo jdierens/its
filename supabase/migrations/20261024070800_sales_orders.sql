@@ -22,10 +22,10 @@ create table public.so_counter (
   constraint so_counter_next_positive check (next_number >= 1)
 );
 
-insert into public.so_counter (id, next_number) values (1, 1);
+insert into public.so_counter (id, next_number) values (1, 27766);
 
 comment on table public.so_counter is
-  'Next sales-order number. Placeholder 1 until go-live: set next_number from QuickBooks before the first real approval. Plain digits, never shared with po_counter.';
+  'Next sales-order number. Seeded at 27766, the next number at go-live. Display is SO plus the integer. Never shared with po_counter, and never moved backwards.';
 
 create table public.so_payment_terms (
   code text primary key,
@@ -68,7 +68,7 @@ insert into public.so_ship_methods (code, carrier, method, sort_order) values
 
 create table public.sales_orders (
   id uuid primary key default gen_random_uuid(),
-  so_number text,
+  so_number bigint,
   status text not null default 'draft',
   customer_id uuid references public.customers (id),
   customer_po text,
@@ -88,10 +88,10 @@ create table public.sales_orders (
   source text not null default 'manual',
   source_ref text,
   source_message_id text,
+  ebay_order_id text,
+  ebay_sales_record_ref text,
   buyer jsonb,
   field_confidence jsonb,
-  qbo_invoice_id text,
-  qbo_doc_number text,
   sheet_ref text,
   approved_at timestamptz,
   approved_by uuid references public.app_users (id),
@@ -101,7 +101,7 @@ create table public.sales_orders (
   operator_id uuid references public.app_users (id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint sales_orders_number_digits check (so_number is null or so_number ~ '^[0-9]+$'),
+  constraint sales_orders_number_positive check (so_number is null or so_number >= 1),
   constraint sales_orders_number_unique unique (so_number),
   constraint sales_orders_status_check check (status in (
     'draft', 'approved', 'proforma_sent', 'awaiting_payment', 'released',
@@ -118,7 +118,19 @@ create table public.sales_orders (
 );
 
 comment on table public.sales_orders is
-  'Customer sales orders. so_number stays empty until approval and is plain digits from so_counter. Not a purchase order.';
+  'Customer sales orders. so_number stays empty until approval, then it is an integer from so_counter. Display it as SO plus so_number. Not a purchase order.';
+
+comment on column public.sales_orders.so_number is
+  'Integer sales-order number. Null on a draft. Shown as SO || so_number, for example SO27766.';
+
+comment on column public.sales_orders.reference is
+  'Internal reference typed with the order, such as a sheet column. Separate from the SO number.';
+
+comment on column public.sales_orders.ebay_order_id is
+  'eBay order id. Unique when set. An eBay order still takes its SO number from so_counter.';
+
+comment on column public.sales_orders.ebay_sales_record_ref is
+  'eBay sales record reference. Not unique; ebay_order_id is the unique eBay key.';
 
 comment on column public.sales_orders.bill_to is
   'Postal address copied from the customer and editable: line1, line2, city, countrySubDivisionCode, postalCode, country.';
@@ -126,9 +138,9 @@ comment on column public.sales_orders.bill_to is
 comment on column public.sales_orders.ship_to is
   'Ship-to address, plus attention and phone. Copied from the customer and editable.';
 
-create unique index sales_orders_qbo_doc_number_key
-  on public.sales_orders (qbo_doc_number)
-  where qbo_doc_number is not null;
+create unique index sales_orders_ebay_order_id_key
+  on public.sales_orders (ebay_order_id)
+  where ebay_order_id is not null;
 
 create unique index sales_orders_sheet_ref_key
   on public.sales_orders (sheet_ref)
@@ -379,27 +391,89 @@ create index so_package_contents_package_idx on public.so_package_contents (pack
 create table public.so_invoices (
   id uuid primary key default gen_random_uuid(),
   sales_order_id uuid not null references public.sales_orders (id) on delete cascade,
-  doc_number text,
+  order_number bigint,
+  seq integer,
+  number text generated always as (
+    case
+      when seq = 1 then 'INV' || order_number::text
+      else 'INV' || order_number::text || '-' || seq::text
+    end
+  ) stored,
   invoice_date date,
   due_date date,
   status text not null default 'draft',
   qbo_invoice_id text,
+  qbo_doc_number text,
+  qbo_synced_at timestamptz,
   payment_status text,
   balance numeric(14, 2),
-  synced_at timestamptz,
   operator_id uuid references public.app_users (id),
   created_at timestamptz not null default now(),
+  constraint so_invoices_seq_positive check (seq >= 1),
+  constraint so_invoices_order_number_positive check (order_number >= 1),
+  constraint so_invoices_order_seq_unique unique (sales_order_id, seq),
+  constraint so_invoices_number_unique unique (number),
   constraint so_invoices_status_check check (status in ('draft', 'pushed')),
   constraint so_invoices_payment_check check (
     payment_status is null or payment_status in ('unpaid', 'partial', 'paid')
   )
 );
 
-create unique index so_invoices_doc_number_key
-  on public.so_invoices (doc_number)
-  where doc_number is not null;
+comment on table public.so_invoices is
+  'ITS invoice for the customer. seq 1 displays as INV plus the sales-order number. Later invoices on the same order display as INV27766-2, INV27766-3, and so on. QuickBooks upload is later.';
+
+comment on column public.so_invoices.seq is
+  '1 for the first invoice on the sales order, then 2, 3, and so on.';
+
+comment on column public.so_invoices.number is
+  'Generated display number. seq 1 is INV || order_number. Later seq values append -seq.';
+
+comment on column public.so_invoices.qbo_invoice_id is
+  'QuickBooks invoice id, filled when the invoice is uploaded. Phase 4.';
+
+comment on column public.so_invoices.qbo_doc_number is
+  'QuickBooks document number, filled when the invoice is uploaded.';
+
+comment on column public.so_invoices.qbo_synced_at is
+  'When this invoice was last uploaded to or refreshed from QuickBooks.';
 
 create index so_invoices_order_idx on public.so_invoices (sales_order_id, created_at desc);
+
+create or replace function public.so_invoices_set_order_number()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_number bigint;
+begin
+  select so_number into v_number
+  from public.sales_orders
+  where id = new.sales_order_id;
+
+  if v_number is null then
+    raise exception 'Approve the sales order before creating an invoice.'
+      using errcode = '22023';
+  end if;
+  if new.order_number is not null and new.order_number <> v_number then
+    raise exception 'An invoice uses the sales order number.'
+      using errcode = '22023';
+  end if;
+
+  new.order_number := v_number;
+  if new.seq is null then
+    select coalesce(max(seq), 0) + 1 into new.seq
+    from public.so_invoices
+    where sales_order_id = new.sales_order_id;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger so_invoices_set_order_number
+before insert or update of sales_order_id, order_number, seq on public.so_invoices
+for each row execute function public.so_invoices_set_order_number();
 
 create table public.so_invoice_lines (
   id uuid primary key default gen_random_uuid(),
@@ -489,8 +563,8 @@ begin
 end;
 $$;
 
-create or replace function public.reserve_sales_order_number()
-returns text
+create or replace function public.suggest_sales_order_number()
+returns bigint
 language plpgsql
 security definer
 set search_path = ''
@@ -510,21 +584,39 @@ begin
 
   loop
     exit when not exists (
-      select 1 from public.sales_orders where so_number = issued::text
+      select 1 from public.sales_orders where so_number = issued
     );
     issued := issued + 1;
   end loop;
 
+  return issued;
+end;
+$$;
+
+comment on function public.suggest_sales_order_number() is
+  'Locks so_counter and returns the lowest unused sales-order number at or above it. Does not move the counter.';
+
+create or replace function public.reserve_sales_order_number()
+returns bigint
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  issued bigint;
+begin
+  issued := public.suggest_sales_order_number();
+
   update public.so_counter
-  set next_number = issued + 1
+  set next_number = greatest(next_number, issued + 1)
   where id = 1;
 
-  return issued::text;
+  return issued;
 end;
 $$;
 
 comment on function public.reserve_sales_order_number() is
-  'Locks so_counter and returns the next plain-digit sales-order number. Skips numbers already used. Does not touch po_counter.';
+  'Locks so_counter and claims the lowest unused number at or above it. The counter never moves backwards. Does not touch po_counter.';
 
 create or replace function public.so_known_operator(p_operator uuid)
 returns uuid
@@ -577,7 +669,7 @@ begin
       status, customer_id, customer_po, reference, order_date, ship_date,
       bill_to, ship_to, terms, incoterms, ship_method, carrier_account,
       currency, sales_rep, export_notes, internal_notes, source,
-      payment_requirement, qbo_doc_number, operator_id
+      payment_requirement, operator_id
     ) values (
       'draft',
       v_customer,
@@ -597,7 +689,6 @@ begin
       public.blank_to_null(p_payload ->> 'internal_notes'),
       coalesce(public.blank_to_null(p_payload ->> 'source'), 'manual'),
       coalesce(public.blank_to_null(p_payload ->> 'payment_requirement'), 'terms'),
-      public.blank_to_null(p_payload ->> 'qbo_doc_number'),
       v_operator
     )
     returning id, status into v_id, v_status;
@@ -630,7 +721,6 @@ begin
       export_notes = public.blank_to_null(p_payload ->> 'export_notes'),
       internal_notes = public.blank_to_null(p_payload ->> 'internal_notes'),
       payment_requirement = coalesce(public.blank_to_null(p_payload ->> 'payment_requirement'), 'terms'),
-      qbo_doc_number = public.blank_to_null(p_payload ->> 'qbo_doc_number'),
       operator_id = v_operator,
       updated_at = now()
     where id = v_id;
@@ -710,12 +800,13 @@ end;
 $$;
 
 comment on function public.write_sales_order(jsonb, text, uuid) is
-  'Inserts or replaces a draft sales order, its lines, allocations, and notes. Does not assign a number.';
+  'Inserts or replaces a draft sales order, its lines, allocations, and notes. Does not assign so_number. The SO reference is created at approval.';
 
 create or replace function public.approve_sales_order(
   p_order uuid,
   p_initials text,
-  p_operator_id uuid
+  p_operator_id uuid,
+  p_number bigint
 ) returns jsonb
 language plpgsql
 security definer
@@ -725,10 +816,9 @@ declare
   v_label text := public.operator_initials(p_initials);
   v_operator uuid := public.so_known_operator(p_operator_id);
   v_order public.sales_orders;
-  v_number text;
+  v_number bigint;
   v_line record;
   v_allocated numeric;
-  v_doc bigint;
 begin
   select * into v_order from public.sales_orders where id = p_order for update;
   if v_order.id is null then
@@ -784,40 +874,44 @@ begin
     end if;
   end loop;
 
-  if v_order.so_number is not null then
-    v_number := v_order.so_number;
-  elsif v_order.qbo_doc_number ~ '^[0-9]+$' then
-    v_number := v_order.qbo_doc_number;
-    if exists (select 1 from public.sales_orders where so_number = v_number and id <> p_order) then
-      raise exception 'Sales order number % is already used.', v_number
+  perform 1 from public.so_counter where id = 1 for update;
+
+  if p_number is null then
+    v_number := public.reserve_sales_order_number();
+  else
+    if p_number < 1 then
+      raise exception 'Enter a sales order number.'
+        using errcode = '22023';
+    end if;
+    if exists (select 1 from public.sales_orders where so_number = p_number) then
+      raise exception 'Sales order number SO% is already used.', p_number
         using errcode = '23505';
     end if;
-    v_doc := v_number::bigint;
     update public.so_counter
-    set next_number = greatest(next_number, v_doc + 1)
+    set next_number = greatest(next_number, p_number + 1)
     where id = 1;
-  else
-    v_number := public.reserve_sales_order_number();
+    v_number := p_number;
   end if;
 
   update public.sales_orders set
     status = 'approved',
     so_number = v_number,
-    qbo_doc_number = coalesce(qbo_doc_number, v_number),
     approved_at = now(),
     approved_by = v_operator,
     operator_id = v_operator,
     updated_at = now()
   where id = p_order;
 
-  perform public.log_so_event(p_order, 'approved', 'draft', 'approved', null, v_operator, v_label);
+  perform public.log_so_event(
+    p_order, 'approved', 'draft', 'approved', 'SO' || v_number::text, v_operator, v_label
+  );
 
   return jsonb_build_object('id', p_order, 'status', 'approved', 'so_number', v_number);
 end;
 $$;
 
-comment on function public.approve_sales_order(uuid, text, uuid) is
-  'Approves a draft once every line is allocated to SKUs that sum to the line quantity, and assigns the sales-order number.';
+comment on function public.approve_sales_order(uuid, text, uuid, bigint) is
+  'Approves a draft once every line is allocated. Assigns so_number under a lock on so_counter. Null uses the lowest free number at or above the counter. A typed number must be unused. The counter never moves backwards, and a number above it moves the counter past that number.';
 
 create or replace function public.cancel_sales_order(
   p_order uuid,
@@ -832,7 +926,7 @@ declare
   v_label text := public.operator_initials(p_initials);
   v_operator uuid := public.so_known_operator(p_operator_id);
   v_status text;
-  v_number text;
+  v_number bigint;
 begin
   select status, so_number into v_status, v_number
   from public.sales_orders
@@ -844,7 +938,7 @@ begin
       using errcode = 'P0002';
   end if;
   if v_status in ('cancelled', 'closed') then
-    raise exception 'That sales order is already %s.', v_status
+    raise exception 'That sales order is already %.', v_status
       using errcode = '22023';
   end if;
 
@@ -926,14 +1020,19 @@ grant execute on function public.so_events_append_only() to service_role;
 revoke all on function public.log_so_event(uuid, text, text, text, text, uuid, text) from public, anon, authenticated, service_role;
 revoke all on function public.so_known_operator(uuid) from public, anon, authenticated, service_role;
 
+revoke all on function public.so_invoices_set_order_number() from public, anon, authenticated;
+grant execute on function public.so_invoices_set_order_number() to service_role;
+
+revoke all on function public.suggest_sales_order_number() from public, anon, authenticated;
 revoke all on function public.reserve_sales_order_number() from public, anon, authenticated;
 revoke all on function public.write_sales_order(jsonb, text, uuid) from public, anon, authenticated;
-revoke all on function public.approve_sales_order(uuid, text, uuid) from public, anon, authenticated;
+revoke all on function public.approve_sales_order(uuid, text, uuid, bigint) from public, anon, authenticated;
 revoke all on function public.cancel_sales_order(uuid, text, uuid) from public, anon, authenticated;
 
+grant execute on function public.suggest_sales_order_number() to service_role;
 grant execute on function public.reserve_sales_order_number() to service_role;
 grant execute on function public.write_sales_order(jsonb, text, uuid) to service_role;
-grant execute on function public.approve_sales_order(uuid, text, uuid) to service_role;
+grant execute on function public.approve_sales_order(uuid, text, uuid, bigint) to service_role;
 grant execute on function public.cancel_sales_order(uuid, text, uuid) to service_role;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

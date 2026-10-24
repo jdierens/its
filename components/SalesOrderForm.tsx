@@ -8,8 +8,10 @@ import { errorText } from "@/lib/errors";
 import {
   allocationsCover,
   emptyAddress,
+  formatSalesOrderNumber,
   INCOTERMS,
   lineExtension,
+  parseSalesOrderNumber,
   salesOrderStatusLabel,
   SO_CURRENCIES,
   SO_NOTE_KINDS,
@@ -47,12 +49,14 @@ export function SalesOrderForm({
   canEdit,
   showMoney,
   today,
+  suggestedNumber,
 }: {
   order: SalesOrderView | null;
   lookups: SalesLookups;
   canEdit: boolean;
   showMoney: boolean;
   today: string;
+  suggestedNumber: number | null;
 }) {
   const router = useRouter();
   const locked = !canEdit || (order != null && order.status !== "draft");
@@ -80,6 +84,9 @@ export function SalesOrderForm({
   const [internalNotes, setInternalNotes] = useState(order?.internalNotes ?? "");
   const [lines, setLines] = useState<FormLine[]>(order?.lines.length ? order.lines : [blankLine()]);
   const [notes, setNotes] = useState<SalesNoteView[]>(order?.notes ?? []);
+  const [orderNumber, setOrderNumber] = useState(
+    order?.number ?? (suggestedNumber ? formatSalesOrderNumber(suggestedNumber) ?? "" : ""),
+  );
   const [suggestions, setSuggestions] = useState<Record<number, SalesSkuHit[]>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -207,9 +214,15 @@ export function SalesOrderForm({
     setBusy(true);
     setMessage(null);
     try {
+      const chosen = parseSalesOrderNumber(orderNumber);
+      if (!chosen) {
+        setMessage("Enter a sales order number like SO27766.");
+        setBusy(false);
+        return;
+      }
       const saved = await saveSalesOrder(draft());
       setOrderId(saved.id);
-      const approved = await approveSalesOrder(saved.id);
+      const approved = await approveSalesOrder(saved.id, chosen);
       if (saved.addressWarning) setMessage(`${saved.addressWarning} Approved as ${approved.soNumber}.`);
       router.replace(`/sales/orders/${saved.id}`);
       router.refresh();
@@ -641,6 +654,21 @@ export function SalesOrderForm({
           <p className="banner error" role="alert">
             {message}
           </p>
+        ) : null}
+
+        {!locked ? (
+          <label>
+            Sales order number
+            <input
+              id="so-number"
+              value={orderNumber}
+              autoCapitalize="characters"
+              onChange={(event) => setOrderNumber(event.target.value.toUpperCase())}
+            />
+          </label>
+        ) : null}
+        {!locked ? (
+          <p className="hint">Suggested first available number. Type another number if that one should be skipped. It is saved when you approve.</p>
         ) : null}
 
         <div className="actions">

@@ -121,6 +121,29 @@ export function addressFromRecord(value: unknown): SoAddress {
   };
 }
 
+/** Display form of the integer so_number. Drafts have none. */
+export function formatSalesOrderNumber(value: number | string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) return null;
+  return `SO${numeric}`;
+}
+
+/** Accepts 27766 or SO27766. */
+export function parseSalesOrderNumber(value: string): number | null {
+  const trimmed = value.trim().toUpperCase().replace(/^SO/, "");
+  if (!/^[0-9]+$/.test(trimmed)) return null;
+  const numeric = Number(trimmed);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) return null;
+  return numeric;
+}
+
+/** Matches so_invoices.number: seq 1 is INV plus the SO number, then INV27766-2. */
+export function invoiceNumber(soNumber: number, seq: number): string | null {
+  if (!Number.isSafeInteger(soNumber) || soNumber < 1 || !Number.isSafeInteger(seq) || seq < 1) return null;
+  return seq === 1 ? `INV${soNumber}` : `INV${soNumber}-${seq}`;
+}
+
 export function salesOrderStatusLabel(status: string): string {
   return status
     .split("_")

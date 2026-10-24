@@ -2,7 +2,7 @@ import Link from "next/link";
 import { SalesOrderForm } from "@/components/SalesOrderForm";
 import { errorText } from "@/lib/errors";
 import { pacificToday } from "@/lib/salesOrderDraft";
-import { listSalesLookups } from "@/lib/salesOrders";
+import { listSalesLookups, suggestSalesOrderNumber } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
 
 export const dynamic = "force-dynamic";
@@ -21,9 +21,16 @@ export default async function NewSalesOrderPage() {
   }
 
   try {
-    const lookups = await listSalesLookups();
+    const [lookups, suggestedNumber] = await Promise.all([listSalesLookups(), suggestSalesOrderNumber()]);
     return (
-      <SalesOrderForm order={null} lookups={lookups} canEdit={access.canEdit} showMoney={access.canViewMoney} today={pacificToday()} />
+      <SalesOrderForm
+        order={null}
+        lookups={lookups}
+        canEdit={access.canEdit}
+        showMoney={access.canViewMoney}
+        today={pacificToday()}
+        suggestedNumber={suggestedNumber}
+      />
     );
   } catch (error) {
     return (
