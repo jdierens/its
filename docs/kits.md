@@ -20,7 +20,7 @@ On create, condition and ECCN are defaults and can be edited. A server kit takes
 
 ## Sales order lines
 
-Apply `supabase/migrations/20261024070800_sales_orders.sql` before `supabase/migrations/20261024100100_kit_sales_lines.sql`.
+Apply `supabase/migrations/20261024070800_sales_orders.sql` before `supabase/migrations/20261024100100_kit_sales_lines.sql`. Until those tables exist, the sales-order line page says that sales order lines are not available yet. The items list, the recipe tab, and the Sales orders page do not read them.
 
 Approving a sales order copies the kit recipe onto `so_line_components`. The planned part stays. The actual part starts as the planned part, except a generic planned part starts empty. Swap can pick any non-kit SKU except a generic part. A generic item is not offered as the actual part, and the database rejects a generic `actual_item_id`. Substitutes are listed first and never limit the picker. A reason is required when the actual part differs from the planned part.
 

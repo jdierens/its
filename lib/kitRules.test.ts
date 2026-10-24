@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { genericStillNeedsPart, keepKitName, kitFieldDefaults } from "./kitRules.ts";
+import { genericStillNeedsPart, keepKitName, kitFieldDefaults, salesTableMissing } from "./kitRules.ts";
 
 test("kit names keep slashes", () => {
   const name = "DL360G10-S8/CSRF90_2/S240_2/M32R4_16/R408/P80_2/_K";
@@ -53,4 +53,11 @@ test("a generic component still needs a physical part", () => {
   assert.equal(genericStillNeedsPart({ plannedGeneric: true, hasActual: true, actualGeneric: false }), false);
   assert.equal(genericStillNeedsPart({ plannedGeneric: false, hasActual: false, actualGeneric: null }), false);
   assert.equal(genericStillNeedsPart({ plannedGeneric: false, hasActual: true, actualGeneric: true }), true);
+});
+
+test("a missing sales-order table is recognized without treating other errors as missing", () => {
+  assert.equal(salesTableMissing({ code: "PGRST205", message: "Could not find the table 'public.so_lines' in the schema cache" }), true);
+  assert.equal(salesTableMissing({ code: "42P01", message: 'relation "public.so_lines" does not exist' }), true);
+  assert.equal(salesTableMissing({ code: "23514", message: "Pick a physical part." }), false);
+  assert.equal(salesTableMissing({ code: "42703", message: "column so_lines.qty does not exist" }), false);
 });

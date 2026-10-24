@@ -70,6 +70,13 @@ export function kitFieldDefaults(taxonomyCode: string, children: KitChild[]): Ki
   };
 }
 
+/** True when the sales-order tables this screen reads have not been created yet. */
+export function salesTableMissing(error: { code?: string | null; message?: string | null }): boolean {
+  const code = error.code ?? "";
+  const message = error.message ?? "";
+  return code === "PGRST205" || code === "42P01" || /schema cache|relation .* does not exist/i.test(message);
+}
+
 export function genericStillNeedsPart(input: {
   plannedGeneric: boolean;
   actualGeneric: boolean | null;

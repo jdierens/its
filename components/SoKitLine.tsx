@@ -24,16 +24,31 @@ export function SoKitLine({ lineId }: { lineId: string }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const [status, setStatus] = useState<"loading" | "ready" | "missing" | "unavailable">("loading");
+
   async function reload() {
     const loaded = await loadSoKitLine(lineId);
-    setLine(loaded);
+    if (loaded.status === "ready") {
+      setLine(loaded.line);
+      setStatus("ready");
+      return;
+    }
+    setLine(null);
+    setStatus(loaded.status);
   }
 
   useEffect(() => {
     let cancelled = false;
     loadSoKitLine(lineId)
       .then((loaded) => {
-        if (!cancelled) setLine(loaded);
+        if (cancelled) return;
+        if (loaded.status === "ready") {
+          setLine(loaded.line);
+          setStatus("ready");
+          return;
+        }
+        setLine(null);
+        setStatus(loaded.status);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(errorText(err));
@@ -98,8 +113,10 @@ export function SoKitLine({ lineId }: { lineId: string }) {
     }
   }
 
-  if (!line && !error) return <p className="muted">Loading…</p>;
-  if (!line) return <p className="banner error">{error}</p>;
+  if (error && !line) return <p className="banner error">{error}</p>;
+  if (status === "unavailable") return <p className="muted">Sales order lines are not available yet.</p>;
+  if (status === "missing") return <p className="muted">That sales order line was not found.</p>;
+  if (!line) return <p className="muted">Loading…</p>;
 
   const blocked = line.components.some((row) =>
     genericStillNeedsPart({

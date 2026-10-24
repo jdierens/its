@@ -1,6 +1,7 @@
 "use server";
 
 import { errorText } from "@/lib/errors";
+import { salesTableMissing } from "@/lib/kitRules";
 import { purchaseOperatorId } from "@/lib/purchaseSession";
 import { getSupabase } from "@/lib/supabase";
 
@@ -206,20 +207,31 @@ export async function setItemGeneric(itemId: string, generic: boolean): Promise<
   if (error) throw new Error(errorText(error));
 }
 
-export async function loadSoKitLine(lineId: string): Promise<SoKitLineView | null> {
+export type SoKitLineLoad =
+  | { status: "ready"; line: SoKitLineView }
+  | { status: "missing" }
+  | { status: "unavailable" };
+
+export async function loadSoKitLine(lineId: string): Promise<SoKitLineLoad> {
   const supabase = await getSupabase();
   const line = await supabase
     .from("so_lines")
     .select("id, line_no, customer_part_number, customer_description, qty")
     .eq("id", lineId)
     .maybeSingle();
-  if (line.error) throw new Error(errorText(line.error));
-  if (!line.data) return null;
+  if (line.error) {
+    if (salesTableMissing(line.error)) return { status: "unavailable" };
+    throw new Error(errorText(line.error));
+  }
+  if (!line.data) return { status: "missing" };
   const allocations = await supabase
     .from("so_line_allocations")
     .select("items(sku, name, item_type)")
     .eq("so_line_id", lineId);
-  if (allocations.error) throw new Error(errorText(allocations.error));
+  if (allocations.error) {
+    if (salesTableMissing(allocations.error)) return { status: "unavailable" };
+    throw new Error(errorText(allocations.error));
+  }
   const kit = (allocations.data ?? [])
     .map((row) => (Array.isArray(row.items) ? row.items[0] : row.items))
     .find((item) => item && item.item_type === "Kit/Package");
@@ -227,15 +239,20 @@ export async function loadSoKitLine(lineId: string): Promise<SoKitLineView | nul
     .from("so_line_components")
     .select("id, planned_item_id, actual_item_id, qty, swap_reason, planned:items!so_line_components_planned_item_id_fkey(sku, name, is_generic), actual:items!so_line_components_actual_item_id_fkey(sku, name, is_generic)")
     .eq("so_line_id", lineId);
-  if (components.error) throw new Error(errorText(components.error));
+  if (components.error) {
+    if (salesTableMissing(components.error)) return { status: "unavailable" };
+    throw new Error(errorText(components.error));
+  }
   return {
-    lineId: String(line.data.id),
-    lineNo: Number(line.data.line_no),
-    description: String(line.data.customer_description || line.data.customer_part_number || kit?.name || ""),
-    qty: String(line.data.qty ?? ""),
-    kitSku: String(kit?.sku ?? ""),
-    kitName: String(kit?.name ?? ""),
-    components: (components.data ?? []).map((row) => {
+    status: "ready",
+    line: {
+      lineId: String(line.data.id),
+      lineNo: Number(line.data.line_no),
+      description: String(line.data.customer_description || line.data.customer_part_number || kit?.name || ""),
+      qty: String(line.data.qty ?? ""),
+      kitSku: String(kit?.sku ?? ""),
+      kitName: String(kit?.name ?? ""),
+      components: (components.data ?? []).map((row) => {
       const planned = Array.isArray(row.planned) ? row.planned[0] : row.planned;
       const actual = Array.isArray(row.actual) ? row.actual[0] : row.actual;
       const actualId = row.actual_item_id ? String(row.actual_item_id) : null;
@@ -254,6 +271,7 @@ export async function loadSoKitLine(lineId: string): Promise<SoKitLineView | nul
         swapped: Boolean(actualId && actualId !== String(row.planned_item_id)),
       };
     }),
+    },
   };
 }
 
