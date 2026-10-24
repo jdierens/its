@@ -188,7 +188,7 @@ Test results hang off the serial (the unit), not off the SKU. A later listing ro
 | Column | Notes |
 |---|---|
 | `id` | uuid |
-| `number` | unique, from a PO counter, same idea as `sku_counter` |
+| `number` | unique text. `reserve_purchase_order_number()` returns `PO` plus the integer, with no hyphen, for example `PO6304`. The purchase-order screen shows that stored value |
 | `vendor_id` | seller or consignor |
 | `project_id` | nullable |
 | `purpose` | `purchase`, `settlement`, `buyout` |
@@ -212,6 +212,12 @@ Freight-in is stored for a later landed-cost allocation. That allocation is not 
 `po_shipments` is one tracking number on the order: `carrier` (`UPS`, `FedEx`, `USPS`, `DHL`, `Freight`, or `Other`) and `tracking_number`. A purchase order can have several, because it can arrive in more than one shipment. Tracking can be added after the order is sent. A later receipt references `po_shipments.id`, and saving the list again keeps that id when the carrier and number stay the same. Parcel carriers open a tracking page. Freight and Other do not. Tracking is not money.
 
 `po_attachments` stores PDF files on the order. The type is `vendor_invoice`, `quote`, `order_confirmation`, or `other`. There is no customer-document type. The bytes live in the private `po-documents` bucket. The server creates a signed URL for someone who can see money. A role without `can_view_financials` receives no attachment rows and no signed URL. That is true for every current type: a vendor invoice and a quote are the bill and the offer, an order confirmation repeats those prices, and an unlabeled file may be an invoice. Row level security is on, and only `service_role` can read the table. The bucket has no anon or authenticated policy.
+
+## Go-live number
+
+`supabase/migrations/20261024080000_po_number_format.sql` replaces the hyphenated number with `PO` plus the integer. That file does not change `po_counter`. Applying it now leaves the next number where it is, so a test purchase order still takes the current series and does not use `PO6304`.
+
+At go-live, run `supabase/go-live/po_counter_seed.sql` by hand. It is not a migration, and `db push` does not apply it. The statement sets `po_counter.next_number` to 6304 when the counter is still below 6304. The first purchase order issued after that step is `PO6304`. A counter already at or above 6304 stays where it is. The script does not renumber or delete purchase orders that already exist. A test row such as `PO-1` keeps the number it has. Remove or renumber those test rows separately if they should not stay.
 
 `po_lines.line_kind` is `known` or `lot`.
 
@@ -425,7 +431,7 @@ An invoice that does not match an existing PO becomes an intake draft. That row 
 
 Before creating an intake draft, match a numbered purchase order:
 
-1. A PO number printed on the invoice, such as `PO-12`.
+1. The number stored on the purchase order, printed on the invoice. A new number looks like `PO6304`. The match is that stored text, so an older test order still numbered `PO-1` matches `PO-1`.
 2. Otherwise the vendor plus the invoice total against one open order, within a small money tolerance. Two open orders for the same vendor and the same total do not auto-match.
 
 A match attaches the PDF to that PO as a vendor invoice. It does not create a second PO. The file types are the ones on the purchase order: vendor invoice, quote, order confirmation, or other. There is no customer-document type. The bytes go to the private `po-documents` bucket. The comparison is invoice lines against PO lines, quantity and unit price first. Mismatches are flags. The job does not edit the PO lines.
