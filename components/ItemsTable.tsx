@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Plus, Search } from "lucide-react";
 import { ItemExportMenu } from "@/components/ItemExportMenu";
 import { ItemsIconButton } from "@/components/ItemsIconButton";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -634,6 +634,7 @@ export function ItemsTable() {
             selectedIds={[...selected]}
             visibleColumns={gridColumns.map((column) => column.id)}
           />
+          <ItemsIconButton label="Advanced search" icon={Search} href="/items/search" />
           <ItemsIconButton label="New item" icon={Plus} variant="default" href="/items/new" />
         </div>
       </div>
