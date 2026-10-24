@@ -30,7 +30,7 @@ Contrast targets are WCAG AA: 4.5:1 for text, 3:1 for control borders. Primary b
 
 The sidebar is sticky, `100dvh` tall, and solid `#0a0e1c`. The mobile drawer uses the same height so it fills the screen instead of stopping after the links. The ITS mark and the version share one line, for example `ITS v0.21.0`. The version is small muted text. Hover the logo for the commit, branch, and Pacific build time. A collapsed sidebar hides the version and keeps that detail on the logo tooltip. The mobile drawer shows the version beside the mark again. When someone is signed in, their name sits at the bottom in `--sidebar-muted`, with a ghost **Sign out** control: a log-out icon and small muted text, no fill, border, or gradient. Hover adds a light highlight and leaves the text muted. A collapsed sidebar shows the icon only. The tooltip and accessible name are Sign out.
 
-The items list uses icon buttons for First page, Previous page, Next page, Export, and New item. Each has an accessible name and a tooltip. On viewports at 700px and below those controls are at least 44px square.
+The items list uses icon buttons for First page, Previous page, Next page, Last page, Export, and New item. Each has an accessible name and a tooltip. The four page buttons sit together. On viewports at 700px and below those controls are at least 44px square, including when a page button is disabled.
 
 Chips:
 
