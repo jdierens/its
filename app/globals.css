@@ -1962,6 +1962,127 @@ button.danger {
   margin-bottom: 0.9rem;
 }
 
+form.item-form {
+  gap: 0.45rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.item-form fieldset {
+  padding: 0.4rem 0.55rem 0.5rem;
+}
+
+.item-form label,
+.item-form .field span {
+  margin-bottom: 0.08rem;
+  font-size: 0.72rem;
+  line-height: 1.15;
+}
+
+.item-form .hint {
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+}
+
+.item-form .item-main-row,
+.item-form .grid,
+.item-form .item-identity {
+  gap: 0.35rem 0.45rem;
+  margin-bottom: 0.4rem;
+}
+
+.item-form .item-lead-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: start;
+  justify-content: flex-start;
+}
+
+.item-form .item-lead-row > label {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.item-form .item-lead-row > label[data-field="type"] {
+  width: 8.6rem;
+}
+
+.item-form .item-lead-row > label[data-field="taxonomy"] {
+  width: 11.5rem;
+}
+
+.item-form .item-lead-row > label[data-field="unit"] {
+  width: 6.2rem;
+}
+
+.item-form .item-lead-row > label[data-field="condition"] {
+  width: 6.4rem;
+}
+
+.item-form .item-lead-row > label[data-field="condition-note"] {
+  width: 11rem;
+  max-width: 14rem;
+}
+
+.item-form .item-lead-row > label.kit-check {
+  min-height: 1.75rem;
+  align-self: end;
+}
+
+.item-form .item-attr-mem {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: start;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.item-form .item-attr-mem > label {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.item-form .item-attr-mem > label[data-slot="family"] {
+  width: 5.6rem;
+}
+
+.item-form .item-attr-mem > label[data-slot="speed"] {
+  width: 4.8rem;
+}
+
+.item-form .item-attr-mem > label[data-slot="capacity"] {
+  width: 5.5rem;
+}
+
+.item-form .item-attr-mem > label[data-slot="ranking"] {
+  width: 5.2rem;
+}
+
+.item-form .item-attr-mem > label[data-slot="form_factor"] {
+  width: 11rem;
+}
+
+.item-form .item-attr-grid {
+  grid-template-columns: repeat(4, minmax(0, 11rem));
+  justify-content: start;
+}
+
+.item-form textarea {
+  min-height: 3.1rem;
+  padding: 0.28rem 0.45rem;
+  border-radius: 6px;
+}
+
+@media (min-width: 801px) {
+  .item-form input,
+  .item-form select {
+    height: 1.75rem;
+    padding: 0 0.4rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    line-height: 1.2;
+  }
+}
+
 .export-wrap {
   position: relative;
 }
@@ -3001,6 +3122,43 @@ tr.quote-latest td {
 
   .item-main-row {
     grid-template-columns: 1fr;
+  }
+
+  .item-form .item-lead-row,
+  .item-form .item-attr-mem {
+    flex-wrap: wrap;
+  }
+
+  .item-form .item-lead-row > label,
+  .item-form .item-attr-mem > label,
+  .item-form .item-attr-grid {
+    width: auto;
+    max-width: 100%;
+  }
+
+  .item-form .item-lead-row > label,
+  .item-form .item-attr-mem > label {
+    flex: 1 1 8.5rem;
+  }
+
+  .item-form .item-lead-row > label.kit-check {
+    min-height: 44px;
+  }
+
+  .item-form .item-attr-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .item-form input,
+  .item-form select,
+  .item-form textarea {
+    font-size: 16px;
+  }
+
+  .item-form input,
+  .item-form select {
+    min-height: 44px;
+    height: auto;
   }
 
   .export-wrap {

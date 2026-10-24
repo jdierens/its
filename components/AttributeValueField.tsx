@@ -29,9 +29,10 @@ type AttributeValueFieldProps = {
   value: string;
   onChange: (value: string) => void;
   onDraft?: (value: string) => void;
+  slot?: string | null;
 };
 
-export function AttributeValueField({ attribute, value, onChange, onDraft }: AttributeValueFieldProps) {
+export function AttributeValueField({ attribute, value, onChange, onDraft, slot }: AttributeValueFieldProps) {
   const listId = `attribute-values-${attribute.id}`;
   const trimmed = value.trim();
   const isNew =
@@ -40,7 +41,7 @@ export function AttributeValueField({ attribute, value, onChange, onDraft }: Att
     !attribute.allowedValues.some((option) => valuesMatch(attribute.data_type, option, trimmed));
 
   return (
-    <label>
+    <label data-slot={slot || undefined}>
       {attributeLabel(attribute.name, attribute.unit)}
       <FastInput
         list={attribute.uses_list && attribute.allowedValues.length > 0 ? listId : undefined}
