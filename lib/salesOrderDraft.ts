@@ -2,6 +2,23 @@ export const INCOTERMS = ["EXW", "FCA", "FOB", "CIF", "DAP", "DDP"] as const;
 
 export const SO_CURRENCIES = ["USD", "EUR", "GBP", "HKD"] as const;
 
+export const SO_LINE_KINDS = [
+  { id: "product", label: "Product" },
+  { id: "kit", label: "Kit" },
+  { id: "freight", label: "Freight" },
+  { id: "fee", label: "Fee" },
+  { id: "service", label: "Service" },
+  { id: "discount", label: "Discount" },
+  { id: "other", label: "Other" },
+] as const;
+
+export type SoLineKind = (typeof SO_LINE_KINDS)[number]["id"];
+
+/** A product line is the only kind that must point at an item. */
+export function lineRequiresItem(lineKind: string): boolean {
+  return (lineKind || "product") === "product";
+}
+
 export const SO_NOTE_KINDS = [
   { id: "warranty", label: "Warranty" },
   { id: "shipping_instruction", label: "Shipping instruction" },
@@ -30,6 +47,7 @@ export type SoAllocationInput = {
 };
 
 export type SoLineInput = {
+  lineKind: string;
   customerPartNumber: string;
   customerDescription: string;
   qty: string;
@@ -50,6 +68,7 @@ export type SoDraftInput = {
   customerId: string;
   customerPo: string;
   reference: string;
+  channel: string;
   orderDate: string;
   shipDate: string;
   billTo: SoAddress;
@@ -203,6 +222,7 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
     customer_id: input.customerId,
     customer_po: input.customerPo,
     reference: input.reference,
+    channel: input.channel,
     order_date: input.orderDate,
     ship_date: input.shipDate,
     bill_to: input.billTo,
@@ -217,6 +237,7 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
     internal_notes: input.internalNotes,
     payment_requirement: input.paymentRequirement || "terms",
     lines: input.lines.map((line) => ({
+      line_kind: line.lineKind || "product",
       customer_part_number: line.customerPartNumber,
       customer_description: line.customerDescription,
       qty: line.qty,

@@ -1,6 +1,6 @@
 -- Sales orders, kept apart from purchase orders.
--- Own tables, own counter, own terms and ship methods. Does not read po_counter
--- or the purchase-order terms and carrier checks.
+-- Own tables, own counter, own terms, ship methods, and channels. Does not read
+-- po_counter or the purchase-order terms and carrier checks.
 -- Not applied here. Review and apply by hand. Do not run this against production
 -- until it has been reviewed.
 
@@ -66,6 +66,27 @@ insert into public.so_ship_methods (code, carrier, method, sort_order) values
   ('UPS Ground', 'UPS', 'Ground', 4),
   ('Will call', 'Will call', 'Will call', 5);
 
+create table public.so_channels (
+  code text primary key,
+  label text not null,
+  sort_order integer not null,
+  constraint so_channels_label_check check (char_length(btrim(label)) > 0),
+  constraint so_channels_sort_check check (sort_order > 0)
+);
+
+comment on table public.so_channels is
+  'Who the sale is for. Separate from sales_orders.source, which is how the order arrived.';
+
+insert into public.so_channels (code, label, sort_order) values
+  ('ebay', 'eBay', 1),
+  ('broker_reseller', 'Broker / reseller', 2),
+  ('direct', 'Direct', 3),
+  ('supermicro_ff', 'Supermicro FF', 4),
+  ('oem_end_user', 'OEM end user', 5),
+  ('take_out', 'Take out', 6),
+  ('project_buy', 'Project buy', 7),
+  ('other', 'Other', 8);
+
 create table public.sales_orders (
   id uuid primary key default gen_random_uuid(),
   so_number bigint,
@@ -86,6 +107,7 @@ create table public.sales_orders (
   export_notes text,
   internal_notes text,
   source text not null default 'manual',
+  channel text references public.so_channels (code),
   source_ref text,
   source_message_id text,
   ebay_order_id text,
@@ -93,6 +115,7 @@ create table public.sales_orders (
   buyer jsonb,
   field_confidence jsonb,
   sheet_ref text,
+  legacy_journal_ref text,
   approved_at timestamptz,
   approved_by uuid references public.app_users (id),
   payment_requirement text not null default 'terms',
@@ -129,8 +152,20 @@ comment on column public.sales_orders.reference is
 comment on column public.sales_orders.ebay_order_id is
   'eBay order id. Unique when set. An eBay order still takes its SO number from so_counter.';
 
+comment on column public.sales_orders.source is
+  'How the order arrived: manual, email, whatsapp, or ebay. Separate from channel.';
+
+comment on column public.sales_orders.channel is
+  'Sales channel. Foreign key to so_channels. Null until chosen. Not the same fact as source.';
+
 comment on column public.sales_orders.ebay_sales_record_ref is
   'eBay sales record reference. Not unique; ebay_order_id is the unique eBay key.';
+
+comment on column public.sales_orders.sheet_ref is
+  'Transactions sheet row or reference. Indexed, and not unique.';
+
+comment on column public.sales_orders.legacy_journal_ref is
+  'Legacy journal reference. Nullable and not unique.';
 
 comment on column public.sales_orders.bill_to is
   'Postal address copied from the customer and editable: line1, line2, city, countrySubDivisionCode, postalCode, country.';
@@ -142,7 +177,7 @@ create unique index sales_orders_ebay_order_id_key
   on public.sales_orders (ebay_order_id)
   where ebay_order_id is not null;
 
-create unique index sales_orders_sheet_ref_key
+create index sales_orders_sheet_ref_idx
   on public.sales_orders (sheet_ref)
   where sheet_ref is not null;
 
@@ -157,6 +192,7 @@ create table public.so_lines (
   id uuid primary key default gen_random_uuid(),
   sales_order_id uuid not null references public.sales_orders (id) on delete cascade,
   line_no integer not null,
+  line_kind text not null default 'product',
   customer_part_number text,
   customer_description text,
   qty numeric(14, 2) not null,
@@ -169,6 +205,9 @@ create table public.so_lines (
   country_of_origin text,
   constraint so_lines_order_line_unique unique (sales_order_id, line_no),
   constraint so_lines_line_no_positive check (line_no > 0),
+  constraint so_lines_kind_check check (
+    line_kind in ('product', 'kit', 'freight', 'fee', 'service', 'discount', 'other')
+  ),
   constraint so_lines_qty_positive check (qty > 0),
   constraint so_lines_price_nonnegative check (unit_price is null or unit_price >= 0),
   constraint so_lines_ext_check check (
@@ -182,7 +221,10 @@ create table public.so_lines (
 );
 
 comment on table public.so_lines is
-  'Customer lines. The part number and description stay as the customer wrote them. A SKU is an allocation, required only when the order is approved.';
+  'Customer lines. The part number and description stay as the customer wrote them.';
+
+comment on column public.so_lines.line_kind is
+  'product, kit, freight, fee, service, discount, or other. Default product. Kit is stored only. Kit contents and a sales-order to purchase-order link are not built here.';
 
 create index so_lines_order_idx on public.so_lines (sales_order_id, line_no);
 
@@ -197,7 +239,10 @@ create table public.so_line_allocations (
 );
 
 comment on table public.so_line_allocations is
-  'SKUs that fill one customer line. Several rows are allowed. Their quantities must add up to the line when the order is approved.';
+  'SKUs that fill one customer line. Several rows are allowed. This is the only item link, matching po_lines.item_id, except a product line can be more than one SKU.';
+
+comment on column public.so_line_allocations.item_id is
+  'Required when the line kind is product: approval checks that those quantities add up to the line. Other kinds may have no item. A partial allocation on any kind must still add up.';
 
 create index so_line_allocations_line_idx on public.so_line_allocations (so_line_id);
 
@@ -652,9 +697,15 @@ declare
   v_line uuid;
   v_qty numeric;
   v_price numeric;
+  v_kind text;
+  v_channel text := public.blank_to_null(p_payload ->> 'channel');
 begin
   if v_customer is null or not exists (select 1 from public.customers where id = v_customer) then
     raise exception 'Choose a customer.'
+      using errcode = '22023';
+  end if;
+  if v_channel is not null and not exists (select 1 from public.so_channels where code = v_channel) then
+    raise exception 'Choose a channel.'
       using errcode = '22023';
   end if;
   if public.blank_to_null(upper(btrim(coalesce(p_payload ->> 'sales_rep', '')))) is not null
@@ -668,8 +719,8 @@ begin
     insert into public.sales_orders (
       status, customer_id, customer_po, reference, order_date, ship_date,
       bill_to, ship_to, terms, incoterms, ship_method, carrier_account,
-      currency, sales_rep, export_notes, internal_notes, source,
-      payment_requirement, operator_id
+      currency, sales_rep, export_notes, internal_notes, source, channel,
+      legacy_journal_ref, sheet_ref, payment_requirement, operator_id
     ) values (
       'draft',
       v_customer,
@@ -688,6 +739,9 @@ begin
       public.blank_to_null(p_payload ->> 'export_notes'),
       public.blank_to_null(p_payload ->> 'internal_notes'),
       coalesce(public.blank_to_null(p_payload ->> 'source'), 'manual'),
+      v_channel,
+      case when p_payload ? 'legacy_journal_ref' then public.blank_to_null(p_payload ->> 'legacy_journal_ref') else null end,
+      case when p_payload ? 'sheet_ref' then public.blank_to_null(p_payload ->> 'sheet_ref') else null end,
       coalesce(public.blank_to_null(p_payload ->> 'payment_requirement'), 'terms'),
       v_operator
     )
@@ -720,6 +774,15 @@ begin
       sales_rep = public.blank_to_null(upper(btrim(coalesce(p_payload ->> 'sales_rep', '')))),
       export_notes = public.blank_to_null(p_payload ->> 'export_notes'),
       internal_notes = public.blank_to_null(p_payload ->> 'internal_notes'),
+      channel = v_channel,
+      legacy_journal_ref = case
+        when p_payload ? 'legacy_journal_ref' then public.blank_to_null(p_payload ->> 'legacy_journal_ref')
+        else legacy_journal_ref
+      end,
+      sheet_ref = case
+        when p_payload ? 'sheet_ref' then public.blank_to_null(p_payload ->> 'sheet_ref')
+        else sheet_ref
+      end,
       payment_requirement = coalesce(public.blank_to_null(p_payload ->> 'payment_requirement'), 'terms'),
       operator_id = v_operator,
       updated_at = now()
@@ -740,12 +803,18 @@ begin
       raise exception 'Enter a quantity above 0.'
         using errcode = '22023';
     end if;
+    v_kind := coalesce(public.blank_to_null(line ->> 'line_kind'), 'product');
+    if v_kind not in ('product', 'kit', 'freight', 'fee', 'service', 'discount', 'other') then
+      raise exception 'Choose a line kind.'
+        using errcode = '22023';
+    end if;
     insert into public.so_lines (
-      sales_order_id, line_no, customer_part_number, customer_description,
+      sales_order_id, line_no, line_kind, customer_part_number, customer_description,
       qty, unit_price, ext_price, condition, eccn, hts_code, country_of_origin
     ) values (
       v_id,
       n,
+      v_kind,
       public.blank_to_null(line ->> 'customer_part_number'),
       public.blank_to_null(line ->> 'customer_description'),
       v_qty,
@@ -863,11 +932,14 @@ begin
   end if;
 
   for v_line in
-    select id, line_no, qty from public.so_lines where sales_order_id = p_order order by line_no
+    select id, line_no, line_kind, qty from public.so_lines where sales_order_id = p_order order by line_no
   loop
     select coalesce(sum(qty), 0) into v_allocated
     from public.so_line_allocations
     where so_line_id = v_line.id;
+    if v_line.line_kind <> 'product' and v_allocated = 0 then
+      continue;
+    end if;
     if v_allocated <> v_line.qty then
       raise exception 'Line % must be allocated to SKUs that add up to the quantity.', v_line.line_no
         using errcode = '22023';
@@ -911,7 +983,7 @@ end;
 $$;
 
 comment on function public.approve_sales_order(uuid, text, uuid, bigint) is
-  'Approves a draft once every line is allocated. Assigns so_number under a lock on so_counter. Null uses the lowest free number at or above the counter. A typed number must be unused. The counter never moves backwards, and a number above it moves the counter past that number.';
+  'Approves a draft. A product line must be allocated to SKUs that add up to its quantity. Other line kinds need no item, and any allocation they do have must still add up. Assigns so_number under a lock on so_counter. Null uses the lowest free number at or above the counter. A typed number must be unused. The counter never moves backwards, and a number above it moves the counter past that number.';
 
 create or replace function public.cancel_sales_order(
   p_order uuid,
@@ -960,6 +1032,7 @@ comment on function public.cancel_sales_order(uuid, text, uuid) is
 alter table public.so_counter enable row level security;
 alter table public.so_payment_terms enable row level security;
 alter table public.so_ship_methods enable row level security;
+alter table public.so_channels enable row level security;
 alter table public.sales_orders enable row level security;
 alter table public.so_lines enable row level security;
 alter table public.so_line_allocations enable row level security;
@@ -979,6 +1052,7 @@ alter table public.so_invoice_lines enable row level security;
 revoke all on table public.so_counter from public, anon, authenticated;
 revoke all on table public.so_payment_terms from public, anon, authenticated;
 revoke all on table public.so_ship_methods from public, anon, authenticated;
+revoke all on table public.so_channels from public, anon, authenticated;
 revoke all on table public.sales_orders from public, anon, authenticated;
 revoke all on table public.so_lines from public, anon, authenticated;
 revoke all on table public.so_line_allocations from public, anon, authenticated;
@@ -998,6 +1072,7 @@ revoke all on table public.so_invoice_lines from public, anon, authenticated;
 grant select, insert, update, delete on table public.so_counter to service_role;
 grant select, insert, update, delete on table public.so_payment_terms to service_role;
 grant select, insert, update, delete on table public.so_ship_methods to service_role;
+grant select, insert, update, delete on table public.so_channels to service_role;
 grant select, insert, update, delete on table public.sales_orders to service_role;
 grant select, insert, update, delete on table public.so_lines to service_role;
 grant select, insert, update, delete on table public.so_line_allocations to service_role;
