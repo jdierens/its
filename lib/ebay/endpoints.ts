@@ -38,3 +38,7 @@ export function userUrl(environment: EbayEnvironment): string {
 export function privilegeUrl(environment: EbayEnvironment): string {
   return `${apiBase(environment)}/sell/account/v1/privilege`;
 }
+
+export function tradingUrl(environment: EbayEnvironment): string {
+  return `${apiBase(environment)}/ws/api.dll`;
+}

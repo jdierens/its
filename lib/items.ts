@@ -1,6 +1,7 @@
 "use server";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ebayIdsForItems, itemIdsMatchingEbayItemId } from "@/lib/ebay/listings";
 import { errorText } from "@/lib/errors";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
 import { primaryStoragePath } from "@/lib/imageOrder";
@@ -374,11 +375,12 @@ export async function resolveItemQuery(input: {
       if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
       return query;
     });
-    const [textResults, attributeResult, nameResult, aliasResult] = await Promise.all([
+    const [textResults, attributeResult, nameResult, aliasResult, ebayItemIds] = await Promise.all([
       Promise.all(textQueries),
       supabase.from("item_attributes").select("item_id").ilike("value", pattern),
       supabase.from("manufacturers").select("id").ilike("name", pattern),
       supabase.from("manufacturer_aliases").select("manufacturer_id").ilike("alias", pattern),
+      itemIdsMatchingEbayItemId(supabase, pattern),
     ]);
     const failed = textResults.find((result) => result.error);
     if (failed?.error) throw new Error(errorText(failed.error));
@@ -395,6 +397,7 @@ export async function resolveItemQuery(input: {
     for (const row of attributeResult.data ?? []) {
       if (typeof row.item_id === "string") matched.add(row.item_id);
     }
+    for (const id of ebayItemIds) matched.add(id);
 
     const makerIds = new Set<string>();
     for (const row of nameResult.data ?? []) {
@@ -519,12 +522,16 @@ export async function fetchItemList(input: {
   const byId = new Map(((fetched.data ?? []) as unknown as ListRow[]).map((item) => [item.id, item]));
   const records = listed.ids.map((id) => byId.get(id)).filter((item): item is ListRow => Boolean(item));
   const paths = records.map((item) => primaryPath(item.item_images));
-  const urls = await signedImageUrls(paths.filter((path): path is string => Boolean(path)));
+  const [urls, ebayIds] = await Promise.all([
+    signedImageUrls(paths.filter((path): path is string => Boolean(path))),
+    ebayIdsForItems(supabase, records.map((item) => item.id)),
+  ]);
 
   return {
-    rows: records.map((item, index) =>
-      toListRow(item, paths[index] ? urls.get(paths[index] as string) ?? null : null),
-    ),
+    rows: records.map((item, index) => ({
+      ...toListRow(item, paths[index] ? urls.get(paths[index] as string) ?? null : null),
+      ebayItemIds: ebayIds.get(item.id) ?? [],
+    })),
     total,
     matched: listed.count,
     page: listed.page,
@@ -636,6 +643,7 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
     updatedAt: item.updated_at ?? "",
     fields,
     isGeneric: Boolean(item.is_generic),
+    ebayItemIds: [],
   };
 }
 
@@ -647,8 +655,11 @@ export async function fetchListedItem(id: string): Promise<ItemListRow | null> {
   if (!listed.data) return null;
   const item = listed.data as unknown as ListRow;
   const path = primaryPath(item.item_images);
-  const urls = path ? await signedImageUrls([path]) : new Map<string, string>();
-  return toListRow(item, path ? urls.get(path) ?? null : null);
+  const [urls, ebayIds] = await Promise.all([
+    path ? signedImageUrls([path]) : Promise.resolve(new Map<string, string>()),
+    ebayIdsForItems(supabase, [item.id]),
+  ]);
+  return { ...toListRow(item, path ? urls.get(path) ?? null : null), ebayItemIds: ebayIds.get(item.id) ?? [] };
 }
 
 export type CellSave = {

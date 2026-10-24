@@ -139,7 +139,7 @@ export const NAV_GROUPS: NavGroup[] = [
           {
             label: "eBay",
             href: "/admin/integrations/ebay",
-            description: "Seller connection for listings later.",
+            description: "Seller connection and active listings.",
           },
         ],
       },

@@ -55,6 +55,13 @@ type EbayStatus = {
   expiresAt: string | null;
   acceptUrl: string;
   deletionUrl: string;
+  listings: {
+    available: boolean;
+    active: number | null;
+    unmatched: number | null;
+    fetchedAt: string | null;
+  };
+  canRefreshListings: boolean;
   message: string | null;
   logs: LogEntry[];
 };
@@ -73,7 +80,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
   const [error, setError] = useState<string | null>(null);
   const [ebayError, setEbayError] = useState<string | null>(null);
   const [busy, setBusy] = useState<
-    "sync" | "customer" | "vendor" | "disconnect" | "ebay-test" | "ebay-disconnect" | null
+    "sync" | "customer" | "vendor" | "disconnect" | "ebay-test" | "ebay-disconnect" | "ebay-listings" | null
   >(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [ebayNotice, setEbayNotice] = useState<string | null>(null);
@@ -197,6 +204,28 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Disconnect failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function refreshEbayListings() {
+    setBusy("ebay-listings");
+    setEbayNotice(null);
+    setEbayError(null);
+    try {
+      const response = await fetch("/api/ebay/listings", { method: "POST" });
+      const body = (await response.json()) as { message?: string; active?: number; unmatched?: number };
+      if (body.message === EBAY_RECONNECT_MESSAGE) setEbayError(EBAY_RECONNECT_MESSAGE);
+      else if (!response.ok) setEbayError(body.message || "eBay listings could not be refreshed.");
+      else {
+        const active = body.active ?? 0;
+        const unmatched = body.unmatched ?? 0;
+        setEbayNotice(`Fetched ${active} active listings. ${unmatched} do not match an item SKU.`);
+      }
+      await load();
+    } catch (err) {
+      setEbayError(err instanceof Error ? err.message : "eBay listings could not be refreshed.");
     } finally {
       setBusy(null);
     }
@@ -359,6 +388,16 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
         {focus === "ebay" ? (
           <ToolbarButton icon={Plug} label={ebayConnectLabel} href={ebayConnectHref} disabled={!ebayConnectHref || busy !== null} />
         ) : null}
+        {focus === "ebay" && ebay?.canRefreshListings ? (
+          <button
+            type="button"
+            className="secondary toolbar-text"
+            disabled={!ebayConnected || busy !== null}
+            onClick={() => void refreshEbayListings()}
+          >
+            {busy === "ebay-listings" ? "Refreshing listings…" : "Refresh listings"}
+          </button>
+        ) : null}
         <ToolbarButton
           icon={Cable}
           label="Test eBay connection"
@@ -458,7 +497,22 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
                   <dt>eBay user id</dt>
                   <dd>{ebay.ebayUserId ?? "—"}</dd>
                 </div>
+                <div>
+                  <dt>Active listings</dt>
+                  <dd>{ebay.listings?.available ? ebay.listings.active ?? 0 : "—"}</dd>
+                </div>
+                <div>
+                  <dt>Unmatched SKUs</dt>
+                  <dd>{ebay.listings?.available ? ebay.listings.unmatched ?? 0 : "—"}</dd>
+                </div>
+                <div>
+                  <dt>Listings fetched</dt>
+                  <dd>{ebay.listings?.fetchedAt ? formatWhen(ebay.listings.fetchedAt) : "Never"}</dd>
+                </div>
               </dl>
+              {ebay.listings && !ebay.listings.available ? (
+                <p className="hint">The listings table is not in the database yet.</p>
+              ) : null}
               {ebayNeedsReconnect ? <p className="banner error">{EBAY_RECONNECT_MESSAGE}</p> : null}
               {ebay.message ? <p className="banner error">{ebay.message}</p> : null}
               {!ebayConfigured ? (
@@ -478,7 +532,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
                   OAuth redirect uses RuName <code>{ebay.ruName}</code>, not the URL above.
                 </p>
               ) : null}
-              <p className="hint">Connect, test, and disconnect are in the toolbar.</p>
+              <p className="hint">Connect, refresh listings, test, and disconnect are in the toolbar. Refresh reads active listings and does not change anything on eBay.</p>
               <h3>Recent log</h3>
               {ebay.logs.length > 0 ? (
                 <table className="log-table">

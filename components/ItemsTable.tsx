@@ -5,6 +5,7 @@ import { ItemExportMenu } from "@/components/ItemExportMenu";
 import { ItemsIconButton } from "@/components/ItemsIconButton";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { EbayItemIds } from "@/components/EbayItemIds";
 import { QueryField } from "@/components/QueryField";
 import { BulkEditBar, type BulkField } from "@/components/BulkEditBar";
 import { CellEditor } from "@/components/CellEditor";
@@ -55,6 +56,7 @@ const LEADING = [
   { id: "photo", label: "Photo" },
   { id: "taxonomy", label: "Taxonomy" },
   { id: "sku", label: "SKU" },
+  { id: "ebay", label: "eBay" },
   { id: "name", label: "Name" },
   { id: "item_type", label: "Item type" },
   { id: "manufacturer", label: "Manufacturer" },
@@ -598,7 +600,7 @@ export function ItemsTable() {
           className="items-search"
           type="search"
           aria-label="Search items"
-          placeholder="Search SKU, name, manufacturer, model, part number"
+          placeholder="Search SKU, name, manufacturer, model, part number, eBay item id"
           value={q}
           onCommit={commitSearch}
         />
@@ -851,6 +853,8 @@ export function ItemsTable() {
                           />
                         ) : column.id === "taxonomy" ? (
                           item.shortCode ? <span className="code-badge">{item.shortCode}</span> : "—"
+                        ) : column.id === "ebay" ? (
+                          <EbayItemIds ids={item.ebayItemIds} />
                         ) : column.id === "product_url" && productUrlHref(item.productUrl) ? (
                           <a
                             href={productUrlHref(item.productUrl) ?? undefined}

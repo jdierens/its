@@ -72,6 +72,7 @@ export type ItemListRow = {
   updatedAt: string;
   fields: Record<string, string>;
   isGeneric: boolean;
+  ebayItemIds: string[];
 };
 
 export type ItemList = {
