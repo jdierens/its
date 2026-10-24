@@ -6,13 +6,15 @@ The receiving screen posts a known SKU into a bin. The top of the form is the re
 
 | Label | Stored as | Notes |
 | --- | --- | --- |
-| Project | `stock_events.project` and, when a cycle opens, `bin_cycles.project` | The recent list shows receipts for the project typed here. |
+| Project | `stock_events.project` and, when a cycle opens, `bin_cycles.project` | A combobox. Focusing it lists this person's 10 most recently used projects from receipts with their initials, newest first. Typing narrows that list. A name that is not listed is still stored as typed. |
 | Receiving date | `stock_events.received_on` | Defaults to today in America/Los_Angeles. |
 | Incoming bin | `stock_events.incoming_tag` and, when a cycle opens, `bin_cycles.incoming_tag` | The database column is still `incoming_tag`. |
 | Originating system | `stock_events.origin_description` and, when a cycle opens, `bin_cycles.origin_description` | The database column is still `origin_description`. |
 | Orig. system qty | `stock_events.origin_qty` | Optional whole number. The field label is shortened so the header stays on one row. This is the quantity the originating system reports, not the quantity put in the bin. |
 
 A bin that already holds stock keeps the cycle it opened with. The receipt line still stores the header that was on the form.
+
+The project field is filled when the page opens. This browser keeps the last value for this person in `localStorage`, including a cleared field. The first visit on a device, or a browser that blocks storage, uses the project on that person's latest receipt. Clear empties the field. The incoming bin, originating system, receiving date, and originating quantity stay as they are. After a save, that whole header stays filled.
 
 ## Receiving date before go-live
 
