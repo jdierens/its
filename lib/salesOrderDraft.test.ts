@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   allocationsCover,
+  formatSalesOrderNumber,
   hideSalesMoney,
+  invoiceNumber,
   lineExtension,
+  parseSalesOrderNumber,
   partMatches,
   partPrefix,
   salesOrderTotal,
@@ -35,6 +38,18 @@ describe("sales order draft", () => {
     assert.deepEqual(hidden, { unitPrice: "", extPrice: "", total: null, internalNotes: "" });
     assert.equal(salesOrderTotal([{ extPrice: "10.00" }, { extPrice: "2.50" }]), 12.5);
     assert.equal(salesOrderTotal([{ extPrice: "" }]), null);
+  });
+
+  it("shows an integer sales-order number as SO plus the digits", () => {
+    assert.equal(formatSalesOrderNumber(27766), "SO27766");
+    assert.equal(formatSalesOrderNumber("27766"), "SO27766");
+    assert.equal(formatSalesOrderNumber(null), null);
+    assert.equal(parseSalesOrderNumber("SO27770"), 27770);
+    assert.equal(parseSalesOrderNumber("27770"), 27770);
+    assert.equal(parseSalesOrderNumber("SO"), null);
+    assert.equal(invoiceNumber(27766, 1), "INV27766");
+    assert.equal(invoiceNumber(27766, 2), "INV27766-2");
+    assert.equal(invoiceNumber(27766, 3), "INV27766-3");
   });
 
   it("sends a draft payload without a sales-order number", () => {

@@ -6,7 +6,17 @@ Sales orders do not share tables, counters, payment terms, or carrier checks wit
 
 ## Number
 
-A draft has no number. `approve_sales_order` assigns plain digits from `reserve_sales_order_number`, which locks `so_counter` and skips numbers already used. The counter is seeded at 1 as a placeholder. Set `next_number` from QuickBooks before the first real approval. If the draft already has an all-digit `qbo_doc_number`, approval uses that number and moves the counter past it. Cancelling keeps a number that was already issued.
+A draft has no number. `so_number` is an integer, and the order is shown as `SO` plus that integer, for example `SO27766`. `so_counter` is seeded at 27766, the next number at go-live.
+
+Approval suggests the lowest unused number at or above the counter. The person approving can type a different number. `approve_sales_order` locks `so_counter`, rejects a number that is already on a sales order, and never moves the counter backwards. A number above the counter moves the counter past it. A number below the counter is allowed when it is free, and the counter stays where it is. Cancelling keeps a number that was already issued.
+
+eBay orders use this same series. `ebay_order_id` is unique when set, and `ebay_sales_record_ref` stores the eBay sales record reference.
+
+The internal reference is a separate note on the order. The SO number itself is the reference assigned at approval.
+
+## Invoices
+
+`so_invoices.seq` is 1, 2, 3, and so on for that sales order. The display number is generated: seq 1 is `INV` plus the sales-order number (`INV27766`), and later invoices are `INV27766-2`, `INV27766-3`. The ITS invoice is the one the customer receives. `qbo_invoice_id`, `qbo_doc_number`, and `qbo_synced_at` are on the invoice for the later QuickBooks upload. An invoice cannot be inserted until the sales order has a number.
 
 ## Approve
 
