@@ -11,9 +11,11 @@ import {
   formatSalesOrderNumber,
   INCOTERMS,
   lineExtension,
+  lineRequiresItem,
   parseSalesOrderNumber,
   salesOrderStatusLabel,
   SO_CURRENCIES,
+  SO_LINE_KINDS,
   SO_NOTE_KINDS,
   type SoAddress,
   type SoDraftInput,
@@ -68,6 +70,7 @@ export function SalesOrderForm({
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerPo, setCustomerPo] = useState(order?.customerPo ?? "");
   const [reference, setReference] = useState(order?.reference ?? "");
+  const [channel, setChannel] = useState(order?.channel ?? "");
   const [orderDate, setOrderDate] = useState(order?.orderDate || today);
   const [shipDate, setShipDate] = useState(order?.shipDate ?? "");
   const [billTo, setBillTo] = useState<SoAddress>(order?.billTo ?? emptyAddress());
@@ -111,6 +114,7 @@ export function SalesOrderForm({
       customerId,
       customerPo,
       reference,
+      channel,
       orderDate,
       shipDate,
       billTo,
@@ -125,6 +129,7 @@ export function SalesOrderForm({
       internalNotes,
       paymentRequirement,
       lines: lines.map((line) => ({
+        lineKind: line.lineKind || "product",
         customerPartNumber: line.customerPartNumber,
         customerDescription: line.customerDescription,
         qty: line.qty,
@@ -150,6 +155,7 @@ export function SalesOrderForm({
       setShipTo(defaults.shipTo);
       setCustomerPo(defaults.customerPo);
       setReference(defaults.reference);
+      setChannel(defaults.channel);
       setOrderDate(defaults.orderDate || today);
       setShipDate(defaults.shipDate);
       setTerms(defaults.terms);
@@ -167,7 +173,11 @@ export function SalesOrderForm({
     setLines((current) => current.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line)));
   }
 
-  async function loadSuggestions(index: number, part: string) {
+  async function loadSuggestions(index: number, part: string, lineKind: string) {
+    if (!lineRequiresItem(lineKind)) {
+      setSuggestions((current) => ({ ...current, [index]: [] }));
+      return;
+    }
     try {
       const hits = await suggestSalesSkus(part);
       setSuggestions((current) => ({ ...current, [index]: hits }));
@@ -315,6 +325,17 @@ export function SalesOrderForm({
               <input value={reference} disabled={locked} onChange={(event) => setReference(event.target.value)} />
             </label>
             <label>
+              Channel
+              <select id="so-channel" value={channel} disabled={locked} onChange={(event) => setChannel(event.target.value)}>
+                <option value="">Choose a channel</option>
+                {lookups.channels.map((row) => (
+                  <option key={row.code} value={row.code}>
+                    {row.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
               Order date
               <input type="date" value={orderDate} disabled={locked} onChange={(event) => setOrderDate(event.target.value)} />
             </label>
@@ -406,6 +427,7 @@ export function SalesOrderForm({
           <legend>Lines</legend>
           {lines.map((line, index) => {
             const extension = showMoney ? lineExtension(line.qty, line.unitPrice) : null;
+            const needsItem = lineRequiresItem(line.lineKind);
             const covered = allocationsCover(
               line.qty,
               line.allocations.map((row) => ({ itemId: row.itemId, qty: row.qty })),
@@ -426,6 +448,27 @@ export function SalesOrderForm({
                 </div>
                 <div className="so-grid">
                   <label>
+                    Kind
+                    <select
+                      id={`so-line-kind-${index}`}
+                      value={line.lineKind || "product"}
+                      disabled={locked}
+                      onChange={(event) => {
+                        const lineKind = event.target.value;
+                        updateLine(index, { lineKind });
+                        if (!lineRequiresItem(lineKind)) {
+                          setSuggestions((current) => ({ ...current, [index]: [] }));
+                        }
+                      }}
+                    >
+                      {SO_LINE_KINDS.map((kind) => (
+                        <option key={kind.id} value={kind.id}>
+                          {kind.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     Customer part number
                     <input
                       id={`so-line-part-${index}`}
@@ -433,7 +476,7 @@ export function SalesOrderForm({
                       disabled={locked}
                       onChange={(event) => updateLine(index, { customerPartNumber: event.target.value })}
                       onBlur={(event) => {
-                        if (!locked) void loadSuggestions(index, event.target.value);
+                        if (!locked) void loadSuggestions(index, event.target.value, line.lineKind);
                       }}
                     />
                   </label>
@@ -535,7 +578,13 @@ export function SalesOrderForm({
                     ) : null}
                   </div>
                 ))}
-                <p className={covered ? "hint" : "hint so-gap"}>{covered ? "Allocated." : "Allocate this line to SKUs that add up to the quantity."}</p>
+                <p className={needsItem || line.allocations.length > 0 ? (covered ? "hint" : "hint so-gap") : "hint"}>
+                  {needsItem || line.allocations.length > 0
+                    ? covered
+                      ? "Allocated."
+                      : "Allocate this line to SKUs that add up to the quantity."
+                    : "No SKU is required for this line."}
+                </p>
               </div>
             );
           })}
@@ -756,6 +805,7 @@ function AddressFields({
 
 function blankLine(): FormLine {
   return {
+    lineKind: "product",
     customerPartNumber: "",
     customerDescription: "",
     qty: "1",

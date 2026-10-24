@@ -26,6 +26,7 @@ export type SalesSkuHit = { id: string; sku: string; name: string; partNumber: s
 export type SalesLookups = {
   terms: { code: string; label: string }[];
   shipMethods: { code: string; label: string }[];
+  channels: { code: string; label: string }[];
 };
 
 export type SalesCustomerDefaults = {
@@ -35,6 +36,7 @@ export type SalesCustomerDefaults = {
   shipTo: SoAddress;
   customerPo: string;
   reference: string;
+  channel: string;
   orderDate: string;
   shipDate: string;
   terms: string;
@@ -64,6 +66,7 @@ export type SalesAllocationView = {
 };
 
 export type SalesLineView = {
+  lineKind: string;
   customerPartNumber: string;
   customerDescription: string;
   qty: string;
@@ -95,6 +98,7 @@ export type SalesOrderView = {
   customerName: string;
   customerPo: string;
   reference: string;
+  channel: string;
   orderDate: string;
   shipDate: string;
   billTo: SoAddress;
@@ -121,14 +125,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function listSalesLookups(): Promise<SalesLookups> {
   const supabase = await getSupabase();
-  const [terms, methods] = await Promise.all([
+  const [terms, methods, channels] = await Promise.all([
     supabase.from("so_payment_terms").select("code, label, sort_order").order("sort_order"),
     supabase.from("so_ship_methods").select("code, carrier, method, sort_order").order("sort_order"),
+    supabase.from("so_channels").select("code, label, sort_order").order("sort_order"),
   ]);
   if (terms.error) throw new Error(salesError(terms.error));
   if (methods.error) throw new Error(salesError(methods.error));
+  if (channels.error) throw new Error(salesError(channels.error));
   return {
     terms: (terms.data ?? []).map((row) => ({ code: String(row.code), label: String(row.label) })),
+    channels: (channels.data ?? []).map((row) => ({ code: String(row.code), label: String(row.label) })),
     shipMethods: (methods.data ?? []).map((row) => {
       const carrier = String(row.carrier ?? "");
       const method = String(row.method ?? "");
@@ -159,7 +166,7 @@ export async function salesCustomerDefaults(customerId: string): Promise<SalesCu
   if (!contact || !contact.active) return null;
   const { data, error } = await (await getSupabase())
     .from("sales_orders")
-    .select("customer_po, reference, order_date, ship_date, terms, incoterms, ship_method, carrier_account, currency, sales_rep")
+    .select("customer_po, reference, channel, order_date, ship_date, terms, incoterms, ship_method, carrier_account, currency, sales_rep")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -176,6 +183,7 @@ export async function salesCustomerDefaults(customerId: string): Promise<SalesCu
     shipTo,
     customerPo: text(data?.customer_po),
     reference: text(data?.reference),
+    channel: text(data?.channel),
     orderDate: dateValue(data?.order_date) ?? "",
     shipDate: dateValue(data?.ship_date) ?? "",
     terms: text(data?.terms),
@@ -263,7 +271,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
   const { data, error } = await (await getSupabase())
     .from("sales_orders")
     .select(
-      "id, so_number, status, customer_id, customer_po, reference, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, customers(display_name), so_lines(line_no, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
+      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -292,6 +300,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
         };
       });
       return {
+        lineKind: text(line.line_kind) || "product",
         customerPartNumber: text(line.customer_part_number),
         customerDescription: text(line.customer_description),
         qty: formatQty(line.qty),
@@ -338,6 +347,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     customerName: String(customer?.display_name ?? ""),
     customerPo: text(data.customer_po),
     reference: text(data.reference),
+    channel: text(data.channel),
     orderDate: dateValue(data.order_date) ?? "",
     shipDate: dateValue(data.ship_date) ?? "",
     billTo: addressFromRecord(data.bill_to),

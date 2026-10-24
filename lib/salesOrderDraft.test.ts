@@ -6,6 +6,7 @@ import {
   hideSalesMoney,
   invoiceNumber,
   lineExtension,
+  lineRequiresItem,
   parseSalesOrderNumber,
   partMatches,
   partPrefix,
@@ -33,6 +34,14 @@ describe("sales order draft", () => {
     assert.equal(allocationsCover("10", [{ itemId: "", qty: "10" }]), false);
   });
 
+  it("requires an item only for a product line", () => {
+    assert.equal(lineRequiresItem("product"), true);
+    assert.equal(lineRequiresItem(""), true);
+    assert.equal(lineRequiresItem("freight"), false);
+    assert.equal(lineRequiresItem("kit"), false);
+    assert.equal(lineRequiresItem("fee"), false);
+  });
+
   it("strips prices when the viewer cannot see money", () => {
     const hidden = hideSalesMoney({ unitPrice: "12.50", extPrice: "25.00", total: 25, internalNotes: "margin" }, false);
     assert.deepEqual(hidden, { unitPrice: "", extPrice: "", total: null, internalNotes: "" });
@@ -56,7 +65,9 @@ describe("sales order draft", () => {
     const payload = toSalesOrderPayload(sampleDraft());
     assert.equal("so_number" in payload, false);
     assert.equal(payload.customer_po, "PO-100");
-    const lines = payload.lines as { allocations: { item_id: string }[] }[];
+    const lines = payload.lines as { line_kind: string; allocations: { item_id: string }[] }[];
+    assert.equal(payload.channel, "direct");
+    assert.equal(lines[0].line_kind, "product");
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
   });
@@ -68,6 +79,7 @@ function sampleDraft(): SoDraftInput {
     customerId: "customer-1",
     customerPo: "PO-100",
     reference: "desk",
+    channel: "direct",
     orderDate: "2026-10-24",
     shipDate: "",
     billTo: {
@@ -101,6 +113,7 @@ function sampleDraft(): SoDraftInput {
     paymentRequirement: "terms",
     lines: [
       {
+        lineKind: "product",
         customerPartNumber: "M393A4K40DB3-CWE",
         customerDescription: "Memory",
         qty: "2",
