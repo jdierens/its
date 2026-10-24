@@ -4,7 +4,7 @@ An existing item shows **Pricing** under the item form. Ecommerce price, market 
 
 **Update pricing** looks up the part number. When the part number is blank, it uses the model. Each result is a new price quote. Older quotes stay. **Last updated** is the time of that lookup.
 
-- eBay listed prices use the Browse API `item_summary/search` with an application token. The token is a client-credentials grant from `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`. The scope is `https://api.ebay.com/oauth/api_scope` and `https://api.ebay.com/oauth/api_scope/buy.browse`. The token is not stored.
+- eBay listed prices use the Browse API `item_summary/search` with an application token. The token is a client-credentials grant from `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`. The scope is `https://api.ebay.com/oauth/api_scope`. The token is not stored.
 - eBay sold prices use Marketplace Insights and stay off unless `EBAY_INSIGHTS_ENABLED=true`. That API needs eBay approval.
 - BrokerBin stays off unless `BROKERBIN_API_KEY` is set. With a key, the provider reports that lookup is not connected yet.
 
