@@ -11,6 +11,7 @@ import {
 describe("move inventory", () => {
   it("treats a bin code and a location code as different targets", () => {
     assert.equal(isBinCode("10099-C"), true);
+    assert.equal(isBinCode("40001-G"), true);
     assert.equal(isBinCode("hwr.01.01.01"), false);
     assert.deepEqual(targetFields(" 10099-c "), { targetBin: "10099-C", targetLocation: null });
     assert.deepEqual(targetFields("HWR.01.01.01"), { targetBin: null, targetLocation: "HWR.01.01.01" });

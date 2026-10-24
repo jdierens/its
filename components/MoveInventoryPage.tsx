@@ -510,5 +510,5 @@ export function MoveInventoryPage() {
 }
 
 function isBinCodeTarget(value: string): boolean {
-  return /^\d{1,5}-[BCP]$/.test(value.trim().toUpperCase());
+  return /^\d{1,5}-[A-Z]$/.test(value.trim().toUpperCase());
 }
