@@ -249,6 +249,28 @@ export function pageMetaFor(pathname: string): PageMeta {
     };
   }
 
+  if (pathname === "/sales/orders/new") {
+    return {
+      title: "New sales order",
+      crumbs: [
+        { label: "Sales" },
+        { label: "Sales orders", href: "/sales/orders" },
+        { label: "New sales order" },
+      ],
+    };
+  }
+
+  if (/^\/sales\/orders\/[^/]+$/.test(pathname)) {
+    return {
+      title: "Sales order",
+      crumbs: [
+        { label: "Sales" },
+        { label: "Sales orders", href: "/sales/orders" },
+        { label: "Sales order" },
+      ],
+    };
+  }
+
   if (pathname === "/vendors/new") {
     return {
       title: "New vendor",
