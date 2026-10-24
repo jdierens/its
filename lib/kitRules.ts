@@ -16,7 +16,7 @@ export type KitDefaults = {
   message: string | null;
 };
 
-/** Keep a kit name as it was given. Slashes stay slashes. */
+/** Keep a name as it was given. Kit slashes stay slashes, and product backslashes stay backslashes. */
 export function keepKitName(name: string): string {
   return name.trim();
 }
@@ -75,6 +75,7 @@ export function genericStillNeedsPart(input: {
   actualGeneric: boolean | null;
   hasActual: boolean;
 }): boolean {
+  if (input.hasActual && input.actualGeneric === true) return true;
   if (!input.plannedGeneric) return false;
   if (!input.hasActual) return true;
   return input.actualGeneric !== false;

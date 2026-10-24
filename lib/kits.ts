@@ -155,9 +155,14 @@ function partMatches(choice: PartChoice, query: string): boolean {
   return choice.sku.toLowerCase().includes(needle) || choice.name.toLowerCase().includes(needle);
 }
 
-export async function searchParts(query: string, plannedItemId: string | null): Promise<PartChoice[]> {
+export async function searchParts(
+  query: string,
+  plannedItemId: string | null,
+  options?: { excludeGeneric?: boolean },
+): Promise<PartChoice[]> {
   const supabase = await getSupabase();
   const trimmed = query.trim();
+  const excludeGeneric = options?.excludeGeneric === true;
   const byId = new Map<string, PartChoice>();
   if (plannedItemId) {
     const subs = await supabase
@@ -168,12 +173,14 @@ export async function searchParts(query: string, plannedItemId: string | null): 
     for (const row of subs.data ?? []) {
       const item = Array.isArray(row.items) ? row.items[0] : row.items;
       if (!item || item.item_type === "Kit/Package") continue;
+      if (excludeGeneric && item.is_generic) continue;
       const choice = toPartChoice(item, true);
       if (trimmed && !partMatches(choice, trimmed)) continue;
       byId.set(choice.id, choice);
     }
   }
   let request = supabase.from("items").select(PART_FIELDS).neq("item_type", "Kit/Package").limit(30);
+  if (excludeGeneric) request = request.eq("is_generic", false);
   if (trimmed) {
     const pattern = `%${trimmed.replace(/[%_]/g, "")}%`;
     request = supabase
@@ -182,6 +189,7 @@ export async function searchParts(query: string, plannedItemId: string | null): 
       .neq("item_type", "Kit/Package")
       .or(`sku.ilike.${pattern},name.ilike.${pattern}`)
       .limit(30);
+    if (excludeGeneric) request = request.eq("is_generic", false);
   }
   const { data, error } = await request;
   if (error) throw new Error(errorText(error));

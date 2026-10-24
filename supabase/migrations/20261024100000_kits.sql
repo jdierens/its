@@ -12,6 +12,19 @@
 -- Imported kit SKUs stay at or below the numbers already stored. The existing
 -- items_advance_sku_counter trigger uses greatest(), so it does not move the
 -- counter backwards.
+--
+-- This file does not update existing item rows. is_generic is a constant
+-- default, so rows that already exist read as false without a backfill.
+-- items_kit_taxonomy_guard runs only on insert, or when item_type or
+-- taxonomy_id changes. Service and Product rows are not rewritten.
+--
+-- Before applying, list rows that would fail the guard if their type or
+-- taxonomy were edited later:
+--   select i.sku, i.item_type, t.long_code
+--   from public.items i
+--   left join public.taxonomies t on t.id = i.taxonomy_id
+--   where i.item_type = 'Kit/Package'
+--      or t.long_code in ('KIT/SRV', 'KIT/BDL');
 
 alter table public.items
   add column if not exists is_generic boolean not null default false;
@@ -501,14 +514,15 @@ declare
   v_taxonomy uuid;
   v_old_type text;
   v_old_taxonomy uuid;
+  v_old_generic boolean;
 begin
   if v_code not in ('KIT/SRV', 'KIT/BDL') then
     raise exception 'Choose Kit server or Kit bundle.'
       using errcode = '22023';
   end if;
 
-  select item_type, taxonomy_id
-    into v_old_type, v_old_taxonomy
+  select item_type, taxonomy_id, is_generic
+    into v_old_type, v_old_taxonomy, v_old_generic
   from public.items
   where id = p_item_id
   for update;
@@ -538,7 +552,9 @@ begin
   values (
     p_item_id,
     'conversion',
-    'From ' || coalesce(v_old_type, '') || ' to Kit/Package in ' || v_code,
+    'prior_type=' || coalesce(v_old_type, '')
+      || ';prior_taxonomy=' || coalesce(v_old_taxonomy::text, 'null')
+      || ';prior_generic=' || case when coalesce(v_old_generic, false) then 'true' else 'false' end,
     p_updated_by
   );
 end;

@@ -136,8 +136,13 @@ begin
   join public.items as planned on planned.id = component.planned_item_id
   left join public.items as actual on actual.id = component.actual_item_id
   where component.so_line_id = p_line_id
-    and planned.is_generic
-    and (component.actual_item_id is null or coalesce(actual.is_generic, true));
+    and (
+      coalesce(actual.is_generic, false)
+      or (
+        planned.is_generic
+        and (component.actual_item_id is null or coalesce(actual.is_generic, true))
+      )
+    );
 
   if v_open > 0 then
     raise exception 'Pick a physical part for each generic component before this line can be picked, shipped, or invoiced.'
@@ -147,7 +152,7 @@ end;
 $$;
 
 comment on function public.assert_kit_line_releasable(uuid) is
-  'Blocks pick, ship, and invoice while a generic component has no non-generic actual part.';
+  'Blocks pick, ship, and invoice while a generic component has no physical actual part, and while any actual part is itself generic.';
 
 create or replace function public.so_line_id_for_allocation(p_allocation uuid)
 returns uuid
@@ -260,7 +265,9 @@ set search_path = ''
 as $$
 declare
   v_planned uuid;
+  v_planned_generic boolean;
   v_type text;
+  v_actual_generic boolean;
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
 begin
   select planned_item_id into v_planned
@@ -278,13 +285,22 @@ begin
       using errcode = '22023';
   end if;
 
-  select item_type into v_type from public.items where id = p_actual_item_id;
+  select is_generic into v_planned_generic from public.items where id = v_planned;
+  select item_type, is_generic into v_type, v_actual_generic from public.items where id = p_actual_item_id;
   if v_type is null then
     raise exception 'That part does not exist.'
       using errcode = '22023';
   end if;
   if v_type = 'Kit/Package' then
     raise exception 'Swap to a single part, not another kit.'
+      using errcode = '22023';
+  end if;
+  if coalesce(v_planned_generic, false) and coalesce(v_actual_generic, false) then
+    raise exception 'Pick a physical part. A generic part cannot fill a generic component.'
+      using errcode = '22023';
+  end if;
+  if coalesce(v_actual_generic, false) then
+    raise exception 'A generic part cannot be the actual part.'
       using errcode = '22023';
   end if;
 

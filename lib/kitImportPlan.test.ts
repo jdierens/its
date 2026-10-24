@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { counterMovedBackward, planKitImport, readKitsCsv, readRecipesCsv } from "./kitImportPlan.ts";
+import { counterMovedBackward, emitKitSql, planKitImport, readKitsCsv, readRecipesCsv } from "./kitImportPlan.ts";
 
 const kitName = "DL360G10-S8/CSRF90_2/S240_2/M32R4_16/R408/P80_2/_K";
 
@@ -33,6 +34,37 @@ test("import guards reject an existing create, a missing component, a nested kit
   assert.match(messages, /greater than zero/);
   assert.match(messages, /exactly one/);
   assert.match(messages, /Generic SKU does not exist/);
+});
+
+test("emitted SQL keeps kit slashes and product backslashes", () => {
+  const product = "MEM\\PC4-2400T-R\\32G\\2Rx4";
+  const kitName = "DL360G10-S8/CSRF90_2/S240_2/M32R4_16/R408/P80_2/_K";
+  const files = emitKitSql({
+    kits: [{ sku: "107110", name: kitName, taxonomyCode: "KIT/SRV", action: "create" }],
+    recipes: [{ kitSku: "107110", componentSku: "90103", qtyPerKit: 4 }],
+    generics: ["90103"],
+  });
+  assert.match(files.applySql, /begin;/);
+  assert.match(files.applySql, /commit;/);
+  assert.equal(files.applySql.includes(kitName), true);
+  assert.equal(files.applySql.includes(kitName.replaceAll("/", "\\")), false);
+  assert.equal(files.verifySql.includes("expected"), true);
+  const withProduct = emitKitSql({
+    kits: [{ sku: "107111", name: product, taxonomyCode: "KIT/BDL", action: "convert" }],
+    recipes: [{ kitSku: "107111", componentSku: "90102", qtyPerKit: 2 }],
+    generics: [],
+  });
+  assert.equal(withProduct.applySql.includes(product), true);
+  assert.equal(withProduct.applySql.includes(product.replaceAll("\\", "/")), false);
+  assert.match(files.applySql, /Recipe row has no matching kit/);
+  assert.throws(
+    () => emitKitSql({ kits: [], recipes: [{ kitSku: "1", componentSku: "2", qtyPerKit: 1.5 }], generics: [] }),
+    /whole number/,
+  );
+  const release = readFileSync(new URL("../supabase/migrations/20261024100100_kit_sales_lines.sql", import.meta.url), "utf8");
+  assert.match(release, /coalesce\(actual\.is_generic, false\)/);
+  assert.match(release, /A generic part cannot be the actual part/);
+  assert.match(release, /cannot fill a generic component/);
 });
 
 test("the SKU counter is not allowed to move backwards", () => {

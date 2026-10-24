@@ -48,7 +48,9 @@ export function SoKitLine({ lineId }: { lineId: string }) {
     const component = line?.components.find((row) => row.id === swapId);
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      searchParts(query, component?.plannedItemId ?? null)
+      searchParts(query, component?.plannedItemId ?? null, {
+        excludeGeneric: true,
+      })
         .then((found) => {
           if (!cancelled) setChoices(found);
         })
@@ -177,16 +179,29 @@ export function SoKitLine({ lineId }: { lineId: string }) {
                 Find a part
                 <input aria-label="Find a replacement part" value={query} onChange={(event) => setQuery(event.target.value)} />
               </label>
+              {line.components.find((row) => row.id === swapId)?.plannedGeneric ? (
+                <p className="hint">Generic parts are not a physical part, so they are not offered here.</p>
+              ) : null}
               <ul className="kit-choices">
-                {choices.map((choice) => (
-                  <li key={choice.id}>
-                    <button type="button" className={picked?.id === choice.id ? "" : "secondary"} onClick={() => setPicked(choice)}>
-                      {choice.suggested ? "Suggested · " : ""}
-                      {choice.sku} {choice.name}
-                      {choice.generic ? " · Generic" : ""}
-                    </button>
-                  </li>
-                ))}
+                {choices.map((choice) => {
+                  const blockedGeneric = choice.generic;
+                  return (
+                    <li key={choice.id}>
+                      <button
+                        type="button"
+                        className={picked?.id === choice.id ? "" : "secondary"}
+                        disabled={blockedGeneric}
+                        onClick={() => {
+                          if (!blockedGeneric) setPicked(choice);
+                        }}
+                      >
+                        {choice.suggested ? "Suggested · " : ""}
+                        {choice.sku} {choice.name}
+                        {choice.generic ? " · Generic" : ""}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
               <label>
                 Reason

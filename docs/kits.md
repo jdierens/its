@@ -8,7 +8,7 @@ A bundle is a kit with exactly one distinct component, such as a pair of CPUs. A
 
 ## Generic parts
 
-`items.is_generic` marks a bare spec with no manufacturer part number. The item page and the items list show a Generic badge. The list filter Generic only keeps those rows, together with the item type filter and the page buttons First, Previous, Next, and Last.
+`items.is_generic` marks a bare spec with no manufacturer part number, such as `MEM\PC4-2400T-R\32G\2Rx4`. Product names keep backslashes. Kit names keep slashes. Nothing in the item screen or the import rewrites one into the other. The item page and the items list show a Generic badge. The list filter Generic only keeps those rows, together with the item type filter.
 
 ## Recipe
 
@@ -22,7 +22,7 @@ On create, condition and ECCN are defaults and can be edited. A server kit takes
 
 Apply `supabase/migrations/20261024070800_sales_orders.sql` before `supabase/migrations/20261024100100_kit_sales_lines.sql`.
 
-Approving a sales order copies the kit recipe onto `so_line_components`. The planned part stays. The actual part starts as the planned part, except a generic planned part starts empty. Swap can pick any non-kit SKU. Substitutes are listed first and never limit the picker. A reason is required when the actual part differs from the planned part.
+Approving a sales order copies the kit recipe onto `so_line_components`. The planned part stays. The actual part starts as the planned part, except a generic planned part starts empty. Swap can pick any non-kit SKU except a generic part. A generic item is not offered as the actual part, and the database rejects a generic `actual_item_id`. Substitutes are listed first and never limit the picker. A reason is required when the actual part differs from the planned part.
 
 A generic component must have a non-generic actual part before the line is picked, shipped, or invoiced. The database blocks those steps, and Release line on the sales-order line page does the same.
 
@@ -36,6 +36,21 @@ Quote, pro forma, invoice, and packing slip show the kit line only. The pick tic
 
 The script is not run by the app. It reads CSV paths you pass:
 
+Production is reached by pasting SQL. `--emit-sql` does not connect. It inlines the CSV rows and lets the database look up SKUs, taxonomies, and history. It writes `apply.sql`, `rollback.sql`, and `verify.sql` under `--out` only.
+
+```
+node --experimental-strip-types --import ./test/register.mjs scripts/import-kits.ts \
+  --kits kits.csv \
+  --recipes recipes.csv \
+  --generics generics.csv \
+  --out tmp/kit-import \
+  --emit-sql
+```
+
+Paste `apply.sql` first. It is one transaction and raises if a create SKU exists, a convert SKU is missing or already has history, a component is missing or is a kit, a quantity is not positive, or a bundle does not have one component. `verify.sql` returns expected and actual counts for kits, recipe rows, generics, and bundles. `rollback.sql` deletes created kits and restores converted items from the conversion audit.
+
+A local database can still be used directly. Without `--apply`, that path only writes `snapshot.json`, `rollback.sql`, and `plan.sql`.
+
 ```
 node --experimental-strip-types --import ./test/register.mjs scripts/import-kits.ts \
   --kits kits.csv \
@@ -45,7 +60,7 @@ node --experimental-strip-types --import ./test/register.mjs scripts/import-kits
   --db "dbname=its_stock"
 ```
 
-Add `--apply` to write. Without it, the script only reads and writes `snapshot.json`, `rollback.sql`, and `plan.sql`.
+Add `--apply` to write. The script refuses a remote host.
 
 `kits.csv` columns: `sku`, `name`, `taxonomy_code` (`KIT/SRV` or `KIT/BDL`), `action` (`create` or `convert`).
 

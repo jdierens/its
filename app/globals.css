@@ -1843,12 +1843,6 @@ button.danger {
   margin-left: auto;
 }
 
-.items-pager {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
 .items-toolbar .items-icon {
   width: 36px;
   height: 36px;
