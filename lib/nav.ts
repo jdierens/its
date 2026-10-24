@@ -77,6 +77,11 @@ export const NAV_GROUPS: NavGroup[] = [
         description: "Receive purchase orders into inventory.",
       },
       {
+        label: "Move inventory",
+        href: "/warehouse/move",
+        description: "Move a bin, a nested bin, or a quantity.",
+      },
+      {
         label: "Scan",
         href: "/scan",
         description: "Scan an item QR code, a SKU barcode, or a bin code.",
