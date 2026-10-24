@@ -15,6 +15,9 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CountrySelect } from "@/components/CountrySelect";
 import { FastArea, FastInput } from "@/components/FastField";
 import { ItemGallery, type PendingImage } from "@/components/ItemGallery";
+import { ItemRecipe } from "@/components/ItemRecipe";
+import { UsedInKits } from "@/components/UsedInKits";
+import { setItemGeneric } from "@/lib/kits";
 import { ManufacturerSelect } from "@/components/ManufacturerSelect";
 import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
 import { fetchCountries, type Country } from "@/lib/countries";
@@ -165,6 +168,8 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   const [unit, setUnit] = useState(DEFAULT_UNIT);
   const [units, setUnits] = useState<string[]>([...SEEDED_UNITS]);
   const [itemType, setItemType] = useState<ItemType>(DEFAULT_ITEM_TYPE);
+  const [isGeneric, setIsGeneric] = useState(false);
+  const [detailTab, setDetailTab] = useState<"details" | "recipe">("details");
   const [condition, setCondition] = useState<ItemCondition>(DEFAULT_CONDITION);
   const [conditionNote, setConditionNote] = useState("");
   const [eccn, setEccn] = useState(DEFAULT_ECCN);
@@ -269,6 +274,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           setProductUrl(item.productUrl);
           setUnit(nextUnit);
           setItemType(item.itemType);
+          setIsGeneric(item.isGeneric);
           setCondition(item.condition);
           setConditionNote(item.conditionNote);
           setEccn(item.eccn || DEFAULT_ECCN);
@@ -678,12 +684,14 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             pendingImages.map((image) => image.file),
           );
         }
+        await setItemGeneric(id, isGeneric);
         router.push(`/items/${id}`);
         return true;
       }
       if (!itemId) throw new Error("Missing item id.");
       await updateItem(itemId, input);
       await saveItemNotes(itemId, current.notes);
+      await setItemGeneric(itemId, isGeneric);
       const refreshed = await fetchTaxonomies();
       setTaxonomies(refreshed);
       const match = refreshed.find((row) => row.name.toLowerCase() === trimmedTaxonomy.toLowerCase());
@@ -836,7 +844,28 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           {sourceName}. Nothing is saved until you press Save. Change the name first.
         </p>
       ) : null}
-      <form onSubmit={onSubmit} noValidate>
+      {mode === "edit" && itemId && itemType === "Kit/Package" ? (
+        <div className="kit-tabs" role="tablist" aria-label="Item sections">
+          <button type="button" role="tab" aria-selected={detailTab === "details"} onClick={() => setDetailTab("details")}>
+            Details
+          </button>
+          <button type="button" role="tab" aria-selected={detailTab === "recipe"} onClick={() => setDetailTab("recipe")}>
+            Recipe
+          </button>
+        </div>
+      ) : null}
+      {mode === "edit" && itemId && itemType === "Kit/Package" && detailTab === "recipe" ? (
+        <ItemRecipe
+          itemId={itemId}
+          taxonomyCode={taxonomy?.longCode ?? ""}
+          onApplyDefaults={(nextCondition, nextEccn) => {
+            if (nextCondition === "New" || nextCondition === "Used") setCondition(nextCondition);
+            if (nextEccn) setEccn(nextEccn);
+            setSaved(false);
+          }}
+        />
+      ) : null}
+      <form onSubmit={onSubmit} noValidate hidden={mode === "edit" && itemType === "Kit/Package" && detailTab === "recipe"}>
         <div className="item-identity">
           <label className="item-sku">
             SKU
@@ -873,6 +902,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           </label>
           <label className="item-name">
             Name
+            {isGeneric ? <span className="code-badge">Generic</span> : null}
             <FastInput
               {...bindText(live.current, "name", name, (next) => {
                 setName(next);
@@ -978,6 +1008,17 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="kit-check">
+              <input
+                type="checkbox"
+                checked={isGeneric}
+                onChange={(event) => {
+                  setIsGeneric(event.target.checked);
+                  setSaved(false);
+                }}
+              />
+              Generic part
             </label>
             <label>
               Unit
@@ -1338,6 +1379,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           onPendingChange={setPendingImages}
         />
       </form>
+      {mode === "edit" && itemId ? <UsedInKits itemId={itemId} /> : null}
       {changeTaxonomy && mode === "edit" && itemId ? (
         <ChangeTaxonomyDialog
           taxonomies={taxonomies}
