@@ -38,18 +38,19 @@ test("listing ids are unique and numeric", () => {
 function store() {
   const upserts: ListingWrite[][] = [];
   const ended: string[] = [];
+  const requested: string[][] = [];
   return {
     upserts,
     ended,
+    requested,
     api: {
-      async itemIdsBySku(skus: string[]) {
-        return resolveSkuMap(
-          skus,
-          [
-            { id: "item-red", sku: "KIT-RED" },
-            { id: "item-plain", sku: "PLAIN-1" },
-          ],
-        );
+      async itemsForSkus(skus: string[]) {
+        requested.push(skus);
+        return [
+          { id: "item-red", sku: "KIT-RED" },
+          { id: "item-plain", sku: "PLAIN-1" },
+          { id: "item-base", sku: "12345" },
+        ];
       },
       async upsert(rows: ListingWrite[]) {
         upserts.push(rows);
@@ -118,6 +119,8 @@ test("a full pull upserts matches and ends missing rows only after the last page
   const plain = rows.find((row) => row.ebay_item_id === "222");
   assert.equal(red?.item_id, "item-red");
   assert.equal(red?.sku, "PARENT");
+  assert.equal(red?.pack_qty, 1);
+  assert.equal(red?.base_sku, null);
   assert.equal(missing?.item_id, null);
   assert.equal(plain?.item_id, "item-plain");
   assert.equal(plain?.variation_sku, null);
@@ -155,4 +158,42 @@ test("a failed later page does not upsert or end listings", async () => {
   );
   assert.deepEqual(saved.upserts, []);
   assert.deepEqual(saved.ended, []);
+});
+
+test("a pack label is stored on the base item", async () => {
+  const saved = store();
+  await runListingsPull({
+    token: "token-1",
+    fetchedAt: "2026-10-24T17:00:00.000Z",
+    fetchPage: async () => ({
+      token: "token-1",
+      rlogid: null,
+      requestId: null,
+      page: {
+        ack: "Success",
+        error: null,
+        errorCode: null,
+        totalPages: 1,
+        rows: [
+          {
+            ebayItemId: "555",
+            sku: "12345-4PK",
+            variationSku: null,
+            title: "Pack",
+            quantityAvailable: 1,
+            listingStatus: "Active",
+            listingUrl: "https://www.ebay.com/itm/555",
+          },
+        ],
+      },
+    }),
+    store: saved.api,
+  });
+  const row = saved.upserts[0]?.[0];
+  assert.equal(row?.item_id, "item-base");
+  assert.equal(row?.pack_qty, 4);
+  assert.equal(row?.base_sku, "12345");
+  const asked = saved.requested.flat();
+  assert.equal(asked.includes("12345-4PK"), true);
+  assert.equal(asked.includes("12345"), true);
 });

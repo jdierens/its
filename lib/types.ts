@@ -72,7 +72,8 @@ export type ItemListRow = {
   updatedAt: string;
   fields: Record<string, string>;
   isGeneric: boolean;
-  ebayItemIds: string[];
+  ebayListings: { ebayItemId: string; packQty: number }[];
+  ebayKitListings: { ebayItemId: string; kitItemId: string; kitSku: string; packQty: number; qty: number }[];
 };
 
 export type ItemList = {

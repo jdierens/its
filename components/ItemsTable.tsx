@@ -854,7 +854,7 @@ export function ItemsTable() {
                         ) : column.id === "taxonomy" ? (
                           item.shortCode ? <span className="code-badge">{item.shortCode}</span> : "—"
                         ) : column.id === "ebay" ? (
-                          <EbayItemIds ids={item.ebayItemIds} />
+                          <EbayItemIds listings={item.ebayListings} kitListings={item.ebayKitListings} />
                         ) : column.id === "product_url" && productUrlHref(item.productUrl) ? (
                           <a
                             href={productUrlHref(item.productUrl) ?? undefined}

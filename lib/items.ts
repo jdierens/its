@@ -1,7 +1,7 @@
 "use server";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ebayIdsForItems, itemIdsMatchingEbayItemId } from "@/lib/ebay/listings";
+import { ebayPresenceForItems, itemIdsMatchingEbayItemId } from "@/lib/ebay/listings";
 import { errorText } from "@/lib/errors";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
 import { primaryStoragePath } from "@/lib/imageOrder";
@@ -522,15 +522,16 @@ export async function fetchItemList(input: {
   const byId = new Map(((fetched.data ?? []) as unknown as ListRow[]).map((item) => [item.id, item]));
   const records = listed.ids.map((id) => byId.get(id)).filter((item): item is ListRow => Boolean(item));
   const paths = records.map((item) => primaryPath(item.item_images));
-  const [urls, ebayIds] = await Promise.all([
+  const [urls, ebayViews] = await Promise.all([
     signedImageUrls(paths.filter((path): path is string => Boolean(path))),
-    ebayIdsForItems(supabase, records.map((item) => item.id)),
+    ebayPresenceForItems(supabase, records.map((item) => item.id)),
   ]);
 
   return {
     rows: records.map((item, index) => ({
       ...toListRow(item, paths[index] ? urls.get(paths[index] as string) ?? null : null),
-      ebayItemIds: ebayIds.get(item.id) ?? [],
+      ebayListings: ebayViews.get(item.id)?.direct ?? [],
+      ebayKitListings: ebayViews.get(item.id)?.kits ?? [],
     })),
     total,
     matched: listed.count,
@@ -643,7 +644,8 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
     updatedAt: item.updated_at ?? "",
     fields,
     isGeneric: Boolean(item.is_generic),
-    ebayItemIds: [],
+    ebayListings: [],
+    ebayKitListings: [],
   };
 }
 
@@ -655,11 +657,16 @@ export async function fetchListedItem(id: string): Promise<ItemListRow | null> {
   if (!listed.data) return null;
   const item = listed.data as unknown as ListRow;
   const path = primaryPath(item.item_images);
-  const [urls, ebayIds] = await Promise.all([
+  const [urls, ebayViews] = await Promise.all([
     path ? signedImageUrls([path]) : Promise.resolve(new Map<string, string>()),
-    ebayIdsForItems(supabase, [item.id]),
+    ebayPresenceForItems(supabase, [item.id]),
   ]);
-  return { ...toListRow(item, path ? urls.get(path) ?? null : null), ebayItemIds: ebayIds.get(item.id) ?? [] };
+  const ebay = ebayViews.get(item.id);
+  return {
+    ...toListRow(item, path ? urls.get(path) ?? null : null),
+    ebayListings: ebay?.direct ?? [],
+    ebayKitListings: ebay?.kits ?? [],
+  };
 }
 
 export type CellSave = {

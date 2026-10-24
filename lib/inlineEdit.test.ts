@@ -41,7 +41,8 @@ function row(patch: Partial<ItemListRow> = {}): ItemListRow {
     updatedAt: "2026-10-19T18:00:00.000Z",
     fields: { speed: "4800" },
     isGeneric: false,
-    ebayItemIds: [],
+    ebayListings: [],
+    ebayKitListings: [],
     ...patch,
   };
 }
