@@ -56,7 +56,7 @@ export type MoveResult = {
   requestId: string;
 };
 
-const BIN_CODE = /^\d{1,5}-[BCP]$/;
+const BIN_CODE = /^\d{1,5}-[A-Z]$/;
 
 export function isBinCode(value: string): boolean {
   return BIN_CODE.test(value.trim().toUpperCase());

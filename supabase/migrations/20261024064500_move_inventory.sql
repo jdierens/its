@@ -62,40 +62,64 @@ create index inventory_movements_transfer_idx
   on public.inventory_movements (transfer_id)
   where transfer_id is not null;
 
+create table public.bin_types (
+  type text primary key,
+  name text not null,
+  size_rank integer not null,
+  constraint bin_types_type_check check (type ~ '^[A-Z]$'),
+  constraint bin_types_name_check check (char_length(btrim(name)) > 0),
+  constraint bin_types_rank_check check (size_rank > 0)
+);
+
+comment on table public.bin_types is
+  'One row per bin type. size_rank decides nesting: a bin can go into a type of the same rank or a higher one. Add a row to allow a new type.';
+
+comment on column public.bin_types.size_rank is
+  'Smaller number is a smaller bin. The nesting check compares these ranks and does not list type codes.';
+
+insert into public.bin_types (type, name, size_rank) values
+  ('B', 'box', 1),
+  ('C', 'crate', 2),
+  ('P', 'pallet', 3);
+
+alter table public.bins drop constraint bins_type_check;
+
+alter table public.bins
+  add constraint bins_type_fkey foreign key (type) references public.bin_types (type);
+
+alter table public.bin_types enable row level security;
+revoke all on table public.bin_types from public, anon, authenticated;
+grant select on table public.bin_types to service_role;
+
 create or replace function public.bin_kind(p_type text)
 returns text
 language sql
-immutable
+stable
 security invoker
 set search_path = ''
 as $$
-  select case p_type
-    when 'B' then 'box'
-    when 'C' then 'crate'
-    when 'P' then 'pallet'
-    else 'bin'
-  end;
+  select coalesce(
+    (select name from public.bin_types where type = p_type),
+    'bin'
+  );
 $$;
 
 create or replace function public.bin_type_rank(p_type text)
 returns integer
 language sql
-immutable
+stable
 security invoker
 set search_path = ''
 as $$
-  select case p_type
-    when 'B' then 1
-    when 'C' then 2
-    when 'P' then 3
-    else 0
-  end;
+  select size_rank
+  from public.bin_types
+  where type = p_type;
 $$;
 
 create or replace function public.bin_display_label(p_type text, p_reference text)
 returns text
 language sql
-immutable
+stable
 security invoker
 set search_path = ''
 as $$
@@ -184,6 +208,8 @@ as $$
 declare
   v_child_type text;
   v_parent_type text;
+  v_child_rank integer;
+  v_parent_rank integer;
   v_hit uuid;
 begin
   if p_child is null or p_parent is null then
@@ -199,7 +225,12 @@ begin
     return 'No bin with that code. Use New bin.';
   end if;
 
-  if public.bin_type_rank(v_child_type) > public.bin_type_rank(v_parent_type) then
+  v_child_rank := public.bin_type_rank(v_child_type);
+  v_parent_rank := public.bin_type_rank(v_parent_type);
+  if v_child_rank is null or v_parent_rank is null then
+    return 'That bin type is not registered.';
+  end if;
+  if v_child_rank > v_parent_rank then
     return format(
       'A %s cannot go into a %s.',
       public.bin_kind(v_child_type),
@@ -1510,7 +1541,7 @@ begin
     return jsonb_build_object('kind', 'unknown', 'code', '', 'message', 'Scan or type a bin or a location.');
   end if;
 
-  if v_code ~ '^\d{1,5}-[BCP]$' then
+  if v_code ~ '^\d{1,5}-[A-Z]$' then
     select * into v_bin from public.bins where reference = v_code;
     if not found then
       return jsonb_build_object(

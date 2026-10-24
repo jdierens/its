@@ -8,7 +8,7 @@ Apply `supabase/migrations/20261024064500_move_inventory.sql` before using the s
 
 A bin is either inside one parent bin or at a location. `bins.parent_bin_id` is the parent. `bins.current_location_id` stays the effective location, so the bin screen and receiving keep reading that column. For a nested bin that location is the root ancestor's location. When an ancestor moves, every descendant's effective location is updated in the same transaction.
 
-A bin cannot go into itself or into one of its descendants. Size is box, then crate, then pallet. A bin can go into a bin of the same size or a larger one, never a smaller one. A box can go in a box, a crate, or a pallet. A crate can go on a crate or a pallet. A pallet can go on a pallet, or at a location. Any bin can also be put at a location.
+A bin cannot go into itself or into one of its descendants. Size is a rank on `bin_types`, not a list in the function. A bin can go into a bin of the same rank or a higher one, never a lower one. Today the rows are box 1, crate 2, and pallet 3, so a box can go in a box, a crate, or a pallet, a crate can go on a crate or a pallet, and a pallet can go on a pallet or at a location. Any bin can also be put at a location. A later type is a new `bin_types` row. `bins.type` references that table, and the move screen treats any one-letter suffix as a bin code.
 
 ## What the functions do
 
