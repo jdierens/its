@@ -38,6 +38,7 @@ import {
   type ItemCondition,
   type ItemType,
 } from "@/lib/itemFields";
+import { isMemoryTaxonomy, memoryAttributeSlot, memorySlotRank } from "@/lib/itemFormDensity";
 import { assertDuplicateSave, fetchDuplicateSource, saveDuplicatePrices } from "@/lib/duplicateItemServer";
 import { sameItemName, skuReusesSource } from "@/lib/duplicateItem";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
@@ -797,6 +798,15 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     );
   }
 
+  const memoryLead = (taxonomy?.attributes ?? [])
+    .flatMap((attribute, index) => {
+      if (!isMemoryTaxonomy(taxonomy?.shortCode)) return [];
+      const slot = memoryAttributeSlot(attribute.name);
+      return slot ? [{ attribute, index, slot }] : [];
+    })
+    .sort((a, b) => memorySlotRank(a.slot) - memorySlotRank(b.slot) || a.index - b.index);
+  const memoryLeadIds = new Set(memoryLead.map((row) => row.attribute.id));
+
   return (
     <main className="page">
       <PageToolbar
@@ -865,7 +875,12 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           }}
         />
       ) : null}
-      <form onSubmit={onSubmit} noValidate hidden={mode === "edit" && itemType === "Kit/Package" && detailTab === "recipe"}>
+      <form
+        className="item-form"
+        onSubmit={onSubmit}
+        noValidate
+        hidden={mode === "edit" && itemType === "Kit/Package" && detailTab === "recipe"}
+      >
         <div className="item-identity">
           <label className="item-sku">
             SKU
@@ -990,8 +1005,8 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         ) : null}
         <fieldset>
           <legend>Main</legend>
-          <div className="item-main-row">
-            <label>
+          <div className="item-main-row item-lead-row">
+            <label data-field="type">
               Type
               <select
                 aria-label="Type"
@@ -1020,25 +1035,8 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
               />
               Generic part
             </label>
-            <label>
-              Unit
-              <select
-                aria-label="Unit"
-                value={unit}
-                onChange={(event) => {
-                  setUnit(event.target.value);
-                  setSaved(false);
-                }}
-              >
-                {unitChoices.map((choice) => (
-                  <option key={choice} value={choice}>
-                    {choice}
-                  </option>
-                ))}
-              </select>
-            </label>
             {mode === "edit" ? (
-              <label>
+              <label data-field="taxonomy">
                 Taxonomy
                 <input
                   value={
@@ -1052,7 +1050,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                 />
               </label>
             ) : (
-              <label>
+              <label data-field="taxonomy">
                 Taxonomy
                 <FastInput
                   list="taxonomy-names"
@@ -1073,6 +1071,73 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                     New taxonomy. Enter its codes, then save. It is added at the end of the list.
                   </span>
                 ) : null}
+              </label>
+            )}
+            <label data-field="unit">
+              Unit
+              <select
+                aria-label="Unit"
+                value={unit}
+                onChange={(event) => {
+                  setUnit(event.target.value);
+                  setSaved(false);
+                }}
+              >
+                {unitChoices.map((choice) => (
+                  <option key={choice} value={choice}>
+                    {choice}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label data-field="condition">
+              Condition
+              <select
+                value={condition}
+                onChange={(event) => {
+                  const next = event.target.value === "New" ? "New" : "Used";
+                  setCondition(next);
+                  setConditionNote((note) => conditionNoteAfterChange(next, note));
+                  setSaved(false);
+                }}
+              >
+                <option value="Used">Used</option>
+                <option value="New">New</option>
+              </select>
+            </label>
+            {condition === "New" ? (
+              <label data-field="condition-note">
+                Condition note
+                <select
+                  value={
+                    NEW_CONDITION_NOTES.includes(conditionNote as (typeof NEW_CONDITION_NOTES)[number])
+                      ? conditionNote
+                      : ""
+                  }
+                  onChange={(event) => {
+                    setConditionNote(event.target.value);
+                    setSaved(false);
+                  }}
+                >
+                  <option value="">None</option>
+                  {NEW_CONDITION_NOTES.map((note) => (
+                    <option key={note} value={note}>
+                      {note}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label data-field="condition-note">
+                Condition note
+                <FastInput
+                  autoComplete="off"
+                  {...bindText(live.current, "conditionNote", conditionNote, (next) => {
+                    setConditionNote(next);
+                    setSaved(false);
+                  })}
+                />
+                <span className="hint">Optional.</span>
               </label>
             )}
           </div>
@@ -1186,112 +1251,34 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                 <span className="hint">Optional http or https address.</span>
               )}
             </label>
-            <label>
-              Condition
-              <select
-                value={condition}
-                onChange={(event) => {
-                  const next = event.target.value === "New" ? "New" : "Used";
-                  setCondition(next);
-                  setConditionNote((note) => conditionNoteAfterChange(next, note));
-                  setSaved(false);
-                }}
-              >
-                <option value="Used">Used</option>
-                <option value="New">New</option>
-              </select>
-            </label>
-            {condition === "New" ? (
-              <label>
-                Condition note
-                <select
-                  value={
-                    NEW_CONDITION_NOTES.includes(conditionNote as (typeof NEW_CONDITION_NOTES)[number])
-                      ? conditionNote
-                      : ""
-                  }
-                  onChange={(event) => {
-                    setConditionNote(event.target.value);
-                    setSaved(false);
-                  }}
-                >
-                  <option value="">None</option>
-                  {NEW_CONDITION_NOTES.map((note) => (
-                    <option key={note} value={note}>
-                      {note}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <label>
-                Condition note
-                <FastInput
-                  autoComplete="off"
-                  {...bindText(live.current, "conditionNote", conditionNote, (next) => {
-                    setConditionNote(next);
-                    setSaved(false);
-                  })}
-                />
-                <span className="hint">Optional.</span>
-              </label>
-            )}
-          </div>
-        </fieldset>
-        <fieldset>
-          <legend>Trade compliance</legend>
-          <div className="grid">
-            <label>
-              ECCN
-              <FastInput
-                autoComplete="off"
-                spellCheck={false}
-                {...bindText(live.current, "eccn", eccn, (next) => {
-                  setEccn(next);
-                  setSaved(false);
-                })}
-              />
-              <span className="hint">Blank saves as {DEFAULT_ECCN}.</span>
-            </label>
-            <label>
-              US HTS
-              <FastInput
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="8471.30.0100"
-                {...bindText(live.current, "usHts", usHts, (next) => {
-                  setUsHts(next);
-                  setSaved(false);
-                })}
-              />
-              <span className="hint">Digits and optional dots, up to 10 digits.</span>
-            </label>
-            <label>
-              CCATS
-              <FastInput
-                autoComplete="off"
-                spellCheck={false}
-                {...bindText(live.current, "ccats", ccats, (next) => {
-                  setCcats(next);
-                  setSaved(false);
-                })}
-              />
-            </label>
-            <CountrySelect
-              countries={countries}
-              value={coo}
-              onChange={(alpha3) => {
-                setCoo(alpha3);
-                setSaved(false);
-              }}
-            />
           </div>
         </fieldset>
         {taxonomyName.trim() ? (
           <fieldset>
             <legend>{taxonomy?.name ?? taxonomyName.trim()} attributes</legend>
-            <div className="grid">
-              {(taxonomy?.attributes ?? []).map((attribute) => (
+            {memoryLead.length > 0 ? (
+              <div className="item-attr-mem">
+                {memoryLead.map((row) => (
+                  <AttributeValueField
+                    key={row.attribute.id}
+                    attribute={row.attribute}
+                    slot={row.slot}
+                    value={attributeValues[row.attribute.name] ?? ""}
+                    onDraft={(value) => {
+                      live.current.set(`attr:${row.attribute.name}`, value);
+                    }}
+                    onChange={(value) => {
+                      setAttributeValues((current) => ({ ...current, [row.attribute.name]: value }));
+                      setSaved(false);
+                    }}
+                  />
+                ))}
+              </div>
+            ) : null}
+            <div className="grid item-attr-grid">
+              {(taxonomy?.attributes ?? [])
+                .filter((attribute) => !memoryLeadIds.has(attribute.id))
+                .map((attribute) => (
                 <AttributeValueField
                   key={attribute.id}
                   attribute={attribute}
@@ -1373,6 +1360,56 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             </div>
           </fieldset>
         ) : null}
+
+        <fieldset>
+          <legend>Trade compliance</legend>
+          <div className="grid">
+            <label>
+              ECCN
+              <FastInput
+                autoComplete="off"
+                spellCheck={false}
+                {...bindText(live.current, "eccn", eccn, (next) => {
+                  setEccn(next);
+                  setSaved(false);
+                })}
+              />
+              <span className="hint">Blank saves as {DEFAULT_ECCN}.</span>
+            </label>
+            <label>
+              US HTS
+              <FastInput
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="8471.30.0100"
+                {...bindText(live.current, "usHts", usHts, (next) => {
+                  setUsHts(next);
+                  setSaved(false);
+                })}
+              />
+              <span className="hint">Digits and optional dots, up to 10 digits.</span>
+            </label>
+            <label>
+              CCATS
+              <FastInput
+                autoComplete="off"
+                spellCheck={false}
+                {...bindText(live.current, "ccats", ccats, (next) => {
+                  setCcats(next);
+                  setSaved(false);
+                })}
+              />
+            </label>
+            <CountrySelect
+              countries={countries}
+              value={coo}
+              onChange={(alpha3) => {
+                setCoo(alpha3);
+                setSaved(false);
+              }}
+            />
+          </div>
+        </fieldset>
         <ItemGallery
           itemId={mode === "edit" ? itemId : undefined}
           pending={pendingImages}
