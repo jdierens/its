@@ -116,6 +116,6 @@ select set_config('its.changed_by', 'Benjamin', true);
 select set_config('its.batch_id', 'swi-pilot-1', true);
 ```
 
-`items` logs an update and skips `updated_at`, `updated_by`, `created_at`, and `created_by`. `item_attributes` logs the value on insert, update, and delete. `attribute_values` logs the value and sort order on insert, update, and delete. Update and delete on `item_field_edits` raise an exception. Row level security is on, with no policies. `select` and `insert` on the table, and execute on `log_item_field_edit` and `reject_item_field_edit_change`, are granted to `service_role` only.
+`items` logs an update and skips `updated_at`, `updated_by`, `created_at`, and `created_by`. `20261024054226_item_field_edits_item_inserts.sql` is already applied (version `20261024054226`); do not edit it or run it again. Creating an item logs one `items`/`item`/`insert` row when `its.changed_by` is set. `item_attributes` logs the value on insert, update, and delete. `attribute_values` logs the value and sort order on insert, update, and delete. Update and delete on `item_field_edits` raise an exception. Row level security is on, with no policies. `select` and `insert` on the table, and execute on `log_item_field_edit` and `reject_item_field_edit_change`, are granted to `service_role` only.
 
 `npm run typecheck` and `npm run build` both need to pass.
