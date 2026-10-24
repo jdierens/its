@@ -23,6 +23,7 @@ import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageT
 import { fetchCountries, type Country } from "@/lib/countries";
 import { errorText } from "@/lib/errors";
 import { isDirty, SAVE_BEFORE_LABEL, SAVE_BEFORE_TAXONOMY } from "@/lib/formDirty";
+import { itemLabelHref } from "@/lib/labelReturn";
 import { uploadItemImages } from "@/lib/imageUpload";
 import {
   DEFAULT_CONDITION,
@@ -725,11 +726,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     await save();
   }
 
-  const labelHref = snapshot.sku.trim()
-    ? `/labels?sku=${encodeURIComponent(snapshot.sku.trim())}`
-    : itemId
-      ? `/labels?id=${itemId}`
-      : "/labels";
+  const labelHref = itemLabelHref(itemId ?? null, snapshot.sku);
 
   async function onPrint() {
     if (isDirty(currentSnapshot(), baseline) || manufacturerUnresolved) {
