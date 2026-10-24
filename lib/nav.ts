@@ -158,6 +158,19 @@ export function pageMetaFor(pathname: string): PageMeta {
     };
   }
 
+  if (pathname === "/items/search") {
+    return {
+      title: "Advanced search",
+      backHref: "/items",
+      backLabel: "Items",
+      crumbs: [
+        { label: "Inventory" },
+        { label: "Items", href: "/items" },
+        { label: "Advanced search" },
+      ],
+    };
+  }
+
   if (pathname === "/items/new") {
     return {
       title: "New item",
