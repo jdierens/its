@@ -21,6 +21,7 @@ export const READ_ONLY_COLUMNS = new Set([
   "quantity",
   "edited",
   "fields",
+  "ebay",
 ]);
 
 const PRICE_COLUMNS = new Set(["ecommerce_price", "market_price", "msrp"]);

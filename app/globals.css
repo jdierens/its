@@ -2434,6 +2434,101 @@ button.danger {
   overflow-wrap: anywhere;
 }
 
+.page-toolbar button.toolbar-text {
+  min-height: 36px;
+  padding: 0.35rem 0.75rem;
+  white-space: nowrap;
+}
+
+.ebay-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.35rem;
+  align-items: center;
+  max-width: min(36rem, calc(100vw - 3rem));
+}
+
+.items-grid td:has(.ebay-ids) {
+  height: auto;
+  min-height: 30px;
+  white-space: normal;
+}
+
+button.ebay-more {
+  margin: 0;
+  padding: 0 0.15rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.ebay-pack {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ebay-kit-list {
+  display: grid;
+  flex-basis: 100%;
+  gap: 0.2rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ebay-kit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.45rem;
+  align-items: baseline;
+  max-width: 100%;
+}
+
+.item-ebay-card {
+  padding: 1rem 1.1rem;
+  min-width: 0;
+}
+
+.item-ebay-card h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+}
+
+.item-ebay-block + .item-ebay-block {
+  margin-top: 0.9rem;
+}
+
+.item-ebay-block h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+}
+
+.item-ebay-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item-ebay-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.55rem;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.item-ebay-list a,
+.ebay-ids a {
+  overflow-wrap: anywhere;
+}
+
 .log-table td:last-child {
   white-space: normal;
 }
@@ -2741,6 +2836,25 @@ tr.quote-latest td {
 
   .integration-facts {
     grid-template-columns: 1fr;
+  }
+
+  .integration-card,
+  .integration-facts dd,
+  .integration-card .hint,
+  .item-ebay-card {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .page-toolbar button.toolbar-text {
+    min-height: 44px;
+  }
+
+  .item-ebay-list a,
+  .item-ebay-line a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
   }
 
   .pricing-filters {

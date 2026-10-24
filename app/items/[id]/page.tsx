@@ -1,16 +1,16 @@
-"use client";
-
-import { useParams } from "next/navigation";
+import { ItemEbayListings } from "@/components/ItemEbayListings";
 import { ItemForm } from "@/components/ItemForm";
 import { ItemPricingPanel } from "@/components/ItemPricingPanel";
 
-export default function EditItemPage() {
-  const params = useParams<{ id: string }>();
-  const itemId = Array.isArray(params.id) ? params.id[0] : params.id;
+export const dynamic = "force-dynamic";
+
+export default async function EditItemPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   return (
     <>
-      <ItemForm mode="edit" itemId={itemId} />
-      {itemId ? <ItemPricingPanel itemId={itemId} /> : null}
+      <ItemForm mode="edit" itemId={id} />
+      {id ? <ItemEbayListings itemId={id} /> : null}
+      {id ? <ItemPricingPanel itemId={id} /> : null}
     </>
   );
 }

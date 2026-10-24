@@ -41,12 +41,15 @@ function row(patch: Partial<ItemListRow> = {}): ItemListRow {
     updatedAt: "2026-10-19T18:00:00.000Z",
     fields: { speed: "4800" },
     isGeneric: false,
+    ebayListings: [],
+    ebayKitListings: [],
     ...patch,
   };
 }
 
 test("sku and taxonomy stay read-only while trade and attribute cells edit", () => {
   assert.equal(isEditableColumn("sku"), false);
+  assert.equal(isEditableColumn("ebay"), false);
   assert.equal(isEditableColumn("taxonomy"), false);
   assert.equal(isEditableColumn("name"), false);
   assert.equal(isEditableColumn("model"), true);
