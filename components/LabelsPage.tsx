@@ -1,6 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { usePageMeta } from "@/components/AppShell";
+import { labelItemBackHref } from "@/lib/labelReturn";
 import { FormEvent, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Printer, X } from "lucide-react";
 import { FastInput } from "@/components/FastField";
@@ -73,6 +75,14 @@ export function LabelsPage() {
   const [template, setTemplate] = useState<LabelTemplateId | null>(null);
   const [origin, setOrigin] = useState("");
   const [edited, setEdited] = useState(false);
+  const [openedItemId, setOpenedItemId] = useState<string | null>(null);
+  const backHref = labelItemBackHref(params.get("from"), params.get("id"), openedItemId);
+
+  usePageMeta({
+    title: "Labels",
+    crumbs: [{ label: "Inventory" }, { label: "Labels" }],
+    ...(backHref ? { backHref, backLabel: "Back to item" } : {}),
+  });
   const requestId = useRef(0);
   const holdQuery = useRef<string | null>(null);
   const typed = useRef(initialIdentifier);
@@ -114,6 +124,7 @@ export function LabelsPage() {
         if (cancelled) return;
         setItem(found);
         setPrintedOn(todayLabel(new Date()));
+        if (found) setOpenedItemId((current) => current ?? found.id);
         if (!found) setError("No items found");
       })
       .catch((err: unknown) => {
