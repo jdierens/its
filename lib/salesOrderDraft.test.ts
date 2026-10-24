@@ -43,8 +43,29 @@ describe("sales order draft", () => {
   });
 
   it("strips prices when the viewer cannot see money", () => {
-    const hidden = hideSalesMoney({ unitPrice: "12.50", extPrice: "25.00", total: 25, internalNotes: "margin" }, false);
-    assert.deepEqual(hidden, { unitPrice: "", extPrice: "", total: null, internalNotes: "" });
+    const hidden = hideSalesMoney(
+      {
+        unitPrice: "12.50",
+        extPrice: "25.00",
+        total: 25,
+        internalNotes: "margin",
+        ebayTransactionFee: "1.25",
+        ebayLabelFee: "0.50",
+        ebayAdFee: "0.20",
+        ebayOrderEarnings: "10.00",
+      },
+      false,
+    );
+    assert.deepEqual(hidden, {
+      unitPrice: "",
+      extPrice: "",
+      total: null,
+      internalNotes: "",
+      ebayTransactionFee: "",
+      ebayLabelFee: "",
+      ebayAdFee: "",
+      ebayOrderEarnings: "",
+    });
     assert.equal(salesOrderTotal([{ extPrice: "10.00" }, { extPrice: "2.50" }]), 12.5);
     assert.equal(salesOrderTotal([{ extPrice: "" }]), null);
   });
@@ -67,6 +88,8 @@ describe("sales order draft", () => {
     assert.equal(payload.customer_po, "PO-100");
     const lines = payload.lines as { line_kind: string; allocations: { item_id: string }[] }[];
     assert.equal(payload.channel, "direct");
+    assert.equal(payload.payment_method, "wire_ach");
+    assert.equal(payload.ebay_transaction_fee, "1.25");
     assert.equal(lines[0].line_kind, "product");
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
@@ -111,6 +134,13 @@ function sampleDraft(): SoDraftInput {
     exportNotes: "",
     internalNotes: "",
     paymentRequirement: "terms",
+    paymentMethod: "wire_ach",
+    paymentDate: "2026-10-24",
+    paymentRef: "WIRE-1",
+    ebayTransactionFee: "1.25",
+    ebayLabelFee: "",
+    ebayAdFee: "",
+    ebayOrderEarnings: "",
     lines: [
       {
         lineKind: "product",

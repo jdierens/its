@@ -26,7 +26,7 @@ The internal reference is a separate note on the order. The SO number itself is 
 
 ## Lines
 
-`so_lines.line_kind` is `product`, `kit`, `freight`, `fee`, `service`, `discount`, or `other`. The default is `product`. The item is `so_line_allocations.item_id`, the same role as `po_lines.item_id`, and a product line can be several SKUs. Approval requires those quantities to add up to the line only when the kind is `product`. Freight, a fee, a service, a discount, a kit, and other do not need an item. Any allocation that is present still has to add up. Kit contents are not expanded, and a sales order is not linked to a purchase order. Both wait on a later design.
+`so_lines.line_kind` is `product`, `kit`, `freight`, `fee`, `service`, `discount`, or `other`. The default is `product`. The item is `so_line_allocations.item_id`, the same role as `po_lines.item_id`, and a product line can be several SKUs. Approval requires those quantities to add up to the line only when the kind is `product`. Freight, a fee, a service, a discount, a kit, and other do not need an item. Any allocation that is present still has to add up. Kit contents are not expanded. There is no link from a sales-order line to a purchase-order line.
 
 ## Approve
 
@@ -40,7 +40,9 @@ Bill-to and ship-to are copied from the customer and can be edited. **Save addre
 
 Choosing a customer also fills customer PO, internal reference, channel, order date, requested ship date, terms, Incoterms, ship method, and carrier account from that customer's latest sales order.
 
-Unit price, extension, order total, and internal notes are removed on the server when `can_view_financials` is false. Admin, staff, and read-only can see prices. Other roles see parts and quantities. Files can contain prices, so those roles receive no attachments. Admin and staff can edit. Read-only cannot.
+Unit price, extension, order total, internal notes, and the eBay money columns are removed on the server when `can_view_financials` is false. Those columns are `ebay_transaction_fee`, `ebay_label_fee`, `ebay_ad_fee`, and `ebay_order_earnings`, all nullable. Admin, staff, and read-only can see prices. Other roles see parts and quantities. Files can contain prices, so those roles receive no attachments. Admin and staff can edit. Read-only cannot.
+
+`payment_method` is a foreign key to `so_payment_methods`: `wire_ach`, `ebay`, `credit_card`, `check`, `paypal`, and `other`. `payment_date` and `payment_ref` record when and under what reference the payment arrived. Those three are not amounts. Row level security is on for `so_payment_methods`, and only `service_role` can read or write it.
 
 ## History
 

@@ -82,6 +82,13 @@ export type SoDraftInput = {
   exportNotes: string;
   internalNotes: string;
   paymentRequirement: string;
+  paymentMethod: string;
+  paymentDate: string;
+  paymentRef: string;
+  ebayTransactionFee: string;
+  ebayLabelFee: string;
+  ebayAdFee: string;
+  ebayOrderEarnings: string;
   lines: SoLineInput[];
   notes: SoNoteInput[];
   saveAddressToCustomer: boolean;
@@ -203,6 +210,10 @@ export function hideSalesMoney<
     extPrice?: string;
     total?: number | null;
     internalNotes?: string;
+    ebayTransactionFee?: string;
+    ebayLabelFee?: string;
+    ebayAdFee?: string;
+    ebayOrderEarnings?: string;
   },
 >(row: T, canViewMoney: boolean): T {
   if (canViewMoney) return row;
@@ -212,6 +223,10 @@ export function hideSalesMoney<
     ...(row.extPrice !== undefined ? { extPrice: "" } : {}),
     ...(row.total !== undefined ? { total: null } : {}),
     ...(row.internalNotes !== undefined ? { internalNotes: "" } : {}),
+    ...(row.ebayTransactionFee !== undefined ? { ebayTransactionFee: "" } : {}),
+    ...(row.ebayLabelFee !== undefined ? { ebayLabelFee: "" } : {}),
+    ...(row.ebayAdFee !== undefined ? { ebayAdFee: "" } : {}),
+    ...(row.ebayOrderEarnings !== undefined ? { ebayOrderEarnings: "" } : {}),
   };
 }
 
@@ -236,6 +251,13 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
     export_notes: input.exportNotes,
     internal_notes: input.internalNotes,
     payment_requirement: input.paymentRequirement || "terms",
+    payment_method: input.paymentMethod,
+    payment_date: input.paymentDate,
+    payment_ref: input.paymentRef,
+    ebay_transaction_fee: input.ebayTransactionFee,
+    ebay_label_fee: input.ebayLabelFee,
+    ebay_ad_fee: input.ebayAdFee,
+    ebay_order_earnings: input.ebayOrderEarnings,
     lines: input.lines.map((line) => ({
       line_kind: line.lineKind || "product",
       customer_part_number: line.customerPartNumber,

@@ -27,6 +27,7 @@ export type SalesLookups = {
   terms: { code: string; label: string }[];
   shipMethods: { code: string; label: string }[];
   channels: { code: string; label: string }[];
+  paymentMethods: { code: string; label: string }[];
 };
 
 export type SalesCustomerDefaults = {
@@ -112,6 +113,13 @@ export type SalesOrderView = {
   exportNotes: string;
   internalNotes: string;
   paymentRequirement: string;
+  paymentMethod: string;
+  paymentDate: string;
+  paymentRef: string;
+  ebayTransactionFee: string;
+  ebayLabelFee: string;
+  ebayAdFee: string;
+  ebayOrderEarnings: string;
   lines: SalesLineView[];
   notes: SalesNoteView[];
   attachments: SoAttachmentView[];
@@ -125,17 +133,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function listSalesLookups(): Promise<SalesLookups> {
   const supabase = await getSupabase();
-  const [terms, methods, channels] = await Promise.all([
+  const [terms, methods, channels, paymentMethods] = await Promise.all([
     supabase.from("so_payment_terms").select("code, label, sort_order").order("sort_order"),
     supabase.from("so_ship_methods").select("code, carrier, method, sort_order").order("sort_order"),
     supabase.from("so_channels").select("code, label, sort_order").order("sort_order"),
+    supabase.from("so_payment_methods").select("code, label, sort_order").order("sort_order"),
   ]);
   if (terms.error) throw new Error(salesError(terms.error));
   if (methods.error) throw new Error(salesError(methods.error));
   if (channels.error) throw new Error(salesError(channels.error));
+  if (paymentMethods.error) throw new Error(salesError(paymentMethods.error));
   return {
     terms: (terms.data ?? []).map((row) => ({ code: String(row.code), label: String(row.label) })),
     channels: (channels.data ?? []).map((row) => ({ code: String(row.code), label: String(row.label) })),
+    paymentMethods: (paymentMethods.data ?? []).map((row) => ({ code: String(row.code), label: String(row.label) })),
     shipMethods: (methods.data ?? []).map((row) => {
       const carrier = String(row.carrier ?? "");
       const method = String(row.method ?? "");
@@ -271,7 +282,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
   const { data, error } = await (await getSupabase())
     .from("sales_orders")
     .select(
-      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
+      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -335,6 +346,10 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     {
       internalNotes: text(data.internal_notes),
       total: salesOrderTotal(lines),
+      ebayTransactionFee: moneyText(data.ebay_transaction_fee),
+      ebayLabelFee: moneyText(data.ebay_label_fee),
+      ebayAdFee: moneyText(data.ebay_ad_fee),
+      ebayOrderEarnings: moneyText(data.ebay_order_earnings),
     },
     access.canViewMoney,
   );
@@ -361,6 +376,13 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     exportNotes: text(data.export_notes),
     internalNotes: shown.internalNotes,
     paymentRequirement: text(data.payment_requirement) || "terms",
+    paymentMethod: text(data.payment_method),
+    paymentDate: dateValue(data.payment_date) ?? "",
+    paymentRef: text(data.payment_ref),
+    ebayTransactionFee: shown.ebayTransactionFee,
+    ebayLabelFee: shown.ebayLabelFee,
+    ebayAdFee: shown.ebayAdFee,
+    ebayOrderEarnings: shown.ebayOrderEarnings,
     lines,
     notes,
     attachments: await loadSoAttachments(String(data.id)),
@@ -384,6 +406,9 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   }
   for (const note of draft.notes) {
     if (note.response === "countered" && !note.counterText.trim()) throw new Error("Enter the counter text.");
+  }
+  for (const amount of [draft.ebayTransactionFee, draft.ebayLabelFee, draft.ebayAdFee, draft.ebayOrderEarnings]) {
+    if (amount.trim() && !/^-?[0-9]+(\.[0-9]+)?$/.test(amount.trim())) throw new Error("Enter a valid amount.");
   }
 
   const persisted = access.canViewMoney ? draft : { ...draft, internalNotes: input.id ? await readInternalNotes(input.id) : "" };
@@ -501,7 +526,7 @@ function salesError(error: { message?: string }): string {
     return MIGRATION;
   }
   const match = textValue.match(
-    /Choose a customer\.|Sales rep initials are 2 letters\.|That sales order can no longer be edited\.|Sales order not found\.|Enter a quantity above 0\.|Only a draft can be approved\.|Enter the order date\.|Enter a bill-to address\.|Enter a ship-to address\.|Choose terms\.|Choose a ship method\.|Enter the sales rep initials\.|Enter a sales order number\.|Add a line before approving\.|Line \d+ must be allocated to SKUs that add up to the quantity\.|Sales order number SO\d+ is already used\.|That sales order is already \w+\./,
+    /Choose a customer\.|Choose a channel\.|Choose a payment method\.|Enter a valid amount\.|Enter a payment date\.|Sales rep initials are 2 letters\.|That sales order can no longer be edited\.|Sales order not found\.|Enter a quantity above 0\.|Only a draft can be approved\.|Enter the order date\.|Enter a bill-to address\.|Enter a ship-to address\.|Choose terms\.|Choose a ship method\.|Enter the sales rep initials\.|Enter a sales order number\.|Add a line before approving\.|Line \d+ must be allocated to SKUs that add up to the quantity\.|Sales order number SO\d+ is already used\.|That sales order is already \w+\./,
   );
   if (match) return match[0];
   if (textValue.includes("so_lines_text_check")) return "Enter a part number or a description.";
@@ -541,6 +566,13 @@ function formatQty(value: unknown): string {
   if (!Number.isFinite(amount)) return "";
   if (Number.isInteger(amount)) return String(amount);
   return amount.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function moneyText(value: unknown): string {
+  if (value == null || value === "") return "";
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "";
+  return amount.toFixed(2);
 }
 
 function formatPrice(value: unknown): string {

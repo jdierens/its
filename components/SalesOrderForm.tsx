@@ -83,6 +83,13 @@ export function SalesOrderForm({
   const [currency, setCurrency] = useState(order?.currency || "USD");
   const [salesRep, setSalesRep] = useState(order?.salesRep ?? "");
   const [paymentRequirement, setPaymentRequirement] = useState(order?.paymentRequirement || "terms");
+  const [paymentMethod, setPaymentMethod] = useState(order?.paymentMethod ?? "");
+  const [paymentDate, setPaymentDate] = useState(order?.paymentDate ?? "");
+  const [paymentRef, setPaymentRef] = useState(order?.paymentRef ?? "");
+  const [ebayTransactionFee, setEbayTransactionFee] = useState(order?.ebayTransactionFee ?? "");
+  const [ebayLabelFee, setEbayLabelFee] = useState(order?.ebayLabelFee ?? "");
+  const [ebayAdFee, setEbayAdFee] = useState(order?.ebayAdFee ?? "");
+  const [ebayOrderEarnings, setEbayOrderEarnings] = useState(order?.ebayOrderEarnings ?? "");
   const [exportNotes, setExportNotes] = useState(order?.exportNotes ?? "");
   const [internalNotes, setInternalNotes] = useState(order?.internalNotes ?? "");
   const [lines, setLines] = useState<FormLine[]>(order?.lines.length ? order.lines : [blankLine()]);
@@ -128,6 +135,13 @@ export function SalesOrderForm({
       exportNotes,
       internalNotes,
       paymentRequirement,
+      paymentMethod,
+      paymentDate,
+      paymentRef,
+      ebayTransactionFee: showMoney ? ebayTransactionFee : "",
+      ebayLabelFee: showMoney ? ebayLabelFee : "",
+      ebayAdFee: showMoney ? ebayAdFee : "",
+      ebayOrderEarnings: showMoney ? ebayOrderEarnings : "",
       lines: lines.map((line) => ({
         lineKind: line.lineKind || "product",
         customerPartNumber: line.customerPartNumber,
@@ -409,6 +423,49 @@ export function SalesOrderForm({
                 <option value="prepay">Prepay</option>
               </select>
             </label>
+            <label>
+              Payment method
+              <select id="so-payment-method" value={paymentMethod} disabled={locked} onChange={(event) => setPaymentMethod(event.target.value)}>
+                <option value="">Choose a payment method</option>
+                {lookups.paymentMethods.map((method) => (
+                  <option key={method.code} value={method.code}>
+                    {method.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Payment date
+              <input type="date" value={paymentDate} disabled={locked} onChange={(event) => setPaymentDate(event.target.value)} />
+            </label>
+            <label>
+              Payment reference
+              <input value={paymentRef} disabled={locked} onChange={(event) => setPaymentRef(event.target.value)} />
+            </label>
+            {showMoney ? (
+              <label>
+                eBay transaction fee
+                <input id="so-ebay-transaction-fee" className="num-input" inputMode="decimal" value={ebayTransactionFee} disabled={locked} onChange={(event) => setEbayTransactionFee(event.target.value)} />
+              </label>
+            ) : null}
+            {showMoney ? (
+              <label>
+                eBay label fee
+                <input className="num-input" inputMode="decimal" value={ebayLabelFee} disabled={locked} onChange={(event) => setEbayLabelFee(event.target.value)} />
+              </label>
+            ) : null}
+            {showMoney ? (
+              <label>
+                eBay ad fee
+                <input className="num-input" inputMode="decimal" value={ebayAdFee} disabled={locked} onChange={(event) => setEbayAdFee(event.target.value)} />
+              </label>
+            ) : null}
+            {showMoney ? (
+              <label>
+                eBay order earnings
+                <input className="num-input" inputMode="decimal" value={ebayOrderEarnings} disabled={locked} onChange={(event) => setEbayOrderEarnings(event.target.value)} />
+              </label>
+            ) : null}
           </div>
         </fieldset>
 
