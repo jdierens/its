@@ -87,6 +87,25 @@ insert into public.so_channels (code, label, sort_order) values
   ('project_buy', 'Project buy', 7),
   ('other', 'Other', 8);
 
+create table public.so_payment_methods (
+  code text primary key,
+  label text not null,
+  sort_order integer not null,
+  constraint so_payment_methods_label_check check (char_length(btrim(label)) > 0),
+  constraint so_payment_methods_sort_check check (sort_order > 0)
+);
+
+comment on table public.so_payment_methods is
+  'How the customer paid. Separate from payment terms and from payment status.';
+
+insert into public.so_payment_methods (code, label, sort_order) values
+  ('wire_ach', 'Wire / ACH', 1),
+  ('ebay', 'eBay', 2),
+  ('credit_card', 'Credit card', 3),
+  ('check', 'Check', 4),
+  ('paypal', 'PayPal', 5),
+  ('other', 'Other', 6);
+
 create table public.sales_orders (
   id uuid primary key default gen_random_uuid(),
   so_number bigint,
@@ -120,6 +139,13 @@ create table public.sales_orders (
   approved_by uuid references public.app_users (id),
   payment_requirement text not null default 'terms',
   payment_status text not null default 'unpaid',
+  payment_method text references public.so_payment_methods (code),
+  payment_date date,
+  payment_ref text,
+  ebay_transaction_fee numeric(14, 2),
+  ebay_label_fee numeric(14, 2),
+  ebay_ad_fee numeric(14, 2),
+  ebay_order_earnings numeric(14, 2),
   staging_bin_id uuid references public.bins (id),
   operator_id uuid references public.app_users (id),
   created_at timestamptz not null default now(),
@@ -166,6 +192,24 @@ comment on column public.sales_orders.sheet_ref is
 
 comment on column public.sales_orders.legacy_journal_ref is
   'Legacy journal reference. Nullable and not unique.';
+
+comment on column public.sales_orders.payment_method is
+  'How this order was paid. Foreign key to so_payment_methods. Null until recorded.';
+
+comment on column public.sales_orders.payment_ref is
+  'Payment reference, such as a wire confirmation. Not an amount.';
+
+comment on column public.sales_orders.ebay_transaction_fee is
+  'eBay transaction fee. Nullable money. Hidden from a role that cannot view financials.';
+
+comment on column public.sales_orders.ebay_label_fee is
+  'eBay label fee. Nullable money. Hidden from a role that cannot view financials.';
+
+comment on column public.sales_orders.ebay_ad_fee is
+  'eBay ad fee. Nullable money. Hidden from a role that cannot view financials.';
+
+comment on column public.sales_orders.ebay_order_earnings is
+  'eBay order earnings. Nullable money. Hidden from a role that cannot view financials.';
 
 comment on column public.sales_orders.bill_to is
   'Postal address copied from the customer and editable: line1, line2, city, countrySubDivisionCode, postalCode, country.';
@@ -224,7 +268,7 @@ comment on table public.so_lines is
   'Customer lines. The part number and description stay as the customer wrote them.';
 
 comment on column public.so_lines.line_kind is
-  'product, kit, freight, fee, service, discount, or other. Default product. Kit is stored only. Kit contents and a sales-order to purchase-order link are not built here.';
+  'product, kit, freight, fee, service, discount, or other. Default product. Kit is stored only. There is no column linking a sales-order line to a purchase-order line.';
 
 create index so_lines_order_idx on public.so_lines (sales_order_id, line_no);
 
@@ -673,6 +717,30 @@ as $$
   select id from public.app_users where id = p_operator;
 $$;
 
+create or replace function public.so_optional_money(p_value text)
+returns numeric
+language plpgsql
+immutable
+security invoker
+set search_path = ''
+as $$
+declare
+  v_text text := nullif(btrim(coalesce(p_value, '')), '');
+begin
+  if v_text is null then
+    return null;
+  end if;
+  if v_text !~ '^-?[0-9]+(\.[0-9]+)?$' then
+    raise exception 'Enter a valid amount.'
+      using errcode = '22023';
+  end if;
+  return round(v_text::numeric, 2);
+end;
+$$;
+
+comment on function public.so_optional_money(text) is
+  'Parses a nullable money amount for a sales order. Blank is null. Called only from write_sales_order.';
+
 create or replace function public.write_sales_order(
   p_payload jsonb,
   p_initials text,
@@ -699,6 +767,12 @@ declare
   v_price numeric;
   v_kind text;
   v_channel text := public.blank_to_null(p_payload ->> 'channel');
+  v_method text := public.blank_to_null(p_payload ->> 'payment_method');
+  v_paid date;
+  v_txn numeric;
+  v_label_fee numeric;
+  v_ad numeric;
+  v_earnings numeric;
 begin
   if v_customer is null or not exists (select 1 from public.customers where id = v_customer) then
     raise exception 'Choose a customer.'
@@ -708,6 +782,21 @@ begin
     raise exception 'Choose a channel.'
       using errcode = '22023';
   end if;
+  if v_method is not null and not exists (select 1 from public.so_payment_methods where code = v_method) then
+    raise exception 'Choose a payment method.'
+      using errcode = '22023';
+  end if;
+  begin
+    v_paid := nullif(p_payload ->> 'payment_date', '')::date;
+    v_txn := public.so_optional_money(p_payload ->> 'ebay_transaction_fee');
+    v_label_fee := public.so_optional_money(p_payload ->> 'ebay_label_fee');
+    v_ad := public.so_optional_money(p_payload ->> 'ebay_ad_fee');
+    v_earnings := public.so_optional_money(p_payload ->> 'ebay_order_earnings');
+  exception
+    when invalid_datetime_format or datetime_field_overflow then
+      raise exception 'Enter a payment date.'
+        using errcode = '22023';
+  end;
   if public.blank_to_null(upper(btrim(coalesce(p_payload ->> 'sales_rep', '')))) is not null
     and upper(btrim(p_payload ->> 'sales_rep')) !~ '^[A-Z]{2}$'
   then
@@ -720,7 +809,8 @@ begin
       status, customer_id, customer_po, reference, order_date, ship_date,
       bill_to, ship_to, terms, incoterms, ship_method, carrier_account,
       currency, sales_rep, export_notes, internal_notes, source, channel,
-      legacy_journal_ref, sheet_ref, payment_requirement, operator_id
+      legacy_journal_ref, sheet_ref, payment_requirement, payment_method, payment_date, payment_ref,
+      ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, operator_id
     ) values (
       'draft',
       v_customer,
@@ -743,6 +833,13 @@ begin
       case when p_payload ? 'legacy_journal_ref' then public.blank_to_null(p_payload ->> 'legacy_journal_ref') else null end,
       case when p_payload ? 'sheet_ref' then public.blank_to_null(p_payload ->> 'sheet_ref') else null end,
       coalesce(public.blank_to_null(p_payload ->> 'payment_requirement'), 'terms'),
+      v_method,
+      v_paid,
+      public.blank_to_null(p_payload ->> 'payment_ref'),
+      v_txn,
+      v_label_fee,
+      v_ad,
+      v_earnings,
       v_operator
     )
     returning id, status into v_id, v_status;
@@ -784,6 +881,13 @@ begin
         else sheet_ref
       end,
       payment_requirement = coalesce(public.blank_to_null(p_payload ->> 'payment_requirement'), 'terms'),
+      payment_method = v_method,
+      payment_date = v_paid,
+      payment_ref = public.blank_to_null(p_payload ->> 'payment_ref'),
+      ebay_transaction_fee = v_txn,
+      ebay_label_fee = v_label_fee,
+      ebay_ad_fee = v_ad,
+      ebay_order_earnings = v_earnings,
       operator_id = v_operator,
       updated_at = now()
     where id = v_id;
@@ -1033,6 +1137,7 @@ alter table public.so_counter enable row level security;
 alter table public.so_payment_terms enable row level security;
 alter table public.so_ship_methods enable row level security;
 alter table public.so_channels enable row level security;
+alter table public.so_payment_methods enable row level security;
 alter table public.sales_orders enable row level security;
 alter table public.so_lines enable row level security;
 alter table public.so_line_allocations enable row level security;
@@ -1053,6 +1158,7 @@ revoke all on table public.so_counter from public, anon, authenticated;
 revoke all on table public.so_payment_terms from public, anon, authenticated;
 revoke all on table public.so_ship_methods from public, anon, authenticated;
 revoke all on table public.so_channels from public, anon, authenticated;
+revoke all on table public.so_payment_methods from public, anon, authenticated;
 revoke all on table public.sales_orders from public, anon, authenticated;
 revoke all on table public.so_lines from public, anon, authenticated;
 revoke all on table public.so_line_allocations from public, anon, authenticated;
@@ -1073,6 +1179,7 @@ grant select, insert, update, delete on table public.so_counter to service_role;
 grant select, insert, update, delete on table public.so_payment_terms to service_role;
 grant select, insert, update, delete on table public.so_ship_methods to service_role;
 grant select, insert, update, delete on table public.so_channels to service_role;
+grant select, insert, update, delete on table public.so_payment_methods to service_role;
 grant select, insert, update, delete on table public.sales_orders to service_role;
 grant select, insert, update, delete on table public.so_lines to service_role;
 grant select, insert, update, delete on table public.so_line_allocations to service_role;
@@ -1094,6 +1201,7 @@ grant execute on function public.so_events_append_only() to service_role;
 
 revoke all on function public.log_so_event(uuid, text, text, text, text, uuid, text) from public, anon, authenticated, service_role;
 revoke all on function public.so_known_operator(uuid) from public, anon, authenticated, service_role;
+revoke all on function public.so_optional_money(text) from public, anon, authenticated, service_role;
 
 revoke all on function public.so_invoices_set_order_number() from public, anon, authenticated;
 grant execute on function public.so_invoices_set_order_number() to service_role;
