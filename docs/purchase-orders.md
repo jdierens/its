@@ -215,7 +215,9 @@ Freight-in is stored for a later landed-cost allocation. That allocation is not 
 
 ## Go-live number
 
-`supabase/migrations/20261024080000_po_number_format.sql` replaces the hyphenated number with `PO` plus the integer. The go-live step in that file sets `po_counter.next_number` to 6304 when the counter is still below 6304. The first purchase order issued after that step is `PO6304`. The statement does not renumber or delete purchase orders that already exist. A test row such as `PO-1` keeps the number it has. Remove or renumber those test rows separately if they should not stay.
+`supabase/migrations/20261024080000_po_number_format.sql` replaces the hyphenated number with `PO` plus the integer. That file does not change `po_counter`. Applying it now leaves the next number where it is, so a test purchase order still takes the current series and does not use `PO6304`.
+
+At go-live, run `supabase/go-live/po_counter_seed.sql` by hand. It is not a migration, and `db push` does not apply it. The statement sets `po_counter.next_number` to 6304 when the counter is still below 6304. The first purchase order issued after that step is `PO6304`. A counter already at or above 6304 stays where it is. The script does not renumber or delete purchase orders that already exist. A test row such as `PO-1` keeps the number it has. Remove or renumber those test rows separately if they should not stay.
 
 `po_lines.line_kind` is `known` or `lot`.
 
@@ -429,7 +431,7 @@ An invoice that does not match an existing PO becomes an intake draft. That row 
 
 Before creating an intake draft, match a numbered purchase order:
 
-1. A PO number printed on the invoice, such as `PO-12`.
+1. The number stored on the purchase order, printed on the invoice. A new number looks like `PO6304`. The match is that stored text, so an older test order still numbered `PO-1` matches `PO-1`.
 2. Otherwise the vendor plus the invoice total against one open order, within a small money tolerance. Two open orders for the same vendor and the same total do not auto-match.
 
 A match attaches the PDF to that PO as a vendor invoice. It does not create a second PO. The file types are the ones on the purchase order: vendor invoice, quote, order confirmation, or other. There is no customer-document type. The bytes go to the private `po-documents` bucket. The comparison is invoice lines against PO lines, quantity and unit price first. Mismatches are flags. The job does not edit the PO lines.

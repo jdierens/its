@@ -2,8 +2,9 @@
 -- Not applied here. Review and apply by hand. Do not run this against production
 -- until it has been reviewed.
 --
--- The update at the bottom is the go-live step. It sets the next number to 6304.
--- It does not renumber or delete existing test purchase orders.
+-- This file does not move po_counter. Applying it leaves the next number where
+-- it is, so test orders keep using the current series. At go-live, run
+-- supabase/go-live/po_counter_seed.sql by hand. That script is not a migration.
 
 create or replace function public.reserve_purchase_order_number()
 returns text
@@ -33,11 +34,3 @@ comment on function public.reserve_purchase_order_number() is
 
 comment on table public.po_counter is
   'Next purchase-order number. Display is PO plus the integer, with no hyphen. Locked with SELECT FOR UPDATE when a number is reserved.';
-
--- Go-live step. Continues the legacy series at PO6304.
--- A counter already at or above 6304 is left where it is, so this cannot move
--- the counter backwards. purchase_orders rows are not updated.
-update public.po_counter
-set next_number = 6304
-where id = 1
-  and next_number < 6304;
