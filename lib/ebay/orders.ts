@@ -37,7 +37,6 @@ import {
 import { parsePackLabel } from "@/lib/ebay/packs";
 import { forceRefreshAccessToken, validAccessToken } from "@/lib/ebay/oauth";
 import { escapeLike } from "@/lib/labelLookup";
-import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
 
 const MIGRATION = "Apply supabase/migrations/20261025020829_ebay_order_pull.sql before pulling eBay orders.";
@@ -88,7 +87,7 @@ type OrderStore = {
   legacySoNumbers?(orderIds: string[]): Promise<LegacySoNumber[]>;
   apply(
     actions: PullAction[],
-    customer: { id: string; billTo: SoAddress | null },
+    customer: { id: string },
   ): Promise<{ created: number; updated: number; linked: number }>;
   syncLabelFees?(fees: ReadonlyMap<string, number>): Promise<void>;
   setWatermark(iso: string): Promise<void>;
@@ -189,7 +188,7 @@ async function insertLines(admin: SupabaseClient, salesOrderId: string, action: 
 export async function runOrderPull(input: {
   now: Date;
   watermark: string | null;
-  customer: { id: string; billTo: SoAddress | null };
+  customer: { id: string };
   fetchPage: (url: string) => Promise<{ body: unknown; rlogid: string | null; requestId: string | null }>;
   pageUrl: (filter: string, offset: number) => string;
   allowNext: (url: string) => boolean;
@@ -279,24 +278,7 @@ export async function runOrderPull(input: {
   };
 }
 
-/** A refresh keeps payment terms, Incoterms, and a bill-to that are already set. */
-async function fillBlankEbayBillTo(admin: SupabaseClient, id: string, shipTo: unknown): Promise<void> {
-  if (!shipTo || typeof shipTo !== "object") return;
-  const shipLine = typeof (shipTo as { line1?: unknown }).line1 === "string" ? (shipTo as { line1: string }).line1.trim() : "";
-  if (!shipLine) return;
-  const current = await admin.from("sales_orders").select("bill_to").eq("id", id).maybeSingle();
-  if (current.error) throw new Error("A draft sales order could not be updated.");
-  const bill = current.data?.bill_to;
-  const billLine = bill && typeof bill === "object" && typeof (bill as { line1?: unknown }).line1 === "string" ? (bill as { line1: string }).line1.trim() : "";
-  if (billLine) return;
-  const updated = await admin
-    .from("sales_orders")
-    .update({ bill_to: shipTo, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("status", "draft");
-  if (updated.error) throw new Error("A draft sales order could not be updated.");
-}
-
+/** A refresh keeps payment terms and Incoterms that are already set. */
 async function fillBlankEbayTerms(
   admin: SupabaseClient,
   id: string,
@@ -436,7 +418,6 @@ function supabaseStore(
           const patch = draftOrderRow({
             order: action.order,
             customerId: customer.id,
-            billTo: customer.billTo,
             soNumber: action.soNumber,
             salesRep: defaults.salesRep,
             paymentTerms: defaults.paymentTerms,
@@ -447,6 +428,7 @@ function supabaseStore(
             .update({
               order_date: patch.order_date,
               ship_to: patch.ship_to,
+              bill_to: null,
               buyer: patch.buyer,
               ebay_order_id: patch.ebay_order_id,
               ebay_sales_record_ref: patch.ebay_sales_record_ref,
@@ -469,7 +451,6 @@ function supabaseStore(
             continue;
           }
           await fillBlankEbayTerms(admin, action.id, defaults.paymentTerms, defaults.incoterms);
-          await fillBlankEbayBillTo(admin, action.id, patch.ship_to);
           if (action.soNumber != null) {
             const numbered = await admin
               .from("sales_orders")
@@ -492,7 +473,6 @@ function supabaseStore(
             draftOrderRow({
               order: action.order,
               customerId: customer.id,
-              billTo: customer.billTo,
               soNumber: action.soNumber,
               salesRep: defaults.salesRep,
               paymentTerms: defaults.paymentTerms,
@@ -508,7 +488,6 @@ function supabaseStore(
               draftOrderRow({
                 order: action.order,
                 customerId: customer.id,
-                billTo: customer.billTo,
                 salesRep: defaults.salesRep,
                 paymentTerms: defaults.paymentTerms,
                 incoterms: defaults.incoterms,
@@ -665,10 +644,10 @@ async function readSeed(admin: SupabaseClient): Promise<SeedState> {
   };
 }
 
-async function ebayCustomer(admin: SupabaseClient): Promise<{ id: string; billTo: SoAddress | null }> {
+async function ebayCustomer(admin: SupabaseClient): Promise<{ id: string }> {
   const { data, error } = await admin
     .from("customers")
-    .select("id, billing_address")
+    .select("id")
     .eq("display_name", EBAY_ORDER_CUSTOMER_NAME)
     .eq("qbo_id", EBAY_ORDER_CUSTOMER_QBO_ID)
     .eq("active", true)
@@ -677,8 +656,7 @@ async function ebayCustomer(admin: SupabaseClient): Promise<{ id: string; billTo
   if (!data || data.length !== 1) {
     throw new Error("The eBay Customer record was not found. No sales orders were created.");
   }
-  const billTo = addressFromRecord(data[0].billing_address);
-  return { id: String(data[0].id), billTo: billTo.line1.trim() ? billTo : null };
+  return { id: String(data[0].id) };
 }
 
 function emptyOrderPullSummary(available: boolean): OrderPullSummary {

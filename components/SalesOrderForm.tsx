@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
 import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import {
-  billToForEbay,
   emptyAddress,
   formatSalesMoney,
   formatSalesOrderNumber,
@@ -147,13 +146,7 @@ export function SalesOrderForm({
   const [orderDate, setOrderDate] = useState(order?.orderDate || today);
   const [shipDate, setShipDate] = useState(order?.shipDate ?? "");
   const openedAsEbay = orderIsEbay(order);
-  const [billTo, setBillTo] = useState<SoAddress>(
-    billToForEbay({
-      ebay: openedAsEbay,
-      billTo: order?.billTo ?? emptyAddress(),
-      shipTo: order?.shipTo ?? emptyAddress(),
-    }) ?? emptyAddress(),
-  );
+  const [billTo, setBillTo] = useState<SoAddress>(order?.billTo ?? emptyAddress());
   const [shipTo, setShipTo] = useState<SoAddress>(order?.shipTo ?? emptyAddress());
   const [saveAddress, setSaveAddress] = useState(false);
   const [terms, setTerms] = useState(
@@ -219,7 +212,7 @@ export function SalesOrderForm({
       channel,
       orderDate,
       shipDate,
-      billTo,
+      billTo: ebayOrder ? emptyAddress() : billTo,
       shipTo,
       terms,
       incoterms,
@@ -261,15 +254,7 @@ export function SalesOrderForm({
     try {
       const defaults = await salesCustomerDefaults(hit.id);
       if (!defaults) return;
-      setBillTo(
-        billToForEbay({
-          ebay:
-            defaults.channel.trim().toLowerCase() === "ebay" ||
-            hit.name.trim().toLowerCase() === EBAY_ORDER_CUSTOMER_NAME.toLowerCase(),
-          billTo: defaults.billTo,
-          shipTo: defaults.shipTo,
-        }) ?? defaults.billTo,
-      );
+      setBillTo(defaults.billTo);
       setShipTo(defaults.shipTo);
       setCustomerPo(defaults.customerPo);
       setChannel(defaults.channel);
@@ -551,7 +536,6 @@ export function SalesOrderForm({
                   setSalesRep((current) => current.trim() || defaultEbaySalesRep);
                   setTerms((current) => current.trim() || defaultEbayPaymentTerms);
                   setIncoterms((current) => current.trim() || defaultEbayIncoterms);
-                  setBillTo((current) => billToForEbay({ ebay: true, billTo: current, shipTo }) ?? current);
                 }
               }}
             >

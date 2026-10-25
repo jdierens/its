@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   allocationsCover,
-  billToForEbay,
   compareSalesOrderList,
   formatSalesMoney,
   formatSalesOrderNumber,
@@ -10,7 +9,6 @@ import {
   invoiceNumber,
   lineExtension,
   lineRequiresItem,
-  withEbayBillTo,
   withEbayShippingItem,
   salesOrderListReference,
   salesOrderListScope,
@@ -23,21 +21,6 @@ import {
   toSalesOrderPayload,
   type SoDraftInput,
 } from "./salesOrderDraft.ts";
-
-describe("eBay bill-to", () => {
-  it("copies ship-to when an eBay bill-to has no line 1", () => {
-    const shipTo = { ...sampleDraft().shipTo, line1: "1 Main", city: "Austin" };
-    const copied = billToForEbay({ ebay: true, billTo: { ...shipTo, line1: "  " }, shipTo });
-    assert.equal(copied?.line1, "1 Main");
-    assert.equal(copied?.city, "Austin");
-    const kept = billToForEbay({ ebay: true, billTo: { ...shipTo, line1: "9 Bill" }, shipTo });
-    assert.equal(kept?.line1, "9 Bill");
-    const other = withEbayBillTo({ ...sampleDraft(), channel: "direct", billTo: { ...shipTo, line1: "" }, shipTo });
-    assert.equal(other.billTo.line1, "");
-    const ebay = withEbayBillTo({ ...sampleDraft(), channel: "ebay", billTo: { ...shipTo, line1: "" }, shipTo });
-    assert.equal(ebay.billTo.line1, "1 Main");
-  });
-});
 
 describe("sales order draft", () => {
   it("matches a part number by normalized prefix", () => {
@@ -181,6 +164,17 @@ describe("sales order draft", () => {
     assert.equal(lines[0].line_kind, "product");
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
+  });
+
+  it("leaves an eBay bill-to blank and keeps ship-to", () => {
+    const draft = sampleDraft();
+    const payload = toSalesOrderPayload({ ...draft, channel: "ebay" });
+    const bill = payload.bill_to as { line1: string };
+    const ship = payload.ship_to as { line1: string };
+    assert.equal(bill.line1, "");
+    assert.equal(ship.line1, draft.shipTo.line1);
+    const direct = toSalesOrderPayload(draft);
+    assert.equal((direct.bill_to as { line1: string }).line1, "1 Demo St");
   });
 });
 

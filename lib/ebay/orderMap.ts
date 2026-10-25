@@ -1,7 +1,7 @@
 import { ebayIncotermsFromSetting, ebayPaymentTermsFromSetting } from "@/lib/ebayOrderDefaults";
 import { ebaySalesRepFromSetting } from "@/lib/ebaySalesRep";
 import { allocationQtyForLine, assignListingSku } from "@/lib/ebay/packs";
-import { addressFromRecord, billToForEbay, type SoAddress } from "@/lib/salesOrderDraft";
+import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 
 export const EBAY_ORDER_CUSTOMER_NAME = "eBay Customer";
 export const EBAY_ORDER_CUSTOMER_QBO_ID = "1";
@@ -720,7 +720,6 @@ export function planOrderPull(
 export function draftOrderRow(input: {
   order: ParsedEbayOrder;
   customerId: string;
-  billTo: SoAddress | null;
   soNumber?: number | null;
   /** app_settings ebay_default_sales_rep. Empty becomes MT. */
   salesRep?: string | null;
@@ -739,7 +738,7 @@ export function draftOrderRow(input: {
     customer_id: input.customerId,
     order_date: input.order.orderDate,
     ship_to: input.order.shipTo,
-    bill_to: billToForEbay({ ebay: true, billTo: input.billTo, shipTo: input.order.shipTo }),
+    bill_to: null,
     currency: input.order.currency,
     source: "ebay",
     channel: "ebay",

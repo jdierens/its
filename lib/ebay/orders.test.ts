@@ -99,24 +99,18 @@ test("a paid eBay order becomes an unnumbered draft under the given customer", (
   const [action] = planOrderPull([order], [], [{ id: "item-1", sku: "SKU-1" }]);
   assert.equal(action.kind, "create");
   if (action.kind !== "create") return;
-  const row = draftOrderRow({ order: action.order, customerId: "customer-ebay", billTo: null });
+  const row = draftOrderRow({ order: action.order, customerId: "customer-ebay" });
   assert.equal(row.status, "draft");
   assert.equal(row.so_number, null);
   assert.equal(row.sales_rep, "MT");
   assert.equal(row.terms, "PIA");
   assert.equal(row.incoterms, "FOB");
-  assert.equal((row.bill_to as { line1: string }).line1, "1 Main");
-  const billed = draftOrderRow({
-    order: action.order,
-    customerId: "customer-ebay",
-    billTo: { ...action.order.shipTo, line1: "9 Bill" },
-  });
-  assert.equal((billed.bill_to as { line1: string }).line1, "9 Bill");
-  assert.equal(draftOrderRow({ order: action.order, customerId: "customer-ebay", billTo: null, salesRep: "jd" }).sales_rep, "JD");
+  assert.equal(row.bill_to, null);
+  assert.equal((row.ship_to as { line1: string }).line1, action.order.shipTo.line1);
+  assert.equal(draftOrderRow({ order: action.order, customerId: "customer-ebay", salesRep: "jd" }).sales_rep, "JD");
   const chosen = draftOrderRow({
     order: action.order,
     customerId: "customer-ebay",
-    billTo: null,
     paymentTerms: "Net30",
     incoterms: "exw",
   });
@@ -216,7 +210,7 @@ test("fulfillment orders drop tax identifiers and keep the buyer on the order", 
   assert.equal(parsed[0].shipTo.line1, "1 Main");
   assert.equal(parsed[0].paymentStatus, "paid");
   assert.equal(parsed[0].lines[0].unitPrice, 5);
-  const row = draftOrderRow({ order: parsed[0], customerId: "customer-ebay", billTo: null });
+  const row = draftOrderRow({ order: parsed[0], customerId: "customer-ebay" });
   assert.equal(row.status, "draft");
   assert.equal(row.so_number, null);
 });
@@ -270,7 +264,7 @@ test("a pull creates one draft and links an order that already has the sales rec
   const result = await runOrderPull({
     now: new Date("2026-10-25T00:00:00.000Z"),
     watermark: "2026-10-20T00:00:00.000Z",
-    customer: { id: "customer-ebay", billTo: null },
+    customer: { id: "customer-ebay" },
     pageUrl: (filter, offset) => `https://api.ebay.com/orders?filter=${encodeURIComponent(filter)}&offset=${offset}`,
     allowNext: () => false,
     fetchPage: async () => ({
@@ -306,7 +300,7 @@ test("a pull creates one draft and links an order that already has the sales rec
       async apply(actions, customer) {
         for (const action of actions) {
           if (action.kind === "create") {
-            const row = draftOrderRow({ order: action.order, customerId: customer.id, billTo: customer.billTo });
+            const row = draftOrderRow({ order: action.order, customerId: customer.id });
             assert.equal(row.so_number, null);
             assert.equal(row.status, "draft");
             created.push(row);
@@ -425,7 +419,7 @@ test("unit and extended prices use the eBay discount amount, not a fixed 5 perce
   assert.equal(lines[1].item_id, "item-4343");
   assert.equal(lines[1].allocation_qty, lines[1].qty);
   assert.notEqual(lines[0].ext_price, Math.round(6388 * 0.95 * 100) / 100);
-  const row = draftOrderRow({ order: parsed[0], customerId: "customer-ebay", billTo: null });
+  const row = draftOrderRow({ order: parsed[0], customerId: "customer-ebay" });
   assert.equal(row.ebay_order_id, "20-15321-25072");
   assert.equal(row.ebay_sales_record_ref, "19283");
   assert.equal(row.ebay_order_earnings, 5631.59);
@@ -530,7 +524,7 @@ test("shipping label debits net of credits, and the pull stores that fee without
   assert.equal(fees.has("not-an-order"), false);
   const order = ebayOrder({ earnings: 5631.59 });
   applyLabelFees([order], fees);
-  const row = draftOrderRow({ order, customerId: "customer-ebay", billTo: null });
+  const row = draftOrderRow({ order, customerId: "customer-ebay" });
   assert.equal(row.ebay_label_fee, 9.42);
   assert.equal(row.ebay_order_earnings, 5631.59);
 

@@ -7,6 +7,7 @@ import type { PostalAddress } from "@/lib/qbo/map";
 import {
   addressFromRecord,
   compareSalesOrderList,
+  emptyAddress,
   formatSalesOrderNumber,
   hideSalesMoney,
   salesOrderListReference,
@@ -14,7 +15,6 @@ import {
   partPrefix,
   salesOrderTotal,
   toSalesOrderPayload,
-  withEbayBillTo,
   withEbayShippingItem,
   type SoAddress,
   type SoDraftInput,
@@ -507,7 +507,7 @@ async function attachEbayShipping(input: SoDraftInput): Promise<SoDraftInput> {
 export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string; addressWarning: string | null }> {
   const access = await salesPageAccess();
   if (!access.canEdit || !access.canViewMoney) throw new Error(EDIT_DENIED);
-  const draft = withEbayBillTo(meaningfulDraft(input));
+  const draft = meaningfulDraft(input);
   if (!UUID.test(draft.customerId)) throw new Error("Choose a customer.");
   const rep = draft.salesRep.trim().toUpperCase();
   if (rep && !/^[A-Z]{2}$/.test(rep)) throw new Error("Sales rep initials are 2 letters.");
@@ -526,14 +526,16 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
 
   const persisted = access.canViewMoney ? draft : { ...draft, internalNotes: input.id ? await readInternalNotes(input.id) : "" };
   const allocated = await attachEbayShipping(persisted);
+  const ebay = await salesOrderIsEbay(allocated);
+  const stored = ebay ? { ...allocated, billTo: emptyAddress() } : allocated;
   const { data, error } = await (await getSupabase()).rpc("write_sales_order", {
-    p_payload: toSalesOrderPayload(allocated),
+    p_payload: toSalesOrderPayload(stored),
     p_initials: await operatorInitials(),
     p_operator_id: await salesOperatorId(),
   });
   if (error) throw new Error(salesError(error));
   const id = rpcId(data);
-  const addressWarning = input.saveAddressToCustomer ? await saveAddressToCustomer(draft) : null;
+  const addressWarning = input.saveAddressToCustomer ? await saveAddressToCustomer(stored, ebay) : null;
   return { id, addressWarning };
 }
 
@@ -620,7 +622,7 @@ function meaningfulDraft(input: SoDraftInput): SoDraftInput {
   };
 }
 
-async function saveAddressToCustomer(input: SoDraftInput): Promise<string | null> {
+async function saveAddressToCustomer(input: SoDraftInput, ebay: boolean): Promise<string | null> {
   try {
     const contact = await fetchContact("customer", input.customerId);
     if (!contact) return "The order was saved. The customer record was not found, so the address was not saved.";
@@ -635,7 +637,7 @@ async function saveAddressToCustomer(input: SoDraftInput): Promise<string | null
         familyName: contact.familyName,
         primaryEmail: contact.primaryEmail,
         phone: input.shipTo.phone.trim() || contact.phone,
-        billingAddress: postalFrom(input.billTo, false),
+        billingAddress: ebay ? contact.billingAddress : postalFrom(input.billTo, false),
         shippingAddress: shipping,
         taxId: contact.taxId,
         notes: contact.notes,
