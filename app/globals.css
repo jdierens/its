@@ -2940,6 +2940,80 @@ button.ebay-more {
   align-items: center;
 }
 
+#item-pricing .price-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.35rem 0.9rem;
+  align-items: start;
+  width: 100%;
+}
+
+#item-pricing .price-field,
+#item-pricing .price-save-slot {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  align-items: stretch;
+  margin: 0;
+  min-width: 0;
+}
+
+#item-pricing .price-field > span:first-child,
+#item-pricing .price-save-caption {
+  margin: 0 0 0.16rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+#item-pricing .price-save-caption {
+  visibility: hidden;
+}
+
+#item-pricing .price-field .hint,
+#item-pricing .price-save-hint {
+  margin-top: 0.1rem;
+  min-height: 1.15em;
+}
+
+#item-pricing .money-input {
+  box-sizing: border-box;
+  height: 2.25rem;
+}
+
+#item-pricing button.price-save {
+  grid-row: 2;
+  align-self: center;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  background-image: none;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+#item-pricing button.price-save:not(:disabled) {
+  background: var(--accent);
+  background-image: none;
+  color: #fff;
+  border-color: transparent;
+  cursor: pointer;
+}
+
+#item-pricing button.price-save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .pricing-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

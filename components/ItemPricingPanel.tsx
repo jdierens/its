@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Loader2, Save } from "lucide-react";
 import {
   addItemTransaction,
   addPriceQuote,
@@ -52,6 +53,9 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
   const [ecommerce, setEcommerce] = useState("");
   const [market, setMarket] = useState("");
   const [msrp, setMsrp] = useState("");
+  const [savedEcommerce, setSavedEcommerce] = useState("");
+  const [savedMarket, setSavedMarket] = useState("");
+  const [savedMsrp, setSavedMsrp] = useState("");
   const [ecommerceUpdatedAt, setEcommerceUpdatedAt] = useState<string | null>(null);
   const [marketUpdatedAt, setMarketUpdatedAt] = useState<string | null>(null);
   const [msrpUpdatedAt, setMsrpUpdatedAt] = useState<string | null>(null);
@@ -131,9 +135,15 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
       }
     }
     function applyPrices(prices: NonNullable<Awaited<ReturnType<typeof fetchItemPrices>>>) {
-      setEcommerce(moneyField(prices.ecommercePrice));
-      setMarket(moneyField(prices.marketPrice));
-      setMsrp(moneyField(prices.msrp));
+      const nextEcommerce = moneyField(prices.ecommercePrice);
+      const nextMarket = moneyField(prices.marketPrice);
+      const nextMsrp = moneyField(prices.msrp);
+      setEcommerce(nextEcommerce);
+      setMarket(nextMarket);
+      setMsrp(nextMsrp);
+      setSavedEcommerce(nextEcommerce);
+      setSavedMarket(nextMarket);
+      setSavedMsrp(nextMsrp);
       setEcommerceUpdatedAt(prices.ecommerceUpdatedAt);
       setMarketUpdatedAt(prices.marketUpdatedAt);
       setMsrpUpdatedAt(prices.msrpUpdatedAt);
@@ -174,9 +184,11 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
     [txns, typeFilter, fromDate, toDate],
   );
   const txnPreview = previewTotal(txnQty, txnUnit);
+  const pricesDirty = ecommerce !== savedEcommerce || market !== savedMarket || msrp !== savedMsrp;
 
   async function onSavePrices(event: FormEvent) {
     event.preventDefault();
+    if (!pricesDirty || savingPrices) return;
     const ecommercePrice = parseMoney(ecommerce);
     const marketPrice = parseMoney(market);
     const msrpPrice = parseMoney(msrp);
@@ -198,9 +210,15 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
       });
       const prices = await fetchItemPrices(itemId);
       if (prices) {
-        setEcommerce(moneyField(prices.ecommercePrice));
-        setMarket(moneyField(prices.marketPrice));
-        setMsrp(moneyField(prices.msrp));
+        const nextEcommerce = moneyField(prices.ecommercePrice);
+        const nextMarket = moneyField(prices.marketPrice);
+        const nextMsrp = moneyField(prices.msrp);
+        setEcommerce(nextEcommerce);
+        setMarket(nextMarket);
+        setMsrp(nextMsrp);
+        setSavedEcommerce(nextEcommerce);
+        setSavedMarket(nextMarket);
+        setSavedMsrp(nextMsrp);
         setEcommerceUpdatedAt(prices.ecommerceUpdatedAt);
         setMarketUpdatedAt(prices.marketUpdatedAt);
         setMsrpUpdatedAt(prices.msrpUpdatedAt);
@@ -382,7 +400,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
     <section className="page" id="item-pricing" aria-labelledby="pricing-heading">
       <h2 id="pricing-heading">Pricing</h2>
       <form onSubmit={onSavePrices}>
-        <div className="grid">
+        <div className="price-row">
           <PriceField
             label="Ecommerce price"
             value={ecommerce}
@@ -410,6 +428,25 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
               setPriceSaved(false);
             }}
           />
+          <div className="price-save-slot">
+            <span className="price-save-caption" aria-hidden="true">
+              Save
+            </span>
+            <button
+              type="submit"
+              className="price-save"
+              disabled={!pricesDirty || savingPrices}
+              aria-label="Save prices"
+              title="Save prices"
+            >
+              {savingPrices ? (
+                <Loader2 className="icon-spin" size={18} strokeWidth={1.75} aria-hidden />
+              ) : (
+                <Save size={18} strokeWidth={1.75} aria-hidden />
+              )}
+            </button>
+            <span className="price-save-hint" aria-hidden="true" />
+          </div>
         </div>
         {priceError ? (
           <p className="banner error" role="alert">
@@ -421,12 +458,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
             Prices saved.
           </p>
         ) : null}
-        <div className="actions">
-          <button type="submit" disabled={savingPrices}>
-            {savingPrices ? "Saving…" : "Save prices"}
-          </button>
-          <span className="hint">USD. Each price keeps its own updated time.</span>
-        </div>
+        <p className="hint">USD. Each price keeps its own updated time. Save stays off until a price changes.</p>
       </form>
 
       <div className="panel-block">
@@ -763,8 +795,8 @@ function PriceField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label>
-      {label}
+    <label className="price-field">
+      <span>{label}</span>
       <MoneyInput value={value} onChange={onChange} />
       <span className="hint">{updatedAt ? `Updated ${exactPacificTime(updatedAt)}` : "Not set"}</span>
     </label>

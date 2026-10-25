@@ -1,6 +1,6 @@
 # Item pricing
 
-An existing item shows **Pricing** under the item form. Ecommerce price, market price, and MSRP are USD. Each price stores the time it last changed. Saving the item form does not change them. **Save prices** writes only those three amounts.
+An existing item shows **Pricing** under the item form. Ecommerce price, market price, and MSRP are USD and share one row with **Save**. Each price stores the time it last changed. Saving the item form does not change them. **Save** is an icon on that row. It stays off until one of those amounts changes, and it writes only those three amounts.
 
 **Update pricing** looks up the part number. When the part number is blank, it uses the model. Each result is a new price quote. Older quotes stay. **Last updated** is the time of that lookup.
 
