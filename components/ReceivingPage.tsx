@@ -49,7 +49,7 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
-import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, skuAlreadyInBinNote } from "@/lib/receivingLine";
+import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, receivingSkuOverride, skuAlreadyInBinNote } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
   type BinDetail,
@@ -148,6 +148,8 @@ export function ReceivingPage() {
   const prefilledBin = useRef("");
   const binEdit = useRef(0);
   const [identifier, setIdentifier] = useState("");
+  const [skuDraft, setSkuDraft] = useState<string | null>(null);
+  const skuLookup = useRef(0);
   const [held, setHeld] = useState(0);
   const [edited, setEdited] = useState(false);
   const [item, setItem] = useState<LabelItem | null>(null);
@@ -344,9 +346,21 @@ export function ReceivingPage() {
     };
   }, [project, listStamp, projectReady, entryPage]);
 
+  function adoptSku(next: LabelItem, focusQty: boolean) {
+    skuLookup.current += 1;
+    setItem(next);
+    setSkuDraft(null);
+    setCleaned(false);
+    setWiped(false);
+    setError(null);
+    if (focusQty) queueMicrotask(() => qtyField.current?.focus());
+  }
+
   function choose(next: LabelItem, rawScan: string | null = null, typedQuery: string | null = null) {
+    skuLookup.current += 1;
     const search = searchFieldAfterPick(typed.current, next);
     holdQuery.current = search.trim();
+    setSkuDraft(null);
     setItem(next);
     setMatches([]);
     setTruncated(false);
@@ -430,6 +444,25 @@ export function ReceivingPage() {
       requestId.current += 1;
     };
   }, [edited, identifier]);
+
+  useEffect(() => {
+    if (skuDraft == null) return;
+    const text = skuDraft.trim();
+    if (receivingSkuOverride({ typedSku: text, currentSku: item?.sku ?? "", exactSku: null }) !== "pending") return;
+    const id = ++skuLookup.current;
+    const handle = window.setTimeout(() => {
+      void searchReceivingScan(text)
+        .then((result) => {
+          if (id !== skuLookup.current || !result.exact) return;
+          if (receivingSkuOverride({ typedSku: text, currentSku: item?.sku ?? "", exactSku: result.exact.sku }) !== "apply") return;
+          adoptSku(result.exact, true);
+        })
+        .catch((cause: unknown) => {
+          if (id === skuLookup.current) setError(errorText(cause));
+        });
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [skuDraft, item?.sku]);
 
   function selectOrSearch() {
     const field = typed.current.trim();
@@ -550,7 +583,12 @@ export function ReceivingPage() {
         const claim = beginReceiptSave(saveGate.current, crypto.randomUUID());
         if (!claim.ok) return;
         saveGate.current = claim.gate;
-        await commitReceipt(bin.reference, claim.requestId);
+        const chosen = await resolveLineItem();
+        if (!chosen) {
+          releaseSave(false);
+          return;
+        }
+        await commitReceipt(bin.reference, claim.requestId, chosen);
       }
     } catch (createError) {
       setError(errorText(createError));
@@ -564,12 +602,70 @@ export function ReceivingPage() {
     setSaving(false);
   }
 
-  async function commitReceipt(reference: string, requestId: string) {
-    if (!item) {
-      releaseSave(false);
-      setError("Choose an item.");
+  async function resolveLineItem(): Promise<LabelItem | null> {
+    const current = item;
+    const draft = skuDraft;
+    const typed = (draft ?? "").trim();
+    const decision = receivingSkuOverride({
+      typedSku: draft == null ? (current?.sku ?? "") : typed,
+      currentSku: current?.sku ?? "",
+      exactSku: null,
+    });
+    if (draft == null || decision === "same") {
+      if (!current) {
+        setError("Choose an item.");
+        return null;
+      }
+      setSkuDraft(null);
+      return current;
+    }
+    const id = ++skuLookup.current;
+    try {
+      const result = await searchReceivingScan(typed);
+      if (id !== skuLookup.current) return null;
+      if (
+        result.exact &&
+        receivingSkuOverride({ typedSku: typed, currentSku: current?.sku ?? "", exactSku: result.exact.sku }) === "apply"
+      ) {
+        adoptSku(result.exact, false);
+        return result.exact;
+      }
+      setError(`No item with SKU ${typed}.`);
+      return null;
+    } catch (cause) {
+      if (id === skuLookup.current) setError(errorText(cause));
+      return null;
+    }
+  }
+
+  async function commitSkuDraft() {
+    const draft = skuDraft;
+    if (draft == null) return;
+    const text = draft.trim();
+    const currentSku = item?.sku ?? "";
+    if (receivingSkuOverride({ typedSku: text, currentSku, exactSku: null }) !== "pending") {
+      setSkuDraft(null);
       return;
     }
+    const id = ++skuLookup.current;
+    try {
+      const result = await searchReceivingScan(text);
+      if (id !== skuLookup.current) return;
+      if (
+        result.exact &&
+        receivingSkuOverride({ typedSku: text, currentSku, exactSku: result.exact.sku }) === "apply"
+      ) {
+        adoptSku(result.exact, true);
+        return;
+      }
+      setError(`No item with SKU ${text}.`);
+      setSkuDraft(null);
+    } catch (cause) {
+      if (id === skuLookup.current) setError(errorText(cause));
+    }
+  }
+
+  async function commitReceipt(reference: string, requestId: string, lineItem: LabelItem) {
     const parsed = receiveLineQty(qty);
     if (!parsed.ok) {
       releaseSave(false);
@@ -589,7 +685,7 @@ export function ReceivingPage() {
     }
     const qtyWarning = systemQtyMultipleWarning(parsed.qty, originParsed.qty);
     const flags = receiptFlagsForPrep(
-      receivePrepKind({ shortCode: item.shortCode, longCode: item.longCode, taxonomyName: item.taxonomyName }),
+      receivePrepKind({ shortCode: lineItem.shortCode, longCode: lineItem.longCode, taxonomyName: lineItem.taxonomyName }),
       cleaned,
       wiped,
     );
@@ -598,7 +694,7 @@ export function ReceivingPage() {
     try {
       const result = await receiveIntoBin({
         reference,
-        itemId: item.id,
+        itemId: lineItem.id,
         qty: parsed.qty,
         comment,
         project,
@@ -613,8 +709,7 @@ export function ReceivingPage() {
         wiped: flags.wiped,
       });
       const printedOn = todayLabel(new Date());
-      const savedItem = item;
-      setReceipt({ result, item: savedItem, qty: parsed.qty, printedOn, qtyWarning });
+      setReceipt({ result, item: lineItem, qty: parsed.qty, printedOn, qtyWarning });
       typed.current = "";
       holdQuery.current = null;
       binTyped.current = "";
@@ -625,6 +720,7 @@ export function ReceivingPage() {
       setBinHeld((current) => current + 1);
       setEdited(false);
       setIdentifier("");
+      setSkuDraft(null);
       setItem(null);
       setMatches([]);
       setTruncated(false);
@@ -674,9 +770,9 @@ export function ReceivingPage() {
     const claim = beginReceiptSave(saveGate.current, crypto.randomUUID());
     if (!claim.ok) return;
     saveGate.current = claim.gate;
-    if (!item) {
+    const chosen = await resolveLineItem();
+    if (!chosen) {
       releaseSave(false);
-      setError("Choose an item.");
       return;
     }
     const parsed = receiveLineQty(qty);
@@ -700,7 +796,7 @@ export function ReceivingPage() {
       releaseSave(false);
       return;
     }
-    await commitReceipt(reference, claim.requestId);
+    await commitReceipt(reference, claim.requestId, chosen);
   }
 
   async function printBinLabel(reference: string, type: BinType) {
@@ -872,8 +968,10 @@ export function ReceivingPage() {
                       });
                       if (action === "ignore") return;
                       holdQuery.current = null;
+                      skuLookup.current += 1;
                       setEdited(true);
                       setIdentifier(value);
+                      setSkuDraft(null);
                       setItem(null);
                       setMatches([]);
                       setTruncated(false);
@@ -908,9 +1006,25 @@ export function ReceivingPage() {
                   </ul>
                 ) : null}
               </div>
-              <label className="receive-readout" htmlFor="receive-line-sku">
+              <label className="receive-readout receive-sku" htmlFor="receive-line-sku">
                 <span>SKU</span>
-                <input id="receive-line-sku" value={item?.sku ?? ""} readOnly tabIndex={-1} />
+                <input
+                  id="receive-line-sku"
+                  value={skuDraft ?? item?.sku ?? ""}
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  disabled={busy}
+                  onChange={(event) => setSkuDraft(event.target.value)}
+                  onBlur={() => {
+                    void commitSkuDraft();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || skuDraft == null) return;
+                    event.preventDefault();
+                    void commitSkuDraft();
+                  }}
+                />
               </label>
               <div className="receive-readout receive-name">
                 <span>Name</span>
