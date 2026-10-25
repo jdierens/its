@@ -2,8 +2,15 @@ import type { BinType } from "@/lib/bins";
 import { formatBinReference } from "@/lib/bins";
 import { nextFreeBinError, parseReceivingBinCode } from "@/lib/stockReceive";
 
-/** CPU receipts ask Cleaned. SSD and HDD receipts ask Wiped. Anything else asks neither. */
+/** CPU receipts record cleaned. SSD and HDD receipts record wiped. Anything else records neither. */
 export type ReceivePrep = "cleaned" | "wiped";
+
+const PREP_STATUSES = [
+  { text: "Pending Wipe", prep: "wiped", value: false },
+  { text: "Wiped", prep: "wiped", value: true },
+  { text: "cleaned", prep: "cleaned", value: true },
+  { text: "dirty", prep: "cleaned", value: false },
+] as const;
 
 export function receivePrepKind(input: {
   shortCode?: string | null;
@@ -49,6 +56,94 @@ export function receiptFlagsForPrep(
   if (prep === "cleaned") return { cleaned, wiped: null };
   if (prep === "wiped") return { cleaned: null, wiped };
   return { cleaned: null, wiped: null };
+}
+
+/** The word a CPU or drive comment starts with. A flag that was never set adds no word. */
+export function prepStatusText(
+  prep: ReceivePrep | null,
+  cleaned: boolean | null,
+  wiped: boolean | null,
+): string | null {
+  if (prep === "cleaned") {
+    if (cleaned === true) return "cleaned";
+    if (cleaned === false) return "dirty";
+    return null;
+  }
+  if (prep === "wiped") {
+    if (wiped === true) return "Wiped";
+    if (wiped === false) return "Pending Wipe";
+    return null;
+  }
+  return null;
+}
+
+function leadingPrepStatus(
+  text: string,
+  prep: ReceivePrep,
+): { value: boolean; rest: string } | null {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  for (const status of PREP_STATUSES) {
+    if (status.prep !== prep) continue;
+    const phrase = status.text.toLowerCase();
+    if (lower === phrase) return { value: status.value, rest: "" };
+    if (lower.startsWith(phrase) && /\s/.test(lower.charAt(phrase.length))) {
+      return { value: status.value, rest: trimmed.slice(phrase.length).trim() };
+    }
+  }
+  return null;
+}
+
+/** Comment as the clerk sees it. The status word is not part of the stored comment. */
+export function commentWithPrepStatus(
+  comment: string | null | undefined,
+  prep: ReceivePrep | null,
+  cleaned: boolean | null,
+  wiped: boolean | null,
+): string {
+  const body = (comment ?? "").trim();
+  const status = prepStatusText(prep, cleaned, wiped);
+  if (!status) return body;
+  return body ? `${status} ${body}` : status;
+}
+
+/**
+ * Visible comment after a new item is chosen.
+ * A status word from the previous CPU or drive is removed so it does not stick.
+ * A note typed before any item was chosen is left as written, including one that
+ * happens to start with those words. The new CPU starts at dirty, and a drive at Pending Wipe.
+ * A blank note still takes a multi-token scan.
+ */
+export function commentAfterItemPick(input: {
+  current: string;
+  previous: { shortCode?: string | null; longCode?: string | null; taxonomyName?: string | null } | null;
+  next: { shortCode?: string | null; longCode?: string | null; taxonomyName?: string | null };
+  scan: string | null;
+}): string {
+  const previousPrep = input.previous ? receivePrepKind(input.previous) : null;
+  const nextPrep = receivePrepKind(input.next);
+  const stripped = previousPrep
+    ? (leadingPrepStatus(input.current, previousPrep)?.rest ?? input.current.trim())
+    : input.current.trim();
+  const base = stripped.trim() ? stripped : (input.scan?.trim() ?? "");
+  return commentWithPrepStatus(base, nextPrep, false, false);
+}
+
+/**
+ * Read a leading status word for this taxonomy and return the flag to store.
+ * The stored comment does not include that word. A missing word stores false.
+ * A note on memory or any other taxonomy is stored as written.
+ */
+export function splitPrepComment(
+  prep: ReceivePrep | null,
+  text: string,
+): { comment: string; cleaned: boolean | null; wiped: boolean | null } {
+  if (prep !== "cleaned" && prep !== "wiped") return { comment: text.trim(), cleaned: null, wiped: null };
+  const found = leadingPrepStatus(text, prep);
+  if (prep === "cleaned") {
+    return { comment: found ? found.rest : text.trim(), cleaned: found ? found.value : false, wiped: null };
+  }
+  return { comment: found ? found.rest : text.trim(), cleaned: null, wiped: found ? found.value : false };
 }
 
 export type ReceivingBinLookup = {
