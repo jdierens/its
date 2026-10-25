@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Copy, ScanBarcode, Shapes, Trash2 } from "lucide-react";
+import { Camera, Copy, ExternalLink, ScanBarcode, Shapes, Trash2 } from "lucide-react";
 import {
   AttributeValueField,
   attributeValueError,
@@ -883,7 +883,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
       >
         <div className="item-identity">
           <label className="item-sku">
-            SKU
+            <span className="attr-caption">SKU</span>
             <FastInput
               {...bindText(live.current, "sku", sku, (next) => {
                 setSku(next);
@@ -916,8 +916,10 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             ) : null}
           </label>
           <label className="item-name">
-            Name
-            {isGeneric ? <span className="code-badge">Generic</span> : null}
+            <span className="item-name-title">
+              <span className="attr-caption">Name</span>
+              {isGeneric ? <span className="code-badge">Generic</span> : null}
+            </span>
             <FastInput
               {...bindText(live.current, "name", name, (next) => {
                 setName(next);
@@ -1024,17 +1026,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                 ))}
               </select>
             </label>
-            <label className="kit-check">
-              <input
-                type="checkbox"
-                checked={isGeneric}
-                onChange={(event) => {
-                  setIsGeneric(event.target.checked);
-                  setSaved(false);
-                }}
-              />
-              Generic part
-            </label>
             {mode === "edit" ? (
               <label data-field="taxonomy">
                 Taxonomy
@@ -1140,6 +1131,19 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                 <span className="hint">Optional.</span>
               </label>
             )}
+            <label className="kit-check" data-field="generic">
+              Generic part
+              <span className="generic-control">
+                <input
+                  type="checkbox"
+                  checked={isGeneric}
+                  onChange={(event) => {
+                    setIsGeneric(event.target.checked);
+                    setSaved(false);
+                  }}
+                />
+              </span>
+            </label>
           </div>
           {isNewTaxonomy ? (
             <div className="grid">
@@ -1230,24 +1234,34 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
             </label>
             <label>
               Product page
-              <FastInput
-                type="url"
-                inputMode="url"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="https://"
-                {...bindText(live.current, "productUrl", productUrl, (next) => {
-                  setProductUrl(next);
-                  setSaved(false);
-                })}
-              />
+              <span className={productUrlHref(snapshot.productUrl) ? "product-url-control has-open" : "product-url-control"}>
+                <FastInput
+                  type="url"
+                  inputMode="url"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="https://"
+                  {...bindText(live.current, "productUrl", productUrl, (next) => {
+                    setProductUrl(next);
+                    setSaved(false);
+                  })}
+                />
+                {productUrlHref(snapshot.productUrl) ? (
+                  <a
+                    className="product-url-open"
+                    href={productUrlHref(snapshot.productUrl) ?? undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open product page"
+                    aria-label="Open product page"
+                  >
+                    <ExternalLink size={15} strokeWidth={1.75} aria-hidden />
+                  </a>
+                ) : null}
+              </span>
               {snapshot.productUrl.trim() && productUrlError(snapshot.productUrl) ? (
                 <span className="error-text">{productUrlError(snapshot.productUrl)}</span>
-              ) : productUrlHref(snapshot.productUrl) ? (
-                <a href={productUrlHref(snapshot.productUrl) ?? undefined} target="_blank" rel="noopener noreferrer">
-                  Open product page
-                </a>
-              ) : (
+              ) : productUrlHref(snapshot.productUrl) ? null : (
                 <span className="hint">Optional http or https address.</span>
               )}
             </label>
