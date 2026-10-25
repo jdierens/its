@@ -1,3 +1,4 @@
+import { alnumFieldContains, alnumQueryContains } from "@/lib/itemAlnum";
 import type { LabelItem } from "@/lib/types";
 
 export const LABEL_RESULT_CAP = 25;
@@ -51,10 +52,12 @@ export function sortLabelMatches(matches: readonly LabelItem[], query: string): 
   const rank = (item: LabelItem) => {
     const sku = item.sku.toLowerCase();
     const name = item.name.toLowerCase();
-    if (sku === needle) return 0;
-    if (needle && sku.includes(needle)) return 1;
-    if (needle && name.includes(needle)) return 2;
-    return 3;
+    if (needle && sku === needle) return 0;
+    if (needle && (sku.includes(needle) || alnumFieldContains(item.sku, query))) return 1;
+    if (needle && (name.includes(needle) || alnumFieldContains(item.name, query))) return 2;
+    if (alnumQueryContains(item.sku, query)) return 3;
+    if (alnumQueryContains(item.name, query)) return 4;
+    return 5;
   };
   return matches.slice().sort((a, b) => rank(a) - rank(b) || a.sku.localeCompare(b.sku, undefined, { numeric: true }));
 }

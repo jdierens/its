@@ -1,6 +1,7 @@
 "use server";
 
 import { errorText } from "@/lib/errors";
+import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
 import { salesTableMissing } from "@/lib/kitRules";
 import { purchaseOperatorId } from "@/lib/purchaseSession";
 import { getSupabase } from "@/lib/supabase";
@@ -192,11 +193,27 @@ export async function searchParts(
       .limit(30);
     if (excludeGeneric) request = request.eq("is_generic", false);
   }
-  const { data, error } = await request;
+  const [{ data, error }, alnumIds] = await Promise.all([
+    request,
+    trimmed
+      ? itemIdsMatchingAlnum(supabase, trimmed, { columns: ["sku", "name"], limit: 30 })
+      : Promise.resolve([] as string[]),
+  ]);
   if (error) throw new Error(errorText(error));
   for (const row of data ?? []) {
     if (byId.has(String(row.id))) continue;
     byId.set(String(row.id), toPartChoice(row, false));
+  }
+  const missing = alnumIds.filter((id) => !byId.has(id));
+  if (missing.length > 0) {
+    let extra = supabase.from("items").select(PART_FIELDS).in("id", missing).neq("item_type", "Kit/Package");
+    if (excludeGeneric) extra = extra.eq("is_generic", false);
+    const added = await extra;
+    if (added.error) throw new Error(errorText(added.error));
+    for (const row of added.data ?? []) {
+      if (byId.has(String(row.id))) continue;
+      byId.set(String(row.id), toPartChoice(row, false));
+    }
   }
   return [...byId.values()].sort((a, b) => Number(b.suggested) - Number(a.suggested) || a.sku.localeCompare(b.sku, undefined, { numeric: true }));
 }

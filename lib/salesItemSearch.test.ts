@@ -25,6 +25,19 @@ test("Find SKU uses the items-page search sources", () => {
   assert.equal(ITEM_LIST_SEARCH_SOURCES.includes("ebay_listings.ebay_item_id"), true);
 });
 
+test("a hyphenated part ranks the stored name that omits those hyphens", () => {
+  const ranked = rankSalesItemHits(["MCX-516A-CDAT"], [
+    { sku: "102847", name: "CARD\\NIC\\E30\\100G_2Q\\LP-FH\\MCX516A-CCAT", partNumber: "" },
+    { sku: "999", name: "CDAT", partNumber: "" },
+    { sku: "107109", name: "CARD\\NIC\\E30\\100G_2Q\\LP-FH\\MCX516A-CDAT_FSB", partNumber: "" },
+    { sku: "106823", name: "CARD\\NIC\\E30\\100G_2Q\\LP-FH\\MCX516A-CDAT", partNumber: "" },
+  ]);
+  assert.deepEqual(
+    ranked.map((row) => row.sku),
+    ["106823", "107109", "999", "102847"],
+  );
+});
+
 test("item hits prefer an exact SKU, then a part number", () => {
   const ranked = rankSalesItemHits(["106683"], [
     { sku: "OTHER", name: "holds 106683 in the name", partNumber: "" },

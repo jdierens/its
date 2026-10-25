@@ -1,4 +1,5 @@
 import { allocationQtyForLine, formatAllocationQty, parsePackLabel } from "@/lib/ebay/packs";
+import { alnumFieldContains, alnumQueryContains, normalizeAlnum } from "@/lib/itemAlnum";
 import { itemListQueryToken } from "@/lib/itemListQuery";
 
 /**
@@ -37,20 +38,30 @@ export function rankSalesItemHits<T extends { sku: string; name: string; partNum
   rows: readonly T[],
   limit = 8,
 ): T[] {
-  const needles = tokens.map((token) => token.trim().toLowerCase()).filter((token) => token.length > 0);
+  const needles = tokens.map((token) => token.trim()).filter((token) => token.length > 0);
   const score = (row: T) => {
     const sku = row.sku.toLowerCase();
     const part = row.partNumber.toLowerCase();
     const name = row.name.toLowerCase();
     let best = 8;
     for (const needle of needles) {
-      if (sku === needle) best = Math.min(best, 0);
-      else if (part === needle) best = Math.min(best, 1);
-      else if (sku.startsWith(needle)) best = Math.min(best, 2);
-      else if (part.startsWith(needle)) best = Math.min(best, 3);
-      else if (sku.includes(needle)) best = Math.min(best, 4);
-      else if (part.includes(needle)) best = Math.min(best, 5);
-      else if (name.includes(needle)) best = Math.min(best, 6);
+      const folded = needle.toLowerCase();
+      const skuSame = normalizeAlnum(row.sku) === normalizeAlnum(needle) && normalizeAlnum(needle).length > 0;
+      const partSame = normalizeAlnum(row.partNumber) === normalizeAlnum(needle) && normalizeAlnum(needle).length > 0;
+      if (sku === folded) best = Math.min(best, 0);
+      else if (part === folded) best = Math.min(best, 1);
+      else if (sku.startsWith(folded) || skuSame) best = Math.min(best, 2);
+      else if (part.startsWith(folded) || partSame) best = Math.min(best, 3);
+      else if (sku.includes(folded) || alnumFieldContains(row.sku, needle)) best = Math.min(best, 4);
+      else if (part.includes(folded) || alnumFieldContains(row.partNumber, needle)) best = Math.min(best, 5);
+      else if (name.includes(folded) || alnumFieldContains(row.name, needle)) best = Math.min(best, 6);
+      else if (
+        alnumQueryContains(row.sku, needle) ||
+        alnumQueryContains(row.partNumber, needle) ||
+        alnumQueryContains(row.name, needle)
+      ) {
+        best = Math.min(best, 7);
+      }
     }
     return best;
   };

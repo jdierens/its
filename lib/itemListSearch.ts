@@ -1,19 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { itemIdsMatchingEbayItemId } from "@/lib/ebay/listings";
 import { errorText } from "@/lib/errors";
+import { ITEM_ALNUM_COLUMNS } from "@/lib/itemAlnum";
+import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
 import { itemListQueryToken } from "@/lib/itemListQuery";
 
 /** Columns the items list matches with a case-insensitive contains search. */
-export const ITEM_LIST_TEXT_COLUMNS = [
-  "sku",
-  "name",
-  "description",
-  "model",
-  "part_number",
-  "oem_name",
-  "oem_part_number",
-  "product_url",
-] as const;
+export const ITEM_LIST_TEXT_COLUMNS = ITEM_ALNUM_COLUMNS;
 
 /** Every place the items list looks, including related rows. */
 export const ITEM_LIST_SEARCH_SOURCES = [
@@ -57,12 +50,18 @@ export async function itemIdsMatchingListQuery(
   let aliases = supabase.from("manufacturer_aliases").select("manufacturer_id").ilike("alias", pattern);
   if (limit) aliases = aliases.limit(limit);
 
-  const [textResults, attributeResult, nameResult, aliasResult, ebayItemIds] = await Promise.all([
+  const [textResults, attributeResult, nameResult, aliasResult, ebayItemIds, alnumIds] = await Promise.all([
     Promise.all(textQueries),
     attributes,
     names,
     aliases,
     itemIdsMatchingEbayItemId(supabase, pattern),
+    itemIdsMatchingAlnum(supabase, searchText, {
+      columns: ITEM_LIST_TEXT_COLUMNS,
+      includeAttributes: true,
+      taxonomyId,
+      limit: limit ?? 1000,
+    }),
   ]);
   const failed = textResults.find((result) => result.error);
   if (failed?.error) throw new Error(errorText(failed.error));
@@ -71,6 +70,7 @@ export async function itemIdsMatchingListQuery(
   if (aliasResult.error) throw new Error(errorText(aliasResult.error));
 
   const matched = new Set<string>();
+  for (const id of alnumIds) matched.add(id);
   for (const result of textResults) {
     for (const row of result.data ?? []) {
       if (typeof row.id === "string") matched.add(row.id);

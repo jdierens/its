@@ -24,6 +24,8 @@ import { loadSoAttachments, type SoAttachmentView } from "@/lib/soAttachments";
 import { operatorInitials } from "@/lib/stockAccess";
 import { EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
 import { parsePackLabel } from "@/lib/ebay/packs";
+import { alnumContains } from "@/lib/itemAlnum";
+import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
 import { itemIdsMatchingListQuery } from "@/lib/itemListSearch";
 import { rankSalesItemHits, salesItemSearchTokens } from "@/lib/salesItemSearch";
 import { getSupabase } from "@/lib/supabase";
@@ -230,7 +232,8 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
   if (!raw) return [];
   const pattern = `%${raw}%`;
   const compactPattern = `%${compact}%`;
-  const { data, error } = await (await getSupabase())
+  const supabase = await getSupabase();
+  const { data, error } = await supabase
     .from("items")
     .select("id, sku, name, part_number, oem_part_number")
     .or(
@@ -248,13 +251,22 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
     if (/part_number|oem_part_number|column/i.test(errorText(error))) return [];
     throw new Error(salesError(error));
   }
-  return (data ?? [])
-    .filter(
-      (row) =>
-        partMatches(term, String(row.part_number ?? "")) ||
-        partMatches(term, String(row.oem_part_number ?? "")) ||
-        partMatches(term, String(row.sku ?? "")),
-    )
+  const ilikeRows = [...(data ?? [])];
+  const seen = new Set(ilikeRows.map((row) => String(row.id)));
+  const alnumIds = await itemIdsMatchingAlnum(supabase, term, {
+    columns: ["sku", "part_number", "oem_part_number"],
+    limit: 40,
+  });
+  const missing = alnumIds.filter((id) => !seen.has(id));
+  const extraRows: typeof ilikeRows = [];
+  if (missing.length > 0) {
+    const extra = await supabase.from("items").select("id, sku, name, part_number, oem_part_number").in("id", missing);
+    if (extra.error) throw new Error(salesError(extra.error));
+    extraRows.push(...(extra.data ?? []));
+  }
+  const rows = [...extraRows, ...ilikeRows];
+  return rows
+    .filter((row) => salesSkuRowMatches(term, row))
     .slice(0, 8)
     .map((row) => ({
       id: String(row.id),
@@ -262,6 +274,14 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
       name: String(row.name ?? ""),
       partNumber: String(row.part_number ?? row.oem_part_number ?? ""),
     }));
+}
+
+function salesSkuRowMatches(
+  term: string,
+  row: { sku?: unknown; part_number?: unknown; oem_part_number?: unknown },
+): boolean {
+  const fields = [String(row.part_number ?? ""), String(row.oem_part_number ?? ""), String(row.sku ?? "")];
+  return fields.some((field) => partMatches(term, field) || alnumContains(field, term));
 }
 
 export type SalesItemSearch = { ok: true; hits: SalesSkuHit[] } | { ok: false; message: string };
@@ -281,8 +301,9 @@ export async function searchSalesItems(query: string): Promise<SalesItemSearch> 
       const part = String(row.part_number ?? "");
       const oem = String(row.oem_part_number ?? "");
       const needles = tokens.map((token) => token.toLowerCase());
-      const partHit = needles.some((needle) => part.toLowerCase().includes(needle));
-      const oemHit = needles.some((needle) => oem.toLowerCase().includes(needle));
+      const fieldHit = (value: string, needle: string) => value.toLowerCase().includes(needle) || alnumContains(value, needle);
+      const partHit = needles.some((needle) => fieldHit(part, needle));
+      const oemHit = needles.some((needle) => fieldHit(oem, needle));
       return {
         id: String(row.id),
         sku: String(row.sku ?? ""),
