@@ -100,7 +100,7 @@ describe("inline receipt edit", () => {
     assert.equal("putaway" in cleared.body, false);
   });
 
-  it("keeps the stored search on another cell edit and saves a search correction without a stock confirm", () => {
+  it("keeps the stored search when another cell or the SKU changes, and saves a search correction without a stock confirm", () => {
     const stored = entry({ searchQuery: "samsung 860" });
     const comment = planReceiptEdit(stored, { comment: "relocated" }, false);
     assert.equal(comment.action, "save");
@@ -117,12 +117,13 @@ describe("inline receipt edit", () => {
 
     const picked = planReceiptEdit(
       stored,
-      { item: { id: "item-2", sku: "1001", name: "Widget" }, searchQuery: "rail kit" },
+      { item: { id: "item-2", sku: "1001", name: "Widget" } },
       true,
     );
     assert.equal(picked.action, "save");
     if (picked.action !== "save") return;
-    assert.equal(picked.body.searchQuery, "rail kit");
+    assert.equal(picked.body.searchQuery, "samsung 860");
+    assert.equal(picked.body.sku, "1001");
     assert.equal(picked.body.itemId, "item-2");
   });
 });
