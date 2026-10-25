@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { receiptChangeSummary, receiptSearchQuery, scanSearchNote, scanTokensInSearchOrder } from "@/lib/receivingScan";
+import { receiptChangeSummary, receiptSearchQuery, scanSearchNote, scanTokensInSearchOrder, searchFieldAfterPick } from "@/lib/receivingScan";
 
 describe("receiving scan tokens", () => {
   it("searches the part number before the date code and the country", () => {
@@ -24,6 +24,11 @@ describe("receiving scan tokens", () => {
     assert.equal(receiptSearchQuery("   "), null);
     assert.equal(receiptSearchQuery(null), null);
     assert.equal(receiptSearchQuery("x".repeat(600))?.length, 500);
+  });
+
+  it("keeps the typed search after a hit is chosen", () => {
+    assert.equal(searchFieldAfterPick("rail kit", { sku: "SRM7C-1" }), "rail kit");
+    assert.equal(searchFieldAfterPick("  94415 ", { sku: "94415" }), "  94415 ");
   });
 
   it("asks before a qty or SKU change", () => {

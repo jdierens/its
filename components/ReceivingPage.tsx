@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, Fragment, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Save } from "lucide-react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
 import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
-import { ReceiptRowEditor } from "@/components/ReceiptRowEditor";
+import { ReceiptCard, ReceiptTableRow } from "@/components/ReceiptInline";
 import { ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, formatBinReference, type BinType } from "@/lib/bins";
@@ -17,7 +17,6 @@ import {
   labelCommitAction,
   labelHighlightedChoice,
   labelSearchOutcome,
-  labelShownText,
 } from "@/lib/labelDeskSelection";
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
 import type { BinLabelTemplates, LabelTemplateId } from "@/lib/labelTemplates";
@@ -34,14 +33,14 @@ import {
   suggestBins,
 } from "@/lib/receivingActions";
 import { distinctRecentProjects, projectToRestore, readStoredProject, writeStoredProject } from "@/lib/receivingProjects";
-import { receiptSearchQuery, scanSearchNote } from "@/lib/receivingScan";
+import { receiptSearchQuery, scanSearchNote, searchFieldAfterPick } from "@/lib/receivingScan";
 import {
   RECEIVING_DATE_EDITABLE,
   beginReceiptSave,
   finishReceiptSave,
-  formatReceivedOn,
   originQtyInput,
   receiptSavedNote,
+  receiveLineQty,
   warehouseToday,
   type ReceiptSaveGate,
   type ReceivingEntry,
@@ -62,13 +61,6 @@ function todayLabel(date: Date): string {
     month: "short",
     year: "numeric",
   });
-}
-
-function parseQty(value: string): number | null {
-  if (!/^\d+$/.test(value.trim())) return null;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000000) return null;
-  return parsed;
 }
 
 type PrintJob =
@@ -108,8 +100,6 @@ export function ReceivingPage() {
   const [entriesNext, setEntriesNext] = useState<number | null>(null);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [listStamp, setListStamp] = useState(0);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [phoneLayout, setPhoneLayout] = useState(false);
   const [editorInitials, setEditorInitials] = useState("");
   const [scanRaw, setScanRaw] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
@@ -121,7 +111,7 @@ export function ReceivingPage() {
   const [created, setCreated] = useState<CreatedBin | null>(null);
   const [cleaned, setCleaned] = useState(false);
   const [wiped, setWiped] = useState(false);
-  const [qty, setQty] = useState("1");
+  const [qty, setQty] = useState("");
   const [comment, setComment] = useState("");
   const [suggestions, setSuggestions] = useState<BinSuggestion[]>([]);
   const [receipt, setReceipt] = useState<{ result: ReceiptResult; item: LabelItem; qty: number; printedOn: string } | null>(null);
@@ -142,17 +132,12 @@ export function ReceivingPage() {
     void receivingClerkInitials()
       .then(setEditorInitials)
       .catch(() => setEditorInitials(""));
-    const media = window.matchMedia("(max-width: 800px)");
-    const applyLayout = () => setPhoneLayout(media.matches);
-    applyLayout();
-    media.addEventListener("change", applyLayout);
     void Promise.all([fetchLabelTemplate(), fetchBinLabelTemplates()])
       .then(([itemChoice, binChoice]) => {
         setItemTemplate(itemChoice);
         setTemplates(binChoice);
       })
       .catch(() => undefined);
-    return () => media.removeEventListener("change", applyLayout);
   }, []);
 
   useEffect(() => {
@@ -288,18 +273,15 @@ export function ReceivingPage() {
   }
 
   function choose(next: LabelItem, rawScan: string | null = null, typedQuery: string | null = null) {
-    const shown = labelShownText(next);
-    holdQuery.current = shown;
-    typed.current = shown;
-    setHeld((current) => current + 1);
-    setIdentifier(shown);
+    const search = searchFieldAfterPick(typed.current, next);
+    holdQuery.current = search.trim();
     setItem(next);
     setMatches([]);
     setTruncated(false);
     setActive(-1);
     setSettledQuery("");
     setError(null);
-    setSearchQuery(receiptSearchQuery(typedQuery));
+    setSearchQuery(receiptSearchQuery(typedQuery ?? search));
     if (rawScan) setComment((current) => (current.trim() ? current : rawScan));
     setCleaned(false);
     setWiped(false);
@@ -514,10 +496,10 @@ export function ReceivingPage() {
       setError("Choose an item.");
       return;
     }
-    const parsed = parseQty(qty);
-    if (parsed == null) {
+    const parsed = receiveLineQty(qty);
+    if (!parsed.ok) {
       releaseSave(false);
-      setError("Enter a whole number of at least 1.");
+      setError(parsed.message);
       return;
     }
     const originParsed = originQtyInput(originQty);
@@ -542,7 +524,7 @@ export function ReceivingPage() {
       const result = await receiveIntoBin({
         reference,
         itemId: item.id,
-        qty: parsed,
+        qty: parsed.qty,
         comment,
         project,
         origin,
@@ -557,7 +539,7 @@ export function ReceivingPage() {
       });
       const printedOn = todayLabel(new Date());
       const savedItem = item;
-      setReceipt({ result, item: savedItem, qty: parsed, printedOn });
+      setReceipt({ result, item: savedItem, qty: parsed.qty, printedOn });
       typed.current = "";
       holdQuery.current = null;
       binTyped.current = "";
@@ -580,7 +562,7 @@ export function ReceivingPage() {
       setBinPrompt(null);
       setCleaned(false);
       setWiped(false);
-      setQty("1");
+      setQty("");
       setComment("");
       setScanRaw(null);
       setSearchQuery(null);
@@ -621,10 +603,10 @@ export function ReceivingPage() {
       setError("Choose an item.");
       return;
     }
-    const parsed = parseQty(qty);
-    if (parsed == null) {
+    const parsed = receiveLineQty(qty);
+    if (!parsed.ok) {
       releaseSave(false);
-      setError("Enter a whole number of at least 1.");
+      setError(parsed.message);
       return;
     }
     const rawBin = (binTyped.current || binCode).trim();
@@ -1050,7 +1032,7 @@ export function ReceivingPage() {
             {project.trim()
               ? `Receipts for ${project.trim()}, newest first.`
               : "Receipts with no project, newest first."}{" "}
-            Tap a row to correct it. Every edit records initials.
+            Click a value to correct it. Initials stay with the person who received the line. Putaway is the bin from the receipt.
           </p>
           {entries.length === 0 ? (
             <p className="hint">
@@ -1068,56 +1050,23 @@ export function ReceivingPage() {
                       <th className="fit">Incoming bin</th>
                       <th className="origin">Orig. system</th>
                       <th className="num fit">Orig. qty</th>
+                      <th className="search">Search</th>
                       <th className="fit">SKU</th>
                       <th className="item">Item name</th>
                       <th className="num fit">Qty</th>
+                      <th className="prep">Prep</th>
                       <th className="putaway">Putaway</th>
                       <th className="note">Comment</th>
                     </tr>
                   </thead>
                   <tbody>
                     {entries.map((entry) => (
-                      <Fragment key={entry.id}>
-                        <tr
-                          className="receipt-line"
-                          tabIndex={0}
-                          aria-label={`Edit receipt ${entry.sku}`}
-                          onClick={() => setEditingId(entry.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              setEditingId(entry.id);
-                            }
-                          }}
-                        >
-                          <td className="fit">{formatReceivedOn(entry.receivedOn)}</td>
-                          <td className="fit initials">{entry.initials}</td>
-                          <td className="fit">{entry.project ?? ""}</td>
-                          <td className="fit">{entry.incomingBin ?? ""}</td>
-                          <td className="origin">{entry.originatingSystem ?? ""}</td>
-                          <td className="fit num">{entry.originQty ?? ""}</td>
-                          <td className="fit sku">{entry.sku}</td>
-                          <td className="item" title={entry.itemName}>{entry.itemName}</td>
-                          <td className="fit num">{entry.qty}</td>
-                          <td className="putaway" title={entry.putaway || undefined}>{entry.putaway}</td>
-                          <td className="note" title={entry.comment ?? undefined}>{entry.comment ?? ""}</td>
-                        </tr>
-                        {!phoneLayout && editingId === entry.id ? (
-                          <tr className="receive-edit-row">
-                            <td colSpan={11}>
-                              <ReceiptRowEditor
-                                entry={entry}
-                                initials={editorInitials}
-                                onCancel={() => setEditingId(null)}
-                                onSaved={() => {
-                                  setEditingId(null);
-                                  setListStamp((current) => current + 1);
-                                }}
-                              />
-                            </td>
-                          </tr>
-                        ) : null}
-                      </Fragment>
+                      <ReceiptTableRow
+                        key={entry.id}
+                        entry={entry}
+                        initials={editorInitials}
+                        onSaved={() => setListStamp((current) => current + 1)}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -1125,44 +1074,11 @@ export function ReceivingPage() {
               <ul className="receive-cards">
                 {entries.map((entry) => (
                   <li key={`card-${entry.id}`} className="receive-card-row">
-                    {phoneLayout && editingId === entry.id ? (
-                      <ReceiptRowEditor
-                        entry={entry}
-                        initials={editorInitials}
-                        onCancel={() => setEditingId(null)}
-                        onSaved={() => {
-                          setEditingId(null);
-                          setListStamp((current) => current + 1);
-                        }}
-                      />
-                    ) : (
-                      <button type="button" className="receive-card-open" onClick={() => setEditingId(entry.id)}>
-                        <dl>
-                          <dt>Date</dt>
-                          <dd>{formatReceivedOn(entry.receivedOn)}</dd>
-                          <dt>Initials</dt>
-                          <dd className="initials">{entry.initials}</dd>
-                          <dt>Project</dt>
-                          <dd>{entry.project ?? ""}</dd>
-                          <dt>Incoming bin</dt>
-                          <dd>{entry.incomingBin ?? ""}</dd>
-                          <dt>Originating system</dt>
-                          <dd>{entry.originatingSystem ?? ""}</dd>
-                          <dt>Originating system qty</dt>
-                          <dd className="num">{entry.originQty ?? ""}</dd>
-                          <dt>SKU</dt>
-                          <dd className="sku">{entry.sku}</dd>
-                          <dt>Item name</dt>
-                          <dd>{entry.itemName}</dd>
-                          <dt>Qty</dt>
-                          <dd className="num">{entry.qty}</dd>
-                          <dt>Putaway location</dt>
-                          <dd>{entry.putaway}</dd>
-                          <dt>Comment</dt>
-                          <dd>{entry.comment ?? ""}</dd>
-                        </dl>
-                      </button>
-                    )}
+                    <ReceiptCard
+                      entry={entry}
+                      initials={editorInitials}
+                      onSaved={() => setListStamp((current) => current + 1)}
+                    />
                   </li>
                 ))}
               </ul>

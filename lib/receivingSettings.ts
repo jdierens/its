@@ -68,6 +68,18 @@ export function originQtyInput(value: string): { ok: true; qty: number | null } 
   return { ok: true, qty };
 }
 
+/** Quantity on a new receiving line. Blank stays missing; it is never turned into 0 or 1. */
+export function receiveLineQty(value: string): { ok: true; qty: number } | { ok: false; message: string } {
+  const trimmed = value.trim();
+  if (!trimmed) return { ok: false, message: "Enter a quantity." };
+  if (!/^\d+$/.test(trimmed)) return { ok: false, message: "Enter a whole number of at least 1." };
+  const qty = Number(trimmed);
+  if (!Number.isInteger(qty) || qty < 1 || qty > 1000000) {
+    return { ok: false, message: "Enter a whole number of at least 1." };
+  }
+  return { ok: true, qty };
+}
+
 export type ReceivingEntry = {
   id: string;
   receivedOn: string;
