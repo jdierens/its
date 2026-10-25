@@ -691,7 +691,7 @@ export function ReceivingPage() {
         {receipt ? (
           <section className="receive-saved" id="receive-saved" aria-label="Saved receipt">
             <p className="banner ok" role="status">
-              Saved {receipt.qty} of {receipt.item.sku || receipt.item.name} into {receipt.result.reference}.{" "}
+              Saved {receipt.qty} of {receipt.item.sku ? `SKU ${receipt.item.sku}` : receipt.item.name} into {receipt.result.reference}.{" "}
               {receipt.result.cycleOpened ? "A new cycle is open." : "Joined the open cycle."}{" "}
               <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
             </p>
