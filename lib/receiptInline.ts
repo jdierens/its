@@ -47,6 +47,15 @@ function text(value: string | null | undefined): string {
   return (value ?? "").trim();
 }
 
+/** The row shows the picked item's name as soon as the SKU changes. Cancel restores the saved line. */
+export function receiptLineAfterPick(
+  entry: { itemId: string; sku: string; itemName: string },
+  picked: { id: string; sku: string; name: string } | null,
+): { sku: string; itemName: string } {
+  if (!picked || picked.id === entry.itemId) return { sku: entry.sku, itemName: entry.itemName };
+  return { sku: text(picked.sku) || text(picked.name), itemName: picked.name };
+}
+
 function parseEditQty(value: string): number | null {
   if (!/^\d+$/.test(value.trim())) return null;
   const parsed = Number(value);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { planReceiptEdit } from "@/lib/receiptInline";
+import { planReceiptEdit, receiptLineAfterPick } from "@/lib/receiptInline";
 import type { ReceivingEntry } from "@/lib/receivingSettings";
 
 function entry(overrides: Partial<ReceivingEntry> = {}): ReceivingEntry {
@@ -58,6 +58,19 @@ describe("inline receipt edit", () => {
     assert.match(sku.summary, /SKU from 94415 to 1001/);
     assert.equal(sku.body.cleaned, false);
     assert.equal(sku.body.wiped, null);
+    assert.deepEqual(
+      receiptLineAfterPick(entry(), { id: "item-2", sku: "1001", name: "Widget" }),
+      { sku: "1001", itemName: "Widget" },
+    );
+    assert.deepEqual(receiptLineAfterPick(entry(), { id: "item-2", sku: "1001", name: "" }), {
+      sku: "1001",
+      itemName: "",
+    });
+    assert.deepEqual(receiptLineAfterPick(entry(), { id: "item-1", sku: "94415", name: "Other" }), {
+      sku: "94415",
+      itemName: "Drive",
+    });
+    assert.deepEqual(receiptLineAfterPick(entry(), null), { sku: "94415", itemName: "Drive" });
   });
 
   it("stores Cleaned or Wiped only for the taxonomy that asks, without a stock confirm", () => {

@@ -5,7 +5,7 @@ import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import { labelHighlightedChoice, labelSearchOutcome } from "@/lib/labelDeskSelection";
 import { editReceipt, searchReceivingScan } from "@/lib/receivingActions";
-import { planReceiptEdit, type ReceiptEditBody, type ReceiptPatch } from "@/lib/receiptInline";
+import { planReceiptEdit, receiptLineAfterPick, type ReceiptEditBody, type ReceiptPatch } from "@/lib/receiptInline";
 import { receivePrepKind } from "@/lib/receivingLine";
 import { scanSearchNote } from "@/lib/receivingScan";
 import { RECEIVING_DATE_EDITABLE, formatReceivedOn, type ReceivingEntry } from "@/lib/receivingSettings";
@@ -17,6 +17,7 @@ type Field = "date" | "project" | "incoming" | "origin" | "originQty" | "sku" | 
 function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
   const [field, setField] = useState<Field | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [pendingItem, setPendingItem] = useState<ReceiptPatch["item"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const lock = useRef(false);
@@ -42,6 +43,7 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     setSaving(false);
     setField(null);
     setConfirm(null);
+    setPendingItem(null);
     setError(null);
   }, [signature]);
 
@@ -88,9 +90,11 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     setError(null);
     setField(null);
     if (plan.action === "confirm") {
+      setPendingItem(patch.item && patch.item.id !== entry.itemId ? patch.item : null);
       setConfirm({ summary: plan.summary, body: plan.body });
       return;
     }
+    setPendingItem(null);
     lock.current = true;
     void persist(plan.body, false);
   }
@@ -105,11 +109,13 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     field,
     setField,
     confirm,
+    pendingItem,
     error,
     saving,
     apply,
     confirmSave,
     cancelConfirm() {
+      setPendingItem(null);
       setConfirm(null);
       setError(null);
     },
@@ -409,6 +415,7 @@ export function ReceiptTableRow({
   onSaved: () => void;
 }) {
   const edit = useReceiptEdit(entry, onSaved);
+  const shown = receiptLineAfterPick(entry, edit.pendingItem ?? null);
   const prep = receivePrepKind({ shortCode: entry.shortCode, longCode: entry.longCode, taxonomyName: entry.taxonomyName });
   function open(next: Field) {
     if (edit.saving) return;
@@ -481,11 +488,11 @@ export function ReceiptTableRow({
           {edit.field === "sku" ? (
             <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
           ) : (
-            <CellButton value={entry.sku} title="Find another item" onClick={() => open("sku")} />
+            <CellButton value={shown.sku} title="Find another item" onClick={() => open("sku")} />
           )}
         </td>
-        <td className="item" title={entry.itemName}>
-          {entry.itemName}
+        <td className="item" title={shown.itemName}>
+          {shown.itemName}
         </td>
         <td className="fit num">
           {edit.field === "qty" ? (
@@ -563,6 +570,7 @@ export function ReceiptCard({
   onSaved: () => void;
 }) {
   const edit = useReceiptEdit(entry, onSaved);
+  const shown = receiptLineAfterPick(entry, edit.pendingItem ?? null);
   const prep = receivePrepKind({ shortCode: entry.shortCode, longCode: entry.longCode, taxonomyName: entry.taxonomyName });
   function open(next: Field) {
     if (edit.saving) return;
@@ -637,11 +645,11 @@ export function ReceiptCard({
           {edit.field === "sku" ? (
             <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
           ) : (
-            <CellButton value={entry.sku} onClick={() => open("sku")} />
+            <CellButton value={shown.sku} onClick={() => open("sku")} />
           )}
         </CardLine>
         <CardLine label="Item name">
-          <span title={entry.itemName}>{entry.itemName}</span>
+          <span title={shown.itemName}>{shown.itemName}</span>
         </CardLine>
         <CardLine label="Qty">
           {edit.field === "qty" ? (
