@@ -5159,15 +5159,6 @@ tr.receipt-line:focus-visible td {
   background: rgba(15, 23, 42, 0.04);
 }
 
-.receive-edited {
-  display: inline-block;
-  margin-left: 0.35rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-}
-
 .receive-edit {
   display: grid;
   gap: 0.75rem;

@@ -42,7 +42,7 @@ Columns follow the receipt, in this order: Date, Initials, Project, Incoming bin
 
 The server returns those fields. It does not send item prices. A role without `can_view_financials` has those price fields removed before the response is built, including prices nested on the item.
 
-Tap a row to correct it. The same form opens on a phone. Date, project, incoming bin, originating system, originating system qty, and comment are header corrections. The ledger row is not updated. Each save writes `stock_event_edits` with who, when, and the old and new values. The row then shows the corrected values and an edited marker. A qty or SKU change asks for confirmation, then posts a `receipt_adjustment` and moves `bin_contents` through `adjust_bin_cycle_qty`. That adjustment cannot take the bin below 0. Initials are required on every edit. They are the signed-in person's two letters, or `OP` when sign-in is off.
+Tap a row to correct it. The same form opens on a phone. Date, project, incoming bin, originating system, originating system qty, and comment are header corrections. The ledger row is not updated. Each save writes `stock_event_edits` with who, when, and the old and new values. The row then shows the corrected values. The date stays the date. A qty or SKU change asks for confirmation, then posts a `receipt_adjustment` and moves `bin_contents` through `adjust_bin_cycle_qty`. That adjustment cannot take the bin below 0. Initials are required on every edit. They are the signed-in person's two letters, or `OP` when sign-in is off.
 
 Apply `supabase/migrations/20261023070123_receipt_edits.sql` before corrections. It is additive. Row level security is on, and the table and functions are granted to `service_role` only. It has not been applied.
 
