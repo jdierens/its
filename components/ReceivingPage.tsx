@@ -10,7 +10,7 @@ import { PrintedLabel } from "@/components/labelRenderers";
 import { ReceiptCard, ReceiptTableRow } from "@/components/ReceiptInline";
 import { ReceivingOriginField, ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
-import { BIN_TYPES, formatBinReference, type BinType } from "@/lib/bins";
+import { BIN_TYPES, binTypeLabel, formatBinReference, type BinType } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import {
@@ -24,6 +24,7 @@ import { emptyBinLabelTemplates, qrLabelPayload } from "@/lib/labelTemplates";
 import {
   createReceivingBin,
   fetchBinDetail,
+  fetchReceivingBinNumber,
   lastPutawayBin,
   listReceivingEntries,
   receiveIntoBin,
@@ -75,7 +76,17 @@ type PrintJob =
 
 type BinPrompt =
   | { kind: "create"; reference: string; type: BinType; resumeSave: boolean }
-  | { kind: "required"; nextNumber: number; type: BinType; resumeSave: boolean };
+  | { kind: "required"; nextNumber: number; type: BinType; resumeSave: boolean }
+  | {
+      kind: "mismatch";
+      number: number;
+      selected: BinType;
+      selectedReference: string;
+      existing: BinType;
+      existingReference: string;
+      message: string;
+      resumeSave: boolean;
+    };
 
 function ReceiptPager({
   page,
@@ -535,9 +546,21 @@ export function ReceivingPage() {
     setError(null);
     try {
       const detail = parsed ? await fetchBinDetail(parsed.reference) : null;
+      let owner: { reference: string; type: BinType } | null = null;
+      if (parsed && !detail) {
+        const looked = await fetchReceivingBinNumber(parsed.number);
+        if (!looked.ok) {
+          setConfirmed(null);
+          setBinPrompt(null);
+          setError(looked.message);
+          return null;
+        }
+        owner = looked.owner;
+      }
       const outcome = receivingBinDecision(
         raw,
         detail ? { reference: detail.reference, canReceive: binCanReceive(detail) } : null,
+        owner,
       );
       if (outcome.action === "accept" && detail) {
         acceptBin(detail);
@@ -546,6 +569,20 @@ export function ReceivingPage() {
       if (outcome.action === "create") {
         setConfirmed(null);
         setBinPrompt({ kind: "create", reference: outcome.reference, type: outcome.type, resumeSave });
+        return null;
+      }
+      if (outcome.action === "mismatch") {
+        setConfirmed(null);
+        setBinPrompt({
+          kind: "mismatch",
+          number: outcome.number,
+          selected: outcome.selected,
+          selectedReference: outcome.selectedReference,
+          existing: outcome.existing,
+          existingReference: outcome.existingReference,
+          message: outcome.message,
+          resumeSave,
+        });
         return null;
       }
       setConfirmed(null);
@@ -574,13 +611,19 @@ export function ReceivingPage() {
 
   async function confirmBinPrompt() {
     const prompt = binPrompt;
-    if (!prompt) return;
+    if (!prompt || prompt.kind === "mismatch") return;
     const type = prompt.type;
     const code = prompt.kind === "create" ? prompt.reference : formatBinReference(prompt.nextNumber, type);
     setBusy(true);
     setError(null);
     try {
-      const bin = await createReceivingBin(type, code);
+      const createdResult = await createReceivingBin(type, code);
+      if (!createdResult.ok) {
+        setBinPrompt(null);
+        setError(createdResult.message);
+        return;
+      }
+      const bin = createdResult.bin;
       setCreated(bin);
       binTyped.current = bin.reference;
       binSource.current = "user";
@@ -594,22 +637,37 @@ export function ReceivingPage() {
       setBinPrompt(null);
       setPrintJob({ kind: "bin", reference: bin.reference, type: bin.type });
       setPrintStamp((current) => current + 1);
-      if (prompt.resumeSave) {
-        const claim = beginReceiptSave(saveGate.current, crypto.randomUUID());
-        if (!claim.ok) return;
-        saveGate.current = claim.gate;
-        const chosen = await resolveLineItem();
-        if (!chosen) {
-          releaseSave(false);
-          return;
-        }
-        await commitReceipt(bin.reference, claim.requestId, chosen);
-      }
+      if (prompt.resumeSave) await continueReceipt(bin.reference);
     } catch (createError) {
       setError(errorText(createError));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function useExistingBin(reference: string, resumeSave: boolean) {
+    binTyped.current = reference;
+    binSource.current = "user";
+    prefilledBin.current = "";
+    binEdit.current += 1;
+    setBinCode(reference);
+    setBinHeld((current) => current + 1);
+    setBinPrompt(null);
+    setError(null);
+    const accepted = await lookupBin(reference, false);
+    if (accepted && resumeSave) await continueReceipt(accepted);
+  }
+
+  async function continueReceipt(reference: string) {
+    const claim = beginReceiptSave(saveGate.current, crypto.randomUUID());
+    if (!claim.ok) return;
+    saveGate.current = claim.gate;
+    const chosen = await resolveLineItem();
+    if (!chosen) {
+      releaseSave(false);
+      return;
+    }
+    await commitReceipt(reference, claim.requestId, chosen);
   }
 
   function releaseSave(saved: boolean) {
@@ -1109,6 +1167,7 @@ export function ReceivingPage() {
                     setBinPrompt((current) => {
                       if (!current) return null;
                       if (current.kind === "create" && current.reference === next) return current;
+                      if (current.kind === "mismatch" && current.selectedReference === next) return current;
                       if (current.kind === "required" && next === "") return current;
                       return null;
                     });
@@ -1209,11 +1268,17 @@ export function ReceivingPage() {
             ) : null}
             {truncated ? <span className="hint">Showing the first matches. Type more to narrow them.</span> : null}
             {binPrompt ? (
-              <div className="receive-bin-ask" role="region" aria-label="Create bin">
+              <div
+                className="receive-bin-ask"
+                role="region"
+                aria-label={binPrompt.kind === "mismatch" ? "Bin type" : "Create bin"}
+              >
                 <p id="receive-bin-ask-title">
                   {binPrompt.kind === "create"
                     ? `No bin ${binPrompt.reference}. Create it?`
-                    : `A bin is required. Create the next bin, ${suggestedCode}?`}
+                    : binPrompt.kind === "mismatch"
+                      ? binPrompt.message
+                      : `A bin is required. Create the next bin, ${suggestedCode}?`}
                 </p>
                 {binPrompt.kind === "required" ? (
                   <div className="label-segments receive-segments" role="group" aria-label="Bin type">
@@ -1234,9 +1299,19 @@ export function ReceivingPage() {
                   </div>
                 ) : null}
                 <div className="receive-actions">
-                  <button type="button" disabled={busy} onClick={() => void confirmBinPrompt()}>
-                    Create bin
-                  </button>
+                  {binPrompt.kind === "mismatch" ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void useExistingBin(binPrompt.existingReference, binPrompt.resumeSave)}
+                    >
+                      {`Use ${binTypeLabel(binPrompt.existing)} ${binPrompt.existingReference}`}
+                    </button>
+                  ) : (
+                    <button type="button" disabled={busy} onClick={() => void confirmBinPrompt()}>
+                      Create bin
+                    </button>
+                  )}
                   <button type="button" className="secondary" disabled={busy} onClick={() => setBinPrompt(null)}>
                     Cancel
                   </button>

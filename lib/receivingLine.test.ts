@@ -11,6 +11,8 @@ import {
   receivingAutoFillFocus,
   receivingSkuOverride,
   skuAlreadyInBinNote,
+  binTypeMismatchMessage,
+  receivingBinCreateMessage,
   receivingBinDecision,
   receivingBinDefault,
 } from "@/lib/receivingLine";
@@ -105,6 +107,48 @@ describe("typed receiving bin", () => {
       receivingBinDecision("20014-B", { reference: "20014-B", canReceive: false }).action,
       "unusable",
     );
+  });
+
+  it("asks to adjust the suffix when that number is already another type", () => {
+    const message = "BIN 10042 is a Crate and you selected a Box, please adjust your bin selection";
+    assert.equal(binTypeMismatchMessage(10042, "C", "B"), message);
+    assert.equal(binTypeMismatchMessage(10042, "P", "C"), "BIN 10042 is a Pallet and you selected a Crate, please adjust your bin selection");
+    const decision = receivingBinDecision("10042-B", null, { reference: "10042-C", type: "C" });
+    assert.equal(decision.action, "mismatch");
+    if (decision.action !== "mismatch") return;
+    assert.equal(decision.message, message);
+    assert.equal(decision.existingReference, "10042-C");
+    assert.equal(decision.selectedReference, "10042-B");
+    assert.equal(decision.selected, "B");
+    assert.notEqual(receivingBinDecision("10099-C", null, null).action, "mismatch");
+    assert.equal(receivingBinDecision("10099-C", null).action, "create");
+    assert.equal(
+      receivingBinDecision("10042-C", null, { reference: "10042-c", type: "C" }).action,
+      "invalid",
+    );
+  });
+
+  it("returns the crate mismatch instead of the production digest when create is refused", () => {
+    const database = {
+      message: "10042-C already exists. Scan it instead of creating a new one.",
+      code: "23505",
+    };
+    assert.equal(
+      receivingBinCreateMessage(database, "10042-B"),
+      "BIN 10042 is a Crate and you selected a Box, please adjust your bin selection",
+    );
+    assert.equal(
+      receivingBinCreateMessage(database, "10042-C"),
+      "10042-C already exists. Scan it instead of creating a new one.",
+    );
+    assert.equal(
+      receivingBinCreateMessage(
+        new Error("An error occurred in the Server Components render. The specific message is omitted in production builds."),
+        "10042-B",
+      ),
+      "The bin was not created.",
+    );
+    assert.match(receivingBinCreateMessage({ message: 'duplicate key value violates unique constraint "bins_number_unique"' }, "10042-B"), /10042/);
   });
 
   it("treats an empty bin as usable and a stocked bin without an open cycle as not", () => {

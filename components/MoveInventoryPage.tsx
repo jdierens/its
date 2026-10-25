@@ -164,11 +164,15 @@ export function MoveInventoryPage() {
     setError(null);
     try {
       const created = await createReceivingBin(type, code);
+      if (!created.ok) {
+        setError(created.message);
+        return;
+      }
       if (sourceText.trim().toUpperCase() === code.toUpperCase() || place?.kind === "missing_bin") {
-        setSourceText(created.reference);
-        await loadSource(created.reference);
+        setSourceText(created.bin.reference);
+        await loadSource(created.bin.reference);
       } else {
-        setTargetText(created.reference);
+        setTargetText(created.bin.reference);
       }
     } catch (cause) {
       fail(cause);
