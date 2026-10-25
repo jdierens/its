@@ -69,53 +69,45 @@ export function pieceQtyForPack(lineQty: number, packQty: number): number {
   return Number.isFinite(pieces) && pieces > 0 ? pieces : lineQty;
 }
 
-function formatPieceQty(qty: number): string {
+/** Pieces to allocate. Customer qty stays as entered. A 2-pack with quantity 1 allocates 2. */
+export function allocationQtyForLine(part: string, lineQty: number): number {
+  if (!Number.isFinite(lineQty) || lineQty <= 0) return lineQty;
+  const pack = parsePackLabel(part);
+  if (!pack || pack.packQty <= 1) return lineQty;
+  const pieces = Math.round(lineQty * pack.packQty * 1000) / 1000;
+  return Number.isFinite(pieces) && pieces > 0 ? pieces : lineQty;
+}
+
+export function formatAllocationQty(qty: number): string {
+  if (!Number.isFinite(qty)) return "";
   if (Number.isInteger(qty)) return String(qty);
   return String(Math.round(qty * 1000) / 1000);
 }
 
-function formatPieceUnit(unit: number): string {
-  const rounded = Math.round(unit * 10000) / 10000;
-  if (Number.isInteger(rounded)) return String(rounded);
-  return rounded.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
-}
-
 /**
  * What Customer PN blur and Find SKU do with a pack label.
- * `106683_2PK` or `106683(x2)` with line quantity 1 searches ITS SKU `106683` and becomes 2 pieces.
- * The unit price is divided so the extension stays the amount the buyer paid.
- * A quantity that is already the piece count is not multiplied again.
+ * `106683_2PK` with quantity 1 and unit 6338 stays 1 × 6338.
+ * The search is ITS SKU `106683`, and the allocation quantity is 2.
  */
 export function applyPackToLine(input: { part: string; qty: string; unitPrice: string }): {
   search: string;
   qty: string;
   unitPrice: string;
   packQty: number | null;
+  allocationQty: string | null;
 } {
   const pack = parsePackLabel(input.part);
   const search = (pack?.baseSku ?? input.part).trim();
-  if (!pack) return { search, qty: input.qty, unitPrice: input.unitPrice, packQty: null };
+  if (!pack) return { search, qty: input.qty, unitPrice: input.unitPrice, packQty: null, allocationQty: null };
   const qty = Number(input.qty);
-  const pieces = pieceQtyForPack(Number.isFinite(qty) ? qty : 0, pack.packQty);
-  if (!(qty > 0) || pieces === qty) {
-    return { search, qty: input.qty, unitPrice: input.unitPrice, packQty: pack.packQty };
-  }
-  const price = Number(input.unitPrice);
-  const unit = Number.isFinite(price) ? perPieceUnit(qty, price, pieces) : null;
+  const pieces = allocationQtyForLine(input.part, Number.isFinite(qty) ? qty : 0);
   return {
     search,
-    qty: formatPieceQty(pieces),
-    unitPrice: unit == null ? input.unitPrice : formatPieceUnit(unit),
+    qty: input.qty,
+    unitPrice: input.unitPrice,
     packQty: pack.packQty,
+    allocationQty: qty > 0 ? formatAllocationQty(pieces) : null,
   };
-}
-
-/** Keep the buyer extension when a pack quantity becomes a piece quantity. */
-export function perPieceUnit(lineQty: number, unitPrice: number, pieceQty: number): number | null {
-  if (!(lineQty > 0) || !(pieceQty > 0) || !Number.isFinite(unitPrice) || unitPrice < 0) return null;
-  const total = Math.round(lineQty * unitPrice * 100) / 100;
-  const unit = Math.round((total / pieceQty) * 10000) / 10000;
-  return Number.isFinite(unit) && unit >= 0 ? unit : null;
 }
 
 export function resolveSkuMap(wanted: readonly string[], items: readonly { id: string; sku: string }[]): Map<string, string> {

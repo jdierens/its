@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   allocationsCover,
   compareSalesOrderList,
+  formatSalesMoney,
   formatSalesOrderNumber,
   hideSalesMoney,
   invoiceNumber,
@@ -133,7 +134,10 @@ describe("sales order draft", () => {
     assert.equal(salesOrderTotal([{ extPrice: "" }]), null);
     assert.equal(sellerNet("5631.59", ""), 5631.59);
     assert.equal(sellerNet("5631.59", "9.42"), 5622.17);
+    assert.equal(sellerNet("$5,631.59", "$9.42"), 5622.17);
     assert.equal(sellerNet("", "9.42"), null);
+    assert.equal(salesOrderTotal([{ extPrice: "$6,338.00" }]), 6338);
+    assert.equal(formatSalesMoney(6338, "USD"), "$6,338.00");
   });
 
   it("shows an integer sales-order number as SO plus the digits", () => {

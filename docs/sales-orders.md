@@ -36,7 +36,7 @@ The form keeps that field order on the zinc surface (`ds` in `docs/design-system
 
 ## Approve
 
-A product line needs allocations whose quantities add up to the line. Several SKUs on one line are allowed, and a one-to-one line is still one allocation row. Approval also requires a customer, order date, bill-to and ship-to line 1, terms, ship method, sales rep initials, and at least one line. The check is in the database function.
+A product line needs allocations whose quantities add up to the line. A customer part that is a pack label (`106683_2PK`, `106683(x2)`, or `106683-2PK`) and is not itself an item needs the customer quantity times the pack. `106683_2PK` with customer quantity 1 allocates 2 of item `106683`. Several SKUs on one line are allowed, and a one-to-one line is still one allocation row. Approval also requires a customer, order date, bill-to and ship-to line 1, terms, ship method, sales rep initials, and at least one line. The check is in the database function. Apply `supabase/migrations/20261025100000_pack_allocation_qty.sql` by hand. Deploying does not run it.
 
 Suggested SKUs are a prefix match after uppercasing and stripping spaces, `/`, and `-`. A customer part shorter than 3 characters does not match. Nothing is picked automatically.
 
@@ -50,7 +50,7 @@ The list defaults to drafts that still need processing. **All orders** shows eve
 
 On a line, quantity, unit price, and extension stay consistent. Changing the unit price recomputes the extension. Changing the extension, or the quantity, recomputes the unit price and keeps the extension. Unit price is four decimals. Extension is cents. The extension is editable. `write_sales_order` stores the extension as the cent rounding of quantity times unit price.
 
-A customer part such as `106683_2PK` or `106683(x2)` is searched as ITS SKU `106683`. Leaving that field, or using Find SKU, sets the line quantity to the piece count when the typed quantity is still the pack count. A quantity of 1 on `106683(x2)` becomes 2, and the unit price is split so the extension stays the same. A quantity that is already the piece count is not multiplied again. Production does not do this until this change is deployed.
+A customer part such as `106683_2PK` or `106683(x2)` is searched as ITS SKU `106683`. The customer quantity, unit price, and extension stay as entered. A quantity of 1 and a unit of 6338 stays 1 × 6338. Leaving Customer PN, or using Find SKU, allocates ITS SKU `106683` with quantity 2 when that line has no allocation yet. Two of that pack allocate 4. The customer quantity is not rewritten, and the unit price is not split. A label that is itself an item allocates the customer quantity. Unit price, extension, eBay fees, seller earnings, and payment amount display with a dollar sign, thousands separators, and two decimal places (`$6,338.00`). The stored values stay plain numbers. Production does not do this until this change is deployed.
 
 Unit price, extension, order total, internal notes, and the eBay money columns are removed on the server when `can_view_financials` is false. Those columns are `ebay_transaction_fee`, `ebay_label_fee`, `ebay_ad_fee`, and `ebay_order_earnings`, all nullable. Admin, staff, and read-only can see prices. Other roles see parts and quantities. Files can contain prices, so those roles receive no attachments. Admin and staff can edit. Read-only cannot.
 
@@ -62,7 +62,7 @@ Unit price, extension, order total, internal notes, and the eBay money columns a
 
 ## Migration
 
-`supabase/migrations/20261024070800_sales_orders.sql` is additive. It also adds nullable `customers.merged_into_customer_id` (no rows are updated) and adds `conversion` to the inventory-movement reference check while keeping every reference type that is already allowed. Apply it by hand. This change does not run it against production.
+`supabase/migrations/20261024070800_sales_orders.sql` is additive. `supabase/migrations/20261025100000_pack_allocation_qty.sql` replaces `approve_sales_order` so a pack label can be approved when the allocation is the customer quantity times the pack. Apply it by hand. Deploying does not run it. It also adds nullable `customers.merged_into_customer_id` (no rows are updated) and adds `conversion` to the inventory-movement reference check while keeping every reference type that is already allowed. Apply it by hand. This change does not run it against production.
 
 If the move-inventory migration is applied after this one and its reference-type list does not include `conversion`, that later migration would drop `conversion`. Apply this file after that one, or add `conversion` to that list before applying it second.
 

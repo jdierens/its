@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyPackToLine, assignListingSku, kitListingUses, parsePackLabel, pieceQtyForPack } from "./packs.ts";
+import { allocationQtyForLine, applyPackToLine, assignListingSku, kitListingUses, parsePackLabel, pieceQtyForPack } from "./packs.ts";
 
 const baseAndPackItem = [
   { id: "base", sku: "12345" },
@@ -31,14 +31,18 @@ test("underscore and parenthesis pack labels become a base sku and a piece count
   assert.equal(parsePackLabel("106683(x04)"), null);
   assert.equal(pieceQtyForPack(1, 2), 2);
   assert.equal(pieceQtyForPack(2, 2), 2);
-  const expanded = applyPackToLine({ part: "106683_2PK", qty: "1", unitPrice: "6338" });
-  assert.equal(expanded.search, "106683");
-  assert.equal(expanded.qty, "2");
-  assert.equal(expanded.unitPrice, "3169");
-  assert.equal(expanded.packQty, 2);
-  const again = applyPackToLine({ part: "106683(x2)", qty: expanded.qty, unitPrice: expanded.unitPrice });
-  assert.equal(again.qty, "2");
-  assert.equal(again.unitPrice, "3169");
+  assert.equal(allocationQtyForLine("106683_2PK", 1), 2);
+  assert.equal(allocationQtyForLine("106683_2PK", 2), 4);
+  const packed = applyPackToLine({ part: "106683_2PK", qty: "1", unitPrice: "6338" });
+  assert.equal(packed.search, "106683");
+  assert.equal(packed.qty, "1");
+  assert.equal(packed.unitPrice, "6338");
+  assert.equal(packed.packQty, 2);
+  assert.equal(packed.allocationQty, "2");
+  const twoPacks = applyPackToLine({ part: "106683(x2)", qty: "2", unitPrice: "6338" });
+  assert.equal(twoPacks.qty, "2");
+  assert.equal(twoPacks.unitPrice, "6338");
+  assert.equal(twoPacks.allocationQty, "4");
 });
 
 test("an exact sku wins over the pack pattern", () => {

@@ -1,8 +1,8 @@
 "use client";
 
 import { Ban, Check, Save } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
-import { applyPackToLine, parsePackLabel } from "@/lib/ebay/packs";
+import { Fragment, useEffect, useState, type InputHTMLAttributes } from "react";
+import { allocationQtyForLine, applyPackToLine, formatAllocationQty, parsePackLabel } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +42,43 @@ import {
 
 type FormAllocation = { itemId: string; sku: string; name: string; qty: string };
 type FormLine = Omit<SalesLineView, "allocations"> & { allocations: FormAllocation[] };
+
+function plainMoney(value: string): string {
+  return value.replace(/[$,]/g, "");
+}
+
+function moneyAmount(value: string): number | null {
+  if (!value.trim()) return null;
+  const numeric = Number(plainMoney(value));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function MoneyField({
+  value,
+  currency,
+  onBlur,
+  onFocus,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { value: string; currency: string }) {
+  const [focused, setFocused] = useState(false);
+  const raw = String(value ?? "");
+  const numeric = moneyAmount(raw);
+  const shown = !focused && numeric != null ? formatSalesMoney(numeric, currency) : raw;
+  return (
+    <input
+      {...props}
+      value={shown}
+      onFocus={(event) => {
+        setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        onBlur?.(event);
+      }}
+    />
+  );
+}
 
 const NOTE_RESPONSES = [
   { id: "", label: "No response yet" },
@@ -198,15 +235,16 @@ export function SalesOrderForm({
   }
 
   function changeLineMoney(index: number, field: "qty" | "unit" | "ext", value: string, commit = false) {
+    const cleaned = field === "qty" ? value : plainMoney(value);
     setLines((current) =>
       current.map((line, lineIndex) => {
         if (lineIndex !== index) return line;
-        const qty = field === "qty" ? value : line.qty;
+        const qty = field === "qty" ? cleaned : line.qty;
         if (!showMoney) return { ...line, qty };
         const synced = syncSalesLineMoney({
           qty,
-          unitPrice: field === "unit" ? value : line.unitPrice,
-          extPrice: field === "ext" ? value : line.extPrice,
+          unitPrice: field === "unit" ? cleaned : line.unitPrice,
+          extPrice: field === "ext" ? cleaned : line.extPrice,
           edited: field,
           commit,
         });
@@ -215,30 +253,26 @@ export function SalesOrderForm({
     );
   }
 
-  function pricedFromPack(line: FormLine, qty: string, unitPrice: string): Pick<FormLine, "qty" | "unitPrice" | "extPrice"> {
-    if (!showMoney) return { qty, unitPrice: line.unitPrice, extPrice: line.extPrice };
-    return { qty, unitPrice, extPrice: lineExtension(qty, unitPrice) ?? line.extPrice };
-  }
-
   function rememberSuggestions(index: number, hits: SalesSkuHit[], part: string, expand: boolean) {
     setSuggestions((current) => ({ ...current, [index]: hits }));
     setLines((current) =>
       current.map((line, lineIndex) => {
         if (lineIndex !== index) return line;
+        const open = line.allocations.length === 0;
+        if (!expand || !open || hits.length !== 1 || line.allocations.some((row) => row.itemId === hits[0].id)) return line;
+        const hit = hits[0];
+        const exact = hit.sku.trim().toLowerCase() === line.customerPartNumber.trim().toLowerCase();
         const fromTyped = applyPackToLine({ part, qty: line.qty, unitPrice: line.unitPrice });
         const fromPn = applyPackToLine({ part: line.customerPartNumber, qty: line.qty, unitPrice: line.unitPrice });
         const applied = fromTyped.packQty != null ? fromTyped : fromPn;
-        const open = line.allocations.length === 0;
-        const priced = pricedFromPack(
-          line,
-          expand && open ? applied.qty : line.qty,
-          expand && open && showMoney ? applied.unitPrice : line.unitPrice,
-        );
-        const next = { ...line, ...priced };
-        if (!open || hits.length !== 1 || next.allocations.some((row) => row.itemId === hits[0].id)) return next;
         return {
-          ...next,
-          allocations: [{ itemId: hits[0].id, sku: hits[0].sku, name: hits[0].name, qty: next.qty || "1" }],
+          ...line,
+          allocations: [{
+            itemId: hit.id,
+            sku: hit.sku,
+            name: hit.name,
+            qty: exact ? line.qty || "1" : applied.allocationQty ?? (line.qty || "1"),
+          }],
         };
       }),
     );
@@ -291,19 +325,16 @@ export function SalesOrderForm({
       current.map((line, lineIndex) => {
         if (lineIndex !== index) return line;
         if (line.allocations.some((row) => row.itemId === hit.id)) return line;
-        const applied = applyPackToLine({ part: line.customerPartNumber, qty: line.qty, unitPrice: line.unitPrice });
-        const open = line.allocations.length === 0;
-        const next = {
-          ...line,
-          ...pricedFromPack(line, open ? applied.qty : line.qty, open && showMoney ? applied.unitPrice : line.unitPrice),
-        };
-        const used = next.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
-        const remaining = Math.round((Number(next.qty) - used) * 100) / 100;
+        const qtyNumber = Number(line.qty);
+        const exact = hit.sku.trim().toLowerCase() === line.customerPartNumber.trim().toLowerCase();
+        const target = !Number.isFinite(qtyNumber) ? 0 : exact ? qtyNumber : allocationQtyForLine(line.customerPartNumber, qtyNumber);
+        const used = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+        const remaining = Math.round((target - used) * 100) / 100;
         return {
-          ...next,
+          ...line,
           allocations: [
-            ...next.allocations,
-            { itemId: hit.id, sku: hit.sku, name: hit.name, qty: remaining > 0 ? String(remaining) : "1" },
+            ...line.allocations,
+            { itemId: hit.id, sku: hit.sku, name: hit.name, qty: remaining > 0 ? formatAllocationQty(remaining) : "1" },
           ],
         };
       }),
@@ -699,9 +730,17 @@ export function SalesOrderForm({
                 {lines.map((line, index) => {
                   const needsItem = lineRequiresItem(line.lineKind);
                   const pack = parsePackLabel(line.customerPartNumber);
+                  const qtyNumber = Number(line.qty);
+                  const exactItem = line.allocations.some((row) => row.sku.trim().toLowerCase() === line.customerPartNumber.trim().toLowerCase());
+                  const pieceTarget = !Number.isFinite(qtyNumber)
+                    ? Number.NaN
+                    : exactItem
+                      ? qtyNumber
+                      : allocationQtyForLine(line.customerPartNumber, qtyNumber);
+                  const targetText = Number.isFinite(pieceTarget) && pieceTarget > 0 ? formatAllocationQty(pieceTarget) : line.qty;
                   const allocatedQty = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
                   const covered = allocationsCover(
-                    line.qty,
+                    targetText,
                     line.allocations.map((row) => ({ itemId: row.itemId, qty: row.qty })),
                   );
                   return (
@@ -740,11 +779,12 @@ export function SalesOrderForm({
                         </td>
                         {showMoney ? (
                           <td className="num">
-                            <input
+                            <MoneyField
                               className="num-input"
                               aria-label={`Customer unit ${index + 1}`}
                               inputMode="decimal"
                               value={line.unitPrice}
+                              currency={currency}
                               disabled={locked}
                               onChange={(event) => changeLineMoney(index, "unit", event.target.value)}
                               onBlur={(event) => changeLineMoney(index, "unit", event.target.value, true)}
@@ -753,11 +793,12 @@ export function SalesOrderForm({
                         ) : null}
                         {showMoney ? (
                           <td className="num">
-                            <input
+                            <MoneyField
                               className="num-input"
                               aria-label={`Cust ext ${index + 1}`}
                               inputMode="decimal"
                               value={line.extPrice}
+                              currency={currency}
                               disabled={locked}
                               onChange={(event) => changeLineMoney(index, "ext", event.target.value)}
                               onBlur={(event) => changeLineMoney(index, "ext", event.target.value, true)}
@@ -781,8 +822,9 @@ export function SalesOrderForm({
                           {needsItem ? (
                             <div className="so-allocate">
                               <p className="hint">
-                                Pick one or more ITS items. Their quantities have to add up to the line quantity
-                                {pack ? `. ${line.customerPartNumber.trim()} is ${pack.packQty} × ${pack.baseSku}` : ""}.
+                                {pack && !exactItem
+                                  ? `${line.customerPartNumber.trim()} is ${pack.packQty} × ITS SKU ${pack.baseSku}. Customer qty stays ${line.qty || "as entered"}. Allocate ${targetText}.`
+                                  : "Pick one or more ITS items. Their quantities have to add up to the customer quantity."}
                               </p>
                               {!locked ? (
                                 <div className="so-find-sku">
@@ -875,8 +917,8 @@ export function SalesOrderForm({
                           {needsItem || line.allocations.length > 0 ? (
                             <p className={covered ? "hint" : "hint so-gap"}>
                               {covered
-                                ? `Allocated ${allocatedQty} of ${line.qty}.`
-                                : `Allocated ${allocatedQty} of ${line.qty}. Add ITS items until the quantities match.`}
+                                ? `Allocated ${allocatedQty} of ${targetText}.`
+                                : `Allocated ${allocatedQty} of ${targetText}. Add ITS items until the quantities match.`}
                             </p>
                           ) : null}
                         </td>
@@ -900,20 +942,20 @@ export function SalesOrderForm({
             <div className="so-pay-row">
               <label>
                 eBay transaction fee
-                <input id="so-ebay-transaction-fee" className="num-input" inputMode="decimal" value={ebayTransactionFee} disabled={locked} onChange={(event) => setEbayTransactionFee(event.target.value)} />
+                <MoneyField id="so-ebay-transaction-fee" className="num-input" inputMode="decimal" value={ebayTransactionFee} currency={currency} disabled={locked} onChange={(event) => setEbayTransactionFee(plainMoney(event.target.value))} onBlur={(event) => setEbayTransactionFee(plainMoney(event.target.value))} />
               </label>
               <label>
                 eBay label fee
-                <input className="num-input" inputMode="decimal" value={ebayLabelFee} disabled={locked} onChange={(event) => setEbayLabelFee(event.target.value)} />
+                <MoneyField className="num-input" inputMode="decimal" value={ebayLabelFee} currency={currency} disabled={locked} onChange={(event) => setEbayLabelFee(plainMoney(event.target.value))} onBlur={(event) => setEbayLabelFee(plainMoney(event.target.value))} />
                 <span className="hint">Deducted when a label is bought on eBay. The next order pull fills this in.</span>
               </label>
               <label>
                 eBay ad fee
-                <input className="num-input" inputMode="decimal" value={ebayAdFee} disabled={locked} onChange={(event) => setEbayAdFee(event.target.value)} />
+                <MoneyField className="num-input" inputMode="decimal" value={ebayAdFee} currency={currency} disabled={locked} onChange={(event) => setEbayAdFee(plainMoney(event.target.value))} onBlur={(event) => setEbayAdFee(plainMoney(event.target.value))} />
               </label>
               <label>
                 Seller earnings
-                <input className="num-input" inputMode="decimal" value={ebayOrderEarnings} disabled={locked} onChange={(event) => setEbayOrderEarnings(event.target.value)} />
+                <MoneyField className="num-input" inputMode="decimal" value={ebayOrderEarnings} currency={currency} disabled={locked} onChange={(event) => setEbayOrderEarnings(plainMoney(event.target.value))} onBlur={(event) => setEbayOrderEarnings(plainMoney(event.target.value))} />
                 <span className="hint">eBay&apos;s total due the seller. Marketplace fees are already out. A shipping label is not.</span>
               </label>
             </div>
@@ -926,11 +968,11 @@ export function SalesOrderForm({
                 <>
                   <div>
                     <dt>Seller earnings</dt>
-                    <dd>{ebayOrderEarnings.trim() ? formatSalesMoney(Number(ebayOrderEarnings), currency) : ""}</dd>
+                    <dd>{moneyAmount(ebayOrderEarnings) == null ? "" : formatSalesMoney(moneyAmount(ebayOrderEarnings), currency)}</dd>
                   </div>
                   <div>
                     <dt>Shipping label</dt>
-                    <dd>{ebayLabelFee.trim() ? formatSalesMoney(Number(ebayLabelFee), currency) : "None yet"}</dd>
+                    <dd>{moneyAmount(ebayLabelFee) == null ? "None yet" : formatSalesMoney(moneyAmount(ebayLabelFee), currency)}</dd>
                   </div>
                   <div>
                     <dt>Seller net</dt>
@@ -972,7 +1014,7 @@ export function SalesOrderForm({
             {showMoney ? (
               <label>
                 Payment amount
-                <input className="num-input" inputMode="decimal" value={paymentAmount} disabled={locked} onChange={(event) => setPaymentAmount(event.target.value)} />
+                <MoneyField className="num-input" inputMode="decimal" value={paymentAmount} currency={currency} disabled={locked} onChange={(event) => setPaymentAmount(plainMoney(event.target.value))} onBlur={(event) => setPaymentAmount(plainMoney(event.target.value))} />
               </label>
             ) : null}
           </div>

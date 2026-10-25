@@ -154,7 +154,7 @@ async function insertEvent(
 }
 
 async function insertLines(admin: SupabaseClient, salesOrderId: string, action: Extract<PullAction, { kind: "create" | "update" }>): Promise<void> {
-  const lines = draftLines(action.order, action.itemIds, action.shippingItemId);
+  const lines = draftLines(action.order, action.itemIds, action.shippingItemId, action.allocationQtys);
   if (lines.some((line) => line.line_kind === "freight" && !line.item_id)) {
     throw new Error("eBay shipping could not be allocated to item 4343.");
   }
@@ -178,7 +178,7 @@ async function insertLines(admin: SupabaseClient, salesOrderId: string, action: 
     const allocation = await admin.from("so_line_allocations").insert({
       so_line_id: data.id,
       item_id: line.item_id,
-      qty: line.qty,
+      qty: line.allocation_qty ?? line.qty,
       operator_id: null,
     });
     if (allocation.error) throw new Error("A sales-order line could not be matched to an item.");
