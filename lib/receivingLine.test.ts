@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   binCanReceive,
+  commentAfterItemPick,
+  commentWithPrepStatus,
   lastPutawayBinReference,
   nextReceivingBinCode,
+  prepStatusText,
   receiptFlagsForPrep,
   receivePrepKind,
   receivingBinDecision,
   receivingBinDefault,
+  splitPrepComment,
 } from "@/lib/receivingLine";
 
 describe("receive prep", () => {
@@ -27,6 +31,76 @@ describe("receive prep", () => {
     assert.deepEqual(receiptFlagsForPrep("wiped", true, false), { cleaned: null, wiped: false });
     assert.deepEqual(receiptFlagsForPrep("wiped", false, true), { cleaned: null, wiped: true });
     assert.deepEqual(receiptFlagsForPrep(null, true, true), { cleaned: null, wiped: null });
+  });
+
+  it("shows cleaned or dirty on a CPU and Wiped or Pending Wipe on a drive", () => {
+    assert.equal(prepStatusText("cleaned", true, null), "cleaned");
+    assert.equal(prepStatusText("cleaned", false, true), "dirty");
+    assert.equal(prepStatusText("cleaned", null, false), null);
+    assert.equal(prepStatusText("wiped", null, true), "Wiped");
+    assert.equal(prepStatusText("wiped", true, false), "Pending Wipe");
+    assert.equal(prepStatusText("wiped", false, null), null);
+    assert.equal(prepStatusText(null, true, true), null);
+    assert.equal(commentWithPrepStatus("pin bent", "cleaned", false, null), "dirty pin bent");
+    assert.equal(commentWithPrepStatus("", "cleaned", true, null), "cleaned");
+    assert.equal(commentWithPrepStatus("  date code  ", "wiped", null, true), "Wiped date code");
+    assert.equal(commentWithPrepStatus("dirty already", "cleaned", null, null), "dirty already");
+    assert.equal(commentWithPrepStatus("keep dirty word", null, null, null), "keep dirty word");
+  });
+
+  it("reads the status word for this taxonomy and leaves it out of the stored comment", () => {
+    assert.deepEqual(splitPrepComment("cleaned", "cleaned pin bent"), {
+      comment: "pin bent",
+      cleaned: true,
+      wiped: null,
+    });
+    assert.deepEqual(splitPrepComment("cleaned", "  DIRTY  "), { comment: "", cleaned: false, wiped: null });
+    assert.deepEqual(splitPrepComment("wiped", "Pending Wipe  date code"), {
+      comment: "date code",
+      cleaned: null,
+      wiped: false,
+    });
+    assert.deepEqual(splitPrepComment("wiped", "WIPED"), { comment: "", cleaned: null, wiped: true });
+    assert.deepEqual(splitPrepComment("cleaned", "Wiped later"), {
+      comment: "Wiped later",
+      cleaned: false,
+      wiped: null,
+    });
+    assert.deepEqual(splitPrepComment("wiped", "scratch"), { comment: "scratch", cleaned: null, wiped: false });
+    assert.deepEqual(splitPrepComment("cleaned", "cleanedish pin"), {
+      comment: "cleanedish pin",
+      cleaned: false,
+      wiped: null,
+    });
+    assert.deepEqual(splitPrepComment(null, "dirty pin"), { comment: "dirty pin", cleaned: null, wiped: null });
+  });
+
+  it("prefixes the new item and drops only the previous status word", () => {
+    const cpu = { shortCode: "CPU", longCode: "CPU/PRC", taxonomyName: "CPU" };
+    const drive = { shortCode: "SSD", longCode: "DSK/SSD", taxonomyName: "SSD" };
+    const memory = { shortCode: "MEM", longCode: "DIM/MEM", taxonomyName: "memory" };
+    assert.equal(
+      commentAfterItemPick({ current: "cleaned pin bent", previous: cpu, next: drive, scan: null }),
+      "Pending Wipe pin bent",
+    );
+    assert.equal(
+      commentAfterItemPick({ current: "Pending Wipe KR 2349", previous: drive, next: cpu, scan: null }),
+      "dirty KR 2349",
+    );
+    assert.equal(
+      commentAfterItemPick({ current: "Pending Wipe KR 2349", previous: drive, next: memory, scan: null }),
+      "KR 2349",
+    );
+    assert.equal(
+      commentAfterItemPick({ current: "dirty pins", previous: null, next: drive, scan: "KR 2349" }),
+      "Pending Wipe dirty pins",
+    );
+    assert.equal(commentAfterItemPick({ current: "", previous: null, next: cpu, scan: null }), "dirty");
+    assert.equal(
+      commentAfterItemPick({ current: "dirty", previous: cpu, next: drive, scan: "KR M393 2349" }),
+      "Pending Wipe KR M393 2349",
+    );
+    assert.equal(commentAfterItemPick({ current: "  ", previous: null, next: drive, scan: null }), "Pending Wipe");
   });
 });
 

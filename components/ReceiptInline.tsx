@@ -6,7 +6,7 @@ import { descriptionSnippet } from "@/lib/labelLookup";
 import { labelHighlightedChoice, labelSearchOutcome } from "@/lib/labelDeskSelection";
 import { editReceipt, searchReceivingScan } from "@/lib/receivingActions";
 import { planReceiptEdit, receiptLineAfterPick, type ReceiptEditBody, type ReceiptPatch } from "@/lib/receiptInline";
-import { receivePrepKind } from "@/lib/receivingLine";
+import { commentWithPrepStatus, receivePrepKind, splitPrepComment } from "@/lib/receivingLine";
 import { scanSearchNote } from "@/lib/receivingScan";
 import { RECEIVING_DATE_EDITABLE, formatReceivedOn, type ReceivingEntry } from "@/lib/receivingSettings";
 import type { LabelItem } from "@/lib/types";
@@ -348,23 +348,24 @@ function SkuEdit({
   );
 }
 
-function PrepBox({ entry, saving, onToggle }: { entry: ReceivingEntry; saving: boolean; onToggle: (checked: boolean) => void }) {
+function visibleComment(entry: ReceivingEntry, pending: ReceiptPatch["item"] | null): string {
+  const picked = pending && pending.id !== entry.itemId ? pending : null;
+  const prep = receivePrepKind({
+    shortCode: picked ? picked.shortCode : entry.shortCode,
+    longCode: picked ? picked.longCode : entry.longCode,
+    taxonomyName: picked ? picked.taxonomyName : entry.taxonomyName,
+  });
+  return commentWithPrepStatus(entry.comment, prep, picked ? false : entry.cleaned, picked ? false : entry.wiped);
+}
+
+function commentPatch(entry: ReceivingEntry, value: string): ReceiptPatch {
   const prep = receivePrepKind({ shortCode: entry.shortCode, longCode: entry.longCode, taxonomyName: entry.taxonomyName });
-  if (!prep) return null;
-  const label = prep === "cleaned" ? "Cleaned" : "Wiped";
-  const checked = prep === "cleaned" ? entry.cleaned === true : entry.wiped === true;
-  return (
-    <label className="receive-inline-prep">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={saving}
-        aria-label={label}
-        onChange={(event) => onToggle(event.target.checked)}
-      />
-      <span>{label}</span>
-    </label>
-  );
+  const split = splitPrepComment(prep, value);
+  return {
+    comment: split.comment,
+    ...(typeof split.cleaned === "boolean" ? { cleaned: split.cleaned } : {}),
+    ...(typeof split.wiped === "boolean" ? { wiped: split.wiped } : {}),
+  };
 }
 
 function ConfirmBar({
@@ -427,7 +428,7 @@ export function ReceiptTableRow({
 }) {
   const edit = useReceiptEdit(entry, onSaved);
   const shown = receiptLineAfterPick(entry, edit.pendingItem ?? null);
-  const prep = receivePrepKind({ shortCode: entry.shortCode, longCode: entry.longCode, taxonomyName: entry.taxonomyName });
+  const note = visibleComment(entry, edit.pendingItem);
   function open(next: Field) {
     if (edit.saving) return;
     edit.setField(next);
@@ -530,29 +531,20 @@ export function ReceiptTableRow({
             <CellButton align="right" value={String(entry.qty)} onClick={() => open("qty")} />
           )}
         </td>
-        <td className="prep">
-          {prep ? (
-            <PrepBox
-              entry={entry}
-              saving={edit.saving}
-              onToggle={(checked) => edit.apply(prep === "cleaned" ? { cleaned: checked } : { wiped: checked })}
-            />
-          ) : null}
-        </td>
         <td className="putaway" title="Putaway is the destination bin stored on the receipt. It is not changed from this table.">
           {entry.putaway}
         </td>
-        <td className="note" title={entry.comment ?? undefined}>
+        <td className="note" title={note || undefined}>
           {edit.field === "comment" ? (
-            <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
+            <TextEdit value={note} onCommit={(value) => edit.apply(commentPatch(entry, value))} onCancel={() => edit.setField(null)} kind="text" />
           ) : (
-            <CellButton value={entry.comment ?? ""} title={entry.comment ?? undefined} onClick={() => open("comment")} />
+            <CellButton value={note} title={note || undefined} onClick={() => open("comment")} />
           )}
         </td>
       </tr>
       {edit.confirm || edit.error ? (
         <tr className="receive-edit-row">
-          <td colSpan={13}>
+          <td colSpan={12}>
             <ConfirmBar
               initials={initials}
               confirm={edit.confirm}
@@ -594,7 +586,7 @@ export function ReceiptCard({
 }) {
   const edit = useReceiptEdit(entry, onSaved);
   const shown = receiptLineAfterPick(entry, edit.pendingItem ?? null);
-  const prep = receivePrepKind({ shortCode: entry.shortCode, longCode: entry.longCode, taxonomyName: entry.taxonomyName });
+  const note = visibleComment(entry, edit.pendingItem);
   function open(next: Field) {
     if (edit.saving) return;
     edit.setField(next);
@@ -699,23 +691,14 @@ export function ReceiptCard({
             <CellButton align="right" value={String(entry.qty)} onClick={() => open("qty")} />
           )}
         </CardLine>
-        {prep ? (
-          <CardLine label={prep === "cleaned" ? "Cleaned" : "Wiped"}>
-            <PrepBox
-              entry={entry}
-              saving={edit.saving}
-              onToggle={(checked) => edit.apply(prep === "cleaned" ? { cleaned: checked } : { wiped: checked })}
-            />
-          </CardLine>
-        ) : null}
         <CardLine label="Putaway location">
           <span title="Putaway is the destination bin stored on the receipt. It is not changed from this list.">{entry.putaway}</span>
         </CardLine>
         <CardLine label="Comment">
           {edit.field === "comment" ? (
-            <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
+            <TextEdit value={note} onCommit={(value) => edit.apply(commentPatch(entry, value))} onCancel={() => edit.setField(null)} kind="text" />
           ) : (
-            <CellButton value={entry.comment ?? ""} onClick={() => open("comment")} />
+            <CellButton value={note} onClick={() => open("comment")} />
           )}
         </CardLine>
       </dl>
