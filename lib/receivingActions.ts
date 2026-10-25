@@ -35,6 +35,7 @@ import {
   type ReceiptResult,
 } from "@/lib/stockReceive";
 import type { BinType } from "@/lib/bins";
+import { lastPutawayBinReference } from "@/lib/receivingLine";
 import { getSupabase } from "@/lib/supabase";
 
 function rpcError(error: { message?: string } | null): never {
@@ -91,6 +92,39 @@ export async function fetchBinDetail(reference: string): Promise<BinDetail | nul
   const detail = binDetailFromJson(data);
   if (!detail) return null;
   return attachItemNames(detail);
+}
+
+/** Most recent receive of this item, on any project. Blank when it has never been put away. */
+export async function lastPutawayBin(itemId: string): Promise<string | null> {
+  const id = itemId.trim();
+  if (!id) return null;
+  const supabase = await getSupabase();
+  const viewed = await supabase
+    .from("receipt_lines")
+    .select("bin_reference")
+    .eq("item_id", id)
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1);
+  if (!viewed.error) {
+    const row = Array.isArray(viewed.data) ? viewed.data[0] : null;
+    return lastPutawayBinReference(row ?? null);
+  }
+  if (!missingColumn(viewed.error) && !missingSchema(viewed.error)) rpcError(viewed.error);
+  const legacy = await supabase
+    .from("stock_events")
+    .select("bins(reference)")
+    .eq("event_type", "receive_into_bin")
+    .eq("item_id", id)
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1);
+  if (legacy.error) {
+    if (missingSchema(legacy.error)) return null;
+    rpcError(legacy.error);
+  }
+  const row = Array.isArray(legacy.data) ? legacy.data[0] : null;
+  return lastPutawayBinReference(row ?? null);
 }
 
 export async function suggestBins(itemId: string, project: string): Promise<BinSuggestion[]> {

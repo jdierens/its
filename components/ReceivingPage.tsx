@@ -25,6 +25,7 @@ import { emptyBinLabelTemplates, qrLabelPayload } from "@/lib/labelTemplates";
 import {
   createReceivingBin,
   fetchBinDetail,
+  lastPutawayBin,
   listReceivingEntries,
   receiveIntoBin,
   receivingClerkInitials,
@@ -45,7 +46,7 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
-import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision } from "@/lib/receivingLine";
+import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
   type BinDetail,
@@ -83,6 +84,9 @@ export function ReceivingPage() {
   const holdQuery = useRef<string | null>(null);
   const requestId = useRef(0);
   const binTyped = useRef("");
+  const binSource = useRef<"empty" | "user" | "prefill">("empty");
+  const prefilledBin = useRef("");
+  const binEdit = useRef(0);
   const [identifier, setIdentifier] = useState("");
   const [held, setHeld] = useState(0);
   const [edited, setEdited] = useState(false);
@@ -173,6 +177,44 @@ export function ReceivingPage() {
     if (!projectReady || !projectStorageKey) return;
     writeStoredProject(window.localStorage, projectStorageKey, project);
   }, [project, projectReady, projectStorageKey]);
+
+  useEffect(() => {
+    if (!item) {
+      if (binSource.current !== "user" && binTyped.current) {
+        binSource.current = "empty";
+        prefilledBin.current = "";
+        binTyped.current = "";
+        setBinCode("");
+        setBinHeld((current) => current + 1);
+        setConfirmed(null);
+        setBinPrompt(null);
+      }
+      return;
+    }
+    if (binSource.current === "user" && binTyped.current.trim()) return;
+    let cancelled = false;
+    const itemId = item.id;
+    const editAtStart = binEdit.current;
+    void lastPutawayBin(itemId)
+      .then((reference) => {
+        if (cancelled || binEdit.current !== editAtStart) return;
+        if (binSource.current === "user" && binTyped.current.trim()) return;
+        const next = receivingBinDefault({ lastReference: reference, userTyped: false, current: "" });
+        const source = next ? "prefill" : "empty";
+        if (binTyped.current === next && binSource.current === source) return;
+        binSource.current = source;
+        prefilledBin.current = next;
+        binTyped.current = next;
+        setBinCode(next);
+        setBinHeld((current) => current + 1);
+        setConfirmed(null);
+        setBinPrompt(null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [item]);
 
   useEffect(() => {
     if (!item) {
@@ -434,6 +476,9 @@ export function ReceivingPage() {
       const bin = await createReceivingBin(type, code);
       setCreated(bin);
       binTyped.current = bin.reference;
+      binSource.current = "user";
+      prefilledBin.current = "";
+      binEdit.current += 1;
       setBinCode(bin.reference);
       setBinHeld((current) => current + 1);
       const detail = await fetchBinDetail(bin.reference);
@@ -512,6 +557,9 @@ export function ReceivingPage() {
       typed.current = "";
       holdQuery.current = null;
       binTyped.current = "";
+      binSource.current = "empty";
+      prefilledBin.current = "";
+      binEdit.current += 1;
       setHeld((current) => current + 1);
       setBinHeld((current) => current + 1);
       setEdited(false);
@@ -728,6 +776,9 @@ export function ReceivingPage() {
                     className="secondary"
                     disabled={busy}
                     onClick={() => {
+                      binSource.current = "user";
+                      prefilledBin.current = "";
+                      binEdit.current += 1;
                       void lookupBin(suggestion.reference, false);
                     }}
                   >
@@ -739,7 +790,7 @@ export function ReceivingPage() {
             </div>
           ) : null}
           {item && suggestions.length === 0 ? (
-            <p className="hint">No bin on this project already holds that SKU. An empty bin is not suggested.</p>
+            <p className="hint">No open bin on this project already holds that SKU.</p>
           ) : null}
           <form onSubmit={onSave}>
             <div className="receive-line-row">
@@ -842,7 +893,6 @@ export function ReceivingPage() {
                   autoCapitalize="characters"
                   spellCheck={false}
                   disabled={busy}
-                  placeholder="20000-B"
                   onDraft={(value) => {
                     binTyped.current = value;
                   }}
@@ -854,6 +904,11 @@ export function ReceivingPage() {
                   onValue={(value) => {
                     setBinCode(value);
                     const next = value.trim().toUpperCase();
+                    if (!(binSource.current === "prefill" && next === prefilledBin.current)) {
+                      binSource.current = next ? "user" : "empty";
+                      if (!next) prefilledBin.current = "";
+                      binEdit.current += 1;
+                    }
                     if (confirmed && next !== confirmed.reference) setConfirmed(null);
                     setBinPrompt((current) => {
                       if (!current) return null;

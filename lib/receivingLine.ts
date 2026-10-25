@@ -92,3 +92,34 @@ export function nextReceivingBinCode(nextNumber: number, type: BinType): string 
   if (nextFreeBinError(nextNumber)) return null;
   return formatBinReference(nextNumber, type);
 }
+
+function nestedBinReference(value: unknown): unknown {
+  if (Array.isArray(value)) return nestedBinReference(value[0]);
+  if (!value || typeof value !== "object") return null;
+  return (value as Record<string, unknown>).reference;
+}
+
+/** Bin code from a receipt row: `bin_reference`, or `bins.reference` from the ledger join. */
+export function lastPutawayBinReference(row: unknown): string | null {
+  if (!row || typeof row !== "object") return null;
+  const record = row as Record<string, unknown>;
+  const direct = record.bin_reference;
+  const raw = typeof direct === "string" && direct.trim() ? direct : nestedBinReference(record.bins);
+  if (typeof raw !== "string") return null;
+  return parseReceivingBinCode(raw)?.reference ?? null;
+}
+
+/**
+ * What the bin field shows before the clerk types.
+ * A value they typed stays. Otherwise the last putaway bin for that SKU, or blank.
+ * The next counter number is not a field value.
+ */
+export function receivingBinDefault(input: {
+  lastReference: string | null;
+  userTyped: boolean;
+  current: string;
+}): string {
+  if (input.userTyped) return input.current;
+  if (!input.lastReference) return "";
+  return parseReceivingBinCode(input.lastReference)?.reference ?? "";
+}

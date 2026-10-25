@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   binCanReceive,
+  lastPutawayBinReference,
   nextReceivingBinCode,
   receiptFlagsForPrep,
   receivePrepKind,
   receivingBinDecision,
+  receivingBinDefault,
 } from "@/lib/receivingLine";
 
 describe("receive prep", () => {
@@ -58,5 +60,26 @@ describe("typed receiving bin", () => {
     assert.equal(nextReceivingBinCode(20042, "B"), "20042-B");
     assert.equal(nextReceivingBinCode(20042, "P"), "20042-P");
     assert.equal(nextReceivingBinCode(999, "B"), null);
+  });
+});
+
+describe("receiving bin default", () => {
+  it("reads the last putaway bin from a receipt row", () => {
+    assert.equal(lastPutawayBinReference(null), null);
+    assert.equal(lastPutawayBinReference({ bin_reference: "10059-c" }), "10059-C");
+    assert.equal(lastPutawayBinReference({ bins: { reference: "20042-B" } }), "20042-B");
+    assert.equal(lastPutawayBinReference({ bins: [{ reference: "20042-b" }] }), "20042-B");
+    assert.equal(lastPutawayBinReference({ bin_reference: " ", bins: { reference: "20014-P" } }), "20014-P");
+    assert.equal(lastPutawayBinReference({ bin_reference: "2000-B" }), null);
+  });
+
+  it("stays blank unless the SKU was put away before, and never invents the next number", () => {
+    assert.equal(receivingBinDefault({ lastReference: null, userTyped: false, current: "" }), "");
+    assert.equal(receivingBinDefault({ lastReference: "10059-c", userTyped: false, current: "" }), "10059-C");
+    assert.equal(receivingBinDefault({ lastReference: "2000-B", userTyped: false, current: "" }), "");
+    assert.equal(
+      receivingBinDefault({ lastReference: "10059-C", userTyped: true, current: "20011-B" }),
+      "20011-B",
+    );
   });
 });
