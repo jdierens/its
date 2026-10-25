@@ -45,7 +45,7 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
-import { binCanReceive, commentAfterItemPick, nextReceivingBinCode, receivePrepKind, receivingBinDecision, receivingBinDefault, splitPrepComment } from "@/lib/receivingLine";
+import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
   type BinDetail,
@@ -109,6 +109,8 @@ export function ReceivingPage() {
   const [confirmed, setConfirmed] = useState<BinDetail | null>(null);
   const [binPrompt, setBinPrompt] = useState<BinPrompt | null>(null);
   const [created, setCreated] = useState<CreatedBin | null>(null);
+  const [cleaned, setCleaned] = useState(false);
+  const [wiped, setWiped] = useState(false);
   const [qty, setQty] = useState("");
   const [comment, setComment] = useState("");
   const [suggestions, setSuggestions] = useState<BinSuggestion[]>([]);
@@ -273,7 +275,6 @@ export function ReceivingPage() {
   function choose(next: LabelItem, rawScan: string | null = null, typedQuery: string | null = null) {
     const search = searchFieldAfterPick(typed.current, next);
     holdQuery.current = search.trim();
-    const previous = item;
     setItem(next);
     setMatches([]);
     setTruncated(false);
@@ -281,7 +282,9 @@ export function ReceivingPage() {
     setSettledQuery("");
     setError(null);
     setSearchQuery(receiptSearchQuery(typedQuery ?? search));
-    setComment((current) => commentAfterItemPick({ current, previous, next, scan: rawScan }));
+    if (rawScan) setComment((current) => (current.trim() ? current : rawScan));
+    setCleaned(false);
+    setWiped(false);
   }
 
   async function runSearch(raw: string, submitted: boolean) {
@@ -510,9 +513,10 @@ export function ReceivingPage() {
       setError("Enter a receiving date.");
       return;
     }
-    const note = splitPrepComment(
+    const flags = receiptFlagsForPrep(
       receivePrepKind({ shortCode: item.shortCode, longCode: item.longCode, taxonomyName: item.taxonomyName }),
-      comment,
+      cleaned,
+      wiped,
     );
     setSaving(true);
     setError(null);
@@ -521,7 +525,7 @@ export function ReceivingPage() {
         reference,
         itemId: item.id,
         qty: parsed.qty,
-        comment: note.comment,
+        comment,
         project,
         origin,
         incomingTag,
@@ -530,8 +534,8 @@ export function ReceivingPage() {
         clientRequestId: requestId,
         scanRaw,
         searchQuery,
-        cleaned: note.cleaned,
-        wiped: note.wiped,
+        cleaned: flags.cleaned,
+        wiped: flags.wiped,
       });
       const printedOn = todayLabel(new Date());
       const savedItem = item;
@@ -556,6 +560,8 @@ export function ReceivingPage() {
       setConfirmed(null);
       setCreated(null);
       setBinPrompt(null);
+      setCleaned(false);
+      setWiped(false);
       setQty("");
       setComment("");
       setScanRaw(null);
@@ -646,6 +652,11 @@ export function ReceivingPage() {
 
   const openCycle = confirmed?.cycles.find((cycle) => cycle.status === "open") ?? null;
   const listOpen = matches.length > 0;
+  const prep = receivePrepKind({
+    shortCode: item?.shortCode,
+    longCode: item?.longCode,
+    taxonomyName: item?.taxonomyName,
+  });
   const suggestedCode =
     binPrompt?.kind === "required" ? formatBinReference(binPrompt.nextNumber, binPrompt.type) : null;
 
@@ -902,6 +913,30 @@ export function ReceivingPage() {
                   }}
                 />
               </label>
+              {prep === "cleaned" ? (
+                <label className="receive-prep" htmlFor="receive-cleaned">
+                  <span>Cleaned</span>
+                  <input
+                    id="receive-cleaned"
+                    type="checkbox"
+                    checked={cleaned}
+                    disabled={busy}
+                    onChange={(event) => setCleaned(event.target.checked)}
+                  />
+                </label>
+              ) : null}
+              {prep === "wiped" ? (
+                <label className="receive-prep" htmlFor="receive-wiped">
+                  <span>Wiped</span>
+                  <input
+                    id="receive-wiped"
+                    type="checkbox"
+                    checked={wiped}
+                    disabled={busy}
+                    onChange={(event) => setWiped(event.target.checked)}
+                  />
+                </label>
+              ) : null}
               <label className="receive-comment" htmlFor="receive-comment">
                 <span>Comment</span>
                 <input
@@ -1019,6 +1054,7 @@ export function ReceivingPage() {
                       <th className="fit">SKU</th>
                       <th className="item">Item name</th>
                       <th className="num fit">Item Qty</th>
+                      <th className="prep">Prep</th>
                       <th className="putaway">Putaway</th>
                       <th className="note">Comment</th>
                     </tr>

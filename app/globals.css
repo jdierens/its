@@ -4991,6 +4991,7 @@ button.bin-label-hit:focus-visible {
 .receive-search,
 .receive-readout,
 .receive-bin-field,
+.receive-prep,
 .receive-comment,
 .receive-save {
   display: grid;
@@ -5037,6 +5038,21 @@ button.bin-label-hit:focus-visible {
   width: 100%;
   max-width: none;
   min-width: 0;
+}
+
+.receive-prep {
+  flex: 0 0 auto;
+  grid-template-rows: auto calc(1.45em + 1rem + 2px);
+  align-items: center;
+  justify-items: center;
+}
+
+.receive-prep input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  min-height: 1.25rem;
+  margin: 0;
+  accent-color: var(--ds-ink, var(--ink));
 }
 
 .receive-save {
@@ -5206,6 +5222,29 @@ button.receive-cell.num {
   font-size: 13px;
   font-weight: 400;
   background: var(--ds-input, #fff);
+}
+
+.receive-table td.prep,
+.receive-table th.prep {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.receive-inline-prep {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.receive-inline-prep input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--ds-ink, var(--ink));
 }
 
 .receive-sku-menu {
