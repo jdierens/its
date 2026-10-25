@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ReconnectError } from "@/lib/ebay/auth";
 import { RECONNECT_MESSAGE } from "@/lib/ebay/messages";
-import { pullEbayOrders, SeedRequiredError } from "@/lib/ebay/orders";
+import { orderPullMessage, pullEbayOrders, SeedRequiredError } from "@/lib/ebay/orders";
 import { stockSettingsWritable } from "@/lib/stockAccess";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export async function POST() {
     return NextResponse.json({
       ok: true,
       ...result,
-      message: `Created ${result.created} draft sales orders. Updated ${result.updated}. Linked ${result.linked}.`,
+      message: orderPullMessage(result),
     });
   } catch (error) {
     if (error instanceof ReconnectError) {

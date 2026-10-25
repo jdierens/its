@@ -5854,6 +5854,36 @@ input.num-input {
   margin: 0 0 0.85rem;
 }
 
+.so-ebay-refs,
+.so-money-summary {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.9rem;
+  margin: 0 0 0.9rem;
+}
+
+.so-ebay-refs dt,
+.so-money-summary dt {
+  margin: 0;
+  color: var(--muted);
+}
+
+.so-ebay-refs dd,
+.so-money-summary dd {
+  margin: 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.so-money-summary {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, max-content));
+}
+
+.so-money-summary > div {
+  display: grid;
+  gap: 0.15rem;
+}
+
 .so-grid,
 .so-addresses,
 .so-line-money,

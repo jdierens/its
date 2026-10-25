@@ -8,12 +8,15 @@ import { errorText } from "@/lib/errors";
 import {
   allocationsCover,
   emptyAddress,
+  formatSalesMoney,
   formatSalesOrderNumber,
   INCOTERMS,
   lineExtension,
   lineRequiresItem,
   parseSalesOrderNumber,
   salesOrderStatusLabel,
+  salesOrderTotal,
+  sellerNet,
   SO_CURRENCIES,
   SO_LINE_KINDS,
   SO_NOTE_KINDS,
@@ -274,6 +277,11 @@ export function SalesOrderForm({
   const status = order?.status ?? "draft";
   const number = order?.number ?? "Draft";
   const filesEditable = canEdit && status !== "cancelled" && status !== "closed";
+  const ebayOrder = Boolean(order?.ebayOrderId || order?.ebaySalesRecordRef);
+  const buyerTotal = showMoney
+    ? salesOrderTotal(lines.map((line) => ({ extPrice: lineExtension(line.qty, line.unitPrice) ?? "" })))
+    : null;
+  const net = showMoney ? sellerNet(ebayOrderEarnings, ebayLabelFee) : null;
 
   return (
     <main className="page so-page">
@@ -281,14 +289,27 @@ export function SalesOrderForm({
         <span className="sku">{number}</span>
         <Badge tone={status}>{salesOrderStatusLabel(status)}</Badge>
       </p>
-      {order?.ebayOrderId || order?.buyerName || order?.buyerUsername ? (
-        <p className="hint">
-          eBay {order.ebayOrderId ? `order ${order.ebayOrderId}` : "order"}
-          {order.ebaySalesRecordRef ? ` · record ${order.ebaySalesRecordRef}` : ""}
-          {order.buyerName || order.buyerUsername
-            ? ` · buyer ${[order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ")}`
-            : ""}
-        </p>
+      {order?.ebayOrderId || order?.ebaySalesRecordRef || order?.buyerName || order?.buyerUsername ? (
+        <dl className="so-ebay-refs">
+          {order.ebayOrderId ? (
+            <>
+              <dt>eBay order number</dt>
+              <dd>{order.ebayOrderId}</dd>
+            </>
+          ) : null}
+          {order.ebaySalesRecordRef ? (
+            <>
+              <dt>Sales record number</dt>
+              <dd>{order.ebaySalesRecordRef}</dd>
+            </>
+          ) : null}
+          {order.buyerName || order.buyerUsername ? (
+            <>
+              <dt>Buyer</dt>
+              <dd>{[order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ")}</dd>
+            </>
+          ) : null}
+        </dl>
       ) : null}
       <form
         onSubmit={(event) => {
@@ -461,6 +482,7 @@ export function SalesOrderForm({
               <label>
                 eBay label fee
                 <input className="num-input" inputMode="decimal" value={ebayLabelFee} disabled={locked} onChange={(event) => setEbayLabelFee(event.target.value)} />
+                <span className="hint">Deducted when a label is bought on eBay. The next order pull fills this in.</span>
               </label>
             ) : null}
             {showMoney ? (
@@ -471,8 +493,9 @@ export function SalesOrderForm({
             ) : null}
             {showMoney ? (
               <label>
-                eBay order earnings
+                Seller earnings
                 <input className="num-input" inputMode="decimal" value={ebayOrderEarnings} disabled={locked} onChange={(event) => setEbayOrderEarnings(event.target.value)} />
+                <span className="hint">eBay&apos;s total due the seller. Marketplace fees are already out. A shipping label is not.</span>
               </label>
             ) : null}
           </div>
@@ -660,6 +683,36 @@ export function SalesOrderForm({
             </button>
           ) : null}
         </fieldset>
+
+        {showMoney ? (
+          <dl className="so-money-summary">
+            <div>
+              <dt>Buyer total</dt>
+              <dd>{buyerTotal == null ? "" : formatSalesMoney(buyerTotal, currency)}</dd>
+            </div>
+            {ebayOrder ? (
+              <>
+                <div>
+                  <dt>Seller earnings</dt>
+                  <dd>{ebayOrderEarnings.trim() ? formatSalesMoney(Number(ebayOrderEarnings), currency) : ""}</dd>
+                </div>
+                <div>
+                  <dt>Shipping label</dt>
+                  <dd>{ebayLabelFee.trim() ? formatSalesMoney(Number(ebayLabelFee), currency) : "None yet"}</dd>
+                </div>
+                <div>
+                  <dt>Seller net</dt>
+                  <dd>{net == null ? "" : formatSalesMoney(net, currency)}</dd>
+                </div>
+              </>
+            ) : null}
+          </dl>
+        ) : null}
+        {showMoney && ebayOrder ? (
+          <p className="hint">
+            Buyer total is the lines after the eBay discount, plus the shipping the buyer paid. Seller earnings is the amount eBay reports as due the seller, which already excludes marketplace fees. Seller net subtracts a shipping label bought on eBay.
+          </p>
+        ) : null}
 
         <fieldset>
           <legend>Customer notes</legend>
