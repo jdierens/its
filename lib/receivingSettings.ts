@@ -92,6 +92,17 @@ export function receiveLineQty(value: string): { ok: true; qty: number } | { ok:
   return { ok: true, qty };
 }
 
+/**
+ * Soft check for the receiving line. A positive originating system qty should divide the item qty.
+ * Blank, zero, and invalid system qty skip the check. An invalid item qty is a separate hard error.
+ */
+export function systemQtyMultipleWarning(itemQty: number, systemQty: number | null): string | null {
+  if (systemQty == null || !Number.isInteger(systemQty) || systemQty <= 0) return null;
+  if (!Number.isInteger(itemQty) || itemQty < 1) return null;
+  if (itemQty % systemQty === 0) return null;
+  return `Item qty ${itemQty} is not a multiple of system qty ${systemQty}.`;
+}
+
 export type ReceivingEntry = {
   id: string;
   receivedOn: string;

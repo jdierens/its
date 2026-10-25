@@ -65,7 +65,7 @@ describe("already in this bin", () => {
 });
 
 describe("auto-filled search", () => {
-  it("moves focus to quantity only when the search fills the line", () => {
+  it("moves focus to quantity when the search fills the line, and not when it only opens a list", () => {
     assert.equal(receivingAutoFillFocus("select"), "qty");
     assert.equal(receivingAutoFillFocus("list"), null);
     assert.equal(receivingAutoFillFocus("empty"), null);

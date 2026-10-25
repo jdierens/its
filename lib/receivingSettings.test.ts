@@ -8,6 +8,7 @@ import {
   finishReceiptSave,
   originQtyInput,
   receiveLineQty,
+  systemQtyMultipleWarning,
   putawayLabel,
   receiptInitials,
   receiptSavedNote,
@@ -72,6 +73,19 @@ describe("originating system qty", () => {
     assert.deepEqual(originQtyInput("0"), { ok: true, qty: 0 });
     assert.deepEqual(originQtyInput("12.5"), { ok: false });
     assert.deepEqual(originQtyInput("-1"), { ok: false });
+  });
+});
+
+describe("system qty multiple", () => {
+  it("warns only when a positive system qty does not divide the item qty", () => {
+    assert.equal(systemQtyMultipleWarning(8, 4), null);
+    assert.equal(systemQtyMultipleWarning(4, 4), null);
+    assert.equal(systemQtyMultipleWarning(4, 1), null);
+    assert.equal(systemQtyMultipleWarning(7, 4), "Item qty 7 is not a multiple of system qty 4.");
+    assert.equal(systemQtyMultipleWarning(3, 6), "Item qty 3 is not a multiple of system qty 6.");
+    assert.equal(systemQtyMultipleWarning(5, null), null);
+    assert.equal(systemQtyMultipleWarning(5, 0), null);
+    assert.equal(systemQtyMultipleWarning(0, 4), null);
   });
 });
 
