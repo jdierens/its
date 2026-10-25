@@ -2,6 +2,7 @@
 
 import { fetchContact, updateContact } from "@/lib/contacts";
 import { errorText } from "@/lib/errors";
+import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import type { PostalAddress } from "@/lib/qbo/map";
 import {
   addressFromRecord,
@@ -13,6 +14,7 @@ import {
   partPrefix,
   salesOrderTotal,
   toSalesOrderPayload,
+  withEbayBillTo,
   withEbayShippingItem,
   type SoAddress,
   type SoDraftInput,
@@ -141,7 +143,6 @@ export type SalesOrderView = {
 };
 
 const EDIT_DENIED = "You cannot change a sales order.";
-const MIGRATION = "Apply supabase/migrations/20261024070800_sales_orders.sql before using sales orders.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function listSalesLookups(): Promise<SalesLookups> {
@@ -506,7 +507,7 @@ async function attachEbayShipping(input: SoDraftInput): Promise<SoDraftInput> {
 export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string; addressWarning: string | null }> {
   const access = await salesPageAccess();
   if (!access.canEdit || !access.canViewMoney) throw new Error(EDIT_DENIED);
-  const draft = meaningfulDraft(input);
+  const draft = withEbayBillTo(meaningfulDraft(input));
   if (!UUID.test(draft.customerId)) throw new Error("Choose a customer.");
   const rep = draft.salesRep.trim().toUpperCase();
   if (rep && !/^[A-Z]{2}$/.test(rep)) throw new Error("Sales rep initials are 2 letters.");
@@ -542,6 +543,39 @@ export async function suggestSalesOrderNumber(): Promise<number> {
   const numeric = Number(data);
   if (!Number.isSafeInteger(numeric) || numeric < 1) throw new Error("Could not suggest a sales order number.");
   return numeric;
+}
+
+export type SalesSave =
+  | { ok: true; id: string; addressWarning: string | null }
+  | { ok: false; message: string };
+
+/** Save a draft. Failures are returned so production does not replace them with the digest page. */
+export async function saveSalesOrderForForm(input: SoDraftInput): Promise<SalesSave> {
+  try {
+    const saved = await saveSalesOrder(input);
+    return { ok: true, id: saved.id, addressWarning: saved.addressWarning };
+  } catch (error) {
+    return { ok: false, message: salesOrderErrorMessage(error) };
+  }
+}
+
+export type SalesApproval =
+  | { ok: true; id: string; soNumber: string; addressWarning: string | null }
+  | { ok: false; message: string };
+
+/**
+ * Save, then approve. Expected failures are returned as `message`.
+ * Throwing them would cross the server-action boundary, and production
+ * replaces that text with the generic Server Components digest.
+ */
+export async function approveSalesOrderFromDraft(input: SoDraftInput, soNumber: number): Promise<SalesApproval> {
+  try {
+    const saved = await saveSalesOrder(input);
+    const approved = await approveSalesOrder(saved.id, soNumber);
+    return { ok: true, id: saved.id, soNumber: approved.soNumber, addressWarning: saved.addressWarning };
+  } catch (error) {
+    return { ok: false, message: salesOrderErrorMessage(error) };
+  }
 }
 
 export async function approveSalesOrder(id: string, soNumber: number): Promise<{ soNumber: string }> {
@@ -634,18 +668,7 @@ async function readInternalNotes(id: string): Promise<string> {
 }
 
 function salesError(error: { message?: string }): string {
-  const textValue = errorText(error);
-  if (/schema cache|does not exist|Could not find/i.test(textValue) && /sales_order|so_|customers/i.test(textValue)) {
-    return MIGRATION;
-  }
-  const match = textValue.match(
-    /Choose a customer\.|Choose a channel\.|Choose a payment method\.|Enter a valid amount\.|Enter a payment date\.|Sales rep initials are 2 letters\.|That sales order can no longer be edited\.|Sales order not found\.|Enter a quantity above 0\.|Only a draft can be approved\.|Enter the order date\.|Enter a bill-to address\.|Enter a ship-to address\.|Choose terms\.|Choose a ship method\.|Enter the sales rep initials\.|Enter a sales order number\.|Add a line before approving\.|Line \d+ must be allocated to SKUs that add up to the quantity\.|Sales order number SO\d+ is already used\.|That sales order is already \w+\./,
-  );
-  if (match) return match[0];
-  if (textValue.includes("so_lines_text_check")) return "Enter a part number or a description.";
-  if (textValue.includes("so_customer_notes_counter_check")) return "Enter the counter text.";
-  if (textValue.includes("so_line_allocations_item_id_fkey")) return "Choose a SKU from the suggestions.";
-  return textValue;
+  return salesOrderErrorMessage(error);
 }
 
 function rpcId(data: unknown): string {

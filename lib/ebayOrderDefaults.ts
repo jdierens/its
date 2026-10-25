@@ -8,8 +8,8 @@ export const EBAY_PAYMENT_TERMS_SETTING_KEY = "ebay_default_payment_terms";
 /** app_settings key. Not a credential. */
 export const EBAY_INCOTERMS_SETTING_KEY = "ebay_default_incoterms";
 
-/** so_payment_terms code, label, and QuickBooks name. */
-export const DEFAULT_EBAY_PAYMENT_TERMS = "Payment In Advance";
+/** so_payment_terms code. The label and QuickBooks name are Payment In Advance. */
+export const DEFAULT_EBAY_PAYMENT_TERMS = "PIA";
 
 export const DEFAULT_EBAY_INCOTERMS = "FOB";
 
@@ -21,10 +21,11 @@ export type EbayDraftDefaults = {
   incoterms: string;
 };
 
-/** A so_payment_terms code, or Payment In Advance when the setting is blank. */
+/** A so_payment_terms code, or PIA when the setting is blank. */
 export function ebayPaymentTermsFromSetting(value: string | null | undefined): string {
   const code = (value ?? "").trim();
-  return code.length > 0 ? code : DEFAULT_EBAY_PAYMENT_TERMS;
+  if (!code || code.toLowerCase() === "payment in advance" || code.toUpperCase() === "PIA") return DEFAULT_EBAY_PAYMENT_TERMS;
+  return code;
 }
 
 /** An Incoterms code, or FOB when the setting is blank or not one of the sales-order codes. */

@@ -25,7 +25,7 @@ import { PutawaySettings } from "@/components/PutawaySettings";
 export function SettingsPage() {
   const [days, setDays] = useState("90");
   const [ebaySalesRep, setEbaySalesRep] = useState("MT");
-  const [ebayPaymentTerms, setEbayPaymentTerms] = useState("Payment In Advance");
+  const [ebayPaymentTerms, setEbayPaymentTerms] = useState("PIA");
   const [ebayIncoterms, setEbayIncoterms] = useState("FOB");
   const [paymentTerms, setPaymentTerms] = useState<{ code: string; label: string }[]>([]);
   const [template, setTemplate] = useState<LabelTemplateId>(DEFAULT_LABEL_TEMPLATE);
@@ -91,7 +91,7 @@ export function SettingsPage() {
       return;
     }
     if (paymentTerms.length > 0 && !paymentTerms.some((term) => term.code === ebayPaymentTerms)) {
-      setError("Payment In Advance is not a payment term yet. Apply supabase/migrations/20261025120000_ebay_default_terms.sql.");
+      setError("PIA is not a payment term yet. Apply supabase/migrations/20261025120000_ebay_default_terms.sql.");
       setSaved(false);
       return;
     }

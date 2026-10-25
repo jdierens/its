@@ -279,7 +279,24 @@ export async function runOrderPull(input: {
   };
 }
 
-/** A refresh keeps payment terms and Incoterms that are already set. */
+/** A refresh keeps payment terms, Incoterms, and a bill-to that are already set. */
+async function fillBlankEbayBillTo(admin: SupabaseClient, id: string, shipTo: unknown): Promise<void> {
+  if (!shipTo || typeof shipTo !== "object") return;
+  const shipLine = typeof (shipTo as { line1?: unknown }).line1 === "string" ? (shipTo as { line1: string }).line1.trim() : "";
+  if (!shipLine) return;
+  const current = await admin.from("sales_orders").select("bill_to").eq("id", id).maybeSingle();
+  if (current.error) throw new Error("A draft sales order could not be updated.");
+  const bill = current.data?.bill_to;
+  const billLine = bill && typeof bill === "object" && typeof (bill as { line1?: unknown }).line1 === "string" ? (bill as { line1: string }).line1.trim() : "";
+  if (billLine) return;
+  const updated = await admin
+    .from("sales_orders")
+    .update({ bill_to: shipTo, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", "draft");
+  if (updated.error) throw new Error("A draft sales order could not be updated.");
+}
+
 async function fillBlankEbayTerms(
   admin: SupabaseClient,
   id: string,
@@ -452,6 +469,7 @@ function supabaseStore(
             continue;
           }
           await fillBlankEbayTerms(admin, action.id, defaults.paymentTerms, defaults.incoterms);
+          await fillBlankEbayBillTo(admin, action.id, patch.ship_to);
           if (action.soNumber != null) {
             const numbered = await admin
               .from("sales_orders")

@@ -25,7 +25,7 @@ export async function fetchSalesPaymentTerms(): Promise<{ code: string; label: s
   return (data ?? []).map((row) => ({ code: String(row.code), label: String(row.label) }));
 }
 
-/** Empty is stored as Payment In Advance. The code has to exist on so_payment_terms. */
+/** Empty is stored as PIA. The code has to exist on so_payment_terms. */
 export async function saveEbayDefaultPaymentTerms(value: string): Promise<string> {
   const code = value.trim() === "" ? DEFAULT_EBAY_PAYMENT_TERMS : value.trim();
   const supabase = await getSupabase();

@@ -10,7 +10,9 @@ import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
+import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import {
+  billToForEbay,
   emptyAddress,
   formatSalesMoney,
   formatSalesOrderNumber,
@@ -28,11 +30,11 @@ import {
   type SoDraftInput,
 } from "@/lib/salesOrderDraft";
 import {
-  approveSalesOrder,
+  approveSalesOrderFromDraft,
   cancelSalesOrder,
   salesCustomerDefaults,
   saveEmptyLineAllocation,
-  saveSalesOrder,
+  saveSalesOrderForForm,
   searchSalesCustomers,
   suggestSalesSkus,
   type SalesCustomerHit,
@@ -144,10 +146,16 @@ export function SalesOrderForm({
   const [channel, setChannel] = useState(order?.channel ?? "");
   const [orderDate, setOrderDate] = useState(order?.orderDate || today);
   const [shipDate, setShipDate] = useState(order?.shipDate ?? "");
-  const [billTo, setBillTo] = useState<SoAddress>(order?.billTo ?? emptyAddress());
+  const openedAsEbay = orderIsEbay(order);
+  const [billTo, setBillTo] = useState<SoAddress>(
+    billToForEbay({
+      ebay: openedAsEbay,
+      billTo: order?.billTo ?? emptyAddress(),
+      shipTo: order?.shipTo ?? emptyAddress(),
+    }) ?? emptyAddress(),
+  );
   const [shipTo, setShipTo] = useState<SoAddress>(order?.shipTo ?? emptyAddress());
   const [saveAddress, setSaveAddress] = useState(false);
-  const openedAsEbay = orderIsEbay(order);
   const [terms, setTerms] = useState(
     initialEbayText({ stored: order?.terms, ebay: openedAsEbay, setting: defaultEbayPaymentTerms }),
   );
@@ -253,7 +261,15 @@ export function SalesOrderForm({
     try {
       const defaults = await salesCustomerDefaults(hit.id);
       if (!defaults) return;
-      setBillTo(defaults.billTo);
+      setBillTo(
+        billToForEbay({
+          ebay:
+            defaults.channel.trim().toLowerCase() === "ebay" ||
+            hit.name.trim().toLowerCase() === EBAY_ORDER_CUSTOMER_NAME.toLowerCase(),
+          billTo: defaults.billTo,
+          shipTo: defaults.shipTo,
+        }) ?? defaults.billTo,
+      );
       setShipTo(defaults.shipTo);
       setCustomerPo(defaults.customerPo);
       setChannel(defaults.channel);
@@ -389,13 +405,17 @@ export function SalesOrderForm({
     setBusy(true);
     setMessage(null);
     try {
-      const saved = await saveSalesOrder(draft());
+      const saved = await saveSalesOrderForForm(draft());
+      if (!saved.ok) {
+        setMessage(saved.message);
+        return;
+      }
       setOrderId(saved.id);
       if (saved.addressWarning) setMessage(saved.addressWarning);
       if (orderId !== saved.id) router.replace(`/sales/orders/${saved.id}`);
       else router.refresh();
     } catch (error) {
-      setMessage(errorText(error));
+      setMessage(salesOrderErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -411,14 +431,17 @@ export function SalesOrderForm({
         setBusy(false);
         return;
       }
-      const saved = await saveSalesOrder(draft());
-      setOrderId(saved.id);
-      const approved = await approveSalesOrder(saved.id, chosen);
-      if (saved.addressWarning) setMessage(`${saved.addressWarning} Approved as ${approved.soNumber}.`);
-      router.replace(`/sales/orders/${saved.id}`);
+      const approved = await approveSalesOrderFromDraft(draft(), chosen);
+      if (!approved.ok) {
+        setMessage(approved.message);
+        return;
+      }
+      setOrderId(approved.id);
+      if (approved.addressWarning) setMessage(`${approved.addressWarning} Approved as ${approved.soNumber}.`);
+      router.replace(`/sales/orders/${approved.id}`);
       router.refresh();
     } catch (error) {
-      setMessage(errorText(error));
+      setMessage(salesOrderErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -528,6 +551,7 @@ export function SalesOrderForm({
                   setSalesRep((current) => current.trim() || defaultEbaySalesRep);
                   setTerms((current) => current.trim() || defaultEbayPaymentTerms);
                   setIncoterms((current) => current.trim() || defaultEbayIncoterms);
+                  setBillTo((current) => billToForEbay({ ebay: true, billTo: current, shipTo }) ?? current);
                 }
               }}
             >

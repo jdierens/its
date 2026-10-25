@@ -117,6 +117,30 @@ export type SoDraftInput = {
   saveAddressToCustomer: boolean;
 };
 
+/**
+ * An eBay draft with no bill-to line 1 uses the ship-to address.
+ * A bill-to that already has line 1 stays. Any other order stays.
+ */
+export function billToForEbay(input: {
+  ebay: boolean;
+  billTo: SoAddress | null;
+  shipTo: SoAddress | null;
+}): SoAddress | null {
+  if (input.billTo?.line1.trim()) return input.billTo;
+  if (input.ebay && input.shipTo?.line1.trim()) return { ...input.shipTo };
+  return input.billTo;
+}
+
+export function withEbayBillTo<T extends { channel: string; billTo: SoAddress; shipTo: SoAddress }>(input: T): T {
+  const billTo = billToForEbay({
+    ebay: input.channel.trim().toLowerCase() === "ebay",
+    billTo: input.billTo,
+    shipTo: input.shipTo,
+  });
+  if (!billTo || billTo === input.billTo) return input;
+  return { ...input, billTo };
+}
+
 export function emptyAddress(): SoAddress {
   return {
     line1: "",
