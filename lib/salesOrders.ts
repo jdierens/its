@@ -24,6 +24,8 @@ import { loadSoAttachments, type SoAttachmentView } from "@/lib/soAttachments";
 import { operatorInitials } from "@/lib/stockAccess";
 import { EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
 import { parsePackLabel } from "@/lib/ebay/packs";
+import { itemIdsMatchingListQuery } from "@/lib/itemListSearch";
+import { rankSalesItemHits, salesItemSearchTokens } from "@/lib/salesItemSearch";
 import { getSupabase } from "@/lib/supabase";
 
 export type SalesCustomerHit = { id: string; name: string };
@@ -260,6 +262,38 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
       name: String(row.name ?? ""),
       partNumber: String(row.part_number ?? row.oem_part_number ?? ""),
     }));
+}
+
+export type SalesItemSearch = { ok: true; hits: SalesSkuHit[] } | { ok: false; message: string };
+
+/** Find SKU. Same matches as the items page, plus the longest word in the query. */
+export async function searchSalesItems(query: string): Promise<SalesItemSearch> {
+  try {
+    const tokens = salesItemSearchTokens(query);
+    if (tokens.length === 0) return { ok: true, hits: [] };
+    const supabase = await getSupabase();
+    const idLists = await Promise.all(tokens.map((token) => itemIdsMatchingListQuery(supabase, token, { perSourceLimit: 40 })));
+    const ids = [...new Set(idLists.flatMap((list) => list ?? []))].slice(0, 120);
+    if (ids.length === 0) return { ok: true, hits: [] };
+    const { data, error } = await supabase.from("items").select("id, sku, name, part_number, oem_part_number").in("id", ids);
+    if (error) throw new Error(salesError(error));
+    const hits = (data ?? []).map((row) => {
+      const part = String(row.part_number ?? "");
+      const oem = String(row.oem_part_number ?? "");
+      const needles = tokens.map((token) => token.toLowerCase());
+      const partHit = needles.some((needle) => part.toLowerCase().includes(needle));
+      const oemHit = needles.some((needle) => oem.toLowerCase().includes(needle));
+      return {
+        id: String(row.id),
+        sku: String(row.sku ?? ""),
+        name: String(row.name ?? ""),
+        partNumber: oemHit && !partHit ? oem : part || oem,
+      };
+    });
+    return { ok: true, hits: rankSalesItemHits(tokens, hits) };
+  } catch (error) {
+    return { ok: false, message: salesOrderErrorMessage(error) };
+  }
 }
 
 export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promise<SalesOrderListItem[]> {

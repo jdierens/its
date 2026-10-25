@@ -1,9 +1,9 @@
 "use server";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ebayPresenceForItems, itemIdsMatchingEbayItemId } from "@/lib/ebay/listings";
+import { ebayPresenceForItems } from "@/lib/ebay/listings";
 import { errorText } from "@/lib/errors";
-import { itemListQueryToken } from "@/lib/itemListQuery";
+import { itemIdsMatchingListQuery } from "@/lib/itemListSearch";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { signedImageUrls } from "@/lib/images";
@@ -241,10 +241,6 @@ function embeddedTaxonomy(value: ListRow["taxonomies"]): ListTaxonomy | null {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 
-function likePattern(raw: string): string {
-  return `%${raw.replace(/\\/g, "\\\\").replace(/[%_]/g, "\\$&")}%`;
-}
-
 export async function fetchTaxonomyChoices(): Promise<TaxonomyChoice[]> {
   const { data, error } = await (await getSupabase())
     .from("taxonomies")
@@ -369,56 +365,9 @@ export async function resolveItemQuery(input: {
   }
 
   let ids: string[] | null = null;
-  const searchText = itemListQueryToken(q);
-  if (searchText) {
-    const pattern = likePattern(searchText);
-    const textQueries = (["sku", "name", "description", "model", "part_number", "oem_name", "oem_part_number", "product_url"] as const).map((column) => {
-      let query = supabase.from("items").select("id").ilike(column, pattern);
-      if (taxonomyId) query = query.eq("taxonomy_id", taxonomyId);
-      return query;
-    });
-    const [textResults, attributeResult, nameResult, aliasResult, ebayItemIds] = await Promise.all([
-      Promise.all(textQueries),
-      supabase.from("item_attributes").select("item_id").ilike("value", pattern),
-      supabase.from("manufacturers").select("id").ilike("name", pattern),
-      supabase.from("manufacturer_aliases").select("manufacturer_id").ilike("alias", pattern),
-      itemIdsMatchingEbayItemId(supabase, pattern),
-    ]);
-    const failed = textResults.find((result) => result.error);
-    if (failed?.error) throw new Error(errorText(failed.error));
-    if (attributeResult.error) throw new Error(errorText(attributeResult.error));
-    if (nameResult.error) throw new Error(errorText(nameResult.error));
-    if (aliasResult.error) throw new Error(errorText(aliasResult.error));
-
-    const matched = new Set<string>();
-    for (const result of textResults) {
-      for (const row of result.data ?? []) {
-        if (typeof row.id === "string") matched.add(row.id);
-      }
-    }
-    for (const row of attributeResult.data ?? []) {
-      if (typeof row.item_id === "string") matched.add(row.item_id);
-    }
-    for (const id of ebayItemIds) matched.add(id);
-
-    const makerIds = new Set<string>();
-    for (const row of nameResult.data ?? []) {
-      if (typeof row.id === "string") makerIds.add(row.id);
-    }
-    for (const row of aliasResult.data ?? []) {
-      if (typeof row.manufacturer_id === "string") makerIds.add(row.manufacturer_id);
-    }
-    if (makerIds.size > 0) {
-      let makerItems = supabase.from("items").select("id").in("manufacturer_id", [...makerIds]);
-      if (taxonomyId) makerItems = makerItems.eq("taxonomy_id", taxonomyId);
-      const made = await makerItems;
-      if (made.error) throw new Error(errorText(made.error));
-      for (const row of made.data ?? []) {
-        if (typeof row.id === "string") matched.add(row.id);
-      }
-    }
-
-    ids = [...matched];
+  const matchedIds = await itemIdsMatchingListQuery(supabase, q, { taxonomyId });
+  if (matchedIds) {
+    ids = matchedIds;
     if (ids.length === 0) {
       return {
         taxonomyId,

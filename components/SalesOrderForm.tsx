@@ -6,6 +6,7 @@ import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/ord
 import { initialEbayText } from "@/lib/ebayOrderDefaults";
 import { initialSalesRep } from "@/lib/ebaySalesRep";
 import { cleanSkuAllocation } from "@/lib/ebay/packs";
+import { qtyForSkuPick } from "@/lib/salesItemSearch";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
@@ -35,8 +36,10 @@ import {
   saveEmptyLineAllocation,
   saveSalesOrderForForm,
   searchSalesCustomers,
+  searchSalesItems,
   suggestSalesSkus,
   type SalesCustomerHit,
+  type SalesSkuHit,
   type SalesLineView,
   type SalesLookups,
   type SalesNoteView,
@@ -184,6 +187,12 @@ export function SalesOrderForm({
     order?.number ?? (suggestedNumber ? formatSalesOrderNumber(suggestedNumber) ?? "" : ""),
   );
   const [allocateQuery, setAllocateQuery] = useState<Record<number, string>>({});
+  const [skuHits, setSkuHits] = useState<Record<number, SalesSkuHit[]>>({});
+  const [skuOpen, setSkuOpen] = useState<number | null>(null);
+  const [skuHighlight, setSkuHighlight] = useState(0);
+  const [skuPending, setSkuPending] = useState(false);
+  const [skuNote, setSkuNote] = useState<string | null>(null);
+  const skuRequest = useRef(0);
   const linesRef = useRef(lines);
   linesRef.current = lines;
   const [message, setMessage] = useState<string | null>(null);
@@ -328,6 +337,23 @@ export function SalesOrderForm({
     }
   }
 
+  function pickSku(index: number, hit: SalesSkuHit) {
+    const line = linesRef.current[index];
+    if (!line || locked) return;
+    const label = line.customerPartNumber.trim().toLowerCase();
+    const partIsItem =
+      hit.sku.trim().toLowerCase() === label ||
+      (skuHits[index] ?? []).some((row) => row.sku.trim().toLowerCase() === label);
+    const qty = qtyForSkuPick({ part: line.customerPartNumber, lineQty: line.qty, sku: hit.sku, partIsItem });
+    if (!qty) {
+      setMessage("Enter a quantity above 0.");
+      return;
+    }
+    putAllocation(index, { itemId: hit.id, sku: hit.sku, name: hit.name, qty }, false);
+    setMessage(null);
+    setSkuOpen(null);
+  }
+
   async function matchCleanSku(index: number, part: string, onlyIfEmpty: boolean) {
     const line = linesRef.current[index];
     if (!line || locked) return;
@@ -353,6 +379,45 @@ export function SalesOrderForm({
       setMessage(errorText(error));
     }
   }
+
+  useEffect(() => {
+    if (skuOpen == null || locked) return;
+    const line = skuOpen;
+    const query = (allocateQuery[line] ?? "").trim();
+    if (!query) {
+      setSkuHits((current) => ({ ...current, [line]: [] }));
+      setSkuPending(false);
+      setSkuNote(null);
+      return;
+    }
+    setSkuPending(true);
+    setSkuNote(null);
+    const request = ++skuRequest.current;
+    const timer = window.setTimeout(() => {
+      void searchSalesItems(query)
+        .then((result) => {
+          if (skuRequest.current !== request) return;
+          if (!result.ok) {
+            setSkuHits((current) => ({ ...current, [line]: [] }));
+            setSkuNote(result.message);
+            setMessage(result.message);
+          } else {
+            setSkuHits((current) => ({ ...current, [line]: result.hits }));
+            setSkuNote(null);
+            setSkuHighlight(0);
+          }
+          setSkuPending(false);
+        })
+        .catch((error) => {
+          if (skuRequest.current !== request) return;
+          const text = salesOrderErrorMessage(error);
+          setSkuPending(false);
+          setSkuNote(text);
+          setMessage(text);
+        });
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [allocateQuery, skuOpen, locked]);
 
   useEffect(() => {
     if (locked) return;
@@ -694,7 +759,7 @@ export function SalesOrderForm({
           <div className="so-main">
         <fieldset>
           <legend>Lines</legend>
-          <div className="so-lines-scroll">
+          <div className={skuOpen != null ? "so-lines-scroll so-lines-menu" : "so-lines-scroll"}>
             <table className="so-lines">
               <thead>
                 <tr>
@@ -869,31 +934,93 @@ export function SalesOrderForm({
                             {showFinder ? (
                               <div className="so-allocate">
                                 <div className="so-alloc-row">
-                                  <label className="so-find-sku">
+                                  <label className="so-find-sku combo">
                                     <span>Find SKU</span>
                                     <input
                                       id={`so-allocate-${index}`}
+                                      role="combobox"
+                                      aria-expanded={skuOpen === index}
+                                      aria-controls={`so-allocate-list-${index}`}
+                                      aria-autocomplete="list"
+                                      autoComplete="off"
                                       value={allocateQuery[index] ?? ""}
-                                      placeholder="ITS SKU"
+                                      placeholder="SKU, part, or name"
+                                      onFocus={() => {
+                                        setSkuOpen(index);
+                                        setSkuHighlight(0);
+                                        setAllocateQuery((current) => {
+                                          if ((current[index] ?? "").trim()) return current;
+                                          const part = linesRef.current[index]?.customerPartNumber.trim() ?? "";
+                                          if (!part) return current;
+                                          return { ...current, [index]: part };
+                                        });
+                                      }}
+                                      onBlur={() => {
+                                        window.setTimeout(() => {
+                                          setSkuOpen((current) => (current === index ? null : current));
+                                        }, 200);
+                                      }}
                                       onChange={(event) => {
                                         const value = event.target.value;
                                         setAllocateQuery((current) => ({ ...current, [index]: value }));
+                                        setSkuOpen(index);
+                                        setSkuHighlight(0);
                                       }}
                                       onKeyDown={(event) => {
+                                        const hits = skuHits[index] ?? [];
+                                        if (event.key === "ArrowDown") {
+                                          event.preventDefault();
+                                          setSkuHighlight((current) => Math.min(current + 1, Math.max(hits.length - 1, 0)));
+                                          return;
+                                        }
+                                        if (event.key === "ArrowUp") {
+                                          event.preventDefault();
+                                          setSkuHighlight((current) => Math.max(current - 1, 0));
+                                          return;
+                                        }
+                                        if (event.key === "Escape") {
+                                          event.preventDefault();
+                                          setSkuOpen(null);
+                                          return;
+                                        }
                                         if (event.key === "Enter") {
                                           event.preventDefault();
-                                          void matchCleanSku(index, event.currentTarget.value, false);
+                                          const chosen = hits[skuHighlight] ?? hits[0];
+                                          if (chosen) pickSku(index, chosen);
                                         }
                                       }}
                                     />
+                                    {skuOpen === index && (allocateQuery[index] ?? "").trim() ? (
+                                      <ul className="combo-menu" id={`so-allocate-list-${index}`} role="listbox">
+                                        {skuPending && (skuHits[index] ?? []).length === 0 ? <li className="combo-empty">Searching…</li> : null}
+                                        {skuOpen === index && skuNote ? <li className="combo-empty">{skuNote}</li> : null}
+                                        {(skuHits[index] ?? []).map((hit, hitIndex) => (
+                                          <li key={hit.id}>
+                                            <button
+                                              type="button"
+                                              className="combo-option"
+                                              role="option"
+                                              aria-selected={hitIndex === skuHighlight}
+                                              onMouseDown={(event) => event.preventDefault()}
+                                              onMouseEnter={() => setSkuHighlight(hitIndex)}
+                                              onClick={() => pickSku(index, hit)}
+                                            >
+                                              <span>
+                                                {hit.sku}
+                                                {hit.name ? ` — ${hit.name}` : ""}
+                                              </span>
+                                              {hit.partNumber && hit.partNumber.toLowerCase() !== hit.sku.toLowerCase() ? (
+                                                <span className="hint">{hit.partNumber}</span>
+                                              ) : null}
+                                            </button>
+                                          </li>
+                                        ))}
+                                        {!skuPending && !skuNote && (skuHits[index] ?? []).length === 0 ? (
+                                          <li className="combo-empty">No matching item.</li>
+                                        ) : null}
+                                      </ul>
+                                    ) : null}
                                   </label>
-                                  <button
-                                    type="button"
-                                    className="secondary"
-                                    onClick={() => void matchCleanSku(index, allocateQuery[index] || "", false)}
-                                  >
-                                    Find
-                                  </button>
                                 </div>
                               </div>
                             ) : (
