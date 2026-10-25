@@ -11,7 +11,7 @@ export default async function NewSalesOrderPage() {
   const access = await salesPageAccess();
   if (!access.canEdit) {
     return (
-      <main className="page so-page">
+      <main className="page so-page ds">
         <p>You cannot create a sales order.</p>
         <p className="muted">
           <Link href="/sales/orders">Back to sales orders</Link>
@@ -34,7 +34,7 @@ export default async function NewSalesOrderPage() {
     );
   } catch (error) {
     return (
-      <main className="page so-page">
+      <main className="page so-page ds">
         <p className="banner error" role="alert">
           {errorText(error)}
         </p>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Ban, Check, Save } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import { applyPackToLine, parsePackLabel } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
@@ -372,34 +373,86 @@ export function SalesOrderForm({
   const net = showMoney ? sellerNet(ebayOrderEarnings, ebayLabelFee) : null;
 
   return (
-    <main className="page so-page">
-      <p className="so-identity">
-        <span className="sku">{number}</span>
-        <Badge tone={status}>{salesOrderStatusLabel(status)}</Badge>
-      </p>
-      {order?.ebaySalesRecordRef || order?.buyerName || order?.buyerUsername ? (
-        <dl className="so-ebay-refs">
-          {order.ebaySalesRecordRef ? (
-            <>
-              <dt>Sales record number</dt>
-              <dd>{order.ebaySalesRecordRef}</dd>
-            </>
-          ) : null}
-          {order.buyerName || order.buyerUsername ? (
-            <>
-              <dt>Buyer</dt>
-              <dd>{[order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ")}</dd>
-            </>
-          ) : null}
-        </dl>
-      ) : null}
+    <main className="page so-page ds">
       <form
         onSubmit={(event) => {
           event.preventDefault();
           if (!locked) void onSave();
         }}
       >
-        <div className="so-head-row">
+        <div className="so-sticky">
+          <div className="so-sticky-lead">
+            <p className="so-identity">
+              <span className="sku">{number}</span>
+              <Badge tone={status}>{salesOrderStatusLabel(status)}</Badge>
+            </p>
+            {!locked ? (
+              <label className="so-number-field">
+                Sales order number
+                <input
+                  id="so-number"
+                  value={orderNumber}
+                  autoCapitalize="characters"
+                  aria-describedby="so-number-hint"
+                  onChange={(event) => setOrderNumber(event.target.value.toUpperCase())}
+                />
+              </label>
+            ) : null}
+          </div>
+          <div className="so-sticky-actions">
+            {!locked ? (
+              <button id="so-save" className="so-icon-action" type="submit" disabled={busy} aria-label="Save draft" title="Save draft">
+                <Save size={18} strokeWidth={1.75} aria-hidden />
+              </button>
+            ) : null}
+            {!locked ? (
+              <button id="so-approve" className="so-icon-action" type="button" disabled={busy} aria-label="Approve" title="Approve" onClick={() => void onApprove()}>
+                <Check size={18} strokeWidth={1.75} aria-hidden />
+              </button>
+            ) : null}
+            {orderId && canEdit && status !== "cancelled" && status !== "closed" ? (
+              <button
+                id="so-cancel"
+                className="so-icon-action secondary"
+                type="button"
+                disabled={busy}
+                aria-label="Cancel order"
+                title="Cancel order"
+                onClick={() => void onCancel()}
+              >
+                <Ban size={18} strokeWidth={1.75} aria-hidden />
+              </button>
+            ) : null}
+          </div>
+          {!locked ? (
+            <p id="so-number-hint" className="hint">
+              Suggested first available number. Type another number if that one should be skipped. It is saved when you approve.
+            </p>
+          ) : null}
+          {message ? (
+            <p className="banner error" role="alert">
+              {message}
+            </p>
+          ) : null}
+        </div>
+        <header className="ds-banner">
+          {order?.ebaySalesRecordRef || order?.buyerName || order?.buyerUsername ? (
+            <dl className="so-ebay-refs">
+              {order.ebaySalesRecordRef ? (
+                <>
+                  <dt>Sales record number</dt>
+                  <dd>{order.ebaySalesRecordRef}</dd>
+                </>
+              ) : null}
+              {order.buyerName || order.buyerUsername ? (
+                <>
+                  <dt>Buyer</dt>
+                  <dd>{[order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ")}</dd>
+                </>
+              ) : null}
+            </dl>
+          ) : null}
+          <div className="so-head-row">
           <label>
             Channel
             <select id="so-channel" value={channel} disabled={locked} onChange={(event) => setChannel(event.target.value)}>
@@ -475,7 +528,12 @@ export function SalesOrderForm({
             {order?.ebayOrderId ? <span className="hint">eBay order id</span> : null}
           </label>
         </div>
-        <div className="so-head-row">
+        </header>
+        <div className="so-workspace">
+          <aside className="so-aside">
+            <details className="ds-drawer" open>
+              <summary>Terms and shipping</summary>
+              <div className="so-head-row">
           <label>
             Currency
             <select value={currency} disabled={locked || !showMoney} onChange={(event) => setCurrency(event.target.value)}>
@@ -524,6 +582,7 @@ export function SalesOrderForm({
             <input value={carrierAccount} disabled={locked} onChange={(event) => setCarrierAccount(event.target.value)} />
           </label>
         </div>
+            </details>
 
         <fieldset className="so-notes">
           <legend>Notes</legend>
@@ -620,7 +679,8 @@ export function SalesOrderForm({
             Save address to customer
           </label>
         ) : null}
-
+          </aside>
+          <div className="so-main">
         <fieldset>
           <legend>Lines</legend>
           <div className="so-lines-scroll">
@@ -936,44 +996,7 @@ export function SalesOrderForm({
             </ul>
           </fieldset>
         ) : null}
-
-        {message ? (
-          <p className="banner error" role="alert">
-            {message}
-          </p>
-        ) : null}
-
-        {!locked ? (
-          <label>
-            Sales order number
-            <input
-              id="so-number"
-              value={orderNumber}
-              autoCapitalize="characters"
-              onChange={(event) => setOrderNumber(event.target.value.toUpperCase())}
-            />
-          </label>
-        ) : null}
-        {!locked ? (
-          <p className="hint">Suggested first available number. Type another number if that one should be skipped. It is saved when you approve.</p>
-        ) : null}
-
-        <div className="actions">
-          {!locked ? (
-            <button id="so-save" type="submit" disabled={busy}>
-              Save draft
-            </button>
-          ) : null}
-          {!locked ? (
-            <button id="so-approve" type="button" disabled={busy} onClick={() => void onApprove()}>
-              Approve
-            </button>
-          ) : null}
-          {orderId && canEdit && status !== "cancelled" && status !== "closed" ? (
-            <button id="so-cancel" type="button" className="secondary" disabled={busy} onClick={() => void onCancel()}>
-              Cancel order
-            </button>
-          ) : null}
+          </div>
         </div>
       </form>
     </main>
