@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SalesOrderListMemory, SalesOrderListSwitch } from "@/components/SalesOrderListSwitch";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
 import { formatSalesMoney, salesOrderListScope, salesOrderStatusLabel } from "@/lib/salesOrderDraft";
@@ -35,17 +36,8 @@ export default async function SalesOrdersPage({
       ) : (
         <p className="muted">You can view sales orders. Creating and approving is limited to admin and staff.</p>
       )}
-      <div className="so-list-switch">
-        <p className="label-caption">{showAll ? "Every sales order" : "Drafts that still need processing"}</p>
-        <nav className="label-segments" aria-label="Which sales orders to show">
-          <Link href="/sales/orders" aria-current={showAll ? undefined : "page"}>
-            Drafts to process
-          </Link>
-          <Link href="/sales/orders?view=all" aria-current={showAll ? "page" : undefined}>
-            All orders
-          </Link>
-        </nav>
-      </div>
+      <SalesOrderListMemory view={scope}>
+      <SalesOrderListSwitch view={scope} />
       {problem ? (
         <p className="banner error" role="alert">
           {problem}
@@ -115,6 +107,7 @@ export default async function SalesOrdersPage({
           </ul>
         </>
       ) : null}
+      </SalesOrderListMemory>
     </main>
   );
 }

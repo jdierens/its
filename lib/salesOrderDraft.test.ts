@@ -10,8 +10,12 @@ import {
   lineExtension,
   lineRequiresItem,
   withEbayShippingItem,
+  salesOrderListHref,
   salesOrderListReference,
   salesOrderListScope,
+  salesOrderListViewToRestore,
+  readSalesOrderListView,
+  writeSalesOrderListView,
   syncSalesLineMoney,
   parseSalesOrderNumber,
   partMatches,
@@ -57,6 +61,7 @@ describe("sales order draft", () => {
     assert.equal(salesOrderListReference({ customerPo: "" }), "");
     assert.equal(salesOrderListScope(undefined), "drafts");
     assert.equal(salesOrderListScope("all"), "all");
+    assert.equal(salesOrderListScope("drafts"), "drafts");
     assert.equal(
       compareSalesOrderList(
         { orderDate: "2026-10-01", createdAt: "2026-10-01T00:00:00Z" },
@@ -175,6 +180,32 @@ describe("sales order draft", () => {
     assert.equal(ship.line1, draft.shipTo.line1);
     const direct = toSalesOrderPayload(draft);
     assert.equal((direct.bill_to as { line1: string }).line1, "1 Demo St");
+  });
+});
+
+describe("sales order list view", () => {
+  it("remembers All orders and restores it when the address has no view", () => {
+    const stored = new Map<string, string>();
+    const storage = {
+      getItem(key: string) {
+        return stored.get(key) ?? null;
+      },
+      setItem(key: string, value: string) {
+        stored.set(key, value);
+      },
+    };
+    assert.equal(readSalesOrderListView(storage), null);
+    assert.equal(salesOrderListViewToRestore({ hasViewParam: false, stored: null }), null);
+    writeSalesOrderListView(storage, "all");
+    assert.equal(readSalesOrderListView(storage), "all");
+    assert.equal(salesOrderListHref("all"), "/sales/orders?view=all");
+    assert.equal(salesOrderListViewToRestore({ hasViewParam: false, stored: "all" }), "all");
+    assert.equal(salesOrderListViewToRestore({ hasViewParam: true, stored: "all" }), null);
+    writeSalesOrderListView(storage, "drafts");
+    assert.equal(readSalesOrderListView(storage), "drafts");
+    assert.equal(salesOrderListHref("drafts"), "/sales/orders?view=drafts");
+    assert.equal(salesOrderListViewToRestore({ hasViewParam: false, stored: "drafts" }), null);
+    assert.equal(readSalesOrderListView({ getItem() { throw new Error("blocked"); } }), null);
   });
 });
 
