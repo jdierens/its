@@ -42,18 +42,20 @@ export type LabelSearchOutcome =
   | { type: "empty" }
   | { type: "missing" };
 
-/** Exact SKU and a submitted single row select. Several rows stay a list. */
+/** Exact SKU and a submitted single row select. Several rows stay a list. A lone receiving hit selects too. */
 export function labelSearchOutcome(input: {
   submitted: boolean;
   exact: LabelItem | null;
   matches: LabelItem[];
   truncated: boolean;
+  loneSelects?: boolean;
 }): LabelSearchOutcome {
   const choice = labelLookupChoice({
     submitted: input.submitted,
     exact: Boolean(input.exact),
     matchCount: input.matches.length,
     truncated: input.truncated,
+    loneSelects: input.loneSelects,
   });
   if (choice === "select") {
     const item = input.exact ?? input.matches[0];

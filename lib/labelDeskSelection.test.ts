@@ -101,6 +101,16 @@ test("an exact SKU and a submitted single match select; several matches stay a l
     truncated: false,
   });
   assert.equal(list.type, "list");
+
+  const lone = labelSearchOutcome({
+    submitted: false,
+    exact: null,
+    matches: [top],
+    truncated: false,
+    loneSelects: true,
+  });
+  assert.equal(lone.type, "select");
+  if (lone.type === "select") assert.equal(lone.item.sku, "SRM7C-1");
 });
 
 test("printing without an item or a ready label explains why instead of doing nothing", () => {

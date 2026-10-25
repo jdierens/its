@@ -311,6 +311,7 @@ export function ReceivingPage() {
         exact: result.exact,
         matches: result.matches,
         truncated: result.truncated,
+        loneSelects: true,
       });
       setSettledQuery(query);
       if (outcome.type === "select") {
@@ -842,10 +843,17 @@ export function ReceivingPage() {
                 <span>SKU</span>
                 <input id="receive-line-sku" value={item?.sku ?? ""} readOnly tabIndex={-1} />
               </label>
-              <label className="receive-readout receive-name" htmlFor="receive-line-name">
+              <div className="receive-readout receive-name">
                 <span>Name</span>
-                <input id="receive-line-name" value={item?.name ?? ""} readOnly tabIndex={-1} title={item?.name || undefined} />
-              </label>
+                <div id="receive-line-name" className="receive-name-value" title={item?.name || undefined}>
+                  {item?.name || "\u00a0"}
+                </div>
+                {item && item.description.trim() ? (
+                  <p className="receive-name-desc" title={item.description}>
+                    {item.description}
+                  </p>
+                ) : null}
+              </div>
               <label className="receive-line-qty" htmlFor="receive-qty">
                 <span>Qty</span>
                 <input
