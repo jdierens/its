@@ -5126,11 +5126,18 @@ nextjs-portal {
   white-space: nowrap;
 }
 
+.receive-table th.search,
+.receive-table td.search,
 .receive-table th.note,
 .receive-table td.note {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.receive-table td.search {
+  min-width: 12ch;
+  max-width: 24ch;
 }
 
 .receive-table td.note {

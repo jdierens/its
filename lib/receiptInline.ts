@@ -1,5 +1,5 @@
 import { receiptFlagsForPrep, receivePrepKind } from "@/lib/receivingLine";
-import { receiptChangeSummary } from "@/lib/receivingScan";
+import { receiptChangeSummary, receiptSearchQuery } from "@/lib/receivingScan";
 import { originQtyInput, parseReceiptDate, type ReceivingEntry } from "@/lib/receivingSettings";
 
 /** Fields a clerk can change on a recent receipt. Putaway is not one of them. */
@@ -10,6 +10,7 @@ export type ReceiptPatch = {
   origin?: string;
   originQty?: string;
   comment?: string;
+  searchQuery?: string;
   qty?: string;
   item?: {
     id: string;
@@ -35,6 +36,7 @@ export type ReceiptEditBody = {
   sku: string;
   cleaned: boolean | null;
   wiped: boolean | null;
+  searchQuery: string | null;
 };
 
 export type ReceiptEditPlan =
@@ -84,6 +86,7 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
   const incomingTag = text(patch.incomingTag ?? entry.incomingBin);
   const origin = text(patch.origin ?? entry.originatingSystem);
   const comment = text(patch.comment ?? entry.comment);
+  const searchQuery = receiptSearchQuery(patch.searchQuery !== undefined ? patch.searchQuery : entry.searchQuery);
   const projectError = limit(project, 120, "Project");
   if (projectError) return { action: "invalid", message: projectError };
   const incomingError = limit(incomingTag, 120, "Incoming bin");
@@ -130,6 +133,7 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
     sku,
     cleaned: flags.cleaned,
     wiped: flags.wiped,
+    searchQuery,
   };
 
   const same =
@@ -142,7 +146,8 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
     qty === entry.qty &&
     itemId === entry.itemId &&
     flags.cleaned === entry.cleaned &&
-    flags.wiped === entry.wiped;
+    flags.wiped === entry.wiped &&
+    searchQuery === receiptSearchQuery(entry.searchQuery);
   if (same) return { action: "unchanged" };
 
   let summary = receiptChangeSummary({ sku: entry.sku, nextSku: sku, qty: entry.qty, nextQty: qty });

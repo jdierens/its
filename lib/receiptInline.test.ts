@@ -25,6 +25,7 @@ function entry(overrides: Partial<ReceivingEntry> = {}): ReceivingEntry {
     longCode: "DIM/MEM",
     taxonomyName: "memory",
     putaway: "20042-B · HWS.00.00.00",
+    searchQuery: null,
     ...overrides,
   };
 }
@@ -97,5 +98,31 @@ describe("inline receipt edit", () => {
     if (cleared.action !== "save") return;
     assert.equal(cleared.body.originQty, null);
     assert.equal("putaway" in cleared.body, false);
+  });
+
+  it("keeps the stored search on another cell edit and saves a search correction without a stock confirm", () => {
+    const stored = entry({ searchQuery: "samsung 860" });
+    const comment = planReceiptEdit(stored, { comment: "relocated" }, false);
+    assert.equal(comment.action, "save");
+    if (comment.action !== "save") return;
+    assert.equal(comment.body.searchQuery, "samsung 860");
+
+    const cleared = planReceiptEdit(stored, { searchQuery: "  " }, false);
+    assert.equal(cleared.action, "save");
+    if (cleared.action !== "save") return;
+    assert.equal(cleared.body.searchQuery, null);
+
+    const same = planReceiptEdit(stored, { searchQuery: " samsung 860 " }, false);
+    assert.equal(same.action, "unchanged");
+
+    const picked = planReceiptEdit(
+      stored,
+      { item: { id: "item-2", sku: "1001", name: "Widget" }, searchQuery: "rail kit" },
+      true,
+    );
+    assert.equal(picked.action, "save");
+    if (picked.action !== "save") return;
+    assert.equal(picked.body.searchQuery, "rail kit");
+    assert.equal(picked.body.itemId, "item-2");
   });
 });

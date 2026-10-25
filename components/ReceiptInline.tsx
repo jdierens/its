@@ -12,7 +12,7 @@ import { RECEIVING_DATE_EDITABLE, formatReceivedOn, type ReceivingEntry } from "
 import type { LabelItem } from "@/lib/types";
 
 type Confirm = { summary: string; body: ReceiptEditBody };
-type Field = "date" | "project" | "incoming" | "origin" | "originQty" | "sku" | "qty" | "comment";
+type Field = "date" | "project" | "incoming" | "origin" | "originQty" | "search" | "sku" | "qty" | "comment";
 
 function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
   const [field, setField] = useState<Field | null>(null);
@@ -32,6 +32,7 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     entry.itemName,
     entry.qty,
     entry.comment,
+    entry.searchQuery,
     entry.cleaned,
     entry.wiped,
     entry.shortCode,
@@ -64,6 +65,7 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
         confirmed,
         cleaned: body.cleaned,
         wiped: body.wiped,
+        searchQuery: body.searchQuery,
       });
       setField(null);
       setConfirm(null);
@@ -186,7 +188,15 @@ function CellButton({
   );
 }
 
-function SkuEdit({ entry, onPick, onCancel }: { entry: ReceivingEntry; onPick: (item: LabelItem) => void; onCancel: () => void }) {
+function SkuEdit({
+  entry,
+  onPick,
+  onCancel,
+}: {
+  entry: ReceivingEntry;
+  onPick: (item: LabelItem, query: string) => void;
+  onCancel: () => void;
+}) {
   const typed = useRef(entry.sku);
   const [query, setQuery] = useState(entry.sku);
   const [matches, setMatches] = useState<LabelItem[]>([]);
@@ -244,7 +254,7 @@ function SkuEdit({ entry, onPick, onCancel }: { entry: ReceivingEntry; onPick: (
             truncated: result.truncated,
           });
           if (outcome.type === "select" && outcome.item) {
-            onPickRef.current(outcome.item);
+            onPickRef.current(outcome.item, text);
             return;
           }
           if (outcome.type === "list") {
@@ -267,7 +277,7 @@ function SkuEdit({ entry, onPick, onCancel }: { entry: ReceivingEntry; onPick: (
 
   function pickHighlighted() {
     const choice = labelHighlightedChoice({ identifier: query.trim(), settledQuery: settled, matches, active });
-    if (choice) onPick(choice);
+    if (choice) onPick(choice, query);
   }
 
   return (
@@ -323,7 +333,7 @@ function SkuEdit({ entry, onPick, onCancel }: { entry: ReceivingEntry; onPick: (
                 role="option"
                 aria-selected={index === active}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onPick(match)}
+                onClick={() => onPick(match, query)}
               >
                 <strong className="label-hit-sku">{match.sku || match.name}</strong>
                 <span>{match.name}</span>
@@ -392,7 +402,7 @@ function ConfirmBar({
   );
 }
 
-function itemPatch(item: LabelItem): ReceiptPatch {
+function itemPatch(item: LabelItem, query: string): ReceiptPatch {
   return {
     item: {
       id: item.id,
@@ -402,6 +412,7 @@ function itemPatch(item: LabelItem): ReceiptPatch {
       longCode: item.longCode,
       taxonomyName: item.taxonomyName,
     },
+    searchQuery: query,
   };
 }
 
@@ -484,9 +495,21 @@ export function ReceiptTableRow({
             <CellButton align="right" value={entry.originQty == null ? "" : String(entry.originQty)} onClick={() => open("originQty")} />
           )}
         </td>
+        <td className="search" title={entry.searchQuery ?? undefined}>
+          {edit.field === "search" ? (
+            <TextEdit
+              value={entry.searchQuery ?? ""}
+              onCommit={(value) => edit.apply({ searchQuery: value })}
+              onCancel={() => edit.setField(null)}
+              kind="text"
+            />
+          ) : (
+            <CellButton value={entry.searchQuery ?? ""} title={entry.searchQuery ?? undefined} onClick={() => open("search")} />
+          )}
+        </td>
         <td className="fit sku">
           {edit.field === "sku" ? (
-            <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
+            <SkuEdit entry={entry} onPick={(item, query) => edit.apply(itemPatch(item, query))} onCancel={() => edit.setField(null)} />
           ) : (
             <CellButton value={shown.sku} title="Find another item" onClick={() => open("sku")} />
           )}
@@ -529,7 +552,7 @@ export function ReceiptTableRow({
       </tr>
       {edit.confirm || edit.error ? (
         <tr className="receive-edit-row">
-          <td colSpan={12}>
+          <td colSpan={13}>
             <ConfirmBar
               initials={initials}
               confirm={edit.confirm}
@@ -641,9 +664,21 @@ export function ReceiptCard({
             <CellButton align="right" value={entry.originQty == null ? "" : String(entry.originQty)} onClick={() => open("originQty")} />
           )}
         </CardLine>
+        <CardLine label="Search">
+          {edit.field === "search" ? (
+            <TextEdit
+              value={entry.searchQuery ?? ""}
+              onCommit={(value) => edit.apply({ searchQuery: value })}
+              onCancel={() => edit.setField(null)}
+              kind="text"
+            />
+          ) : (
+            <CellButton value={entry.searchQuery ?? ""} title={entry.searchQuery ?? undefined} onClick={() => open("search")} />
+          )}
+        </CardLine>
         <CardLine label="SKU">
           {edit.field === "sku" ? (
-            <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
+            <SkuEdit entry={entry} onPick={(item, query) => edit.apply(itemPatch(item, query))} onCancel={() => edit.setField(null)} />
           ) : (
             <CellButton value={shown.sku} onClick={() => open("sku")} />
           )}

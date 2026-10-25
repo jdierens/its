@@ -1050,6 +1050,7 @@ export function ReceivingPage() {
                       <th className="fit">Incoming bin</th>
                       <th className="origin">Orig. system</th>
                       <th className="num fit">Orig. qty</th>
+                      <th className="search">Search</th>
                       <th className="fit">SKU</th>
                       <th className="item">Item name</th>
                       <th className="num fit">Qty</th>
