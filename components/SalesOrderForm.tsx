@@ -3,13 +3,12 @@
 import { Ban, Check, Save } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
-import { allocationQtyForLine, cleanSkuAllocation, formatAllocationQty, parsePackLabel } from "@/lib/ebay/packs";
+import { cleanSkuAllocation } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
 import {
-  allocationsCover,
   emptyAddress,
   formatSalesMoney,
   formatSalesOrderNumber,
@@ -77,18 +76,20 @@ function MoneyField({
   currency,
   onBlur,
   onFocus,
+  readOnly,
   ...props
 }: InputHTMLAttributes<HTMLInputElement> & { value: string; currency: string }) {
   const [focused, setFocused] = useState(false);
   const raw = String(value ?? "");
   const numeric = moneyAmount(raw);
-  const shown = !focused && numeric != null ? formatSalesMoney(numeric, currency) : raw;
+  const shown = (readOnly || !focused) && numeric != null ? formatSalesMoney(numeric, currency) : raw;
   return (
     <input
       {...props}
+      readOnly={readOnly}
       value={shown}
       onFocus={(event) => {
-        setFocused(true);
+        if (!readOnly) setFocused(true);
         onFocus?.(event);
       }}
       onBlur={(event) => {
@@ -663,23 +664,14 @@ export function SalesOrderForm({
                 {lines.map((line, index) => {
                   const needsItem = lineRequiresItem(line.lineKind);
                   const ebayFreight = (line.lineKind || "product") === "freight" && ebayOrder;
-                  const pack = parsePackLabel(line.customerPartNumber);
-                  const qtyNumber = Number(line.qty);
-                  const exactItem = line.allocations.some((row) => row.sku.trim().toLowerCase() === line.customerPartNumber.trim().toLowerCase());
-                  const pieceTarget = !Number.isFinite(qtyNumber)
-                    ? Number.NaN
-                    : exactItem
-                      ? qtyNumber
-                      : allocationQtyForLine(line.customerPartNumber, qtyNumber);
-                  const targetText = Number.isFinite(pieceTarget) && pieceTarget > 0 ? formatAllocationQty(pieceTarget) : line.qty;
-                  const allocatedQty = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
-                  const covered = allocationsCover(
-                    targetText,
-                    line.allocations.map((row) => ({ itemId: row.itemId, qty: row.qty })),
-                  );
+                  const showAllocations = needsItem || ebayFreight;
+                  const showFinder = showAllocations && !locked;
+                  const showNoItemHint = !showAllocations;
+                  const showExtra = showFinder || showNoItemHint;
+                  const allocationCount = showAllocations ? line.allocations.length : 0;
                   return (
                     <Fragment key={index}>
-                      <tr>
+                      <tr className={showExtra || allocationCount > 0 ? undefined : "so-line-end"}>
                         <td>
                           <input
                             id={`so-line-part-${index}`}
@@ -751,12 +743,86 @@ export function SalesOrderForm({
                           ) : null}
                         </td>
                       </tr>
-                      <tr className="so-line-extra">
-                        <td colSpan={showMoney ? 6 : 4}>
-                          {needsItem || ebayFreight ? (
-                            <div className="so-allocate">
-                              <div className="so-alloc-row">
+                      {showAllocations
+                        ? line.allocations.map((allocation, allocationIndex) => (
+                            <tr
+                              className={showExtra || allocationIndex < allocationCount - 1 ? "so-allocation-row" : "so-allocation-row so-line-end"}
+                              key={`${allocation.itemId}-${allocationIndex}`}
+                            >
+                              <td colSpan={2}>
+                                <div className="so-allocation-sku">
+                                  <span className="so-alloc-sku">
+                                    {allocation.sku || "SKU"} {allocation.name}
+                                  </span>
+                                  <span className="so-allocation-label">Allocated qty</span>
+                                </div>
+                              </td>
+                              <td className="num">
+                                <input
+                                  className="num-input"
+                                  inputMode="decimal"
+                                  aria-label={`Allocated qty ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                  value={allocation.qty}
+                                  disabled={locked}
+                                  onChange={(event) =>
+                                    updateLine(index, {
+                                      allocations: line.allocations.map((row, rowIndex) =>
+                                        rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
+                                      ),
+                                    })
+                                  }
+                                />
+                              </td>
+                              {showMoney ? (
+                                <td className="num">
+                                  <MoneyField
+                                    className="num-input"
+                                    aria-label={`Allocated unit ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                    value={line.unitPrice}
+                                    currency={currency}
+                                    readOnly
+                                    disabled={locked}
+                                    tabIndex={-1}
+                                  />
+                                </td>
+                              ) : null}
+                              {showMoney ? (
+                                <td className="num">
+                                  <MoneyField
+                                    className="num-input"
+                                    aria-label={`Allocated ext ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                    value={line.extPrice}
+                                    currency={currency}
+                                    readOnly
+                                    disabled={locked}
+                                    tabIndex={-1}
+                                  />
+                                </td>
+                              ) : null}
+                              <td className="so-line-remove">
                                 {!locked ? (
+                                  <button
+                                    type="button"
+                                    className="secondary"
+                                    onClick={() =>
+                                      updateLine(index, {
+                                        allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
+                                      })
+                                    }
+                                  >
+                                    Remove
+                                  </button>
+                                ) : null}
+                              </td>
+                            </tr>
+                          ))
+                        : null}
+                      {showExtra ? (
+                        <tr className="so-line-extra so-line-end">
+                          <td colSpan={showMoney ? 6 : 4}>
+                            {showFinder ? (
+                              <div className="so-allocate">
+                                <div className="so-alloc-row">
                                   <label className="so-find-sku">
                                     <span>Find SKU</span>
                                     <input
@@ -775,8 +841,6 @@ export function SalesOrderForm({
                                       }}
                                     />
                                   </label>
-                                ) : null}
-                                {!locked ? (
                                   <button
                                     type="button"
                                     className="secondary"
@@ -784,60 +848,14 @@ export function SalesOrderForm({
                                   >
                                     Find
                                   </button>
-                                ) : null}
-                                {line.allocations.map((allocation, allocationIndex) => (
-                                  <div className="so-allocation" key={`${allocation.itemId}-${allocationIndex}`}>
-                                    <span className="so-alloc-sku">
-                                      {allocation.sku || "SKU"} {allocation.name}
-                                    </span>
-                                    <label className="so-alloc-qty">
-                                      <span>Allocated qty</span>
-                                      <input
-                                        className="num-input"
-                                        inputMode="decimal"
-                                        aria-label={`Allocated qty ${index + 1}`}
-                                        value={allocation.qty}
-                                        disabled={locked}
-                                        onChange={(event) =>
-                                          updateLine(index, {
-                                            allocations: line.allocations.map((row, rowIndex) =>
-                                              rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
-                                            ),
-                                          })
-                                        }
-                                      />
-                                    </label>
-                                    {!locked ? (
-                                      <button
-                                        type="button"
-                                        className="secondary"
-                                        onClick={() =>
-                                          updateLine(index, {
-                                            allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
-                                          })
-                                        }
-                                      >
-                                        Remove
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                ))}
-                                {needsItem || line.allocations.length > 0 ? (
-                                  <p className={covered ? "hint so-alloc-note" : "hint so-gap so-alloc-note"}>
-                                    {pack && !exactItem
-                                      ? `${line.customerPartNumber.trim()} is ${pack.packQty} × ${pack.baseSku}. Customer qty ${line.qty || "—"}. Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${targetText}.`
-                                      : ebayFreight
-                                        ? `Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${line.qty || "0"} to shipping.`
-                                        : `Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${targetText}.`}
-                                  </p>
-                                ) : null}
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            <p className="hint">This line does not need an ITS item.</p>
-                          )}
-                        </td>
-                      </tr>
+                            ) : (
+                              <p className="hint">This line does not need an ITS item.</p>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
                     </Fragment>
                   );
                 })}
