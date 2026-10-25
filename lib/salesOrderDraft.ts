@@ -384,7 +384,7 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
     channel: input.channel,
     order_date: input.orderDate,
     ship_date: input.shipDate,
-    bill_to: input.billTo,
+    bill_to: input.channel.trim().toLowerCase() === "ebay" ? emptyAddress() : input.billTo,
     ship_to: input.shipTo,
     terms: input.terms,
     incoterms: input.incoterms,

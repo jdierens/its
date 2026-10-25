@@ -165,6 +165,17 @@ describe("sales order draft", () => {
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
   });
+
+  it("leaves an eBay bill-to blank and keeps ship-to", () => {
+    const draft = sampleDraft();
+    const payload = toSalesOrderPayload({ ...draft, channel: "ebay" });
+    const bill = payload.bill_to as { line1: string };
+    const ship = payload.ship_to as { line1: string };
+    assert.equal(bill.line1, "");
+    assert.equal(ship.line1, draft.shipTo.line1);
+    const direct = toSalesOrderPayload(draft);
+    assert.equal((direct.bill_to as { line1: string }).line1, "1 Demo St");
+  });
 });
 
 function sampleDraft(): SoDraftInput {

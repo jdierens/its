@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readEbayDraftDefaults } from "@/lib/ebayOrderDefaults";
 import { apiBase, apizBase, financesTransactionsUrl, ordersUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
 import { ebayRead } from "@/lib/ebay/http";
 import { writeEbayLog } from "@/lib/ebay/log";
@@ -36,7 +37,6 @@ import {
 import { parsePackLabel } from "@/lib/ebay/packs";
 import { forceRefreshAccessToken, validAccessToken } from "@/lib/ebay/oauth";
 import { escapeLike } from "@/lib/labelLookup";
-import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
 
 const MIGRATION = "Apply supabase/migrations/20261025020829_ebay_order_pull.sql before pulling eBay orders.";
@@ -87,7 +87,7 @@ type OrderStore = {
   legacySoNumbers?(orderIds: string[]): Promise<LegacySoNumber[]>;
   apply(
     actions: PullAction[],
-    customer: { id: string; billTo: SoAddress | null },
+    customer: { id: string },
   ): Promise<{ created: number; updated: number; linked: number }>;
   syncLabelFees?(fees: ReadonlyMap<string, number>): Promise<void>;
   setWatermark(iso: string): Promise<void>;
@@ -188,7 +188,7 @@ async function insertLines(admin: SupabaseClient, salesOrderId: string, action: 
 export async function runOrderPull(input: {
   now: Date;
   watermark: string | null;
-  customer: { id: string; billTo: SoAddress | null };
+  customer: { id: string };
   fetchPage: (url: string) => Promise<{ body: unknown; rlogid: string | null; requestId: string | null }>;
   pageUrl: (filter: string, offset: number) => string;
   allowNext: (url: string) => boolean;
@@ -278,7 +278,34 @@ export async function runOrderPull(input: {
   };
 }
 
-function supabaseStore(admin: SupabaseClient): OrderStore {
+/** A refresh keeps payment terms and Incoterms that are already set. */
+async function fillBlankEbayTerms(
+  admin: SupabaseClient,
+  id: string,
+  paymentTerms: string,
+  incoterms: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const terms = await admin
+    .from("sales_orders")
+    .update({ terms: paymentTerms, updated_at: now })
+    .eq("id", id)
+    .eq("status", "draft")
+    .is("terms", null);
+  if (terms.error) throw new Error("A draft sales order could not be updated.");
+  const trade = await admin
+    .from("sales_orders")
+    .update({ incoterms, updated_at: now })
+    .eq("id", id)
+    .eq("status", "draft")
+    .is("incoterms", null);
+  if (trade.error) throw new Error("A draft sales order could not be updated.");
+}
+
+function supabaseStore(
+  admin: SupabaseClient,
+  defaults: { salesRep: string; paymentTerms: string; incoterms: string },
+): OrderStore {
   return {
     async existing(orderIds, salesRefs) {
       const rows = new Map<
@@ -391,14 +418,17 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
           const patch = draftOrderRow({
             order: action.order,
             customerId: customer.id,
-            billTo: customer.billTo,
             soNumber: action.soNumber,
+            salesRep: defaults.salesRep,
+            paymentTerms: defaults.paymentTerms,
+            incoterms: defaults.incoterms,
           });
           const updatedRow = await admin
             .from("sales_orders")
             .update({
               order_date: patch.order_date,
               ship_to: patch.ship_to,
+              bill_to: null,
               buyer: patch.buyer,
               ebay_order_id: patch.ebay_order_id,
               ebay_sales_record_ref: patch.ebay_sales_record_ref,
@@ -420,6 +450,7 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
             linked += 1;
             continue;
           }
+          await fillBlankEbayTerms(admin, action.id, defaults.paymentTerms, defaults.incoterms);
           if (action.soNumber != null) {
             const numbered = await admin
               .from("sales_orders")
@@ -442,8 +473,10 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
             draftOrderRow({
               order: action.order,
               customerId: customer.id,
-              billTo: customer.billTo,
               soNumber: action.soNumber,
+              salesRep: defaults.salesRep,
+              paymentTerms: defaults.paymentTerms,
+              incoterms: defaults.incoterms,
             }),
           )
           .select("id")
@@ -455,7 +488,9 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
               draftOrderRow({
                 order: action.order,
                 customerId: customer.id,
-                billTo: customer.billTo,
+                salesRep: defaults.salesRep,
+                paymentTerms: defaults.paymentTerms,
+                incoterms: defaults.incoterms,
               }),
             )
             .select("id")
@@ -609,10 +644,10 @@ async function readSeed(admin: SupabaseClient): Promise<SeedState> {
   };
 }
 
-async function ebayCustomer(admin: SupabaseClient): Promise<{ id: string; billTo: SoAddress | null }> {
+async function ebayCustomer(admin: SupabaseClient): Promise<{ id: string }> {
   const { data, error } = await admin
     .from("customers")
-    .select("id, billing_address")
+    .select("id")
     .eq("display_name", EBAY_ORDER_CUSTOMER_NAME)
     .eq("qbo_id", EBAY_ORDER_CUSTOMER_QBO_ID)
     .eq("active", true)
@@ -621,8 +656,7 @@ async function ebayCustomer(admin: SupabaseClient): Promise<{ id: string; billTo
   if (!data || data.length !== 1) {
     throw new Error("The eBay Customer record was not found. No sales orders were created.");
   }
-  const billTo = addressFromRecord(data[0].billing_address);
-  return { id: String(data[0].id), billTo: billTo.line1.trim() ? billTo : null };
+  return { id: String(data[0].id) };
 }
 
 function emptyOrderPullSummary(available: boolean): OrderPullSummary {
@@ -682,6 +716,7 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
   if (seed.missingTable) throw new Error(MIGRATION);
   if (!seed.seeded) throw new SeedRequiredError();
   const customer = await ebayCustomer(admin);
+  const ebayDefaults = await readEbayDraftDefaults(admin);
   const { connection } = await validAccessToken();
   const now = new Date();
   let token = connection.access_token;
@@ -729,7 +764,7 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
             return { ok: true, body: response.body };
           },
         }),
-      store: supabaseStore(admin),
+      store: supabaseStore(admin, ebayDefaults),
     });
     await writeEbayLog({
       entity: "orders",

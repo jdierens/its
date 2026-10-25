@@ -6003,6 +6003,10 @@ input.num-input {
   text-align: left;
 }
 
+.so-lines tbody td {
+  border-bottom: 0;
+}
+
 .so-lines th.num,
 .so-lines td.num {
   width: 7.5rem;
@@ -6015,10 +6019,44 @@ input.num-input {
   text-align: right;
 }
 
+.so-lines tr.so-line-end > td,
+.so-lines .so-line-extra td {
+  border-bottom: 1px solid var(--line);
+}
+
 .so-lines .so-line-extra td {
   padding-top: 0.1rem;
   padding-bottom: 0.85rem;
-  border-bottom: 1px solid var(--line);
+}
+
+.so-lines tr.so-allocation-row td {
+  padding-top: 0.15rem;
+  padding-bottom: 0.35rem;
+}
+
+.so-allocation-sku {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.so-allocation-label {
+  flex: 0 0 auto;
+  color: var(--ds-muted, var(--muted));
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1.2;
+}
+
+.so-lines tr.so-allocation-row .so-alloc-sku {
+  flex: 1 1 auto;
+  padding-bottom: 0;
+}
+
+.so-lines tr.so-allocation-row input[readonly] {
+  cursor: default;
 }
 
 .so-list-switch {
@@ -6052,45 +6090,20 @@ input.num-input {
   margin: 0;
 }
 
-.so-alloc-row .so-find-sku span,
-.so-alloc-row .so-alloc-qty span {
+.so-alloc-row .so-find-sku span {
   color: var(--ds-muted, var(--muted));
   font-size: 0.75rem;
   font-weight: 550;
   line-height: 1.2;
 }
 
-.so-alloc-row .so-allocation {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px 16px;
-  min-width: 0;
-}
-
 .so-alloc-sku {
   flex: 1 1 12rem;
   min-width: 8rem;
   margin: 0;
-  padding-bottom: 0.55rem;
   color: var(--ds-ink, var(--ink));
   font-size: 0.875rem;
   overflow-wrap: anywhere;
-}
-
-.so-alloc-qty {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 0 0 6.5rem;
-  width: 6.5rem;
-  margin: 0;
-}
-
-.so-alloc-note {
-  flex: 1 1 12rem;
-  margin: 0 0 0.55rem;
 }
 
 .so-alloc-row button {
@@ -6361,7 +6374,6 @@ input.num-input {
 }
 
 .so-line-head,
-.so-allocation,
 .so-file-list li,
 .so-events li {
   display: flex;
@@ -6581,6 +6593,47 @@ input.num-input {
 .ds-banner .so-ebay-refs,
 .ds-banner .so-head-row {
   margin: 0;
+}
+
+@media (min-width: 801px) {
+  .ds-banner .so-head-row {
+    align-items: end;
+    grid-template-columns: minmax(7.5rem, 0.8fr) 4.25rem minmax(11rem, 1.7fr) 11rem minmax(10rem, 1.2fr);
+  }
+
+  .ds-banner .so-head-row.so-head-ebay {
+    grid-template-columns:
+      minmax(6.5rem, 0.7fr)
+      4.25rem
+      minmax(8rem, 1.25fr)
+      minmax(8rem, 1.15fr)
+      11rem
+      minmax(8.5rem, 1.05fr)
+      minmax(8.5rem, 10rem);
+  }
+}
+
+.ds-banner .so-head-row input,
+.ds-banner .so-head-row select {
+  min-width: 0;
+}
+
+.ds-banner .so-field-rep input {
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+  text-align: center;
+}
+
+.settings-page input.ebay-sales-rep {
+  max-width: 5rem;
+}
+
+.settings-page select.ebay-payment-terms {
+  max-width: 16rem;
+}
+
+.settings-page select.ebay-incoterms {
+  max-width: 8rem;
 }
 
 .so-sticky {
@@ -6820,6 +6873,7 @@ input.num-input {
   border-color: var(--ds-line);
 }
 
+.ds .so-lines tr.so-line-end > td,
 .ds .so-lines .so-line-extra td {
   border-bottom-color: var(--ds-line);
 }

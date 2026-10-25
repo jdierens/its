@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SalesOrderForm } from "@/components/SalesOrderForm";
 import { errorText } from "@/lib/errors";
+import { fetchEbayDraftDefaults } from "@/lib/ebayOrderDefaultsSettings";
 import { pacificToday } from "@/lib/salesOrderDraft";
 import { listSalesLookups, loadSalesOrder, suggestSalesOrderNumber } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
@@ -12,7 +13,11 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
   const access = await salesPageAccess();
 
   try {
-    const [order, lookups] = await Promise.all([loadSalesOrder(id), listSalesLookups()]);
+    const [order, lookups, ebayDefaults] = await Promise.all([
+      loadSalesOrder(id),
+      listSalesLookups(),
+      fetchEbayDraftDefaults(),
+    ]);
     const suggestedNumber = order?.status === "draft" ? await suggestSalesOrderNumber() : null;
     if (!order) {
       return (
@@ -32,6 +37,9 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
         showMoney={access.canViewMoney}
         today={order.orderDate || pacificToday()}
         suggestedNumber={suggestedNumber}
+        defaultEbaySalesRep={ebayDefaults.salesRep}
+        defaultEbayPaymentTerms={ebayDefaults.paymentTerms}
+        defaultEbayIncoterms={ebayDefaults.incoterms}
       />
     );
   } catch (error) {

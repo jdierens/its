@@ -1,3 +1,5 @@
+import { ebayIncotermsFromSetting, ebayPaymentTermsFromSetting } from "@/lib/ebayOrderDefaults";
+import { ebaySalesRepFromSetting } from "@/lib/ebaySalesRep";
 import { allocationQtyForLine, assignListingSku } from "@/lib/ebay/packs";
 import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 
@@ -718,17 +720,25 @@ export function planOrderPull(
 export function draftOrderRow(input: {
   order: ParsedEbayOrder;
   customerId: string;
-  billTo: SoAddress | null;
   soNumber?: number | null;
+  /** app_settings ebay_default_sales_rep. Empty becomes MT. */
+  salesRep?: string | null;
+  /** app_settings ebay_default_payment_terms. Empty becomes PIA. */
+  paymentTerms?: string | null;
+  /** app_settings ebay_default_incoterms. Empty becomes FOB. */
+  incoterms?: string | null;
 }): Record<string, unknown> {
   return {
     status: "draft",
     so_number: input.soNumber ?? null,
+    sales_rep: ebaySalesRepFromSetting(input.salesRep),
+    terms: ebayPaymentTermsFromSetting(input.paymentTerms),
+    incoterms: ebayIncotermsFromSetting(input.incoterms),
     ...(input.soNumber != null ? { sheet_ref: `SO#${input.soNumber}` } : {}),
     customer_id: input.customerId,
     order_date: input.order.orderDate,
     ship_to: input.order.shipTo,
-    bill_to: input.billTo,
+    bill_to: null,
     currency: input.order.currency,
     source: "ebay",
     channel: "ebay",

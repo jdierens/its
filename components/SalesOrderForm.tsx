@@ -3,13 +3,15 @@
 import { Ban, Check, Save } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
-import { allocationQtyForLine, cleanSkuAllocation, formatAllocationQty, parsePackLabel } from "@/lib/ebay/packs";
+import { initialEbayText } from "@/lib/ebayOrderDefaults";
+import { initialSalesRep } from "@/lib/ebaySalesRep";
+import { cleanSkuAllocation } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
+import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import {
-  allocationsCover,
   emptyAddress,
   formatSalesMoney,
   formatSalesOrderNumber,
@@ -27,11 +29,11 @@ import {
   type SoDraftInput,
 } from "@/lib/salesOrderDraft";
 import {
-  approveSalesOrder,
+  approveSalesOrderFromDraft,
   cancelSalesOrder,
   salesCustomerDefaults,
   saveEmptyLineAllocation,
-  saveSalesOrder,
+  saveSalesOrderForForm,
   searchSalesCustomers,
   suggestSalesSkus,
   type SalesCustomerHit,
@@ -77,18 +79,20 @@ function MoneyField({
   currency,
   onBlur,
   onFocus,
+  readOnly,
   ...props
 }: InputHTMLAttributes<HTMLInputElement> & { value: string; currency: string }) {
   const [focused, setFocused] = useState(false);
   const raw = String(value ?? "");
   const numeric = moneyAmount(raw);
-  const shown = !focused && numeric != null ? formatSalesMoney(numeric, currency) : raw;
+  const shown = (readOnly || !focused) && numeric != null ? formatSalesMoney(numeric, currency) : raw;
   return (
     <input
       {...props}
+      readOnly={readOnly}
       value={shown}
       onFocus={(event) => {
-        setFocused(true);
+        if (!readOnly) setFocused(true);
         onFocus?.(event);
       }}
       onBlur={(event) => {
@@ -113,6 +117,9 @@ export function SalesOrderForm({
   showMoney,
   today,
   suggestedNumber,
+  defaultEbaySalesRep,
+  defaultEbayPaymentTerms,
+  defaultEbayIncoterms,
 }: {
   order: SalesOrderView | null;
   lookups: SalesLookups;
@@ -120,6 +127,9 @@ export function SalesOrderForm({
   showMoney: boolean;
   today: string;
   suggestedNumber: number | null;
+  defaultEbaySalesRep: string;
+  defaultEbayPaymentTerms: string;
+  defaultEbayIncoterms: string;
 }) {
   const router = useRouter();
   const locked = !canEdit || (order != null && order.status !== "draft");
@@ -135,15 +145,26 @@ export function SalesOrderForm({
   const [channel, setChannel] = useState(order?.channel ?? "");
   const [orderDate, setOrderDate] = useState(order?.orderDate || today);
   const [shipDate, setShipDate] = useState(order?.shipDate ?? "");
+  const openedAsEbay = orderIsEbay(order);
   const [billTo, setBillTo] = useState<SoAddress>(order?.billTo ?? emptyAddress());
   const [shipTo, setShipTo] = useState<SoAddress>(order?.shipTo ?? emptyAddress());
   const [saveAddress, setSaveAddress] = useState(false);
-  const [terms, setTerms] = useState(order?.terms ?? "");
-  const [incoterms, setIncoterms] = useState(order?.incoterms ?? "");
+  const [terms, setTerms] = useState(
+    initialEbayText({ stored: order?.terms, ebay: openedAsEbay, setting: defaultEbayPaymentTerms }),
+  );
+  const [incoterms, setIncoterms] = useState(
+    initialEbayText({ stored: order?.incoterms, ebay: openedAsEbay, setting: defaultEbayIncoterms }),
+  );
   const [shipMethod, setShipMethod] = useState(order?.shipMethod ?? "");
   const [carrierAccount, setCarrierAccount] = useState(order?.carrierAccount ?? "");
   const [currency, setCurrency] = useState(order?.currency || "USD");
-  const [salesRep, setSalesRep] = useState(order?.salesRep ?? "");
+  const [salesRep, setSalesRep] = useState(
+    initialSalesRep({
+      stored: order?.salesRep,
+      ebay: openedAsEbay,
+      setting: defaultEbaySalesRep,
+    }),
+  );
   const [paymentRequirement] = useState(order?.paymentRequirement || "terms");
   const [paymentMethod, setPaymentMethod] = useState(order?.paymentMethod ?? "");
   const [paymentDate, setPaymentDate] = useState(order?.paymentDate ?? "");
@@ -191,7 +212,7 @@ export function SalesOrderForm({
       channel,
       orderDate,
       shipDate,
-      billTo,
+      billTo: ebayOrder ? emptyAddress() : billTo,
       shipTo,
       terms,
       incoterms,
@@ -239,12 +260,20 @@ export function SalesOrderForm({
       setChannel(defaults.channel);
       setOrderDate(defaults.orderDate || today);
       setShipDate(defaults.shipDate);
-      setTerms(defaults.terms);
-      setIncoterms(defaults.incoterms);
       setShipMethod(defaults.shipMethod);
       setCarrierAccount(defaults.carrierAccount);
       if (defaults.currency) setCurrency(defaults.currency);
+      const ebayPick =
+        defaults.channel.trim().toLowerCase() === "ebay" || hit.name.trim().toLowerCase() === EBAY_ORDER_CUSTOMER_NAME.toLowerCase();
       if (defaults.salesRep) setSalesRep(defaults.salesRep);
+      else if (ebayPick) setSalesRep((current) => current.trim() || defaultEbaySalesRep);
+      if (ebayPick) {
+        setTerms((current) => defaults.terms.trim() || current.trim() || defaultEbayPaymentTerms);
+        setIncoterms((current) => defaults.incoterms.trim() || current.trim() || defaultEbayIncoterms);
+      } else {
+        setTerms(defaults.terms);
+        setIncoterms(defaults.incoterms);
+      }
     } catch (error) {
       setMessage(errorText(error));
     }
@@ -361,13 +390,17 @@ export function SalesOrderForm({
     setBusy(true);
     setMessage(null);
     try {
-      const saved = await saveSalesOrder(draft());
+      const saved = await saveSalesOrderForForm(draft());
+      if (!saved.ok) {
+        setMessage(saved.message);
+        return;
+      }
       setOrderId(saved.id);
       if (saved.addressWarning) setMessage(saved.addressWarning);
       if (orderId !== saved.id) router.replace(`/sales/orders/${saved.id}`);
       else router.refresh();
     } catch (error) {
-      setMessage(errorText(error));
+      setMessage(salesOrderErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -383,14 +416,17 @@ export function SalesOrderForm({
         setBusy(false);
         return;
       }
-      const saved = await saveSalesOrder(draft());
-      setOrderId(saved.id);
-      const approved = await approveSalesOrder(saved.id, chosen);
-      if (saved.addressWarning) setMessage(`${saved.addressWarning} Approved as ${approved.soNumber}.`);
-      router.replace(`/sales/orders/${saved.id}`);
+      const approved = await approveSalesOrderFromDraft(draft(), chosen);
+      if (!approved.ok) {
+        setMessage(approved.message);
+        return;
+      }
+      setOrderId(approved.id);
+      if (approved.addressWarning) setMessage(`${approved.addressWarning} Approved as ${approved.soNumber}.`);
+      router.replace(`/sales/orders/${approved.id}`);
       router.refresh();
     } catch (error) {
-      setMessage(errorText(error));
+      setMessage(salesOrderErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -486,26 +522,23 @@ export function SalesOrderForm({
           ) : null}
         </div>
         <header className="ds-banner">
-          {order?.ebaySalesRecordRef || order?.buyerName || order?.buyerUsername ? (
-            <dl className="so-ebay-refs">
-              {order.ebaySalesRecordRef ? (
-                <>
-                  <dt>Sales record number</dt>
-                  <dd>{order.ebaySalesRecordRef}</dd>
-                </>
-              ) : null}
-              {order.buyerName || order.buyerUsername ? (
-                <>
-                  <dt>Buyer</dt>
-                  <dd>{[order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ")}</dd>
-                </>
-              ) : null}
-            </dl>
-          ) : null}
-          <div className="so-head-row">
+          <div className={ebayOrder ? "so-head-row so-head-ebay" : "so-head-row"}>
           <label>
             Channel
-            <select id="so-channel" value={channel} disabled={locked} onChange={(event) => setChannel(event.target.value)}>
+            <select
+              id="so-channel"
+              value={channel}
+              disabled={locked}
+              onChange={(event) => {
+                const value = event.target.value;
+                setChannel(value);
+                if (value.trim().toLowerCase() === "ebay") {
+                  setSalesRep((current) => current.trim() || defaultEbaySalesRep);
+                  setTerms((current) => current.trim() || defaultEbayPaymentTerms);
+                  setIncoterms((current) => current.trim() || defaultEbayIncoterms);
+                }
+              }}
+            >
               <option value="">Choose a channel</option>
               {lookups.channels.map((row) => (
                 <option key={row.code} value={row.code}>
@@ -514,9 +547,11 @@ export function SalesOrderForm({
               ))}
             </select>
           </label>
-          <label>
-            Sales rep initials
+          <label className="so-field-rep">
+            Sales rep
             <input
+              id="so-sales-rep"
+              aria-label="Sales rep"
               value={salesRep}
               maxLength={2}
               autoCapitalize="characters"
@@ -564,7 +599,13 @@ export function SalesOrderForm({
               </ul>
             ) : null}
           </label>
-          <label>
+          {ebayOrder ? (
+            <label>
+              Buyer
+              <input id="so-buyer" aria-label="Buyer" value={buyerText(order)} disabled />
+            </label>
+          ) : null}
+          <label className="so-field-date">
             Order date
             <input type="date" value={orderDate} disabled={locked} onChange={(event) => setOrderDate(event.target.value)} />
           </label>
@@ -576,6 +617,12 @@ export function SalesOrderForm({
               <input id="so-order-reference" aria-label="Order reference" value={customerPo} disabled={locked} onChange={(event) => setCustomerPo(event.target.value)} />
             )}
           </label>
+          {ebayOrder ? (
+            <label className="so-field-record">
+              eBay sales record number
+              <input id="so-ebay-sales-record" aria-label="eBay sales record number" value={order?.ebaySalesRecordRef ?? ""} disabled />
+            </label>
+          ) : null}
         </div>
         </header>
         <div className="so-workspace">
@@ -595,7 +642,7 @@ export function SalesOrderForm({
           </label>
           <label>
             Payment terms
-            <select value={terms} disabled={locked} onChange={(event) => setTerms(event.target.value)}>
+            <select id="so-terms" value={terms} disabled={locked} onChange={(event) => setTerms(event.target.value)}>
               <option value="">Choose terms</option>
               {lookups.terms.map((term) => (
                 <option key={term.code} value={term.code}>
@@ -606,7 +653,7 @@ export function SalesOrderForm({
           </label>
           <label>
             Incoterms
-            <select value={incoterms} disabled={locked} onChange={(event) => setIncoterms(event.target.value)}>
+            <select id="so-incoterms" value={incoterms} disabled={locked} onChange={(event) => setIncoterms(event.target.value)}>
               <option value="">Choose Incoterms</option>
               {INCOTERMS.map((code) => (
                 <option key={code} value={code}>
@@ -635,7 +682,7 @@ export function SalesOrderForm({
 
         <div className="so-addresses">
           <AddressFields legend="Ship to" address={shipTo} disabled={locked} showAttention onChange={setShipTo} />
-          <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />
+          {ebayOrder ? null : <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />}
         </div>
         {!locked ? (
           <label className="so-check">
@@ -663,23 +710,14 @@ export function SalesOrderForm({
                 {lines.map((line, index) => {
                   const needsItem = lineRequiresItem(line.lineKind);
                   const ebayFreight = (line.lineKind || "product") === "freight" && ebayOrder;
-                  const pack = parsePackLabel(line.customerPartNumber);
-                  const qtyNumber = Number(line.qty);
-                  const exactItem = line.allocations.some((row) => row.sku.trim().toLowerCase() === line.customerPartNumber.trim().toLowerCase());
-                  const pieceTarget = !Number.isFinite(qtyNumber)
-                    ? Number.NaN
-                    : exactItem
-                      ? qtyNumber
-                      : allocationQtyForLine(line.customerPartNumber, qtyNumber);
-                  const targetText = Number.isFinite(pieceTarget) && pieceTarget > 0 ? formatAllocationQty(pieceTarget) : line.qty;
-                  const allocatedQty = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
-                  const covered = allocationsCover(
-                    targetText,
-                    line.allocations.map((row) => ({ itemId: row.itemId, qty: row.qty })),
-                  );
+                  const showAllocations = needsItem || ebayFreight;
+                  const showFinder = showAllocations && !locked;
+                  const showNoItemHint = !showAllocations;
+                  const showExtra = showFinder || showNoItemHint;
+                  const allocationCount = showAllocations ? line.allocations.length : 0;
                   return (
                     <Fragment key={index}>
-                      <tr>
+                      <tr className={showExtra || allocationCount > 0 ? undefined : "so-line-end"}>
                         <td>
                           <input
                             id={`so-line-part-${index}`}
@@ -751,12 +789,86 @@ export function SalesOrderForm({
                           ) : null}
                         </td>
                       </tr>
-                      <tr className="so-line-extra">
-                        <td colSpan={showMoney ? 6 : 4}>
-                          {needsItem || ebayFreight ? (
-                            <div className="so-allocate">
-                              <div className="so-alloc-row">
+                      {showAllocations
+                        ? line.allocations.map((allocation, allocationIndex) => (
+                            <tr
+                              className={showExtra || allocationIndex < allocationCount - 1 ? "so-allocation-row" : "so-allocation-row so-line-end"}
+                              key={`${allocation.itemId}-${allocationIndex}`}
+                            >
+                              <td colSpan={2}>
+                                <div className="so-allocation-sku">
+                                  <span className="so-alloc-sku">
+                                    {allocation.sku || "SKU"} {allocation.name}
+                                  </span>
+                                  <span className="so-allocation-label">Allocated qty</span>
+                                </div>
+                              </td>
+                              <td className="num">
+                                <input
+                                  className="num-input"
+                                  inputMode="decimal"
+                                  aria-label={`Allocated qty ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                  value={allocation.qty}
+                                  disabled={locked}
+                                  onChange={(event) =>
+                                    updateLine(index, {
+                                      allocations: line.allocations.map((row, rowIndex) =>
+                                        rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
+                                      ),
+                                    })
+                                  }
+                                />
+                              </td>
+                              {showMoney ? (
+                                <td className="num">
+                                  <MoneyField
+                                    className="num-input"
+                                    aria-label={`Allocated unit ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                    value={line.unitPrice}
+                                    currency={currency}
+                                    readOnly
+                                    disabled={locked}
+                                    tabIndex={-1}
+                                  />
+                                </td>
+                              ) : null}
+                              {showMoney ? (
+                                <td className="num">
+                                  <MoneyField
+                                    className="num-input"
+                                    aria-label={`Allocated ext ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                    value={line.extPrice}
+                                    currency={currency}
+                                    readOnly
+                                    disabled={locked}
+                                    tabIndex={-1}
+                                  />
+                                </td>
+                              ) : null}
+                              <td className="so-line-remove">
                                 {!locked ? (
+                                  <button
+                                    type="button"
+                                    className="secondary"
+                                    onClick={() =>
+                                      updateLine(index, {
+                                        allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
+                                      })
+                                    }
+                                  >
+                                    Remove
+                                  </button>
+                                ) : null}
+                              </td>
+                            </tr>
+                          ))
+                        : null}
+                      {showExtra ? (
+                        <tr className="so-line-extra so-line-end">
+                          <td colSpan={showMoney ? 6 : 4}>
+                            {showFinder ? (
+                              <div className="so-allocate">
+                                <div className="so-alloc-row">
                                   <label className="so-find-sku">
                                     <span>Find SKU</span>
                                     <input
@@ -775,8 +887,6 @@ export function SalesOrderForm({
                                       }}
                                     />
                                   </label>
-                                ) : null}
-                                {!locked ? (
                                   <button
                                     type="button"
                                     className="secondary"
@@ -784,60 +894,14 @@ export function SalesOrderForm({
                                   >
                                     Find
                                   </button>
-                                ) : null}
-                                {line.allocations.map((allocation, allocationIndex) => (
-                                  <div className="so-allocation" key={`${allocation.itemId}-${allocationIndex}`}>
-                                    <span className="so-alloc-sku">
-                                      {allocation.sku || "SKU"} {allocation.name}
-                                    </span>
-                                    <label className="so-alloc-qty">
-                                      <span>Allocated qty</span>
-                                      <input
-                                        className="num-input"
-                                        inputMode="decimal"
-                                        aria-label={`Allocated qty ${index + 1}`}
-                                        value={allocation.qty}
-                                        disabled={locked}
-                                        onChange={(event) =>
-                                          updateLine(index, {
-                                            allocations: line.allocations.map((row, rowIndex) =>
-                                              rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
-                                            ),
-                                          })
-                                        }
-                                      />
-                                    </label>
-                                    {!locked ? (
-                                      <button
-                                        type="button"
-                                        className="secondary"
-                                        onClick={() =>
-                                          updateLine(index, {
-                                            allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
-                                          })
-                                        }
-                                      >
-                                        Remove
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                ))}
-                                {needsItem || line.allocations.length > 0 ? (
-                                  <p className={covered ? "hint so-alloc-note" : "hint so-gap so-alloc-note"}>
-                                    {pack && !exactItem
-                                      ? `${line.customerPartNumber.trim()} is ${pack.packQty} × ${pack.baseSku}. Customer qty ${line.qty || "—"}. Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${targetText}.`
-                                      : ebayFreight
-                                        ? `Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${line.qty || "0"} to shipping.`
-                                        : `Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${targetText}.`}
-                                  </p>
-                                ) : null}
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            <p className="hint">This line does not need an ITS item.</p>
-                          )}
-                        </td>
-                      </tr>
+                            ) : (
+                              <p className="hint">This line does not need an ITS item.</p>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
                     </Fragment>
                   );
                 })}
@@ -1130,6 +1194,16 @@ function blankLine(): FormLine {
     condition: "",
     allocations: [],
   };
+}
+
+function orderIsEbay(order: SalesOrderView | null): boolean {
+  if (!order) return false;
+  return Boolean(order.ebayOrderId || order.ebaySalesRecordRef || order.channel.toLowerCase() === "ebay");
+}
+
+function buyerText(order: SalesOrderView | null): string {
+  if (!order) return "";
+  return [order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ");
 }
 
 function formatWhen(iso: string): string {
