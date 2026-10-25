@@ -240,6 +240,39 @@ export type StockEventRow = {
   incomingTag: string | null;
   fromLocationCode: string | null;
   toLocationCode: string | null;
+  receivedOn: string | null;
+  originDescription: string | null;
+  originQty: number | null;
+};
+
+/** One receipt on a bin. Fields come from that receipt, not from the cycle it belongs to. */
+export type BinReceipt = {
+  id: string;
+  receivedOn: string | null;
+  occurredAt: string;
+  project: string | null;
+  originatingSystem: string | null;
+  incomingBin: string | null;
+  sku: string;
+  itemName: string;
+  qty: number | null;
+  comment: string | null;
+  initials: string;
+  originQty: number | null;
+};
+
+export type ReceiptColumnRow = {
+  id: string;
+  receivedOn: string | null;
+  project: string | null;
+  incomingTag: string | null;
+  originDescription: string | null;
+  originQty: number | null;
+  sku: string | null;
+  itemName: string | null;
+  qty: number | null;
+  comment: string | null;
+  operatorInitials: string | null;
 };
 
 export type BinCycleView = {
@@ -261,6 +294,8 @@ export type BinContentRow = {
   sku: string;
   name: string;
   qty: number;
+  description: string;
+  shortCode: string | null;
 };
 
 export type BinDetail = {
@@ -346,22 +381,85 @@ export function moveFromJson(value: unknown): MoveResult {
   };
 }
 
+function finiteNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const qty = Number(value);
+  return Number.isFinite(qty) ? qty : null;
+}
+
 function eventFromJson(value: unknown): StockEventRow | null {
   if (!isRecord(value)) return null;
-  const qty = value.qty == null ? null : Number(value.qty);
   return {
     id: String(value.id),
     eventType: String(value.event_type ?? ""),
     occurredAt: String(value.occurred_at ?? ""),
     operatorInitials: String(value.operator_initials ?? ""),
     comment: textOrNull(value.comment),
-    qty: qty != null && Number.isFinite(qty) ? qty : null,
+    qty: finiteNumber(value.qty),
     sku: textOrNull(value.sku),
     itemName: textOrNull(value.item_name),
     project: textOrNull(value.project),
     incomingTag: textOrNull(value.incoming_tag),
     fromLocationCode: textOrNull(value.from_location_code),
     toLocationCode: textOrNull(value.to_location_code),
+    receivedOn: textOrNull(value.received_on),
+    originDescription: textOrNull(value.origin_description),
+    originQty: finiteNumber(value.origin_qty),
+  };
+}
+
+function receiptSortKey(receipt: BinReceipt): string {
+  return `${receipt.receivedOn ?? receipt.occurredAt.slice(0, 10)} ${receipt.occurredAt}`;
+}
+
+/** Receipts on this bin, newest first. A cycle's project or system is not copied onto them. */
+export function binReceipts(cycles: readonly BinCycleView[]): BinReceipt[] {
+  const receipts = cycles.flatMap((cycle) =>
+    cycle.events
+      .filter((event) => event.eventType === "receive_into_bin")
+      .map((event) => ({
+        id: event.id,
+        receivedOn: event.receivedOn,
+        occurredAt: event.occurredAt,
+        project: event.project,
+        originatingSystem: event.originDescription,
+        incomingBin: event.incomingTag,
+        sku: event.sku ?? "",
+        itemName: event.itemName ?? "",
+        qty: event.qty,
+        comment: event.comment,
+        initials: event.operatorInitials,
+        originQty: event.originQty,
+      })),
+  );
+  return receipts.sort((a, b) => receiptSortKey(b).localeCompare(receiptSortKey(a)) || b.id.localeCompare(a.id));
+}
+
+/** Replace a receipt's own columns when a later read has them. Other events stay as they were. */
+export function applyReceiptColumns(detail: BinDetail, rows: readonly ReceiptColumnRow[]): BinDetail {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return {
+    ...detail,
+    cycles: detail.cycles.map((cycle) => ({
+      ...cycle,
+      events: cycle.events.map((event) => {
+        const row = byId.get(event.id);
+        if (!row || event.eventType !== "receive_into_bin") return event;
+        return {
+          ...event,
+          receivedOn: row.receivedOn,
+          project: row.project,
+          incomingTag: row.incomingTag,
+          originDescription: row.originDescription,
+          originQty: row.originQty,
+          sku: row.sku ?? event.sku,
+          itemName: row.itemName ?? event.itemName,
+          qty: row.qty ?? event.qty,
+          comment: row.comment,
+          operatorInitials: row.operatorInitials || event.operatorInitials,
+        };
+      }),
+    })),
   };
 }
 
@@ -389,6 +487,8 @@ export function binDetailFromJson(value: unknown): BinDetail | null {
       sku: String(row.sku ?? ""),
       name: String(row.name ?? ""),
       qty: Number(row.qty),
+      description: textOrNull(row.description) ?? "",
+      shortCode: textOrNull(row.short_code),
     })),
     cycles: cycles.filter(isRecord).map((row) => {
       const status = row.status === "closed" ? "closed" : "open";
