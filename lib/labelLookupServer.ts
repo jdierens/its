@@ -5,6 +5,7 @@ import { findItemForLabel } from "@/lib/items";
 import {
   escapeLike,
   labelLikeOr,
+  labelTaxonomyFields,
   LABEL_RESULT_CAP,
   sortLabelMatches,
   type LabelLookupResult,
@@ -13,31 +14,26 @@ import { getSupabase } from "@/lib/supabase";
 import type { LabelItem } from "@/lib/types";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const COLUMNS = "id, sku, name, description, taxonomies(short_code)";
+const COLUMNS = "id, sku, name, description, taxonomies(short_code, long_code, name)";
 
-type Tax = { short_code: string | null };
 type Row = {
   id: string;
   sku: string | null;
   name: string | null;
   description: string | null;
-  taxonomies: Tax | Tax[] | null;
+  taxonomies: unknown;
 };
 
-function shortCode(value: Row["taxonomies"]): string | null {
-  if (!value) return null;
-  const row = Array.isArray(value) ? value[0] : value;
-  const code = row?.short_code?.trim().toUpperCase() ?? "";
-  return code || null;
-}
-
 function toHit(row: Row): LabelItem {
+  const taxonomy = labelTaxonomyFields(row.taxonomies);
   return {
     id: row.id,
     sku: row.sku?.trim() ?? "",
     name: row.name?.trim() ?? "",
     description: row.description ?? "",
-    shortCode: shortCode(row.taxonomies),
+    shortCode: taxonomy.shortCode,
+    longCode: taxonomy.longCode,
+    taxonomyName: taxonomy.taxonomyName,
   };
 }
 

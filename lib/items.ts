@@ -3,6 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ebayPresenceForItems } from "@/lib/ebay/listings";
 import { errorText } from "@/lib/errors";
+import { labelTaxonomyFields } from "@/lib/labelLookup";
 import { itemIdsMatchingListQuery } from "@/lib/itemListSearch";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
 import { primaryStoragePath } from "@/lib/imageOrder";
@@ -720,7 +721,7 @@ export async function findItemForLabel(identifier: string): Promise<LabelItem | 
   if (!query) return null;
 
   const supabase = await getSupabase();
-  const columns = "id, sku, name, description, taxonomies(short_code)";
+  const columns = "id, sku, name, description, taxonomies(short_code, long_code, name)";
 
   if (UUID_PATTERN.test(query)) {
     const byId = await supabase.from("items").select(columns).eq("id", query).maybeSingle();
@@ -734,30 +735,24 @@ export async function findItemForLabel(identifier: string): Promise<LabelItem | 
   return toLabelItem(bySku.data as LabelRow);
 }
 
-type LabelTaxonomy = { short_code: string | null };
-
 type LabelRow = {
   id: string;
   sku: string | null;
   name: string | null;
   description: string | null;
-  taxonomies: LabelTaxonomy | LabelTaxonomy[] | null;
+  taxonomies: unknown;
 };
 
-function embeddedShortCode(value: LabelRow["taxonomies"]): string | null {
-  if (!value) return null;
-  const row = Array.isArray(value) ? value[0] : value;
-  const code = row?.short_code?.trim().toUpperCase() ?? "";
-  return code || null;
-}
-
 function toLabelItem(row: LabelRow): LabelItem {
+  const taxonomy = labelTaxonomyFields(row.taxonomies);
   return {
     id: row.id,
     sku: row.sku ?? "",
     name: row.name ?? "",
     description: row.description ?? "",
-    shortCode: embeddedShortCode(row.taxonomies),
+    shortCode: taxonomy.shortCode,
+    longCode: taxonomy.longCode,
+    taxonomyName: taxonomy.taxonomyName,
   };
 }
 

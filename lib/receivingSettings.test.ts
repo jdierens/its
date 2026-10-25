@@ -6,6 +6,7 @@ import {
   beginReceiptSave,
   finishReceiptSave,
   originQtyInput,
+  putawayLabel,
   receiptInitials,
   receivingDateToStore,
   receivingEntryForViewer,
@@ -87,6 +88,12 @@ describe("recent receiving rows", () => {
       comment: "shelf box",
       edited: false,
       editedBy: null,
+      cleaned: null,
+      wiped: null,
+      shortCode: null,
+      longCode: null,
+      taxonomyName: null,
+      putaway: "",
     });
     const shown = receivingEntryForViewer(row, true);
     assert.equal(shown.sku, "1001");
@@ -95,5 +102,24 @@ describe("recent receiving rows", () => {
     assert.equal(receiptInitials("OP"), "OP");
     assert.equal(receiptInitials("JAN"), "JAN");
     assert.equal(formatReceivedOn("2026-10-22"), "10/22/26");
+    const located = receivingEntryForViewer(
+      {
+        ...row,
+        cleaned: false,
+        wiped: null,
+        short_code: "CPU",
+        long_code: "CPU/PRC",
+        taxonomy_name: "CPU",
+        bin_reference: "20042-B",
+        location_code: "HWS.00.00.00",
+      },
+      true,
+    );
+    assert.equal(located.cleaned, false);
+    assert.equal(located.wiped, null);
+    assert.equal(located.shortCode, "CPU");
+    assert.equal(located.putaway, "20042-B · HWS.00.00.00");
+    assert.equal(putawayLabel("20042-B", null), "20042-B");
+    assert.equal(putawayLabel(null, "HWS.03.01.02"), "HWS.03.01.02");
   });
 });

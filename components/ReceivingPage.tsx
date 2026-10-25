@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { FormEvent, Fragment, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { Save } from "lucide-react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
 import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { ReceiptRowEditor } from "@/components/ReceiptRowEditor";
 import { ReceivingProjectField } from "@/components/ReceivingProjectField";
-import { reprintBin } from "@/lib/binActions";
-import { BIN_TYPES, type BinType } from "@/lib/bins";
+import { fetchBinCounter, reprintBin } from "@/lib/binActions";
+import { BIN_TYPES, formatBinReference, type BinType } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import {
@@ -21,7 +22,6 @@ import {
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
 import type { BinLabelTemplates, LabelTemplateId } from "@/lib/labelTemplates";
 import { emptyBinLabelTemplates, qrLabelPayload } from "@/lib/labelTemplates";
-import { fetchPutawaySetting, type LocationRow } from "@/lib/locationSettings";
 import {
   createReceivingBin,
   fetchBinDetail,
@@ -44,9 +44,9 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
+import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
-  typedBinCodeError,
   type BinDetail,
   type BinSuggestion,
   type CreatedBin,
@@ -73,12 +73,15 @@ type PrintJob =
   | { kind: "bin"; reference: string; type: BinType }
   | { kind: "item"; item: LabelItem; qty: number; printedOn: string };
 
+type BinPrompt =
+  | { kind: "create"; reference: string; type: BinType; resumeSave: boolean }
+  | { kind: "required"; nextNumber: number; type: BinType; resumeSave: boolean };
+
 export function ReceivingPage() {
   const typed = useRef("");
   const holdQuery = useRef<string | null>(null);
   const requestId = useRef(0);
   const binTyped = useRef("");
-  const codeTyped = useRef("");
   const [identifier, setIdentifier] = useState("");
   const [held, setHeld] = useState(0);
   const [edited, setEdited] = useState(false);
@@ -105,23 +108,19 @@ export function ReceivingPage() {
   const [editorInitials, setEditorInitials] = useState("");
   const [scanRaw, setScanRaw] = useState<string | null>(null);
   const [scanNote, setScanNote] = useState<string | null>(null);
-  const [binMode, setBinMode] = useState<"existing" | "new">("existing");
   const [binCode, setBinCode] = useState("");
   const [binHeld, setBinHeld] = useState(0);
   const [confirmed, setConfirmed] = useState<BinDetail | null>(null);
-  const [suffix, setSuffix] = useState<BinType>("B");
-  const [codeMode, setCodeMode] = useState<"next" | "typed">("next");
-  const [typedCode, setTypedCode] = useState("");
-  const [codeHeld, setCodeHeld] = useState(0);
+  const [binPrompt, setBinPrompt] = useState<BinPrompt | null>(null);
   const [created, setCreated] = useState<CreatedBin | null>(null);
+  const [cleaned, setCleaned] = useState(false);
+  const [wiped, setWiped] = useState(false);
   const [qty, setQty] = useState("1");
   const [comment, setComment] = useState("");
   const [suggestions, setSuggestions] = useState<BinSuggestion[]>([]);
   const [receipt, setReceipt] = useState<{ result: ReceiptResult; item: LabelItem; qty: number; printedOn: string } | null>(null);
   const [templates, setTemplates] = useState<BinLabelTemplates>(emptyBinLabelTemplates);
   const [itemTemplate, setItemTemplate] = useState<LabelTemplateId>("barcode");
-  const [locations, setLocations] = useState<LocationRow[]>([]);
-  const [defaultIds, setDefaultIds] = useState<Record<BinType, string>>({ B: "", C: "", P: "" });
   const [pageOrigin, setPageOrigin] = useState("");
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -145,12 +144,6 @@ export function ReceivingPage() {
       .then(([itemChoice, binChoice]) => {
         setItemTemplate(itemChoice);
         setTemplates(binChoice);
-      })
-      .catch(() => undefined);
-    void fetchPutawaySetting()
-      .then((setting) => {
-        setLocations(setting.locations);
-        setDefaultIds(setting.defaults);
       })
       .catch(() => undefined);
     return () => media.removeEventListener("change", applyLayout);
@@ -263,6 +256,8 @@ export function ReceivingPage() {
     setSettledQuery("");
     setError(null);
     if (rawScan) setComment((current) => (current.trim() ? current : rawScan));
+    setCleaned(false);
+    setWiped(false);
   }
 
   async function runSearch(raw: string, submitted: boolean) {
@@ -364,58 +359,94 @@ export function ReceivingPage() {
     }
   }
 
-  async function confirmBin(raw: string) {
-    const reference = (parseReceivingBinCode(raw)?.reference ?? raw.trim().toUpperCase());
-    if (!reference) {
-      setError("Scan or type a bin code.");
+  function acceptBin(detail: BinDetail) {
+    binTyped.current = detail.reference;
+    setBinCode(detail.reference);
+    setBinHeld((current) => current + 1);
+    setConfirmed(detail);
+    setBinPrompt(null);
+  }
+
+  async function lookupBin(raw: string, resumeSave: boolean): Promise<string | null> {
+    const preliminary = receivingBinDecision(raw, null);
+    if (preliminary.action === "empty") return null;
+    if (preliminary.action === "invalid") {
       setConfirmed(null);
-      return;
+      setBinPrompt(null);
+      setError(preliminary.message);
+      return null;
+    }
+    const parsed = parseReceivingBinCode(raw);
+    if (parsed && confirmed?.reference === parsed.reference && binCanReceive(confirmed)) {
+      setBinPrompt(null);
+      return confirmed.reference;
     }
     setBusy(true);
     setError(null);
     try {
-      const detail = await fetchBinDetail(reference);
-      if (!detail) {
-        setConfirmed(null);
-        setError("No bin with that code. Use New bin.");
-        return;
+      const detail = parsed ? await fetchBinDetail(parsed.reference) : null;
+      const outcome = receivingBinDecision(
+        raw,
+        detail ? { reference: detail.reference, canReceive: binCanReceive(detail) } : null,
+      );
+      if (outcome.action === "accept" && detail) {
+        acceptBin(detail);
+        return detail.reference;
       }
-      binTyped.current = detail.reference;
-      setBinCode(detail.reference);
-      setBinHeld((current) => current + 1);
-      setConfirmed(detail);
+      if (outcome.action === "create") {
+        setConfirmed(null);
+        setBinPrompt({ kind: "create", reference: outcome.reference, type: outcome.type, resumeSave });
+        return null;
+      }
+      setConfirmed(null);
+      setBinPrompt(null);
+      if (outcome.action === "unusable" || outcome.action === "invalid") setError(outcome.message);
+      return null;
     } catch (lookupError) {
       setError(errorText(lookupError));
+      return null;
     } finally {
       setBusy(false);
     }
   }
 
-  async function onCreate() {
-    const raw = codeMode === "typed" ? codeTyped.current.trim() : "";
-    const parsed = raw ? parseReceivingBinCode(raw) : null;
-    const type = parsed?.type ?? suffix;
-    if (parsed && parsed.type !== suffix) setSuffix(parsed.type);
-    if (codeMode === "typed") {
-      const problem = typedBinCodeError(raw, type);
-      if (problem) {
-        setError(problem);
-        return;
-      }
+  async function askForNextBin(resumeSave: boolean): Promise<void> {
+    const counter = await fetchBinCounter();
+    const code = nextReceivingBinCode(counter.nextNumber, "B");
+    if (!code) {
+      setBinPrompt(null);
+      setError("The next bin number must be five digits. Set it in Settings.");
+      return;
     }
+    setError(null);
+    setBinPrompt({ kind: "required", nextNumber: counter.nextNumber, type: "B", resumeSave });
+  }
+
+  async function confirmBinPrompt() {
+    const prompt = binPrompt;
+    if (!prompt) return;
+    const type = prompt.type;
+    const code = prompt.kind === "create" ? prompt.reference : formatBinReference(prompt.nextNumber, type);
     setBusy(true);
     setError(null);
     try {
-      const bin = await createReceivingBin(type, raw ? raw.toUpperCase() : null);
+      const bin = await createReceivingBin(type, code);
       setCreated(bin);
       binTyped.current = bin.reference;
       setBinCode(bin.reference);
       setBinHeld((current) => current + 1);
-      setBinMode("existing");
       const detail = await fetchBinDetail(bin.reference);
-      setConfirmed(detail);
+      if (detail && binCanReceive(detail)) setConfirmed(detail);
+      else setConfirmed(detail);
+      setBinPrompt(null);
       setPrintJob({ kind: "bin", reference: bin.reference, type: bin.type });
       setPrintStamp((current) => current + 1);
+      if (prompt.resumeSave) {
+        const claim = beginReceiptSave(saveGate.current, crypto.randomUUID());
+        if (!claim.ok) return;
+        saveGate.current = claim.gate;
+        await commitReceipt(bin.reference, claim.requestId);
+      }
     } catch (createError) {
       setError(errorText(createError));
     } finally {
@@ -428,20 +459,10 @@ export function ReceivingPage() {
     setSaving(false);
   }
 
-  async function onSave(event: FormEvent) {
-    event.preventDefault();
-    const claim = beginReceiptSave(saveGate.current, crypto.randomUUID());
-    if (!claim.ok) return;
-    saveGate.current = claim.gate;
+  async function commitReceipt(reference: string, requestId: string) {
     if (!item) {
       releaseSave(false);
       setError("Choose an item.");
-      return;
-    }
-    const reference = confirmed?.reference;
-    if (!reference) {
-      releaseSave(false);
-      setError("Scan an existing bin, or create one.");
       return;
     }
     const parsed = parseQty(qty);
@@ -461,6 +482,11 @@ export function ReceivingPage() {
       setError("Enter a receiving date.");
       return;
     }
+    const flags = receiptFlagsForPrep(
+      receivePrepKind({ shortCode: item.shortCode, longCode: item.longCode, taxonomyName: item.taxonomyName }),
+      cleaned,
+      wiped,
+    );
     setSaving(true);
     setError(null);
     try {
@@ -474,8 +500,10 @@ export function ReceivingPage() {
         incomingTag,
         receivedOn,
         originQty: originParsed.qty,
-        clientRequestId: claim.requestId,
+        clientRequestId: requestId,
         scanRaw,
+        cleaned: flags.cleaned,
+        wiped: flags.wiped,
       });
       const printedOn = todayLabel(new Date());
       const savedItem = item;
@@ -496,6 +524,9 @@ export function ReceivingPage() {
       setBinCode("");
       setConfirmed(null);
       setCreated(null);
+      setBinPrompt(null);
+      setCleaned(false);
+      setWiped(false);
       setQty("1");
       setComment("");
       setScanRaw(null);
@@ -526,6 +557,40 @@ export function ReceivingPage() {
     }
   }
 
+  async function onSave(event: FormEvent) {
+    event.preventDefault();
+    const claim = beginReceiptSave(saveGate.current, crypto.randomUUID());
+    if (!claim.ok) return;
+    saveGate.current = claim.gate;
+    if (!item) {
+      releaseSave(false);
+      setError("Choose an item.");
+      return;
+    }
+    const parsed = parseQty(qty);
+    if (parsed == null) {
+      releaseSave(false);
+      setError("Enter a whole number of at least 1.");
+      return;
+    }
+    const rawBin = (binTyped.current || binCode).trim();
+    if (!rawBin) {
+      releaseSave(false);
+      try {
+        await askForNextBin(true);
+      } catch (counterError) {
+        setError(errorText(counterError));
+      }
+      return;
+    }
+    const reference = await lookupBin(rawBin, true);
+    if (!reference) {
+      releaseSave(false);
+      return;
+    }
+    await commitReceipt(reference, claim.requestId);
+  }
+
   async function printBinLabel(reference: string, type: BinType) {
     setError(null);
     try {
@@ -550,11 +615,17 @@ export function ReceivingPage() {
   }
 
   const openCycle = confirmed?.cycles.find((cycle) => cycle.status === "open") ?? null;
-  const defaultCode = locations.find((location) => location.id === defaultIds[suffix])?.code;
   const listOpen = matches.length > 0;
+  const prep = receivePrepKind({
+    shortCode: item?.shortCode,
+    longCode: item?.longCode,
+    taxonomyName: item?.taxonomyName,
+  });
+  const suggestedCode =
+    binPrompt?.kind === "required" ? formatBinReference(binPrompt.nextNumber, binPrompt.type) : null;
 
   return (
-    <main className="page receiving-page desk-fields">
+    <main className="page receiving-page desk-fields ds">
       <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
       <div className="no-print">
         <p className="page-note">The header is the receipt. The line is one SKU into one bin.</p>
@@ -640,92 +711,6 @@ export function ReceivingPage() {
 
         <section className="card receive-card" id="receive-line">
           <h2>Line</h2>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            selectOrSearch();
-          }}
-        >
-          <label htmlFor="receive-sku">
-            <span>SKU, name, or description</span>
-          <FastInput
-            id="receive-sku"
-            value={identifier}
-            syncKey={held}
-            autoFocus
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            enterKeyHint="search"
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={listOpen}
-            aria-controls="receive-results"
-            aria-busy={searching}
-            aria-activedescendant={active >= 0 ? `receive-hit-${matches[active]?.id}` : undefined}
-            onDraft={(value) => {
-              typed.current = value;
-              requestId.current += 1;
-            }}
-            onValue={(value) => {
-              const action = labelCommitAction({
-                value,
-                typed: typed.current,
-                held: holdQuery.current,
-                identifier,
-              });
-              if (action === "ignore") return;
-              holdQuery.current = null;
-              setEdited(true);
-              setIdentifier(value);
-              setItem(null);
-              setMatches([]);
-              setTruncated(false);
-              setActive(-1);
-              setScanRaw(null);
-              setScanNote(null);
-              setError(null);
-            }}
-            onKeyDown={onSearchKey}
-          />
-          </label>
-          {scanNote ? (
-            <p className="hint" id="receive-scan-note">
-              {scanNote}
-            </p>
-          ) : null}
-          {listOpen ? (
-            <ul className="label-results" id="receive-results" role="listbox">
-              {matches.map((match, index) => (
-                <li key={match.id}>
-                  <button
-                    type="button"
-                    id={`receive-hit-${match.id}`}
-                    className="label-hit"
-                    role="option"
-                    aria-selected={index === active}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => choose(match)}
-                  >
-                    <strong>{match.sku || match.name}</strong>
-                    <span>{match.name}</span>
-                    {match.description ? <span className="muted">{descriptionSnippet(match.description)}</span> : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {truncated ? <span className="hint">Showing the first matches. Type more to narrow them.</span> : null}
-          {item ? (
-            <p className="hint">
-              {item.sku || item.id}
-              {item.name ? ` · ${item.name}` : ""}
-            </p>
-          ) : null}
-        </form>
-
-        <form onSubmit={onSave}>
           {item && suggestions.length > 0 ? (
             <div>
               <p className="hint">This SKU is already in these bins on this project.</p>
@@ -737,8 +722,7 @@ export function ReceivingPage() {
                     className="secondary"
                     disabled={busy}
                     onClick={() => {
-                      setBinMode("existing");
-                      void confirmBin(suggestion.reference);
+                      void lookupBin(suggestion.reference, false);
                     }}
                   >
                     {suggestion.reference}
@@ -751,174 +735,246 @@ export function ReceivingPage() {
           {item && suggestions.length === 0 ? (
             <p className="hint">No bin on this project already holds that SKU. An empty bin is not suggested.</p>
           ) : null}
-
-          <div className="receive-line-row">
-            <div className="receive-toggle-field">
-              <span id="receive-bin-mode-label">Bin</span>
-              <div className="label-segments receive-segments" role="group" aria-labelledby="receive-bin-mode-label">
-                <button type="button" aria-pressed={binMode === "existing"} onClick={() => setBinMode("existing")}>
-                  Existing
-                </button>
-                <button type="button" aria-pressed={binMode === "new"} onClick={() => setBinMode("new")}>
-                  New
-                </button>
-              </div>
-            </div>
-            {binMode === "existing" ? (
-              <div className="receive-code-field">
-                <label htmlFor="receive-bin">Code</label>
-                <div className="receive-code-controls">
+          <form onSubmit={onSave}>
+            <div className="receive-line-row">
+              <div className="receive-search">
+                <label htmlFor="receive-sku">
+                  <span>Search</span>
                   <FastInput
-                    id="receive-bin"
-                    className="receive-bin-code"
-                    value={binCode}
-                    syncKey={binHeld}
-                    maxLength={10}
+                    id="receive-sku"
+                    value={identifier}
+                    syncKey={held}
+                    autoFocus
                     autoComplete="off"
-                    autoCapitalize="characters"
+                    autoCapitalize="off"
+                    autoCorrect="off"
                     spellCheck={false}
+                    enterKeyHint="search"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={listOpen}
+                    aria-controls="receive-results"
+                    aria-busy={searching}
+                    aria-activedescendant={active >= 0 ? `receive-hit-${matches[active]?.id}` : undefined}
+                    onDraft={(value) => {
+                      typed.current = value;
+                      requestId.current += 1;
+                    }}
+                    onValue={(value) => {
+                      const action = labelCommitAction({
+                        value,
+                        typed: typed.current,
+                        held: holdQuery.current,
+                        identifier,
+                      });
+                      if (action === "ignore") return;
+                      holdQuery.current = null;
+                      setEdited(true);
+                      setIdentifier(value);
+                      setItem(null);
+                      setMatches([]);
+                      setTruncated(false);
+                      setActive(-1);
+                      setScanRaw(null);
+                      setScanNote(null);
+                      setError(null);
+                    }}
+                    onKeyDown={onSearchKey}
+                  />
+                </label>
+                {listOpen ? (
+                  <ul className="label-results" id="receive-results" role="listbox">
+                    {matches.map((match, index) => (
+                      <li key={match.id}>
+                        <button
+                          type="button"
+                          id={`receive-hit-${match.id}`}
+                          className="label-hit"
+                          role="option"
+                          aria-selected={index === active}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => choose(match)}
+                        >
+                          <strong>{match.sku || match.name}</strong>
+                          <span>{match.name}</span>
+                          {match.description ? <span className="muted">{descriptionSnippet(match.description)}</span> : null}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+              <label className="receive-readout" htmlFor="receive-line-sku">
+                <span>SKU</span>
+                <input id="receive-line-sku" value={item?.sku ?? ""} readOnly tabIndex={-1} />
+              </label>
+              <label className="receive-readout receive-name" htmlFor="receive-line-name">
+                <span>Name</span>
+                <input id="receive-line-name" value={item?.name ?? ""} readOnly tabIndex={-1} title={item?.name || undefined} />
+              </label>
+              <label className="receive-line-qty" htmlFor="receive-qty">
+                <span>Qty</span>
+                <input
+                  id="receive-qty"
+                  className="num-input"
+                  value={qty}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  disabled={busy}
+                  onChange={(event) => setQty(event.target.value)}
+                />
+              </label>
+              <label className="receive-bin-field" htmlFor="receive-bin">
+                <span>Bin</span>
+                <FastInput
+                  id="receive-bin"
+                  className="receive-bin-code"
+                  value={binCode}
+                  syncKey={binHeld}
+                  maxLength={10}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  disabled={busy}
+                  placeholder="20000-B"
+                  onDraft={(value) => {
+                    binTyped.current = value;
+                  }}
+                  onBlur={() => {
+                    const raw = binTyped.current.trim();
+                    if (!raw) return;
+                    void lookupBin(raw, false);
+                  }}
+                  onValue={(value) => {
+                    setBinCode(value);
+                    const next = value.trim().toUpperCase();
+                    if (confirmed && next !== confirmed.reference) setConfirmed(null);
+                    setBinPrompt((current) => {
+                      if (!current) return null;
+                      if (current.kind === "create" && current.reference === next) return current;
+                      if (current.kind === "required" && next === "") return current;
+                      return null;
+                    });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void lookupBin(binTyped.current, false);
+                    }
+                  }}
+                />
+              </label>
+              {prep === "cleaned" ? (
+                <label className="receive-prep" htmlFor="receive-cleaned">
+                  <span>Cleaned</span>
+                  <input
+                    id="receive-cleaned"
+                    type="checkbox"
+                    checked={cleaned}
                     disabled={busy}
-                    onDraft={(value) => {
-                      binTyped.current = value;
-                    }}
-                    onValue={(value) => {
-                      setBinCode(value);
-                      if (confirmed && value.trim().toUpperCase() !== confirmed.reference) setConfirmed(null);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void confirmBin(binTyped.current);
-                      }
-                    }}
+                    onChange={(event) => setCleaned(event.target.checked)}
                   />
-                  <button type="button" className="secondary" disabled={busy} onClick={() => void confirmBin(binTyped.current || binCode)}>
-                    Look up
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="receive-code-field">
-                <label htmlFor="receive-new-code">Code</label>
-                <div className="receive-code-controls">
-                  <FastInput
-                    id="receive-new-code"
-                    className="receive-bin-code"
-                    value={codeMode === "next" ? "" : typedCode}
-                    syncKey={codeHeld}
-                    maxLength={10}
-                    autoComplete="off"
-                    autoCapitalize="characters"
-                    spellCheck={false}
-                    placeholder={codeMode === "next" ? "Next" : `20000-${suffix}`}
-                    disabled={busy || codeMode === "next"}
-                    onDraft={(value) => {
-                      codeTyped.current = value;
-                      const parsed = parseReceivingBinCode(value);
-                      if (parsed) setSuffix(parsed.type);
-                    }}
-                    onValue={(value) => {
-                      setTypedCode(value);
-                      const parsed = parseReceivingBinCode(value);
-                      if (parsed) setSuffix(parsed.type);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void onCreate();
-                      }
-                    }}
+                </label>
+              ) : null}
+              {prep === "wiped" ? (
+                <label className="receive-prep" htmlFor="receive-wiped">
+                  <span>Wiped</span>
+                  <input
+                    id="receive-wiped"
+                    type="checkbox"
+                    checked={wiped}
+                    disabled={busy}
+                    onChange={(event) => setWiped(event.target.checked)}
                   />
-                  <button type="button" className="secondary" disabled={busy} onClick={() => void onCreate()}>
-                    Create
-                  </button>
-                </div>
-              </div>
-            )}
-            <label className="receive-line-qty" htmlFor="receive-qty">
-              <span>Qty</span>
-              <input
-                id="receive-qty"
-                className="num-input"
-                value={qty}
-                inputMode="numeric"
-                autoComplete="off"
-                disabled={busy}
-                onChange={(event) => setQty(event.target.value)}
-              />
-            </label>
-          </div>
-
-          {binMode === "new" ? (
-            <div className="receive-new-options">
-              <div className="label-segments receive-segments" role="group" aria-label="Bin suffix">
-                {BIN_TYPES.map((type) => (
-                  <button
-                    key={type.id}
-                    type="button"
-                    aria-pressed={suffix === type.id}
-                    onClick={() => setSuffix(type.id)}
-                  >
-                    {type.label}
-                  </button>
-                ))}
-              </div>
-              <div className="label-segments receive-segments" role="group" aria-label="Bin code source">
-                <button type="button" aria-pressed={codeMode === "next"} onClick={() => setCodeMode("next")}>
-                  Next free code
-                </button>
-                <button type="button" aria-pressed={codeMode === "typed"} onClick={() => setCodeMode("typed")}>
-                  Type a code
+                </label>
+              ) : null}
+              <label className="receive-comment" htmlFor="receive-comment">
+                <span>Comment</span>
+                <input
+                  id="receive-comment"
+                  value={comment}
+                  autoComplete="off"
+                  disabled={busy}
+                  onChange={(event) => setComment(event.target.value)}
+                />
+              </label>
+              <div className="receive-save">
+                <button
+                  id="receive-save"
+                  className="so-icon-action"
+                  type="submit"
+                  disabled={busy || saving}
+                  aria-label={saving ? "Saving" : "Save receipt"}
+                  title={saving ? "Saving" : "Save receipt"}
+                >
+                  <Save size={18} strokeWidth={1.75} aria-hidden />
                 </button>
               </div>
-              <p className="hint">
-                {codeMode === "next"
-                  ? `The next number from the shared counter, with suffix -${suffix}.${defaultCode ? ` It is placed at ${defaultCode}.` : ""}`
-                  : `Type a code such as 10099-${suffix}. A suffix of -B, -C, or -P sets the type.`}
+            </div>
+            {scanNote ? (
+              <p className="hint" id="receive-scan-note">
+                {scanNote}
               </p>
-            </div>
-          ) : null}
-
-          {confirmed ? (
-            <p className="hint">
-              {confirmed.reference}
-              {confirmed.locationCode ? ` is at ${confirmed.locationCode}` : " has no location yet"}
-              {created ? ", and its label is printed" : ""}.{" "}
-              {openCycle
-                ? `Open cycle${openCycle.project ? ` for ${openCycle.project}` : ""}${openCycle.originDescription ? `. ${openCycle.originDescription}` : ""}.`
-                : "Empty. The next save opens a cycle."}
-            </p>
-          ) : null}
-
-          {created && !receipt ? (
-            <div className="label-preview">
-              <div className="label-frame">
-                <BinLabel reference={created.reference} type={created.type} layout={templates[created.type]} />
+            ) : null}
+            {truncated ? <span className="hint">Showing the first matches. Type more to narrow them.</span> : null}
+            {binPrompt ? (
+              <div className="receive-bin-ask" role="region" aria-label="Create bin">
+                <p id="receive-bin-ask-title">
+                  {binPrompt.kind === "create"
+                    ? `No bin ${binPrompt.reference}. Create it?`
+                    : `A bin is required. Create the next bin, ${suggestedCode}?`}
+                </p>
+                {binPrompt.kind === "required" ? (
+                  <div className="label-segments receive-segments" role="group" aria-label="Bin type">
+                    {BIN_TYPES.map((type) => (
+                      <button
+                        key={type.id}
+                        type="button"
+                        aria-pressed={binPrompt.type === type.id}
+                        onClick={() =>
+                          setBinPrompt((current) =>
+                            current && current.kind === "required" ? { ...current, type: type.id } : current,
+                          )
+                        }
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="receive-actions">
+                  <button type="button" disabled={busy} onClick={() => void confirmBinPrompt()}>
+                    Create bin
+                  </button>
+                  <button type="button" className="secondary" disabled={busy} onClick={() => setBinPrompt(null)}>
+                    Cancel
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : null}
-
-          <label className="receive-comment" htmlFor="receive-comment">
-            <span>Comment</span>
-            <input
-              id="receive-comment"
-              value={comment}
-              autoComplete="off"
-              disabled={busy}
-              onChange={(event) => setComment(event.target.value)}
-            />
-          </label>
-          {error ? (
-            <p className="banner error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="actions">
-            <button id="receive-save" type="submit" disabled={busy || saving}>
-              {saving ? "Saving…" : "Save receipt"}
-            </button>
-          </div>
-        </form>
+            ) : null}
+            {confirmed ? (
+              <p className="hint">
+                {confirmed.reference}
+                {confirmed.locationCode ? ` is at ${confirmed.locationCode}` : " has no location yet"}
+                {created ? ", and its label is printed" : ""}.{" "}
+                {openCycle
+                  ? `Open cycle${openCycle.project ? ` for ${openCycle.project}` : ""}${openCycle.originDescription ? `. ${openCycle.originDescription}` : ""}.`
+                  : "Empty. The next save opens a cycle."}
+              </p>
+            ) : null}
+            {created && !receipt ? (
+              <div className="label-preview">
+                <div className="label-frame">
+                  <BinLabel reference={created.reference} type={created.type} layout={templates[created.type]} />
+                </div>
+              </div>
+            ) : null}
+            {error ? (
+              <p className="banner error" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </form>
         </section>
 
         <section className="card receive-card" id="receive-recent">
@@ -948,6 +1004,7 @@ export function ReceivingPage() {
                       <th className="fit">SKU</th>
                       <th className="item">Item name</th>
                       <th className="num fit">Qty</th>
+                      <th className="putaway">Putaway</th>
                       <th className="note">Comment</th>
                     </tr>
                   </thead>
@@ -982,11 +1039,12 @@ export function ReceivingPage() {
                           <td className="fit sku">{entry.sku}</td>
                           <td className="item" title={entry.itemName}>{entry.itemName}</td>
                           <td className="fit num">{entry.qty}</td>
+                          <td className="putaway" title={entry.putaway || undefined}>{entry.putaway}</td>
                           <td className="note" title={entry.comment ?? undefined}>{entry.comment ?? ""}</td>
                         </tr>
                         {!phoneLayout && editingId === entry.id ? (
                           <tr className="receive-edit-row">
-                            <td colSpan={10}>
+                            <td colSpan={11}>
                               <ReceiptRowEditor
                                 entry={entry}
                                 initials={editorInitials}
@@ -1038,6 +1096,8 @@ export function ReceivingPage() {
                           <dd>{entry.itemName}</dd>
                           <dt>Qty</dt>
                           <dd className="num">{entry.qty}</dd>
+                          <dt>Putaway location</dt>
+                          <dd>{entry.putaway}</dd>
                           <dt>Comment</dt>
                           <dd>{entry.comment ?? ""}</dd>
                         </dl>

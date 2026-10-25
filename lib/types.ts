@@ -134,4 +134,6 @@ export type LabelItem = {
   name: string;
   description: string;
   shortCode: string | null;
+  longCode?: string | null;
+  taxonomyName?: string | null;
 };

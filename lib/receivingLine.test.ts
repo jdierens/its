@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  binCanReceive,
+  nextReceivingBinCode,
+  receiptFlagsForPrep,
+  receivePrepKind,
+  receivingBinDecision,
+} from "@/lib/receivingLine";
+
+describe("receive prep", () => {
+  it("asks Cleaned for a CPU and Wiped for a drive", () => {
+    assert.equal(receivePrepKind({ shortCode: "CPU" }), "cleaned");
+    assert.equal(receivePrepKind({ longCode: "CPU/PRC", taxonomyName: "CPU" }), "cleaned");
+    assert.equal(receivePrepKind({ taxonomyName: "processor" }), "cleaned");
+    assert.equal(receivePrepKind({ shortCode: "HDD", longCode: "DSK/HDD" }), "wiped");
+    assert.equal(receivePrepKind({ shortCode: "SSD" }), "wiped");
+    assert.equal(receivePrepKind({ longCode: "DSK/SSD", taxonomyName: "SSD" }), "wiped");
+    assert.equal(receivePrepKind({ shortCode: "MEM", longCode: "DIM/MEM", taxonomyName: "memory" }), null);
+    assert.equal(receivePrepKind({ shortCode: "SRV" }), null);
+  });
+
+  it("stores the asked flag and leaves the other empty", () => {
+    assert.deepEqual(receiptFlagsForPrep("cleaned", false, true), { cleaned: false, wiped: null });
+    assert.deepEqual(receiptFlagsForPrep("wiped", true, false), { cleaned: null, wiped: false });
+    assert.deepEqual(receiptFlagsForPrep("wiped", false, true), { cleaned: null, wiped: true });
+    assert.deepEqual(receiptFlagsForPrep(null, true, true), { cleaned: null, wiped: null });
+  });
+});
+
+describe("typed receiving bin", () => {
+  it("accepts a usable bin, offers to create an unknown one, and rejects a stuck cycle", () => {
+    assert.deepEqual(receivingBinDecision("", null), { action: "empty" });
+    assert.equal(receivingBinDecision("10099", null).action, "invalid");
+    assert.deepEqual(receivingBinDecision("10099-C", null), {
+      action: "create",
+      reference: "10099-C",
+      type: "C",
+    });
+    assert.deepEqual(receivingBinDecision("20014-b", { reference: "20014-B", canReceive: true }), {
+      action: "accept",
+      reference: "20014-B",
+    });
+    assert.equal(
+      receivingBinDecision("20014-B", { reference: "20014-B", canReceive: false }).action,
+      "unusable",
+    );
+  });
+
+  it("treats an empty bin as usable and a stocked bin without an open cycle as not", () => {
+    assert.equal(binCanReceive({ contents: [], cycles: [] }), true);
+    assert.equal(binCanReceive({ contents: [{ qty: 0 }], cycles: [{ status: "closed" }] }), true);
+    assert.equal(binCanReceive({ contents: [{ qty: 2 }], cycles: [{ status: "open" }] }), true);
+    assert.equal(binCanReceive({ contents: [{ qty: 2 }], cycles: [{ status: "closed" }] }), false);
+  });
+
+  it("suggests the shared counter's next code", () => {
+    assert.equal(nextReceivingBinCode(20042, "B"), "20042-B");
+    assert.equal(nextReceivingBinCode(20042, "P"), "20042-P");
+    assert.equal(nextReceivingBinCode(999, "B"), null);
+  });
+});

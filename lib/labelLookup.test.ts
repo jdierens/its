@@ -6,6 +6,7 @@ import {
   labelLikeOr,
   labelLookupChoice,
   labelResultApplies,
+  labelTaxonomyFields,
   sortLabelMatches,
 } from "./labelLookup.ts";
 import type { LabelItem } from "./types.ts";
@@ -20,6 +21,15 @@ function item(patch: Partial<LabelItem>): LabelItem {
     ...patch,
   };
 }
+
+test("taxonomy codes come from the embedded row", () => {
+  assert.deepEqual(labelTaxonomyFields({ short_code: "ssd", long_code: "dsk/ssd", name: "SSD" }), {
+    shortCode: "SSD",
+    longCode: "DSK/SSD",
+    taxonomyName: "SSD",
+  });
+  assert.deepEqual(labelTaxonomyFields(null), { shortCode: null, longCode: null, taxonomyName: null });
+});
 
 test("like wildcards in the query are escaped and the filter stays one value", () => {
   assert.equal(escapeLike("100%_a\\b"), "100\\%\\_a\\\\b");

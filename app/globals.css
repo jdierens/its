@@ -4890,8 +4890,8 @@ nextjs-portal {
 .receive-line-row {
   display: flex;
   align-items: end;
-  gap: 0.75rem;
-  margin-top: 0.85rem;
+  gap: 0.55rem;
+  min-width: 0;
 }
 
 .receive-toggle-field,
@@ -4961,10 +4961,94 @@ nextjs-portal {
   margin: 0;
 }
 
+.receive-search,
+.receive-readout,
+.receive-bin-field,
+.receive-prep,
+.receive-comment,
+.receive-save {
+  display: grid;
+  gap: 0.3rem;
+  align-content: end;
+  min-width: 0;
+}
+
+.receive-search {
+  position: relative;
+  flex: 0 0 11rem;
+  width: 11rem;
+  max-width: 11rem;
+}
+
+.receive-search .label-results {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 0.2rem);
+  left: 0;
+  width: max(100%, 22rem);
+  margin: 0;
+}
+
+.receive-readout {
+  flex: 0 1 8rem;
+  width: 8rem;
+}
+
+.receive-readout.receive-name,
+.receive-comment {
+  flex: 1 1 8rem;
+  width: auto;
+  min-width: 6rem;
+  margin-top: 0;
+}
+
+.receive-bin-field {
+  flex: 0 0 8.5rem;
+  width: 8.5rem;
+}
+
+.receive-bin-field .receive-bin-code {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.receive-prep {
+  flex: 0 0 auto;
+  grid-template-rows: auto calc(1.45em + 1rem + 2px);
+  align-items: center;
+  justify-items: center;
+}
+
+.receive-prep input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  min-height: 1.25rem;
+  margin: 0;
+  accent-color: var(--ds-ink, var(--ink));
+}
+
+.receive-save {
+  flex: 0 0 44px;
+}
+
+.receive-bin-ask {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--ds-radius, 10px);
+  background: var(--ds-card, var(--card-solid));
+  box-shadow: var(--ds-shadow, none);
+}
+
+.receive-bin-ask p {
+  margin: 0;
+}
+
 .receive-comment {
   display: grid;
   gap: 0.3rem;
-  margin-top: 0.85rem;
+  margin-top: 0;
 }
 
 .receive-table-scroll {
@@ -5033,6 +5117,12 @@ nextjs-portal {
   max-width: 60ch;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.receive-table th.putaway,
+.receive-table td.putaway {
+  width: 1%;
   white-space: nowrap;
 }
 
@@ -5194,8 +5284,17 @@ button.receive-card-open {
   }
 
   .receive-line-row {
-    flex-wrap: nowrap;
-    gap: 0.4rem;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  .receive-search,
+  .receive-readout,
+  .receive-bin-field,
+  .receive-comment {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
   }
 
   .receive-segments button {
@@ -6711,6 +6810,60 @@ input.num-input {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   overflow: auto;
+}
+
+.ds.receiving-page {
+  color: var(--ds-ink);
+}
+
+.ds.receiving-page .receive-card {
+  overflow: visible;
+  box-shadow: var(--ds-shadow);
+}
+
+.ds.receiving-page label > span,
+.ds.receiving-page .hint,
+.ds.receiving-page .page-note,
+.ds.receiving-page .receive-card-row dt {
+  color: var(--ds-muted);
+}
+
+.ds.receiving-page input:not([type="checkbox"]),
+.ds.receiving-page select {
+  background: var(--ds-input);
+  border: 1px solid var(--ds-input-border);
+  border-radius: var(--ds-radius);
+  color: var(--ds-ink);
+  transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+
+.ds.receiving-page input:not([type="checkbox"]):focus,
+.ds.receiving-page select:focus {
+  outline: none;
+  box-shadow: var(--ds-ring);
+}
+
+.ds.receiving-page button.so-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: var(--ds-radius);
+}
+
+.ds.receiving-page button.so-icon-action:focus-visible {
+  outline: none;
+  box-shadow: var(--ds-ring);
+}
+
+.ds.receiving-page .label-results,
+.ds.receiving-page .receive-bin-ask {
+  background: var(--ds-card);
+  border-color: var(--ds-input-border);
+  color: var(--ds-ink);
 }
 
 .so-workspace {

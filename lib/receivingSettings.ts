@@ -83,7 +83,21 @@ export type ReceivingEntry = {
   comment: string | null;
   edited: boolean;
   editedBy: string | null;
+  cleaned: boolean | null;
+  wiped: boolean | null;
+  shortCode: string | null;
+  longCode: string | null;
+  taxonomyName: string | null;
+  putaway: string;
 };
+
+/** Destination bin and the location it was put away to, in one cell. */
+export function putawayLabel(binReference: string | null, locationCode: string | null): string {
+  const bin = (binReference ?? "").trim();
+  const location = (locationCode ?? "").trim();
+  if (bin && location) return `${bin} · ${location}`;
+  return bin || location;
+}
 
 /** Two-letter initials are shown in capitals. A longer value already stored on a receipt is left as written. */
 export function receiptInitials(value: unknown): string {
@@ -106,12 +120,30 @@ function joinedText(value: unknown, key: string): string {
   return String(record[key] ?? "").trim();
 }
 
+function embed(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value)) return embed(value[0]);
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  if (value === true || value === false) return value;
+  return null;
+}
+
 /** Keep the columns the recent table shows. Prices never leave the server for a role that cannot see them. */
 export function receivingEntryForViewer(row: Record<string, unknown>, canViewMoney: boolean): ReceivingEntry {
   const source = canViewMoney ? row : omitMoney(row);
   const receivedOn = textOrNull(source.received_on) ?? textOrNull(source.occurred_at)?.slice(0, 10) ?? "";
   const qty = Number(source.qty);
   const originQty = source.origin_qty == null || source.origin_qty === "" ? null : Number(source.origin_qty);
+  const item = embed(source.items);
+  const taxonomy = embed(item?.taxonomies);
+  const binReference = textOrNull(source.bin_reference) ?? textOrNull(joinedText(source.bins, "reference"));
+  const locationCode =
+    textOrNull(source.location_code) ??
+    textOrNull(joinedText(source.to_location, "code")) ??
+    textOrNull(joinedText(source.locations, "code"));
   return {
     id: String(source.id ?? ""),
     receivedOn,
@@ -127,6 +159,12 @@ export function receivingEntryForViewer(row: Record<string, unknown>, canViewMon
     comment: textOrNull(source.comment),
     edited: source.edited === true,
     editedBy: textOrNull(source.editor_initials),
+    cleaned: booleanOrNull(source.cleaned),
+    wiped: booleanOrNull(source.wiped),
+    shortCode: textOrNull(source.short_code) ?? textOrNull(taxonomy?.short_code),
+    longCode: textOrNull(source.long_code) ?? textOrNull(taxonomy?.long_code),
+    taxonomyName: textOrNull(source.taxonomy_name) ?? textOrNull(taxonomy?.name),
+    putaway: putawayLabel(binReference, locationCode),
   };
 }
 

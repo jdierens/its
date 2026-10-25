@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { errorText } from "@/lib/errors";
 import { editReceipt, searchReceivingScan } from "@/lib/receivingActions";
+import { receiptFlagsForPrep, receivePrepKind } from "@/lib/receivingLine";
 import { receiptChangeSummary, scanSearchNote } from "@/lib/receivingScan";
 import { originQtyInput, parseReceiptDate, type ReceivingEntry } from "@/lib/receivingSettings";
 import type { LabelItem } from "@/lib/types";
@@ -35,6 +36,11 @@ export function ReceiptRowEditor({
   const [itemName, setItemName] = useState(entry.itemName);
   const [qty, setQty] = useState(String(entry.qty));
   const [comment, setComment] = useState(entry.comment ?? "");
+  const [shortCode, setShortCode] = useState(entry.shortCode);
+  const [longCode, setLongCode] = useState(entry.longCode);
+  const [taxonomyName, setTaxonomyName] = useState(entry.taxonomyName);
+  const [cleaned, setCleaned] = useState(entry.cleaned === true);
+  const [wiped, setWiped] = useState(entry.wiped === true);
   const [matches, setMatches] = useState<LabelItem[]>([]);
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -45,6 +51,11 @@ export function ReceiptRowEditor({
     setItemId(item.id);
     setSku(item.sku || item.name);
     setItemName(item.name);
+    setShortCode(item.shortCode);
+    setLongCode(item.longCode ?? null);
+    setTaxonomyName(item.taxonomyName ?? null);
+    setCleaned(false);
+    setWiped(false);
     setMatches([]);
     setConfirming(false);
   }
@@ -115,6 +126,8 @@ export function ReceiptRowEditor({
       setError(null);
       return;
     }
+    const prep = receivePrepKind({ shortCode, longCode, taxonomyName });
+    const flags = receiptFlagsForPrep(prep, cleaned, wiped);
     setSaving(true);
     setError(null);
     try {
@@ -129,6 +142,8 @@ export function ReceiptRowEditor({
         qty: parsedQty,
         itemId,
         confirmed: Boolean(summary),
+        cleaned: flags.cleaned,
+        wiped: flags.wiped,
       });
       onSaved();
     } catch (saveError) {
@@ -186,6 +201,11 @@ export function ReceiptRowEditor({
             onChange={(event) => {
               setSku(event.target.value);
               setItemId("");
+              setShortCode(null);
+              setLongCode(null);
+              setTaxonomyName(null);
+              setCleaned(false);
+              setWiped(false);
               setConfirming(false);
             }}
             onKeyDown={(event) => {
@@ -204,6 +224,34 @@ export function ReceiptRowEditor({
           <span>Qty</span>
           <input id={`edit-qty-${entry.id}`} className="num-input" inputMode="numeric" value={qty} autoComplete="off" onChange={(event) => { setQty(event.target.value); setConfirming(false); }} />
         </label>
+        {receivePrepKind({ shortCode, longCode, taxonomyName }) === "cleaned" ? (
+          <label className="receive-prep" htmlFor={`edit-cleaned-${entry.id}`}>
+            <span>Cleaned</span>
+            <input
+              id={`edit-cleaned-${entry.id}`}
+              type="checkbox"
+              checked={cleaned}
+              onChange={(event) => {
+                setCleaned(event.target.checked);
+                setConfirming(false);
+              }}
+            />
+          </label>
+        ) : null}
+        {receivePrepKind({ shortCode, longCode, taxonomyName }) === "wiped" ? (
+          <label className="receive-prep" htmlFor={`edit-wiped-${entry.id}`}>
+            <span>Wiped</span>
+            <input
+              id={`edit-wiped-${entry.id}`}
+              type="checkbox"
+              checked={wiped}
+              onChange={(event) => {
+                setWiped(event.target.checked);
+                setConfirming(false);
+              }}
+            />
+          </label>
+        ) : null}
         <label className="wide" htmlFor={`edit-comment-${entry.id}`}>
           <span>Comment</span>
           <input id={`edit-comment-${entry.id}`} value={comment} autoComplete="off" onChange={(event) => { setComment(event.target.value); setConfirming(false); }} />
