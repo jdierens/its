@@ -48,6 +48,16 @@ During the pull, the label is `variation_sku` when one is present, otherwise `sk
 
 Until the pack migration is applied, refresh still stores listings and every row is treated as a pack of 1. After you apply it, run **Refresh listings** again so `pack_qty` and `base_sku` are filled. Existing rows default to 1. The eBay card shows the active count, how many active rows have no item, and when listings were last fetched. Before `ebay_listings` exists, those counts stay blank and the items page still loads.
 
+## Listings browser
+
+**Browse listings** on Admin > Integrations > eBay, and **eBay listings** in the sidebar, open `/admin/integrations/ebay/listings`. The page lists every active row: title, picture, custom label, quantity, and the ITS item. Search covers the title, custom label, eBay item id, and the matched item's SKU or name. Filters are all active, unmatched, and matched. Ended rows stay out of this list.
+
+The picture is the listing's https `PictureURL`, or `GalleryURL` when `PictureURL` is missing. Both come from the `GetMyeBaySelling` response already used by refresh. There is no extra call per listing. `supabase/migrations/20261025020000_ebay_listing_browser.sql` adds `picture_url` (text, null until a picture is stored) and `matched_manually` (boolean, not null, default false). Apply that file yourself. Deploying the app does not run it. Until then the page still loads. A matched item can show its ITS photo. After you apply the file, run **Refresh listings** so `picture_url` is filled.
+
+When `item_id` is null, an admin can search for an item and match it. That sets `item_id` and `matched_manually`. It does not change the custom label on eBay. A later refresh keeps that item when the label still matches no SKU. A label that matches an item SKU replaces the hand match. Until `matched_manually` exists, the hand match is stored on `item_id` and the next refresh can clear it. Only an admin can match. The page is readable with the rest of Integrations.
+
+Pushing an adjusted SKU to eBay and ending a listing are not available. Each row shows those actions disabled. They do not call eBay. `ebay_listings` has no `updated_by` column. Pulls and the match update do not invent one.
+
 The items table has an eBay column for listings matched directly to that item. Each id links to `https://www.ebay.com/itm/<id>`. A pack greater than 1 shows beside the id, for example `4x`. Several ids show the first and then +N, which opens the rest. A separate control, such as `in 3 kit listings`, opens the kit listings that use the item. That list has the listing id, the kit SKU linked to the kit item, and how many of this item are in the listing. The item page splits the same facts into **Listed directly** (listing id and pack size, including `1x`) and **In kit listings**.
 
 Kit use is computed when the item is read. It walks `kit_components`, including a kit that contains a kit, and does not add listing rows for the components. Quantity is the component quantity along the recipe, multiplied, times the kit listing's `pack_qty`. Searching an eBay item id finds the listed item or kit only. It does not find components. Ended rows are not shown, but the id still finds the listed item.

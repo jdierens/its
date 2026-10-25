@@ -27,9 +27,11 @@ export type ListingWrite = {
   quantity_available: number | null;
   listing_status: string;
   listing_url: string | null;
+  picture_url: string | null;
   item_id: string | null;
   base_sku: string | null;
   pack_qty: number;
+  matched_manually: boolean;
   fetched_at: string;
 };
 
@@ -71,6 +73,26 @@ export function uniqueEbayItemIds(ids: readonly string[]): string[] {
 }
 
 export { ebayItemUrl } from "@/lib/ebay/itemUrl";
+
+export function listingRowKey(ebayItemId: string, variationSku: string | null): string {
+  return `${ebayItemId}\u0000${variationSku?.trim() ?? ""}`;
+}
+
+export function withPreservedManualMatch(row: ListingWrite, manualItemIds: ReadonlyMap<string, string>): ListingWrite {
+  if (row.item_id) return { ...row, matched_manually: false };
+  const kept = manualItemIds.get(listingRowKey(row.ebay_item_id, row.variation_sku));
+  if (!kept) return { ...row, matched_manually: false };
+  return { ...row, item_id: kept, matched_manually: true };
+}
+
+export function listingsColumnMissing(error: { code?: string; message?: string } | null, column: string): boolean {
+  if (!error) return false;
+  const message = error.message ?? "";
+  const needle = column.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!new RegExp(needle, "i").test(message)) return false;
+  if (error.code === "PGRST204" || error.code === "42703") return true;
+  return /schema cache|does not exist|could not find/i.test(message);
+}
 
 export function listingsTableMissing(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
@@ -127,9 +149,11 @@ export async function runListingsPull(input: {
       quantity_available: row.quantityAvailable,
       listing_status: row.listingStatus || "Active",
       listing_url: row.listingUrl,
+      picture_url: row.pictureUrl,
       item_id: assigned.itemId,
       base_sku: assigned.baseSku,
       pack_qty: assigned.packQty,
+      matched_manually: false,
       fetched_at: input.fetchedAt,
     };
   });
@@ -390,28 +414,32 @@ function kitTableMissing(error: { code?: string; message?: string } | null): boo
   return /kit_components/i.test(message) && /schema cache|does not exist|could not find|PGRST205|42P01/i.test(message);
 }
 
-function withoutPackColumns(row: ListingWrite): Omit<ListingWrite, "base_sku" | "pack_qty"> {
-  const { base_sku: _baseSku, pack_qty: _packQty, ...rest } = row;
-  return rest;
+type ListingOmit = {
+  pack: boolean;
+  picture: boolean;
+  manual: boolean;
+};
+
+function listingPayload(row: ListingWrite, omit: ListingOmit): Record<string, unknown> {
+  const payload: Record<string, unknown> = { ...row };
+  if (omit.pack) {
+    delete payload.base_sku;
+    delete payload.pack_qty;
+  }
+  if (omit.picture) delete payload.picture_url;
+  if (omit.manual) delete payload.matched_manually;
+  return payload;
 }
 
 function supabaseStore(admin: SupabaseClient): ListingsStore {
-  let packColumns = true;
+  const omit: ListingOmit = { pack: false, picture: false, manual: false };
   return {
     itemsForSkus: (skus) => itemsForSkus(admin, skus),
     upsert: async (rows) => {
-      for (const chunk of chunks(rows, UPSERT_CHUNK)) {
-        const payload = packColumns ? chunk : chunk.map(withoutPackColumns);
-        const { error } = await admin.from("ebay_listings").upsert(payload, { onConflict: "ebay_item_id,variation_key" });
-        if (error && packColumns && packColumnsMissing(error)) {
-          packColumns = false;
-          const retry = await admin.from("ebay_listings").upsert(chunk.map(withoutPackColumns), {
-            onConflict: "ebay_item_id,variation_key",
-          });
-          if (retry.error) throw new Error(retry.error.message);
-          continue;
-        }
-        if (error) throw new Error(error.message);
+      const manualItemIds = await manualItemIdsFor(admin, rows, omit);
+      const prepared = omit.manual ? rows : rows.map((row) => withPreservedManualMatch(row, manualItemIds));
+      for (const chunk of chunks(prepared, UPSERT_CHUNK)) {
+        await upsertListingChunk(admin, chunk, omit);
       }
     },
     endMissing: async (fetchedAt) => {
@@ -424,6 +452,53 @@ function supabaseStore(admin: SupabaseClient): ListingsStore {
       return count ?? 0;
     },
   };
+}
+
+async function manualItemIdsFor(
+  admin: SupabaseClient,
+  rows: readonly ListingWrite[],
+  omit: ListingOmit,
+): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  if (omit.manual) return found;
+  const ids = [...new Set(rows.filter((row) => row.item_id === null).map((row) => row.ebay_item_id))];
+  for (const chunk of chunks(ids, SKU_CHUNK)) {
+    const selected = await admin
+      .from("ebay_listings")
+      .select("ebay_item_id, variation_sku, item_id")
+      .in("ebay_item_id", chunk)
+      .eq("matched_manually", true)
+      .not("item_id", "is", null);
+    if (selected.error && listingsColumnMissing(selected.error, "matched_manually")) {
+      omit.manual = true;
+      return new Map();
+    }
+    if (selected.error) {
+      if (listingsTableMissing(selected.error)) return found;
+      throw new Error(selected.error.message);
+    }
+    for (const row of selected.data ?? []) {
+      if (typeof row.ebay_item_id !== "string" || typeof row.item_id !== "string") continue;
+      const variation = typeof row.variation_sku === "string" ? row.variation_sku : null;
+      found.set(listingRowKey(row.ebay_item_id, variation), row.item_id);
+    }
+  }
+  return found;
+}
+
+async function upsertListingChunk(admin: SupabaseClient, chunk: ListingWrite[], omit: ListingOmit): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const { error } = await admin
+      .from("ebay_listings")
+      .upsert(chunk.map((row) => listingPayload(row, omit)), { onConflict: "ebay_item_id,variation_key" });
+    if (!error) return;
+    const before = `${omit.pack}:${omit.picture}:${omit.manual}`;
+    if (!omit.pack && packColumnsMissing(error)) omit.pack = true;
+    if (!omit.picture && listingsColumnMissing(error, "picture_url")) omit.picture = true;
+    if (!omit.manual && listingsColumnMissing(error, "matched_manually")) omit.manual = true;
+    if (`${omit.pack}:${omit.picture}:${omit.manual}` === before) throw new Error(error.message);
+  }
+  throw new Error("eBay listings could not be saved.");
 }
 
 async function itemsForSkus(admin: SupabaseClient, skus: readonly string[]): Promise<{ id: string; sku: string }[]> {

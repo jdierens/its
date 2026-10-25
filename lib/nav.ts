@@ -141,6 +141,11 @@ export const NAV_GROUPS: NavGroup[] = [
             href: "/admin/integrations/ebay",
             description: "Seller connection and active listings.",
           },
+          {
+            label: "eBay listings",
+            href: "/admin/integrations/ebay/listings",
+            description: "Browse active listings and match them to items.",
+          },
         ],
       },
     ],
@@ -319,6 +324,20 @@ export function pageMetaFor(pathname: string): PageMeta {
         { label: "Inventory" },
         { label: "Taxonomies & Fields", href: "/taxonomies" },
         { label: "Fields" },
+      ],
+    };
+  }
+
+  if (pathname === "/admin/integrations/ebay/listings") {
+    return {
+      title: "eBay listings",
+      backHref: "/admin/integrations/ebay",
+      backLabel: "eBay",
+      crumbs: [
+        { label: "Admin" },
+        { label: "Integrations", href: "/admin/integrations" },
+        { label: "eBay", href: "/admin/integrations/ebay" },
+        { label: "eBay listings" },
       ],
     };
   }
