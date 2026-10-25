@@ -4,6 +4,8 @@ import {
   RACKING_PATTERN,
   SHELVES_PATTERN,
   assignNewBinLocation,
+  applyReceiptColumns,
+  binReceipts,
   closesCycle,
   consolidationTargets,
   cycleEventParts,
@@ -19,7 +21,10 @@ import {
   parseReceivingBinCode,
   recordNewCycleDefault,
   typedBinCodeError,
+  type BinCycleView,
+  type BinDetail,
   type PutawayDefaults,
+  type StockEventRow,
 } from "@/lib/stockReceive";
 
 const types = [
@@ -142,6 +147,96 @@ describe("cycle events", () => {
     assert.equal(parts.qty, "4");
     assert.equal(parts.detail, "× 1001 16GB DDR4 ECC");
     assert.equal(`${parts.verb} ${parts.qty} ${parts.detail}`, "Received 4 × 1001 16GB DDR4 ECC");
+  });
+});
+
+function receiptEvent(patch: Partial<StockEventRow> & Pick<StockEventRow, "id">): StockEventRow {
+  return {
+    eventType: "receive_into_bin",
+    occurredAt: "2026-10-01T00:00:00Z",
+    operatorInitials: "JD",
+    comment: null,
+    qty: 1,
+    sku: "1001",
+    itemName: "Drive",
+    project: null,
+    incomingTag: null,
+    fromLocationCode: null,
+    toLocationCode: null,
+    receivedOn: null,
+    originDescription: null,
+    originQty: null,
+    ...patch,
+  };
+}
+
+describe("bin receipts", () => {
+  it("keeps each receipt's project, system, and date instead of the cycle", () => {
+    const cycle: BinCycleView = {
+      id: "cycle-1",
+      status: "open",
+      originDescription: "SHARED",
+      project: "SHARED",
+      incomingTag: "SHARED",
+      openedAt: "2026-09-01T00:00:00Z",
+      closedAt: null,
+      openedByInitials: "OP",
+      defaultLocationCode: "HWS.00.00.00",
+      openedLocationCode: "HWS.00.00.00",
+      events: [
+        receiptEvent({
+          id: "old",
+          occurredAt: "2026-10-01T12:00:00Z",
+          receivedOn: "2026-10-01",
+          project: "AZSIM",
+          originDescription: "AZSIM",
+          incomingTag: "IN-1",
+          sku: "1001",
+        }),
+        receiptEvent({
+          id: "new",
+          occurredAt: "2026-10-03T12:00:00Z",
+          receivedOn: "2026-10-03",
+          project: "OTHER",
+          originDescription: "EBAY",
+          incomingTag: "IN-9",
+          sku: "2002",
+          qty: 4,
+        }),
+        receiptEvent({ id: "move", eventType: "move_bin_location", occurredAt: "2026-10-04T12:00:00Z" }),
+      ],
+    };
+    const rows = binReceipts([cycle]);
+    assert.deepEqual(rows.map((row) => row.id), ["new", "old"]);
+    assert.equal(rows[0].project, "OTHER");
+    assert.equal(rows[0].originatingSystem, "EBAY");
+    assert.equal(rows[0].receivedOn, "2026-10-03");
+    assert.equal(rows[1].project, "AZSIM");
+    assert.equal(rows[1].incomingBin, "IN-1");
+
+    const detail = { cycles: [cycle] } as BinDetail;
+    const overlaid = applyReceiptColumns(detail, [
+      {
+        id: "old",
+        receivedOn: "2026-10-02",
+        project: "EDITED",
+        incomingTag: "IN-2",
+        originDescription: "FIXED",
+        originQty: 8,
+        sku: "1001",
+        itemName: "Drive",
+        qty: 2,
+        comment: "shelf",
+        operatorInitials: "JD",
+      },
+    ]);
+    const again = binReceipts(overlaid.cycles);
+    const old = again.find((row) => row.id === "old");
+    assert.equal(old?.project, "EDITED");
+    assert.equal(old?.originatingSystem, "FIXED");
+    assert.equal(old?.receivedOn, "2026-10-02");
+    assert.equal(old?.originQty, 8);
+    assert.equal(again.find((row) => row.id === "new")?.project, "OTHER");
   });
 });
 

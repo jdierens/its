@@ -3,6 +3,7 @@
 import { authRequired } from "@/lib/authRequired";
 import { readAppUser } from "@/lib/appUserRecord";
 import { errorText } from "@/lib/errors";
+import { labelTaxonomyFields } from "@/lib/labelLookup";
 import { canViewFinancials } from "@/lib/export/access";
 import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import type { LabelItem } from "@/lib/types";
@@ -23,12 +24,14 @@ import {
 import { sessionUser } from "@/lib/sessionUser";
 import { operatorInitials } from "@/lib/stockAccess";
 import {
+  applyReceiptColumns,
   binDetailFromJson,
   createdBinFromJson,
   moveFromJson,
   receiptFromJson,
   suggestionsFromJson,
   type BinDetail,
+  type ReceiptColumnRow,
   type BinSuggestion,
   type CreatedBin,
   type MoveResult,
@@ -86,6 +89,79 @@ async function attachItemNames(detail: BinDetail): Promise<BinDetail> {
   };
 }
 
+function receiptColumnRows(data: unknown): ReceiptColumnRow[] {
+  if (!Array.isArray(data)) return [];
+  return data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object").map((row) => {
+    const originQty = row.origin_qty == null || row.origin_qty === "" ? null : Number(row.origin_qty);
+    const qty = row.qty == null || row.qty === "" ? null : Number(row.qty);
+    const text = (value: unknown) => {
+      if (value == null) return null;
+      const trimmed = String(value).trim();
+      return trimmed ? trimmed : null;
+    };
+    return {
+      id: String(row.id ?? ""),
+      receivedOn: text(row.received_on),
+      project: text(row.project),
+      incomingTag: text(row.incoming_tag),
+      originDescription: text(row.origin_description),
+      originQty: originQty != null && Number.isFinite(originQty) ? originQty : null,
+      sku: text(row.sku),
+      itemName: text(row.item_name),
+      qty: qty != null && Number.isFinite(qty) ? qty : null,
+      comment: text(row.comment),
+      operatorInitials: text(row.operator_initials),
+    };
+  }).filter((row) => row.id);
+}
+
+async function attachContentLabels(detail: BinDetail): Promise<BinDetail> {
+  const ids = [...new Set(detail.contents.map((row) => row.itemId).filter(Boolean))];
+  if (ids.length === 0) return detail;
+  const { data, error } = await (await getSupabase()).from("items").select("id, description, taxonomies(short_code)").in("id", ids);
+  if (error || !data) return detail;
+  const byId = new Map(
+    data.map((row) => {
+      const record = row as { id?: string; description?: string | null; taxonomies?: unknown };
+      return [String(record.id ?? ""), { description: String(record.description ?? ""), shortCode: labelTaxonomyFields(record.taxonomies).shortCode }] as const;
+    }),
+  );
+  return {
+    ...detail,
+    contents: detail.contents.map((row) => {
+      const extra = byId.get(row.itemId);
+      if (!extra) return row;
+      return { ...row, description: extra.description, shortCode: extra.shortCode };
+    }),
+  };
+}
+
+const RECEIPT_OVERLAY_COLUMNS =
+  "id, received_on, project, incoming_tag, origin_description, origin_qty, sku, item_name, qty, comment, operator_initials";
+
+async function attachReceiptColumns(detail: BinDetail): Promise<BinDetail> {
+  const ids = detail.cycles.flatMap((cycle) =>
+    cycle.events.filter((event) => event.eventType === "receive_into_bin").map((event) => event.id),
+  );
+  if (ids.length === 0) return detail;
+  const supabase = await getSupabase();
+  const viewed = await supabase.from("receipt_lines").select(`${RECEIPT_OVERLAY_COLUMNS}, bin_reference`).eq("bin_reference", detail.reference);
+  if (!viewed.error) return applyReceiptColumns(detail, receiptColumnRows(viewed.data));
+  if (viewed.error && missingColumn(viewed.error)) {
+    const older = await supabase.from("receipt_lines").select(RECEIPT_OVERLAY_COLUMNS).in("id", ids);
+    if (!older.error) return applyReceiptColumns(detail, receiptColumnRows(older.data));
+    if (!missingSchema(older.error) && !missingColumn(older.error)) return detail;
+  } else if (!missingSchema(viewed.error)) {
+    return detail;
+  }
+  const legacy = await supabase
+    .from("stock_events")
+    .select("id, received_on, project, incoming_tag, origin_description, origin_qty, qty, comment, operator_initials")
+    .in("id", ids);
+  if (legacy.error || !legacy.data) return detail;
+  return applyReceiptColumns(detail, receiptColumnRows(legacy.data));
+}
+
 export async function fetchBinDetail(reference: string): Promise<BinDetail | null> {
   const { data, error } = await (await getSupabase()).rpc("fetch_bin_detail", {
     p_reference: reference,
@@ -93,7 +169,9 @@ export async function fetchBinDetail(reference: string): Promise<BinDetail | nul
   if (error) rpcError(error);
   const detail = binDetailFromJson(data);
   if (!detail) return null;
-  return attachItemNames(detail);
+  const named = await attachItemNames(detail);
+  const labeled = await attachContentLabels(named);
+  return attachReceiptColumns(labeled);
 }
 
 /** Most recent receive of this item, on any project. Blank when it has never been put away. */

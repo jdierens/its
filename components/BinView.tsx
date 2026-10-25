@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
-import { fetchBin } from "@/lib/binActions";
+import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
+import { PrintedLabel } from "@/components/labelRenderers";
+import { fetchBin, reprintBin } from "@/lib/binActions";
 import { binTypeLabel, type BinRecord } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
-import { fetchBinLabelTemplates } from "@/lib/labelActions";
-import { emptyBinLabelTemplates, type BinLabelTemplates } from "@/lib/labelTemplates";
+import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
+import { emptyBinLabelTemplates, qrLabelPayload, type BinLabelTemplates, type LabelTemplateId } from "@/lib/labelTemplates";
 import { fetchBinDetail, moveBinToLocation } from "@/lib/receivingActions";
-import { cycleEventParts, type BinCycleView, type BinDetail, type StockEventRow } from "@/lib/stockReceive";
+import { formatReceivedOn, receiptInitials } from "@/lib/receivingSettings";
+import { binReceipts, cycleEventParts, type BinContentRow, type BinDetail, type BinReceipt, type StockEventRow } from "@/lib/stockReceive";
 
 function missingMigration(message: string): boolean {
   return /schema cache|does not exist|Could not find the function/i.test(message);
@@ -36,56 +39,59 @@ function CycleEvent({ event }: { event: StockEventRow }) {
   );
 }
 
-function CycleCard({ cycle }: { cycle: BinCycleView }) {
+function receiptDate(receipt: BinReceipt): string {
+  const day = receipt.receivedOn || receipt.occurredAt;
+  return day ? formatReceivedOn(day) : "—";
+}
+
+function ReceiptCard({ receipt }: { receipt: BinReceipt }) {
+  const title = [receipt.sku, receipt.itemName].filter(Boolean).join(" · ") || "Receipt";
   return (
     <article className="cycle-card">
-      <h3>{cycle.status === "open" ? "Open cycle" : "Closed cycle"}</h3>
+      <h3>
+        {title}
+        {receipt.qty == null ? "" : ` · ${receipt.qty}`}
+      </h3>
       <dl className="cycle-facts">
         <div>
-          <dt>Opened</dt>
-          <dd>
-            {when(cycle.openedAt)}
-            {cycle.openedByInitials ? ` · ${cycle.openedByInitials}` : ""}
-          </dd>
+          <dt>Date</dt>
+          <dd>{receiptDate(receipt)}</dd>
         </div>
-        {cycle.closedAt ? (
-          <div>
-            <dt>Closed</dt>
-            <dd>{when(cycle.closedAt)}</dd>
-          </div>
-        ) : null}
         <div>
-          <dt>Originating system</dt>
-          <dd>{cycle.originDescription ?? "—"}</dd>
+          <dt>Initials</dt>
+          <dd>{receiptInitials(receipt.initials) || "—"}</dd>
         </div>
         <div>
           <dt>Project</dt>
-          <dd>{cycle.project ?? "—"}</dd>
+          <dd>{receipt.project ?? "—"}</dd>
+        </div>
+        <div>
+          <dt>Originating system</dt>
+          <dd>{receipt.originatingSystem ?? "—"}</dd>
         </div>
         <div>
           <dt>Incoming bin</dt>
-          <dd>{cycle.incomingTag ?? "—"}</dd>
+          <dd>{receipt.incomingBin ?? "—"}</dd>
         </div>
-        <div>
-          <dt>Put-away default at open</dt>
-          <dd>{cycle.defaultLocationCode ?? "—"}</dd>
-        </div>
-        <div>
-          <dt>Location at open</dt>
-          <dd>{cycle.openedLocationCode ?? "—"}</dd>
-        </div>
+        {receipt.originQty == null ? null : (
+          <div>
+            <dt>Originating system qty</dt>
+            <dd>{receipt.originQty}</dd>
+          </div>
+        )}
+        {receipt.comment ? (
+          <div>
+            <dt>Comment</dt>
+            <dd>{receipt.comment}</dd>
+          </div>
+        ) : null}
       </dl>
-      {cycle.events.length > 0 ? (
-        <ol className="cycle-events">
-          {cycle.events.map((event) => (
-            <CycleEvent key={event.id} event={event} />
-          ))}
-        </ol>
-      ) : (
-        <p className="hint">No events on this cycle.</p>
-      )}
     </article>
   );
+}
+
+function todayLabel(date: Date): string {
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 export function BinView({ reference }: { reference: string }) {
@@ -96,6 +102,10 @@ export function BinView({ reference }: { reference: string }) {
   const [locationCode, setLocationCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [templates, setTemplates] = useState<BinLabelTemplates>(emptyBinLabelTemplates);
+  const [itemTemplate, setItemTemplate] = useState<LabelTemplateId>("barcode");
+  const [pageOrigin, setPageOrigin] = useState("");
+  const [printedOn, setPrintedOn] = useState("");
+  const [printJob, setPrintJob] = useState<{ kind: "bin" } | { kind: "item"; row: BinContentRow } | null>(null);
   const [printStamp, setPrintStamp] = useState(0);
 
   async function load() {
@@ -131,9 +141,16 @@ export function BinView({ reference }: { reference: string }) {
         setMessage(text);
       }
     })();
+    setPageOrigin(window.location.origin);
+    setPrintedOn(todayLabel(new Date()));
     void fetchBinLabelTemplates()
       .then((loaded) => {
         if (!cancelled) setTemplates(loaded);
+      })
+      .catch(() => undefined);
+    void fetchLabelTemplate()
+      .then((loaded) => {
+        if (!cancelled) setItemTemplate(loaded);
       })
       .catch(() => undefined);
     return () => {
@@ -161,11 +178,39 @@ export function BinView({ reference }: { reference: string }) {
     }
   }
 
+  async function printBinLabel() {
+    if (!detail || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const printed = await reprintBin(detail.reference, 1);
+      setDetail((current) => (current ? { ...current, printedCount: printed.printedCount } : current));
+      setPrintJob({ kind: "bin" });
+      setPrintStamp((current) => current + 1);
+    } catch (error) {
+      setMessage(errorText(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function printItemLabel(row: BinContentRow) {
+    setPrintJob({ kind: "item", row });
+    setPrintStamp((current) => current + 1);
+  }
+
   const typeName = detail ? binTypeLabel(detail.type) : basic ? binTypeLabel(basic.type) : "";
+  const receipts = detail ? binReceipts(detail.cycles) : [];
+  const moves = detail
+    ? [
+        ...detail.cycles.flatMap((cycle) => cycle.events.filter((event) => event.eventType !== "receive_into_bin" && event.eventType !== "receipt_adjustment")),
+        ...detail.looseEvents,
+      ]
+    : [];
 
   return (
     <main className="page bin-view desk-fields">
-      <style>{BIN_LABEL_PRINT_CSS}</style>
+      <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
       <div className="no-print">
         <p className="bin-reference">{reference}</p>
         <p className="hint">{typeName ? `${typeName} bin` : "Bin"}</p>
@@ -207,21 +252,21 @@ export function BinView({ reference }: { reference: string }) {
                 <dd>{detail.createdByInitials ?? "—"}</dd>
               </div>
             </dl>
-            <h2 id="bin-cycles">Cycles</h2>
-            {detail.cycles.length === 0 ? (
-              <p className="hint">No cycles yet.</p>
+            <h2 id="bin-receipts">Receipts</h2>
+            {receipts.length === 0 ? (
+              <p className="hint">No receipts yet.</p>
             ) : (
               <div className="cycle-list">
-                {detail.cycles.map((cycle) => (
-                  <CycleCard key={cycle.id} cycle={cycle} />
+                {receipts.map((receipt) => (
+                  <ReceiptCard key={receipt.id} receipt={receipt} />
                 ))}
               </div>
             )}
-            {detail.looseEvents.length > 0 ? (
+            {moves.length > 0 ? (
               <>
-                <h2>Moves while empty</h2>
+                <h2>Moves</h2>
                 <ol className="cycle-events">
-                  {detail.looseEvents.map((event) => (
+                  {moves.map((event) => (
                     <CycleEvent key={event.id} event={event} />
                   ))}
                 </ol>
@@ -231,24 +276,57 @@ export function BinView({ reference }: { reference: string }) {
             {detail.contents.length === 0 ? (
               <p className="hint">Empty. The next receipt opens a new cycle.</p>
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>SKU</th>
-                    <th>Name</th>
-                    <th className="num">Qty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.contents.map((row) => (
-                    <tr key={row.itemId}>
-                      <td>{row.sku}</td>
-                      <td>{row.name}</td>
-                      <td className="num">{row.qty}</td>
+              <>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Name</th>
+                      <th className="num">Qty</th>
                     </tr>
+                  </thead>
+                  <tbody>
+                    {detail.contents.map((row) => (
+                      <tr key={row.itemId}>
+                        <td>{row.sku}</td>
+                        <td>{row.name}</td>
+                        <td className="num">{row.qty}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="hint">Click a label to print it.</p>
+                <div className="bin-label-row">
+                  {detail.contents.map((row) => (
+                    <button
+                      key={row.itemId}
+                      type="button"
+                      className="bin-label-hit"
+                      aria-label={`Print item label for ${row.sku || row.name}`}
+                      onClick={() => printItemLabel(row)}
+                    >
+                      <span className="label-frame">
+                        <PrintedLabel
+                          template={itemTemplate}
+                          name={row.name}
+                          description={row.description.trim() || row.name}
+                          code={
+                            itemTemplate === "qr" && pageOrigin
+                              ? qrLabelPayload(pageOrigin, row.itemId, row.sku)
+                              : barcodeValue(row.sku, row.itemId)
+                          }
+                          sku={row.sku}
+                          itemId={row.itemId}
+                          origin={pageOrigin}
+                          quantity={String(row.qty)}
+                          shortCode={row.shortCode}
+                          printedOn={printedOn}
+                        />
+                      </span>
+                    </button>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </>
             )}
             <form onSubmit={onMove}>
               <div className="field-with-action">
@@ -271,21 +349,48 @@ export function BinView({ reference }: { reference: string }) {
               </div>
               <span className="hint">Scan a location code. It must match one location type.</span>
             </form>
+            <h2>Bin label</h2>
+            <p className="hint">Click the label to print it.</p>
+            <button
+              type="button"
+              className="bin-label-hit"
+              aria-label={`Print bin label ${detail.reference}`}
+              disabled={busy}
+              onClick={() => void printBinLabel()}
+            >
+              <span className="label-frame">
+                <BinLabel reference={detail.reference} type={detail.type} layout={templates[detail.type]} />
+              </span>
+            </button>
             <div className="receive-actions">
-              <button type="button" className="secondary" onClick={() => setPrintStamp((current) => current + 1)}>
-                Print bin label
-              </button>
               <Link href="/warehouse/receiving">Receive into a bin</Link>
-            </div>
-            <div className="label-frame">
-              <BinLabel reference={detail.reference} type={detail.type} layout={templates[detail.type]} />
             </div>
           </>
         ) : null}
       </div>
-      {detail ? (
+      {detail && printJob?.kind === "bin" ? (
         <div className="print-sheet">
           <BinLabel reference={detail.reference} type={detail.type} layout={templates[detail.type]} />
+        </div>
+      ) : null}
+      {printJob?.kind === "item" ? (
+        <div className="print-sheet">
+          <PrintedLabel
+            template={itemTemplate}
+            name={printJob.row.name}
+            description={printJob.row.description.trim() || printJob.row.name}
+            code={
+              itemTemplate === "qr" && pageOrigin
+                ? qrLabelPayload(pageOrigin, printJob.row.itemId, printJob.row.sku)
+                : barcodeValue(printJob.row.sku, printJob.row.itemId)
+            }
+            sku={printJob.row.sku}
+            itemId={printJob.row.itemId}
+            origin={pageOrigin}
+            quantity={String(printJob.row.qty)}
+            shortCode={printJob.row.shortCode}
+            printedOn={printedOn}
+          />
         </div>
       ) : null}
     </main>
