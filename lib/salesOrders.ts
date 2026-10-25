@@ -74,6 +74,7 @@ export type SalesAllocationView = {
 };
 
 export type SalesLineView = {
+  id: string;
   lineKind: string;
   customerPartNumber: string;
   customerDescription: string;
@@ -311,7 +312,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
   const withAmount = await supabase
     .from("sales_orders")
     .select(
-      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, payment_amount, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
+      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, payment_amount, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -323,7 +324,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     ? await supabase
         .from("sales_orders")
         .select(
-          "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
+          "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
         )
         .eq("id", id)
         .maybeSingle()
@@ -354,6 +355,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
         };
       });
       return {
+        id: text(line.id),
         lineKind: text(line.line_kind) || "product",
         customerPartNumber: text(line.customer_part_number),
         customerDescription: text(line.customer_description),
@@ -458,6 +460,36 @@ async function salesOrderIsEbay(input: SoDraftInput): Promise<boolean> {
     .maybeSingle();
   if (error || !data) return false;
   return data.source === "ebay" || data.channel === "ebay" || (data.ebay_order_id != null && String(data.ebay_order_id).trim() !== "");
+}
+
+/**
+ * Inserts one allocation on a draft line that has none.
+ * Does not rewrite the order and does not write an so_events row, so an eBay pull can still refresh the draft.
+ * operator_id stays null.
+ */
+export async function saveEmptyLineAllocation(input: { lineId: string; itemId: string; qty: string }): Promise<void> {
+  const access = await salesPageAccess();
+  if (!access.canEdit) throw new Error(EDIT_DENIED);
+  if (!UUID.test(input.lineId) || !UUID.test(input.itemId)) return;
+  const qty = Number(input.qty);
+  if (!(qty > 0)) return;
+  const supabase = await getSupabase();
+  const line = await supabase.from("so_lines").select("id, sales_order_id").eq("id", input.lineId).maybeSingle();
+  if (line.error) throw new Error(salesError(line.error));
+  if (!line.data?.sales_order_id) return;
+  const order = await supabase.from("sales_orders").select("status").eq("id", line.data.sales_order_id).maybeSingle();
+  if (order.error) throw new Error(salesError(order.error));
+  if (order.data?.status !== "draft") return;
+  const existing = await supabase.from("so_line_allocations").select("id").eq("so_line_id", input.lineId).limit(1);
+  if (existing.error) throw new Error(salesError(existing.error));
+  if ((existing.data ?? []).length > 0) return;
+  const inserted = await supabase.from("so_line_allocations").insert({
+    so_line_id: input.lineId,
+    item_id: input.itemId,
+    qty,
+    operator_id: null,
+  });
+  if (inserted.error) throw new Error(salesError(inserted.error));
 }
 
 /** Freight lines on an eBay order keep an allocation to item 4343 when the form did not send one. */

@@ -1,8 +1,9 @@
 "use client";
 
 import { Ban, Check, Save } from "lucide-react";
-import { Fragment, useEffect, useState, type InputHTMLAttributes } from "react";
-import { allocationQtyForLine, applyPackToLine, formatAllocationQty, parsePackLabel } from "@/lib/ebay/packs";
+import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
+import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
+import { allocationQtyForLine, cleanSkuAllocation, formatAllocationQty, parsePackLabel } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ import {
   approveSalesOrder,
   cancelSalesOrder,
   salesCustomerDefaults,
+  saveEmptyLineAllocation,
   saveSalesOrder,
   searchSalesCustomers,
   suggestSalesSkus,
@@ -37,7 +39,6 @@ import {
   type SalesLookups,
   type SalesNoteView,
   type SalesOrderView,
-  type SalesSkuHit,
 } from "@/lib/salesOrders";
 
 type FormAllocation = { itemId: string; sku: string; name: string; qty: string };
@@ -161,8 +162,9 @@ export function SalesOrderForm({
   const [orderNumber, setOrderNumber] = useState(
     order?.number ?? (suggestedNumber ? formatSalesOrderNumber(suggestedNumber) ?? "" : ""),
   );
-  const [suggestions, setSuggestions] = useState<Record<number, SalesSkuHit[]>>({});
   const [allocateQuery, setAllocateQuery] = useState<Record<number, string>>({});
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -208,7 +210,7 @@ export function SalesOrderForm({
       ebayLabelFee: showMoney ? ebayLabelFee : "",
       ebayAdFee: showMoney ? ebayAdFee : "",
       ebayOrderEarnings: showMoney ? ebayOrderEarnings : "",
-      lines: lines.map((line) => ({
+      lines: linesRef.current.map((line) => ({
         lineKind: line.lineKind || "product",
         customerPartNumber: line.customerPartNumber,
         customerDescription: line.customerDescription,
@@ -271,61 +273,78 @@ export function SalesOrderForm({
     );
   }
 
-  function rememberSuggestions(index: number, hits: SalesSkuHit[], part: string, expand: boolean) {
-    setSuggestions((current) => ({ ...current, [index]: hits }));
-    setLines((current) =>
-      current.map((line, lineIndex) => {
-        if (lineIndex !== index) return line;
-        const open = line.allocations.length === 0;
-        if (!expand || !open || hits.length !== 1 || line.allocations.some((row) => row.itemId === hits[0].id)) return line;
-        const hit = hits[0];
-        const exact = hit.sku.trim().toLowerCase() === line.customerPartNumber.trim().toLowerCase();
-        const fromTyped = applyPackToLine({ part, qty: line.qty, unitPrice: line.unitPrice });
-        const fromPn = applyPackToLine({ part: line.customerPartNumber, qty: line.qty, unitPrice: line.unitPrice });
-        const applied = fromTyped.packQty != null ? fromTyped : fromPn;
-        return {
-          ...line,
-          allocations: [{
-            itemId: hit.id,
-            sku: hit.sku,
-            name: hit.name,
-            qty: exact ? line.qty || "1" : applied.allocationQty ?? (line.qty || "1"),
-          }],
-        };
-      }),
-    );
+  function hasAllocation(line: FormLine): boolean {
+    return line.allocations.some((row) => row.itemId && Number(row.qty) > 0);
   }
 
-  async function lookupSkus(index: number, part: string, lineKind: string, expand: boolean) {
-    if (!lineRequiresItem(lineKind)) {
-      setSuggestions((current) => ({ ...current, [index]: [] }));
-      return;
+  function putAllocation(index: number, allocation: FormAllocation, onlyIfEmpty: boolean): FormLine | null {
+    const current = linesRef.current;
+    const line = current[index];
+    if (!line) return null;
+    if (onlyIfEmpty && hasAllocation(line)) return null;
+    const next = current.map((row, lineIndex) =>
+      lineIndex === index ? { ...row, allocations: [allocation] } : row,
+    );
+    linesRef.current = next;
+    setLines(next);
+    return line;
+  }
+
+  async function persistEmpty(line: FormLine, allocation: FormAllocation) {
+    if (locked || !line.id) return;
+    try {
+      await saveEmptyLineAllocation({ lineId: line.id, itemId: allocation.itemId, qty: allocation.qty });
+    } catch (error) {
+      setMessage(errorText(error));
     }
-    const applied = applyPackToLine({ part, qty: "1", unitPrice: "" });
-    const term = applied.search;
-    setAllocateQuery((current) => ({ ...current, [index]: term }));
-    if (!term) {
-      setSuggestions((current) => ({ ...current, [index]: [] }));
+  }
+
+  async function matchCleanSku(index: number, part: string, onlyIfEmpty: boolean) {
+    const line = linesRef.current[index];
+    if (!line || locked) return;
+    if (onlyIfEmpty && hasAllocation(line)) return;
+    const label = part.trim();
+    if (!label) {
+      if (!onlyIfEmpty) setMessage("Type an ITS SKU.");
       return;
     }
     try {
-      const hits = await suggestSalesSkus(term);
-      rememberSuggestions(index, hits, part, expand);
+      const hits = await suggestSalesSkus(label);
+      const latest = linesRef.current[index];
+      if (!latest) return;
+      const allocation = cleanSkuAllocation(label, latest.qty, hits);
+      if (!allocation) {
+        if (!onlyIfEmpty) setMessage("No ITS item has that SKU.");
+        return;
+      }
+      const previous = putAllocation(index, allocation, onlyIfEmpty);
+      if (previous && onlyIfEmpty) await persistEmpty(previous, allocation);
+      if (!onlyIfEmpty) setMessage(null);
     } catch (error) {
       setMessage(errorText(error));
     }
   }
 
   useEffect(() => {
+    if (locked) return;
     let cancelled = false;
+    const ebay = Boolean(order?.ebayOrderId || order?.ebaySalesRecordRef || (order?.channel ?? "").toLowerCase() === "ebay");
     (order?.lines ?? []).forEach((line, index) => {
-      if (!lineRequiresItem(line.lineKind || "product")) return;
-      const applied = applyPackToLine({ part: line.customerPartNumber, qty: line.qty, unitPrice: line.unitPrice });
-      if (!applied.search) return;
-      setAllocateQuery((current) => ({ ...current, [index]: applied.search }));
-      void suggestSalesSkus(applied.search)
+      const freight = (line.lineKind || "product") === "freight";
+      const part = freight ? (ebay ? EBAY_SHIPPING_ITEM_SKU : "") : line.customerPartNumber;
+      if (!part.trim() || line.allocations.some((row) => row.itemId && Number(row.qty) > 0)) return;
+      void suggestSalesSkus(part)
         .then((hits) => {
-          if (!cancelled) rememberSuggestions(index, hits, line.customerPartNumber, true);
+          if (cancelled) return;
+          const latest = linesRef.current[index];
+          if (!latest || latest.allocations.some((row) => row.itemId && Number(row.qty) > 0)) return;
+          const allocation = cleanSkuAllocation(part, latest.qty, hits);
+          if (!allocation) {
+            if (freight) setMessage("eBay shipping could not be allocated to item 4343.");
+            return;
+          }
+          const previous = putAllocation(index, allocation, true);
+          if (previous) void persistEmpty(previous, allocation);
         })
         .catch((error) => {
           if (!cancelled) setMessage(errorText(error));
@@ -334,30 +353,9 @@ export function SalesOrderForm({
     return () => {
       cancelled = true;
     };
-    // Look up the saved customer part once, including a pack suffix already on the draft.
+    // Fill an empty pack or eBay freight line once, from the saved customer part.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id]);
-
-  function addAllocation(index: number, hit: SalesSkuHit) {
-    setLines((current) =>
-      current.map((line, lineIndex) => {
-        if (lineIndex !== index) return line;
-        if (line.allocations.some((row) => row.itemId === hit.id)) return line;
-        const qtyNumber = Number(line.qty);
-        const exact = hit.sku.trim().toLowerCase() === line.customerPartNumber.trim().toLowerCase();
-        const target = !Number.isFinite(qtyNumber) ? 0 : exact ? qtyNumber : allocationQtyForLine(line.customerPartNumber, qtyNumber);
-        const used = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
-        const remaining = Math.round((target - used) * 100) / 100;
-        return {
-          ...line,
-          allocations: [
-            ...line.allocations,
-            { itemId: hit.id, sku: hit.sku, name: hit.name, qty: remaining > 0 ? formatAllocationQty(remaining) : "1" },
-          ],
-        };
-      }),
-    );
-  }
 
   async function onSave() {
     setBusy(true);
@@ -415,7 +413,10 @@ export function SalesOrderForm({
   const status = order?.status ?? "draft";
   const number = order?.number ?? "Draft";
   const filesEditable = canEdit && status !== "cancelled" && status !== "closed";
-  const ebayOrder = Boolean(order?.ebayOrderId || order?.ebaySalesRecordRef);
+  const ebayOrder = Boolean(
+    order?.ebayOrderId || order?.ebaySalesRecordRef || channel.trim().toLowerCase() === "ebay" || (order?.channel ?? "").toLowerCase() === "ebay",
+  );
+  const ebayCustomer = customerName.trim().toLowerCase() === EBAY_ORDER_CUSTOMER_NAME.toLowerCase();
   const buyerTotal = showMoney
     ? salesOrderTotal(lines.map((line) => ({ extPrice: line.extPrice || lineExtension(line.qty, line.unitPrice) || "" })))
     : null;
@@ -568,13 +569,12 @@ export function SalesOrderForm({
             <input type="date" value={orderDate} disabled={locked} onChange={(event) => setOrderDate(event.target.value)} />
           </label>
           <label>
-            Order reference
-            {order?.ebayOrderId ? (
-              <input value={order.ebayOrderId} disabled />
+            {ebayCustomer ? "eBay order id" : "Order reference"}
+            {ebayCustomer ? (
+              <input id="so-order-reference" aria-label="eBay order id" value={order?.ebayOrderId ?? ""} disabled />
             ) : (
-              <input value={customerPo} disabled={locked} onChange={(event) => setCustomerPo(event.target.value)} />
+              <input id="so-order-reference" aria-label="Order reference" value={customerPo} disabled={locked} onChange={(event) => setCustomerPo(event.target.value)} />
             )}
-            {order?.ebayOrderId ? <span className="hint">eBay order id</span> : null}
           </label>
         </div>
         </header>
@@ -633,94 +633,9 @@ export function SalesOrderForm({
         </div>
             </details>
 
-        <fieldset className="so-notes">
-          <legend>Notes</legend>
-          <label>
-            Notes
-            <textarea value={exportNotes} disabled={locked} onChange={(event) => setExportNotes(event.target.value)} />
-            <span className="hint">Other details read from the customer PDF.</span>
-          </label>
-          {showMoney ? (
-            <label>
-              Internal notes
-              <textarea value={internalNotes} disabled={locked} onChange={(event) => setInternalNotes(event.target.value)} />
-            </label>
-          ) : null}
-          {notes.map((note, index) => (
-            <div className="so-note" key={index}>
-              <label>
-                Kind
-                <select
-                  value={note.kind}
-                  disabled={locked}
-                  onChange={(event) => setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, kind: event.target.value } : row)))}
-                >
-                  {SO_NOTE_KINDS.map((kind) => (
-                    <option key={kind.id} value={kind.id}>
-                      {kind.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Note
-                <textarea
-                  value={note.customerText}
-                  disabled={locked}
-                  onChange={(event) =>
-                    setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, customerText: event.target.value } : row)))
-                  }
-                />
-              </label>
-              <label>
-                Response
-                <select
-                  value={note.response}
-                  disabled={locked}
-                  onChange={(event) =>
-                    setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, response: event.target.value } : row)))
-                  }
-                >
-                  {NOTE_RESPONSES.map((response) => (
-                    <option key={response.id || "none"} value={response.id}>
-                      {response.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {note.response === "countered" ? (
-                <label>
-                  Counter
-                  <textarea
-                    value={note.counterText}
-                    disabled={locked}
-                    onChange={(event) =>
-                      setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, counterText: event.target.value } : row)))
-                    }
-                  />
-                </label>
-              ) : null}
-              {!locked ? (
-                <button type="button" className="secondary" onClick={() => setNotes((current) => current.filter((_, rowIndex) => rowIndex !== index))}>
-                  Remove note
-                </button>
-              ) : null}
-            </div>
-          ))}
-          {!locked ? (
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => setNotes((current) => [...current, { kind: "other", customerText: "", response: "", counterText: "" }])}
-            >
-              Add note
-            </button>
-          ) : null}
-        </fieldset>
-
         <div className="so-addresses">
-          <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />
           <AddressFields legend="Ship to" address={shipTo} disabled={locked} showAttention onChange={setShipTo} />
+          <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />
         </div>
         {!locked ? (
           <label className="so-check">
@@ -747,6 +662,7 @@ export function SalesOrderForm({
               <tbody>
                 {lines.map((line, index) => {
                   const needsItem = lineRequiresItem(line.lineKind);
+                  const ebayFreight = (line.lineKind || "product") === "freight" && ebayOrder;
                   const pack = parsePackLabel(line.customerPartNumber);
                   const qtyNumber = Number(line.qty);
                   const exactItem = line.allocations.some((row) => row.sku.trim().toLowerCase() === line.customerPartNumber.trim().toLowerCase());
@@ -772,7 +688,7 @@ export function SalesOrderForm({
                             disabled={locked}
                             onChange={(event) => updateLine(index, { customerPartNumber: event.target.value })}
                             onBlur={(event) => {
-                              if (!locked) void lookupSkus(index, event.target.value, line.lineKind, true);
+                              if (!locked && lineRequiresItem(line.lineKind)) void matchCleanSku(index, event.target.value, true);
                             }}
                           />
                         </td>
@@ -837,17 +753,12 @@ export function SalesOrderForm({
                       </tr>
                       <tr className="so-line-extra">
                         <td colSpan={showMoney ? 6 : 4}>
-                          {needsItem ? (
+                          {needsItem || ebayFreight ? (
                             <div className="so-allocate">
-                              <p className="hint">
-                                {pack && !exactItem
-                                  ? `${line.customerPartNumber.trim()} is ${pack.packQty} × ITS SKU ${pack.baseSku}. Customer qty stays ${line.qty || "as entered"}. Allocate ${targetText}.`
-                                  : "Pick one or more ITS items. Their quantities have to add up to the customer quantity."}
-                              </p>
-                              {!locked ? (
-                                <div className="so-find-sku">
-                                  <label>
-                                    Find SKU
+                              <div className="so-alloc-row">
+                                {!locked ? (
+                                  <label className="so-find-sku">
+                                    <span>Find SKU</span>
                                     <input
                                       id={`so-allocate-${index}`}
                                       value={allocateQuery[index] ?? ""}
@@ -859,86 +770,72 @@ export function SalesOrderForm({
                                       onKeyDown={(event) => {
                                         if (event.key === "Enter") {
                                           event.preventDefault();
-                                          void lookupSkus(index, event.currentTarget.value || line.customerPartNumber, line.lineKind, true);
+                                          void matchCleanSku(index, event.currentTarget.value, false);
                                         }
-                                      }}
-                                      onBlur={(event) => {
-                                        void lookupSkus(index, event.target.value || line.customerPartNumber, line.lineKind, true);
                                       }}
                                     />
                                   </label>
+                                ) : null}
+                                {!locked ? (
                                   <button
                                     type="button"
                                     className="secondary"
-                                    onClick={() => void lookupSkus(index, allocateQuery[index] || line.customerPartNumber, line.lineKind, true)}
+                                    onClick={() => void matchCleanSku(index, allocateQuery[index] || "", false)}
                                   >
-                                    Find SKU
+                                    Find
                                   </button>
-                                </div>
-                              ) : null}
-                              {(suggestions[index]?.length ?? 0) > 0 ? (
-                                <div className="so-suggest" id={`so-suggest-${index}`}>
-                                  {suggestions[index].map((hit) => (
-                                    <button
-                                      key={hit.id}
-                                      type="button"
-                                      className="suggestion"
-                                      onMouseDown={(event) => event.preventDefault()}
-                                      onClick={() => addAllocation(index, hit)}
-                                    >
-                                      Allocate {hit.sku}
-                                      {hit.partNumber ? ` ${hit.partNumber}` : ""}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : null}
+                                ) : null}
+                                {line.allocations.map((allocation, allocationIndex) => (
+                                  <div className="so-allocation" key={`${allocation.itemId}-${allocationIndex}`}>
+                                    <span className="so-alloc-sku">
+                                      {allocation.sku || "SKU"} {allocation.name}
+                                    </span>
+                                    <label className="so-alloc-qty">
+                                      <span>Allocated qty</span>
+                                      <input
+                                        className="num-input"
+                                        inputMode="decimal"
+                                        aria-label={`Allocated qty ${index + 1}`}
+                                        value={allocation.qty}
+                                        disabled={locked}
+                                        onChange={(event) =>
+                                          updateLine(index, {
+                                            allocations: line.allocations.map((row, rowIndex) =>
+                                              rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
+                                            ),
+                                          })
+                                        }
+                                      />
+                                    </label>
+                                    {!locked ? (
+                                      <button
+                                        type="button"
+                                        className="secondary"
+                                        onClick={() =>
+                                          updateLine(index, {
+                                            allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
+                                          })
+                                        }
+                                      >
+                                        Remove
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                ))}
+                                {needsItem || line.allocations.length > 0 ? (
+                                  <p className={covered ? "hint so-alloc-note" : "hint so-gap so-alloc-note"}>
+                                    {pack && !exactItem
+                                      ? `${line.customerPartNumber.trim()} is ${pack.packQty} × ${pack.baseSku}. Customer qty ${line.qty || "—"}. Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${targetText}.`
+                                      : ebayFreight
+                                        ? `Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${line.qty || "0"} to shipping.`
+                                        : `Allocated ${formatAllocationQty(allocatedQty) || "0"} of ${targetText}.`}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
                           ) : (
                             <p className="hint">This line does not need an ITS item.</p>
                           )}
-                          {line.allocations.map((allocation, allocationIndex) => (
-                            <div className="so-allocation" key={`${allocation.itemId}-${allocationIndex}`}>
-                              <span>
-                                {allocation.sku || "SKU"} {allocation.name}
-                              </span>
-                              <label>
-                                Allocated qty
-                                <input
-                                  className="num-input"
-                                  inputMode="decimal"
-                                  value={allocation.qty}
-                                  disabled={locked}
-                                  onChange={(event) =>
-                                    updateLine(index, {
-                                      allocations: line.allocations.map((row, rowIndex) =>
-                                        rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
-                                      ),
-                                    })
-                                  }
-                                />
-                              </label>
-                              {!locked ? (
-                                <button
-                                  type="button"
-                                  className="secondary"
-                                  onClick={() =>
-                                    updateLine(index, {
-                                      allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
-                                    })
-                                  }
-                                >
-                                  Remove SKU
-                                </button>
-                              ) : null}
-                            </div>
-                          ))}
-                          {needsItem || line.allocations.length > 0 ? (
-                            <p className={covered ? "hint" : "hint so-gap"}>
-                              {covered
-                                ? `Allocated ${allocatedQty} of ${targetText}.`
-                                : `Allocated ${allocatedQty} of ${targetText}. Add ITS items until the quantities match.`}
-                            </p>
-                          ) : null}
                         </td>
                       </tr>
                     </Fragment>
@@ -1047,9 +944,97 @@ export function SalesOrderForm({
           </div>
         </fieldset>
 
-        {showMoney ? (
-          <SalesOrderAttachments orderId={orderId} attachments={order?.attachments ?? []} canEdit={filesEditable} />
-        ) : null}
+        <fieldset className="so-notes-files">
+          <legend>Notes and files</legend>
+          <div className={showMoney ? "so-notes-files-row" : "so-notes-files-row so-notes-files-one"}>
+            <div className="so-notes-col">
+              <label>
+                Customer notes
+                <textarea value={exportNotes} disabled={locked} onChange={(event) => setExportNotes(event.target.value)} />
+                <span className="hint">Other details read from the customer PDF.</span>
+              </label>
+              {notes.map((note, index) => (
+                <div className="so-note" key={index}>
+                  <label>
+                    Kind
+                    <select
+                      value={note.kind}
+                      disabled={locked}
+                      onChange={(event) => setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, kind: event.target.value } : row)))}
+                    >
+                      {SO_NOTE_KINDS.map((kind) => (
+                        <option key={kind.id} value={kind.id}>
+                          {kind.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Note
+                    <textarea
+                      value={note.customerText}
+                      disabled={locked}
+                      onChange={(event) =>
+                        setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, customerText: event.target.value } : row)))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Response
+                    <select
+                      value={note.response}
+                      disabled={locked}
+                      onChange={(event) =>
+                        setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, response: event.target.value } : row)))
+                      }
+                    >
+                      {NOTE_RESPONSES.map((response) => (
+                        <option key={response.id || "none"} value={response.id}>
+                          {response.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {note.response === "countered" ? (
+                    <label>
+                      Counter
+                      <textarea
+                        value={note.counterText}
+                        disabled={locked}
+                        onChange={(event) =>
+                          setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, counterText: event.target.value } : row)))
+                        }
+                      />
+                    </label>
+                  ) : null}
+                  {!locked ? (
+                    <button type="button" className="secondary" onClick={() => setNotes((current) => current.filter((_, rowIndex) => rowIndex !== index))}>
+                      Remove note
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+              {!locked ? (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setNotes((current) => [...current, { kind: "other", customerText: "", response: "", counterText: "" }])}
+                >
+                  Add note
+                </button>
+              ) : null}
+            </div>
+            {showMoney ? (
+              <label>
+                Internal notes
+                <textarea value={internalNotes} disabled={locked} onChange={(event) => setInternalNotes(event.target.value)} />
+              </label>
+            ) : null}
+            {showMoney ? (
+              <SalesOrderAttachments orderId={orderId} attachments={order?.attachments ?? []} canEdit={filesEditable} />
+            ) : null}
+          </div>
+        </fieldset>
 
         {order && order.events.length > 0 ? (
           <fieldset>
@@ -1100,18 +1085,6 @@ function AddressFields({
           Line 2
           <input value={address.line2} disabled={disabled} onChange={(event) => set("line2", event.target.value)} />
         </label>
-        {showAttention ? (
-          <label>
-            Attention
-            <input value={address.attention} disabled={disabled} onChange={(event) => set("attention", event.target.value)} />
-          </label>
-        ) : null}
-        {showAttention ? (
-          <label>
-            Phone
-            <input value={address.phone} disabled={disabled} onChange={(event) => set("phone", event.target.value)} />
-          </label>
-        ) : null}
         <label>
           City
           <input value={address.city} disabled={disabled} onChange={(event) => set("city", event.target.value)} />
@@ -1128,6 +1101,18 @@ function AddressFields({
           Country
           <input value={address.country} disabled={disabled} onChange={(event) => set("country", event.target.value)} />
         </label>
+        {showAttention ? (
+          <label>
+            Attention
+            <input value={address.attention} disabled={disabled} onChange={(event) => set("attention", event.target.value)} />
+          </label>
+        ) : null}
+        {showAttention ? (
+          <label>
+            Phone
+            <input value={address.phone} disabled={disabled} onChange={(event) => set("phone", event.target.value)} />
+          </label>
+        ) : null}
       </div>
     </fieldset>
   );
@@ -1135,6 +1120,7 @@ function AddressFields({
 
 function blankLine(): FormLine {
   return {
+    id: "",
     lineKind: "product",
     customerPartNumber: "",
     customerDescription: "",

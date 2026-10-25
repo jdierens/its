@@ -403,6 +403,7 @@ test("unit and extended prices use the eBay discount amount, not a fixed 5 perce
   assert.equal(lines[1].unit_price, 12.79);
   assert.equal(lines[1].ext_price, 12.79);
   assert.equal(lines[1].item_id, "item-4343");
+  assert.equal(lines[1].allocation_qty, lines[1].qty);
   assert.notEqual(lines[0].ext_price, Math.round(6388 * 0.95 * 100) / 100);
   const row = draftOrderRow({ order: parsed[0], customerId: "customer-ebay", billTo: null });
   assert.equal(row.ebay_order_id, "20-15321-25072");
@@ -464,6 +465,7 @@ test("eBay shipping is allocated to item 4343 for the line quantity", () => {
   assert.ok(freight);
   assert.equal(freight.qty, 1);
   assert.equal(freight.item_id, "item-ship");
+  assert.equal(freight.allocation_qty, freight.qty);
   assert.equal(freight.customer_description, "Shipping");
   const [plain] = planOrderPull([ebayOrder()], [], [{ id: "item-ship", sku: "4343" }]);
   assert.equal(plain.kind, "create");
