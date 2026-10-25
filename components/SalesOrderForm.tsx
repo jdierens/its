@@ -53,6 +53,24 @@ function moneyAmount(value: string): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function EbayTip({ label, text }: { label: string; text: string }) {
+  return (
+    <button
+      type="button"
+      className="so-ebay-tip"
+      aria-label={label}
+      title={text}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={(event) => event.preventDefault()}
+    >
+      <span aria-hidden="true">i</span>
+      <span className="so-ebay-tip-pop" role="tooltip">
+        {text}
+      </span>
+    </button>
+  );
+}
+
 function MoneyField({
   value,
   currency,
@@ -937,56 +955,65 @@ export function SalesOrderForm({
         </fieldset>
 
         {showMoney ? (
-          <fieldset>
-            <legend>eBay</legend>
-            <div className="so-pay-row">
+          <section className="so-ebay-card" aria-labelledby="so-ebay-heading">
+            <div className="so-ebay-head">
+              <h2 id="so-ebay-heading">eBay</h2>
+              {ebayOrder ? (
+                <details className="so-ebay-about">
+                  <summary>About these amounts</summary>
+                  <p>
+                    Buyer total is the lines after the eBay discount, plus shipping the buyer paid. Seller earnings is what eBay reports as due the seller, with marketplace fees already out. Seller net subtracts a shipping label bought on eBay.
+                  </p>
+                </details>
+              ) : null}
+            </div>
+            <div className="so-ebay-grid">
               <label>
-                eBay transaction fee
+                <span className="so-ebay-label">Transaction fee</span>
                 <MoneyField id="so-ebay-transaction-fee" className="num-input" inputMode="decimal" value={ebayTransactionFee} currency={currency} disabled={locked} onChange={(event) => setEbayTransactionFee(plainMoney(event.target.value))} onBlur={(event) => setEbayTransactionFee(plainMoney(event.target.value))} />
               </label>
               <label>
-                eBay label fee
-                <MoneyField className="num-input" inputMode="decimal" value={ebayLabelFee} currency={currency} disabled={locked} onChange={(event) => setEbayLabelFee(plainMoney(event.target.value))} onBlur={(event) => setEbayLabelFee(plainMoney(event.target.value))} />
-                <span className="hint">Deducted when a label is bought on eBay. The next order pull fills this in.</span>
+                <span className="so-ebay-label">
+                  Label fee
+                  <EbayTip label="About the label fee" text="Deducted when a label is bought on eBay. The next order pull fills this in." />
+                </span>
+                <MoneyField className="num-input" inputMode="decimal" aria-label="eBay label fee" value={ebayLabelFee} currency={currency} disabled={locked} onChange={(event) => setEbayLabelFee(plainMoney(event.target.value))} onBlur={(event) => setEbayLabelFee(plainMoney(event.target.value))} />
               </label>
               <label>
-                eBay ad fee
-                <MoneyField className="num-input" inputMode="decimal" value={ebayAdFee} currency={currency} disabled={locked} onChange={(event) => setEbayAdFee(plainMoney(event.target.value))} onBlur={(event) => setEbayAdFee(plainMoney(event.target.value))} />
+                <span className="so-ebay-label">Ad fee</span>
+                <MoneyField className="num-input" inputMode="decimal" aria-label="eBay ad fee" value={ebayAdFee} currency={currency} disabled={locked} onChange={(event) => setEbayAdFee(plainMoney(event.target.value))} onBlur={(event) => setEbayAdFee(plainMoney(event.target.value))} />
               </label>
               <label>
-                Seller earnings
-                <MoneyField className="num-input" inputMode="decimal" value={ebayOrderEarnings} currency={currency} disabled={locked} onChange={(event) => setEbayOrderEarnings(plainMoney(event.target.value))} onBlur={(event) => setEbayOrderEarnings(plainMoney(event.target.value))} />
-                <span className="hint">eBay&apos;s total due the seller. Marketplace fees are already out. A shipping label is not.</span>
+                <span className="so-ebay-label">
+                  Seller earnings
+                  <EbayTip label="About seller earnings" text="eBay's total due the seller. Marketplace fees are already out. A shipping label is not." />
+                </span>
+                <MoneyField className="num-input" inputMode="decimal" aria-label="Seller earnings" value={ebayOrderEarnings} currency={currency} disabled={locked} onChange={(event) => setEbayOrderEarnings(plainMoney(event.target.value))} onBlur={(event) => setEbayOrderEarnings(plainMoney(event.target.value))} />
               </label>
             </div>
-            <dl className="so-money-summary">
+            <dl className="so-ebay-metrics">
               <div>
                 <dt>Buyer total</dt>
-                <dd>{buyerTotal == null ? "" : formatSalesMoney(buyerTotal, currency)}</dd>
+                <dd>{buyerTotal == null ? "—" : formatSalesMoney(buyerTotal, currency)}</dd>
               </div>
-              {ebayOrder ? (
-                <>
-                  <div>
-                    <dt>Seller earnings</dt>
-                    <dd>{moneyAmount(ebayOrderEarnings) == null ? "" : formatSalesMoney(moneyAmount(ebayOrderEarnings), currency)}</dd>
-                  </div>
-                  <div>
-                    <dt>Shipping label</dt>
-                    <dd>{moneyAmount(ebayLabelFee) == null ? "None yet" : formatSalesMoney(moneyAmount(ebayLabelFee), currency)}</dd>
-                  </div>
-                  <div>
-                    <dt>Seller net</dt>
-                    <dd>{net == null ? "" : formatSalesMoney(net, currency)}</dd>
-                  </div>
-                </>
-              ) : null}
+              <div>
+                <dt>Seller earnings</dt>
+                <dd className={moneyAmount(ebayOrderEarnings) == null ? "so-ebay-empty" : undefined}>
+                  {moneyAmount(ebayOrderEarnings) == null ? "—" : formatSalesMoney(moneyAmount(ebayOrderEarnings), currency)}
+                </dd>
+              </div>
+              <div>
+                <dt>Shipping label</dt>
+                <dd className={moneyAmount(ebayLabelFee) == null ? "so-ebay-empty" : undefined}>
+                  {moneyAmount(ebayLabelFee) == null ? (ebayOrder ? "None yet" : "—") : formatSalesMoney(moneyAmount(ebayLabelFee), currency)}
+                </dd>
+              </div>
+              <div>
+                <dt>Seller net</dt>
+                <dd className={net == null ? "so-ebay-empty" : undefined}>{net == null ? "—" : formatSalesMoney(net, currency)}</dd>
+              </div>
             </dl>
-            {ebayOrder ? (
-              <p className="hint">
-                Buyer total is the lines after the eBay discount, plus the shipping the buyer paid. Seller earnings is the amount eBay reports as due the seller, which already excludes marketplace fees. Seller net subtracts a shipping label bought on eBay.
-              </p>
-            ) : null}
-          </fieldset>
+          </section>
         ) : null}
 
         <fieldset>
