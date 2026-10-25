@@ -5147,7 +5147,87 @@ nextjs-portal {
 /* .receive-row is the receipt form grid. Recent entries use this row. */
 tr.receipt-line {
   display: table-row;
-  cursor: pointer;
+}
+
+button.receive-cell {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  cursor: text;
+  min-height: 1.25em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.receive-cell.num {
+  text-align: right;
+}
+
+.receive-table input.receive-cell-input,
+.receive-cards input.receive-cell-input {
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  margin: 0;
+  padding: 0 4px;
+  border-radius: 4px;
+  border-color: var(--ds-ring, var(--input-border));
+  font-size: 13px;
+  font-weight: 400;
+  background: var(--ds-input, #fff);
+}
+
+.receive-table td.prep,
+.receive-table th.prep {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.receive-inline-prep {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.receive-inline-prep input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--ds-ink, var(--ink));
+}
+
+.receive-sku-menu {
+  position: fixed;
+  z-index: 40;
+  margin: 0;
+  max-height: 16rem;
+}
+
+.receive-inline-confirm {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.35rem 0 0.15rem;
+}
+
+.receive-inline-confirm p {
+  margin: 0;
 }
 
 tr.receipt-line > td {
@@ -5305,6 +5385,11 @@ button.receive-card-open {
 
   .receive-table-scroll {
     display: none;
+  }
+
+  .receive-cards input.receive-cell-input {
+    height: 44px;
+    font-size: 16px;
   }
 
   .receive-edit-grid {
