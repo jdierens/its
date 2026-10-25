@@ -147,7 +147,7 @@ export function ItemRecipe({
           <tr>
             <th>SKU</th>
             <th>Name</th>
-            <th>Qty</th>
+            <th className="num">Qty</th>
             <th>Notes</th>
             <th />
           </tr>
@@ -164,8 +164,9 @@ export function ItemRecipe({
                 <td data-label="Name">
                   {row.name} {row.generic ? <span className="code-badge">Generic</span> : null}
                 </td>
-                <td data-label="Qty">
+                <td className="num" data-label="Qty">
                   <input
+                    className="num"
                     aria-label={`Quantity for ${row.sku}`}
                     inputMode="numeric"
                     value={row.qtyPerKit}
@@ -210,7 +211,7 @@ export function ItemRecipe({
         </label>
         <label>
           Qty
-          <input aria-label="Quantity per kit" inputMode="numeric" value={qty} onChange={(event) => setQty(event.target.value)} />
+          <input className="num" aria-label="Quantity per kit" inputMode="numeric" value={qty} onChange={(event) => setQty(event.target.value)} />
         </label>
       </div>
       {choices.length > 0 ? (

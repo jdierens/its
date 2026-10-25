@@ -12,7 +12,7 @@ A bundle is a kit with exactly one distinct component, such as a pair of CPUs. A
 
 ## Recipe
 
-The Recipe tab on a Kit/Package item adds, edits, and removes components and quantities. Each component shows the Generic badge when it is a generic part. Opening a component item lists the kits that use it.
+The Recipe tab on a Kit/Package item adds, edits, and removes components and quantities. Qty and the quantity field are right-aligned. Each component shows the Generic badge when it is a generic part. Opening a component item lists the kits that use it.
 
 On create, condition and ECCN are defaults and can be edited. A server kit takes its condition from the one chassis component, taxonomy `CHA/*` or `SYS/SRV`. If there is not exactly one, the person chooses the condition. Its ECCN defaults to `5A992.C`. A bundle copies both condition and ECCN from its only component. Apply kit defaults on the Recipe tab fills those values.
 

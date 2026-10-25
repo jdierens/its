@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { errorText } from "@/lib/errors";
 import { normalizeLabel } from "@/lib/itemFields";
 import {
@@ -61,6 +62,13 @@ export function ManufacturerSelect({
 
   const exact = suggestions.some((row) => row.score >= 0.99);
   const showAdd = query.trim().length > 0 && !exact;
+  const canClear = query.trim().length > 0 || manufacturerId !== null;
+
+  function clearManufacturer() {
+    onChange(null, "");
+    setQuery("");
+    setOpen(false);
+  }
 
   async function add() {
     setBusy(true);
@@ -80,35 +88,49 @@ export function ManufacturerSelect({
   return (
     <label className="combo">
       Manufacturer
-      <input
-        role="combobox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        value={query}
-        placeholder="Search or add a manufacturer"
-        autoComplete="off"
-        onFocus={() => {
-          focused.current = true;
-          setOpen(true);
-        }}
-        onChange={(event) => {
-          const next = event.target.value;
-          setQuery(next);
-          setOpen(true);
-          if (next.trim() === "") onChange(null, "");
-        }}
-        onBlur={() => {
-          focused.current = false;
-          window.setTimeout(() => setOpen(false), 160);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            setOpen(false);
-            setQuery(manufacturerName);
-          }
-        }}
-      />
+      <span className={canClear ? "combo-field has-clear" : "combo-field"}>
+        <input
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          value={query}
+          placeholder="Search or add a manufacturer"
+          autoComplete="off"
+          onFocus={() => {
+            focused.current = true;
+            setOpen(true);
+          }}
+          onChange={(event) => {
+            const next = event.target.value;
+            setQuery(next);
+            setOpen(true);
+            if (next.trim() === "") onChange(null, "");
+          }}
+          onBlur={() => {
+            focused.current = false;
+            window.setTimeout(() => setOpen(false), 160);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setOpen(false);
+              setQuery(manufacturerName);
+            }
+          }}
+        />
+        {canClear ? (
+          <button
+            type="button"
+            className="field-clear"
+            aria-label="Clear manufacturer"
+            title="Clear manufacturer"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={clearManufacturer}
+          >
+            <X size={14} strokeWidth={1.75} aria-hidden />
+          </button>
+        ) : null}
+      </span>
       {open ? (
         <ul className="combo-menu" id={listId} role="listbox">
           {suggestions.map((row) => {
@@ -147,18 +169,6 @@ export function ManufacturerSelect({
             </li>
           ) : null}
         </ul>
-      ) : null}
-      {manufacturerId ? (
-        <button
-          type="button"
-          className="secondary combo-clear"
-          onClick={() => {
-            onChange(null, "");
-            setQuery("");
-          }}
-        >
-          Clear manufacturer
-        </button>
       ) : null}
       {error ? <span className="hint">{error}</span> : null}
     </label>

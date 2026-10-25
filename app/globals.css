@@ -304,8 +304,39 @@ button.combo-option {
   font-size: 0.86rem;
 }
 
-.combo-clear {
-  margin-top: 0.45rem;
+.combo-field {
+  position: relative;
+  display: block;
+}
+
+.combo-field.has-clear input {
+  padding-right: 1.7rem;
+}
+
+button.field-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.1rem;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  background-image: none;
+  color: var(--muted);
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+button.field-clear:hover {
+  background: rgba(15, 23, 42, 0.06);
+  background-image: none;
+  color: var(--ink);
 }
 
 .alias-list {
@@ -1921,6 +1952,24 @@ button.danger {
   margin-top: 0.35rem;
 }
 
+.item-identity .attr-caption,
+.item-name-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.05rem;
+  margin: 0 0 0.16rem;
+}
+
+.item-identity .attr-caption {
+  display: block;
+}
+
+.item-name-title > .attr-caption {
+  margin: 0;
+  min-height: 0;
+}
+
 .item-name {
   grid-area: name;
   min-width: 0;
@@ -1941,7 +1990,7 @@ button.danger {
   gap: 0.12rem;
   min-width: 5.75rem;
   margin: 0;
-  padding: 0.45rem 0.75rem;
+  padding: 0 0.75rem 0.35rem;
   border: 1px solid rgba(255, 255, 255, 0.85);
   border-radius: var(--radius-md);
   background: var(--card);
@@ -2004,75 +2053,159 @@ form.item-form {
   margin-bottom: 0.4rem;
 }
 
+.item-form input:not([type="checkbox"]),
+.item-form select,
+.item-form textarea {
+  display: block;
+}
+
 .item-form .item-lead-row {
   display: flex;
   flex-wrap: nowrap;
-  align-items: start;
+  align-items: flex-start;
   justify-content: flex-start;
+  gap: 0.9rem;
+  width: 100%;
 }
 
 .item-form .item-lead-row > label {
-  flex: 0 0 auto;
+  flex: 1 1 0;
   min-width: 0;
+  width: auto;
+  white-space: nowrap;
 }
 
 .item-form .item-lead-row > label[data-field="type"] {
-  width: 8.6rem;
+  flex-grow: 1.15;
+  min-width: 8.5rem;
 }
 
 .item-form .item-lead-row > label[data-field="taxonomy"] {
-  width: 11.5rem;
+  flex-grow: 1.7;
+  min-width: 11rem;
 }
 
 .item-form .item-lead-row > label[data-field="unit"] {
-  width: 6.2rem;
+  flex-grow: 0.75;
+  min-width: 5.5rem;
 }
 
 .item-form .item-lead-row > label[data-field="condition"] {
-  width: 6.4rem;
+  flex-grow: 0.85;
+  min-width: 6.25rem;
 }
 
 .item-form .item-lead-row > label[data-field="condition-note"] {
-  width: 11rem;
-  max-width: 14rem;
+  flex-grow: 1.45;
+  min-width: 9rem;
+  max-width: none;
+}
+
+.item-form .item-lead-row > label[data-field="generic"] {
+  flex-grow: 0.9;
+  min-width: 7.5rem;
 }
 
 .item-form .item-lead-row > label.kit-check {
-  min-height: 1.75rem;
-  align-self: end;
+  display: block;
+  min-height: 0;
+  align-self: start;
+}
+
+.item-form .generic-control {
+  display: flex;
+  align-items: center;
+  height: 1.75rem;
+}
+
+.item-form .generic-control input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+}
+
+.item-form .item-trade-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 0.9rem;
+  width: 100%;
+  margin-bottom: 0.4rem;
+}
+
+.item-form .item-trade-row > label {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+}
+
+.product-url-control {
+  position: relative;
+  display: block;
+}
+
+.product-url-control.has-open input {
+  padding-right: 1.7rem;
+}
+
+a.product-url-open {
+  position: absolute;
+  top: 50%;
+  right: 0.12rem;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--accent);
+  text-decoration: none;
 }
 
 .item-form .item-attr-mem {
   display: flex;
   flex-wrap: nowrap;
-  align-items: start;
-  gap: 0.35rem;
-  margin-bottom: 0.4rem;
+  align-items: end;
+  justify-content: flex-start;
+  gap: 0.9rem;
+  width: 100%;
+  margin-bottom: 0.55rem;
 }
 
 .item-form .item-attr-mem > label {
-  flex: 0 0 auto;
+  flex: 1 1 0;
   min-width: 0;
+  width: auto;
+}
+
+.item-form .item-attr-mem > label > span.attr-caption {
+  display: block;
+  white-space: nowrap;
 }
 
 .item-form .item-attr-mem > label[data-slot="family"] {
-  width: 5.6rem;
+  flex-grow: 0.9;
+  min-width: 6.75rem;
 }
 
 .item-form .item-attr-mem > label[data-slot="speed"] {
-  width: 4.8rem;
+  flex-grow: 1.15;
+  min-width: 8.25rem;
 }
 
 .item-form .item-attr-mem > label[data-slot="capacity"] {
-  width: 5.5rem;
+  flex-grow: 1.2;
+  min-width: 8.75rem;
 }
 
 .item-form .item-attr-mem > label[data-slot="ranking"] {
-  width: 5.2rem;
+  flex-grow: 0.85;
+  min-width: 6.25rem;
 }
 
 .item-form .item-attr-mem > label[data-slot="form_factor"] {
-  width: 11rem;
+  flex-grow: 1.8;
+  min-width: 11.5rem;
 }
 
 .item-form .item-attr-grid {
@@ -2822,6 +2955,94 @@ button.ebay-more {
   align-items: center;
 }
 
+#item-pricing .price-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.35rem 0.9rem;
+  align-items: start;
+  width: 100%;
+}
+
+#item-pricing .price-field,
+#item-pricing .price-save-slot {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  align-items: stretch;
+  margin: 0;
+  min-width: 0;
+}
+
+#item-pricing .price-field > span:first-child,
+#item-pricing .price-save-caption {
+  margin: 0 0 0.16rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+#item-pricing .price-field > span:first-child,
+.item-form label:has(> input.num),
+.item-form label:has(> input.num) > .attr-caption,
+#item-pricing label:has(> input.num),
+#item-pricing label:has(> .money-input):not(.price-field),
+.kit-add label:has(> input.num) {
+  text-align: right;
+}
+
+.item-form label:has(> input.num) > .hint,
+.item-form label:has(> input.num) > .field-error {
+  text-align: left;
+}
+
+#item-pricing .price-save-caption {
+  visibility: hidden;
+}
+
+#item-pricing .price-field .hint,
+#item-pricing .price-save-hint {
+  margin-top: 0.1rem;
+  min-height: 1.15em;
+}
+
+#item-pricing .money-input {
+  box-sizing: border-box;
+  height: 2.25rem;
+}
+
+#item-pricing button.price-save {
+  grid-row: 2;
+  align-self: center;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  background-image: none;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+#item-pricing button.price-save:not(:disabled) {
+  background: var(--accent);
+  background-image: none;
+  color: #fff;
+  border-color: transparent;
+  cursor: pointer;
+}
+
+#item-pricing button.price-save:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .pricing-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -2840,6 +3061,7 @@ button.ebay-more {
   margin: 0;
   color: var(--muted);
   font-size: 0.78rem;
+  text-align: right;
 }
 
 .stat strong {
@@ -2847,10 +3069,58 @@ button.ebay-more {
 }
 
 .pricing-filters {
-  display: grid;
-  grid-template-columns: 10rem 1fr 1fr;
-  gap: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 0.35rem 0.7rem;
   margin-bottom: 0.8rem;
+}
+
+.pricing-filters > label {
+  flex: 0 1 9.5rem;
+  min-width: 7.5rem;
+  max-width: 12rem;
+  margin: 0;
+}
+
+.pricing-filters input,
+.pricing-filters select {
+  box-sizing: border-box;
+  height: 2.25rem;
+}
+
+#item-pricing .entry-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.75rem, 1fr));
+  gap: 0.35rem 0.7rem;
+  align-items: start;
+  width: 100%;
+}
+
+#item-pricing .entry-fields > label,
+#item-pricing .entry-fields > .price-save-slot {
+  margin: 0;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+#item-pricing .entry-fields > label {
+  display: grid;
+  grid-template-rows: auto auto;
+  align-items: stretch;
+}
+
+#item-pricing .entry-fields > label > span:first-child {
+  margin: 0 0 0.16rem;
+  font-size: 0.72rem;
+}
+
+#item-pricing .entry-fields input,
+#item-pricing .entry-fields select,
+#item-pricing .entry-fields .money-input {
+  box-sizing: border-box;
+  height: 2.25rem;
+  min-height: 0;
 }
 
 table.dense th,
@@ -2992,8 +3262,34 @@ tr.quote-latest td {
     min-height: 44px;
   }
 
-  .pricing-filters {
-    grid-template-columns: 1fr;
+  .pricing-filters > label,
+  #item-pricing .entry-fields {
+    width: 100%;
+  }
+
+  .pricing-filters > label {
+    flex: 1 1 8.5rem;
+    max-width: 100%;
+  }
+
+  .pricing-filters input,
+  .pricing-filters select {
+    height: 44px;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  #item-pricing .entry-fields {
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  }
+
+  #item-pricing .entry-fields input,
+  #item-pricing .entry-fields select,
+  #item-pricing .entry-fields .money-input,
+  #item-pricing .entry-fields button.price-save {
+    height: 44px;
+    min-height: 44px;
+    font-size: 16px;
   }
 
   .grid {
@@ -3146,24 +3442,52 @@ tr.quote-latest td {
   }
 
   .item-form .item-lead-row,
-  .item-form .item-attr-mem {
+  .item-form .item-attr-mem,
+  .item-form .item-trade-row {
     flex-wrap: wrap;
   }
 
   .item-form .item-lead-row > label,
   .item-form .item-attr-mem > label,
+  .item-form .item-trade-row > label,
   .item-form .item-attr-grid {
     width: auto;
     max-width: 100%;
   }
 
   .item-form .item-lead-row > label,
-  .item-form .item-attr-mem > label {
+  .item-form .item-attr-mem > label,
+  .item-form .item-trade-row > label {
     flex: 1 1 8.5rem;
   }
 
+  .item-form .item-attr-mem > label,
+  .item-form .item-attr-mem > label[data-slot] {
+    flex: 1 1 8.5rem;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .item-form .item-lead-row > label[data-field] {
+    flex: 1 1 8.5rem;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .item-form .item-lead-row > label.kit-check {
-    min-height: 44px;
+    min-height: 0;
+  }
+
+  .item-form .generic-control {
+    height: 44px;
+  }
+
+  button.field-clear,
+  a.product-url-open {
+    width: 44px;
+    height: 44px;
   }
 
   .item-form .item-attr-grid {
@@ -5693,6 +6017,12 @@ input.num-input {
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--line);
+}
+
+.kit-table th.num,
+.kit-table td.num,
+.kit-table td.num input {
+  text-align: right;
 }
 
 .kit-table input {
