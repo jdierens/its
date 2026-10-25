@@ -3069,10 +3069,58 @@ button.ebay-more {
 }
 
 .pricing-filters {
-  display: grid;
-  grid-template-columns: 10rem 1fr 1fr;
-  gap: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 0.35rem 0.7rem;
   margin-bottom: 0.8rem;
+}
+
+.pricing-filters > label {
+  flex: 0 1 9.5rem;
+  min-width: 7.5rem;
+  max-width: 12rem;
+  margin: 0;
+}
+
+.pricing-filters input,
+.pricing-filters select {
+  box-sizing: border-box;
+  height: 2.25rem;
+}
+
+#item-pricing .entry-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.75rem, 1fr));
+  gap: 0.35rem 0.7rem;
+  align-items: start;
+  width: 100%;
+}
+
+#item-pricing .entry-fields > label,
+#item-pricing .entry-fields > .price-save-slot {
+  margin: 0;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+#item-pricing .entry-fields > label {
+  display: grid;
+  grid-template-rows: auto auto;
+  align-items: stretch;
+}
+
+#item-pricing .entry-fields > label > span:first-child {
+  margin: 0 0 0.16rem;
+  font-size: 0.72rem;
+}
+
+#item-pricing .entry-fields input,
+#item-pricing .entry-fields select,
+#item-pricing .entry-fields .money-input {
+  box-sizing: border-box;
+  height: 2.25rem;
+  min-height: 0;
 }
 
 table.dense th,
@@ -3214,8 +3262,34 @@ tr.quote-latest td {
     min-height: 44px;
   }
 
-  .pricing-filters {
-    grid-template-columns: 1fr;
+  .pricing-filters > label,
+  #item-pricing .entry-fields {
+    width: 100%;
+  }
+
+  .pricing-filters > label {
+    flex: 1 1 8.5rem;
+    max-width: 100%;
+  }
+
+  .pricing-filters input,
+  .pricing-filters select {
+    height: 44px;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  #item-pricing .entry-fields {
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  }
+
+  #item-pricing .entry-fields input,
+  #item-pricing .entry-fields select,
+  #item-pricing .entry-fields .money-input,
+  #item-pricing .entry-fields button.price-save {
+    height: 44px;
+    min-height: 44px;
+    font-size: 16px;
   }
 
   .grid {

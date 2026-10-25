@@ -88,6 +88,18 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
   const [quoteUrl, setQuoteUrl] = useState("");
   const [quoteNotes, setQuoteNotes] = useState("");
   const [quoteBy, setQuoteBy] = useState("manual");
+  const [quoteBase, setQuoteBase] = useState({
+    source: "manual" as PriceQuoteSource,
+    price: "",
+    currency: "USD",
+    qty: "",
+    condition: "",
+    seller: "",
+    vendorId: "",
+    url: "",
+    notes: "",
+    by: "manual",
+  });
   const [typeFilter, setTypeFilter] = useState<"all" | TransactionType>("all");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -102,6 +114,17 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
   const [txnReference, setTxnReference] = useState("");
   const [txnSource, setTxnSource] = useState<TransactionSource>("manual");
   const [txnNotes, setTxnNotes] = useState("");
+  const [txnBase, setTxnBase] = useState({
+    type: "sell" as TransactionType,
+    date: txnDate,
+    qty: "",
+    unit: "",
+    customerId: "",
+    vendorId: "",
+    reference: "",
+    source: "manual" as TransactionSource,
+    notes: "",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -185,6 +208,27 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
   );
   const txnPreview = previewTotal(txnQty, txnUnit);
   const pricesDirty = ecommerce !== savedEcommerce || market !== savedMarket || msrp !== savedMsrp;
+  const quoteDirty =
+    quoteSource !== quoteBase.source ||
+    quotePrice !== quoteBase.price ||
+    quoteCurrency !== quoteBase.currency ||
+    quoteQty !== quoteBase.qty ||
+    quoteCondition !== quoteBase.condition ||
+    quoteSeller !== quoteBase.seller ||
+    quoteVendorId !== quoteBase.vendorId ||
+    quoteUrl !== quoteBase.url ||
+    quoteNotes !== quoteBase.notes ||
+    quoteBy !== quoteBase.by;
+  const txnDirty =
+    txnType !== txnBase.type ||
+    txnDate !== txnBase.date ||
+    txnQty !== txnBase.qty ||
+    txnUnit !== txnBase.unit ||
+    txnCustomerId !== txnBase.customerId ||
+    txnVendorId !== txnBase.vendorId ||
+    txnReference !== txnBase.reference ||
+    txnSource !== txnBase.source ||
+    txnNotes !== txnBase.notes;
 
   async function onSavePrices(event: FormEvent) {
     event.preventDefault();
@@ -265,6 +309,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
 
   async function onAddQuote(event: FormEvent) {
     event.preventDefault();
+    if (!quoteDirty || addingQuote) return;
     const price = parseMoney(quotePrice);
     if (!price.ok) {
       setQuoteError(price.message);
@@ -311,6 +356,18 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
       setQuoteVendorId("");
       setQuoteUrl("");
       setQuoteNotes("");
+      setQuoteBase({
+        source: quoteSource,
+        price: "",
+        currency: quoteCurrency,
+        qty: "",
+        condition: "",
+        seller: "",
+        vendorId: "",
+        url: "",
+        notes: "",
+        by: quoteBy,
+      });
     } catch (error) {
       setQuoteError(errorText(error));
     } finally {
@@ -320,6 +377,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
 
   async function onAddTransaction(event: FormEvent) {
     event.preventDefault();
+    if (!txnDirty || addingTxn) return;
     const qty = parseMoney(txnQty);
     const unit = parseMoney(txnUnit);
     if (!qty.ok) {
@@ -363,6 +421,17 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
       setTxnVendorId("");
       setTxnReference("");
       setTxnNotes("");
+      setTxnBase({
+        type: txnType,
+        date: txnDate,
+        qty: "",
+        unit: "",
+        customerId: "",
+        vendorId: "",
+        reference: "",
+        source: txnSource,
+        notes: "",
+      });
     } catch (error) {
       setTxnError(errorText(error));
     } finally {
@@ -559,9 +628,9 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
         )}
         <form onSubmit={onAddQuote}>
           <h3>Add quote</h3>
-          <div className="grid">
-            <label>
-              Source
+          <div className="entry-fields">
+            <label data-field="source">
+              <span>Source</span>
               <select
                 value={quoteSource}
                 onChange={(event) => setQuoteSource(event.target.value as PriceQuoteSource)}
@@ -573,28 +642,28 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 ))}
               </select>
             </label>
-            <label>
-              Price
+            <label data-field="price">
+              <span>Price</span>
               <MoneyInput value={quotePrice} onChange={setQuotePrice} />
             </label>
-            <label>
-              Currency
+            <label data-field="currency">
+              <span>Currency</span>
               <input value={quoteCurrency} autoComplete="off" onChange={(event) => setQuoteCurrency(event.target.value)} />
             </label>
-            <label>
-              Qty
+            <label data-field="qty">
+              <span>Qty</span>
               <input className="num" value={quoteQty} inputMode="decimal" autoComplete="off" onChange={(event) => setQuoteQty(event.target.value)} />
             </label>
-            <label>
-              Condition
+            <label data-field="condition">
+              <span>Condition</span>
               <input value={quoteCondition} autoComplete="off" onChange={(event) => setQuoteCondition(event.target.value)} />
             </label>
-            <label>
-              Seller
+            <label data-field="seller">
+              <span>Seller</span>
               <input value={quoteSeller} autoComplete="off" onChange={(event) => setQuoteSeller(event.target.value)} />
             </label>
-            <label>
-              Vendor
+            <label data-field="vendor">
+              <span>Vendor</span>
               <select value={quoteVendorId} onChange={(event) => setQuoteVendorId(event.target.value)}>
                 <option value="">None</option>
                 {vendors.map((vendor) => (
@@ -604,29 +673,25 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 ))}
               </select>
             </label>
-            <label>
-              URL
+            <label data-field="url">
+              <span>URL</span>
               <input value={quoteUrl} autoComplete="off" onChange={(event) => setQuoteUrl(event.target.value)} />
             </label>
-            <label>
-              Notes
+            <label data-field="notes">
+              <span>Notes</span>
               <input value={quoteNotes} autoComplete="off" onChange={(event) => setQuoteNotes(event.target.value)} />
             </label>
-            <label>
-              Captured by
+            <label data-field="captured-by">
+              <span>Captured by</span>
               <input value={quoteBy} autoComplete="off" onChange={(event) => setQuoteBy(event.target.value)} />
             </label>
+            <EntrySave label="Add quote" dirty={quoteDirty} pending={addingQuote} />
           </div>
           {quoteError ? (
             <p className="banner error" role="alert">
               {quoteError}
             </p>
           ) : null}
-          <div className="actions">
-            <button type="submit" disabled={addingQuote}>
-              {addingQuote ? "Adding…" : "Add quote"}
-            </button>
-          </div>
         </form>
       </div>
 
@@ -691,9 +756,9 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
         )}
         <form onSubmit={onAddTransaction}>
           <h3>Add transaction</h3>
-          <div className="grid">
-            <label>
-              Type
+          <div className="entry-fields">
+            <label data-field="type">
+              <span>Type</span>
               <select
                 value={txnType}
                 onChange={(event) => setTxnType(event.target.value === "buy" ? "buy" : "sell")}
@@ -702,21 +767,21 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 <option value="buy">Buy</option>
               </select>
             </label>
-            <label>
-              Date
+            <label data-field="date">
+              <span>Date</span>
               <input type="date" value={txnDate} onChange={(event) => setTxnDate(event.target.value)} />
             </label>
-            <label>
-              Qty
+            <label data-field="qty">
+              <span>Qty</span>
               <input className="num" value={txnQty} inputMode="decimal" autoComplete="off" onChange={(event) => setTxnQty(event.target.value)} />
             </label>
-            <label>
-              Unit price
+            <label data-field="unit">
+              <span>Unit price</span>
               <MoneyInput value={txnUnit} onChange={setTxnUnit} />
             </label>
             {txnType === "sell" ? (
-              <label>
-                Customer
+              <label data-field="party">
+                <span>Customer</span>
                 <select value={txnCustomerId} onChange={(event) => setTxnCustomerId(event.target.value)}>
                   <option value="">None</option>
                   {customers.map((customer) => (
@@ -727,8 +792,8 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 </select>
               </label>
             ) : (
-              <label>
-                Vendor
+              <label data-field="party">
+                <span>Vendor</span>
                 <select value={txnVendorId} onChange={(event) => setTxnVendorId(event.target.value)}>
                   <option value="">None</option>
                   {vendors.map((vendor) => (
@@ -739,8 +804,8 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 </select>
               </label>
             )}
-            <label>
-              Reference
+            <label data-field="reference">
+              <span>Reference</span>
               <input
                 value={txnReference}
                 autoComplete="off"
@@ -748,8 +813,8 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 onChange={(event) => setTxnReference(event.target.value)}
               />
             </label>
-            <label>
-              Source
+            <label data-field="source">
+              <span>Source</span>
               <select
                 value={txnSource}
                 onChange={(event) => setTxnSource(event.target.value as TransactionSource)}
@@ -761,10 +826,11 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 ))}
               </select>
             </label>
-            <label>
-              Notes
+            <label data-field="notes">
+              <span>Notes</span>
               <input value={txnNotes} autoComplete="off" onChange={(event) => setTxnNotes(event.target.value)} />
             </label>
+            <EntrySave label="Add transaction" dirty={txnDirty} pending={addingTxn} />
           </div>
           <p className="hint">Total {txnPreview == null ? "—" : formatMoney(txnPreview)}. The database stores the rounded total.</p>
           {txnError ? (
@@ -772,14 +838,22 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
               {txnError}
             </p>
           ) : null}
-          <div className="actions">
-            <button type="submit" disabled={addingTxn}>
-              {addingTxn ? "Adding…" : "Add transaction"}
-            </button>
-          </div>
         </form>
       </div>
     </section>
+  );
+}
+
+function EntrySave({ label, dirty, pending }: { label: string; dirty: boolean; pending: boolean }) {
+  return (
+    <div className="price-save-slot">
+      <span className="price-save-caption" aria-hidden="true">
+        Save
+      </span>
+      <button type="submit" className="price-save" disabled={!dirty || pending} aria-label={label} title={label}>
+        {pending ? <Loader2 className="icon-spin" size={18} strokeWidth={1.75} aria-hidden /> : <Save size={18} strokeWidth={1.75} aria-hidden />}
+      </button>
+    </div>
   );
 }
 
