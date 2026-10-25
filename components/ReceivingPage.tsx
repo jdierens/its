@@ -1048,12 +1048,12 @@ export function ReceivingPage() {
                       <th className="fit">Init.</th>
                       <th className="fit">Project</th>
                       <th className="fit">Incoming bin</th>
-                      <th className="origin">Orig. system</th>
-                      <th className="num fit">Orig. qty</th>
+                      <th className="origin">System</th>
+                      <th className="num fit">System Qty</th>
                       <th className="search">Search</th>
                       <th className="fit">SKU</th>
                       <th className="item">Item name</th>
-                      <th className="num fit">Qty</th>
+                      <th className="num fit">Item Qty</th>
                       <th className="prep">Prep</th>
                       <th className="putaway">Putaway</th>
                       <th className="note">Comment</th>

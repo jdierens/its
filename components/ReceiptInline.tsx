@@ -639,7 +639,7 @@ export function ReceiptCard({
             <CellButton value={entry.incomingBin ?? ""} onClick={() => open("incoming")} />
           )}
         </CardLine>
-        <CardLine label="Originating system">
+        <CardLine label="System">
           {edit.field === "origin" ? (
             <TextEdit
               value={entry.originatingSystem ?? ""}
@@ -651,7 +651,7 @@ export function ReceiptCard({
             <CellButton value={entry.originatingSystem ?? ""} onClick={() => open("origin")} />
           )}
         </CardLine>
-        <CardLine label="Originating system qty">
+        <CardLine label="System Qty">
           {edit.field === "originQty" ? (
             <TextEdit
               kind="number"
@@ -686,7 +686,7 @@ export function ReceiptCard({
         <CardLine label="Item name">
           <span title={shown.itemName}>{shown.itemName}</span>
         </CardLine>
-        <CardLine label="Qty">
+        <CardLine label="Item Qty">
           {edit.field === "qty" ? (
             <TextEdit
               kind="number"
