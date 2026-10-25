@@ -72,8 +72,47 @@ test("parser keeps one row per variation and drops prices", () => {
     ],
   );
   assert.equal(parsed.rows[2]?.listingUrl, "https://www.ebay.com/itm/222222222222");
+  assert.equal(parsed.rows[0]?.pictureUrl, null);
   assert.equal(JSON.stringify(parsed.rows).includes("19.99"), false);
   assert.equal(JSON.stringify(parsed.rows).includes("10.00"), false);
+});
+
+test("picture url is the https PictureURL, else GalleryURL, shared by variations", () => {
+  const parsed = parseActiveList(
+    page(
+      `<Item>
+        <ItemID>333333333333</ItemID>
+        <Title>Pictured</Title>
+        <SKU>PIC</SKU>
+        <PictureDetails>
+          <GalleryURL>https://i.ebayimg.com/images/g/gallery/s-l140.jpg</GalleryURL>
+          <PictureURL>https://i.ebayimg.com/images/g/full/s-l1600.jpg</PictureURL>
+        </PictureDetails>
+        <Variations>
+          <Variation><SKU>PIC-A</SKU><Quantity>1</Quantity></Variation>
+          <Variation><SKU>PIC-B</SKU><Quantity>1</Quantity></Variation>
+        </Variations>
+      </Item>
+      <Item>
+        <ItemID>444444444444</ItemID>
+        <Title>Gallery only</Title>
+        <SKU>GAL</SKU>
+        <PictureDetails><GalleryURL>https://i.ebayimg.com/images/g/only/s-l140.jpg</GalleryURL></PictureDetails>
+      </Item>
+      <Item>
+        <ItemID>555555555555</ItemID>
+        <Title>Insecure</Title>
+        <SKU>HTTP</SKU>
+        <PictureDetails><GalleryURL>http://example.com/a.jpg</GalleryURL></PictureDetails>
+      </Item>`,
+      1,
+    ),
+  );
+  assert.equal(parsed.rows[0]?.pictureUrl, "https://i.ebayimg.com/images/g/full/s-l1600.jpg");
+  assert.equal(parsed.rows[1]?.pictureUrl, "https://i.ebayimg.com/images/g/full/s-l1600.jpg");
+  assert.equal(parsed.rows[2]?.pictureUrl, "https://i.ebayimg.com/images/g/only/s-l140.jpg");
+  assert.equal(parsed.rows[3]?.pictureUrl, null);
+  assert.equal(JSON.stringify(parsed.rows).includes("http://example.com"), false);
 });
 
 test("failure ack keeps the eBay message and error code", () => {

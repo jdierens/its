@@ -12,6 +12,7 @@ export type ActiveListing = {
   sku: string | null;
   variationSku: string | null;
   title: string | null;
+  pictureUrl: string | null;
   quantityAvailable: number | null;
   listingStatus: string;
   listingUrl: string | null;
@@ -134,6 +135,7 @@ function parseItem(itemXml: string): ActiveListing[] {
   const shell = without(itemXml, "Variations");
   const sku = clip(tagText(shell, "SKU"));
   const title = clip(tagText(shell, "Title"));
+  const pictureUrl = safeHttpsUrl(tagText(shell, "PictureURL") ?? tagText(shell, "GalleryURL"));
   const listingStatus = clip(tagText(shell, "ListingStatus")) ?? "Active";
   const listingUrl = publicItemUrl(tagText(shell, "ViewItemURL"), ebayItemId);
   const variations = blocks(itemXml, "Variation");
@@ -144,6 +146,7 @@ function parseItem(itemXml: string): ActiveListing[] {
         sku,
         variationSku: null,
         title,
+        pictureUrl,
         quantityAvailable: integer(tagText(shell, "QuantityAvailable")) ?? integer(tagText(shell, "Quantity")),
         listingStatus,
         listingUrl,
@@ -155,10 +158,17 @@ function parseItem(itemXml: string): ActiveListing[] {
     sku,
     variationSku: clip(tagText(variation, "SKU")),
     title,
+    pictureUrl,
     quantityAvailable: integer(tagText(variation, "QuantityAvailable")) ?? integer(tagText(variation, "Quantity")),
     listingStatus,
     listingUrl,
   }));
+}
+
+export function safeHttpsUrl(value: string | null): string | null {
+  const clipped = clip(value);
+  if (!clipped || !/^https:\/\/[^\s]+$/i.test(clipped)) return null;
+  return clipped;
 }
 
 function publicItemUrl(value: string | null, ebayItemId: string): string {

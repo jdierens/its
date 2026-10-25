@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Building, Cable, Contact, Plug, RefreshCw, Unplug } from "lucide-react";
+import { Building, Cable, Contact, List, Plug, RefreshCw, Unplug } from "lucide-react";
 import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
 import { isDirty } from "@/lib/formDirty";
 import { RECONNECT_MESSAGE as EBAY_RECONNECT_MESSAGE } from "@/lib/ebay/messages";
@@ -388,6 +388,9 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
         {focus === "ebay" ? (
           <ToolbarButton icon={Plug} label={ebayConnectLabel} href={ebayConnectHref} disabled={!ebayConnectHref || busy !== null} />
         ) : null}
+        {focus === "ebay" ? (
+          <ToolbarButton icon={List} label="Browse listings" href="/admin/integrations/ebay/listings" />
+        ) : null}
         {focus === "ebay" && ebay?.canRefreshListings ? (
           <button
             type="button"
@@ -532,7 +535,10 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
                   OAuth redirect uses RuName <code>{ebay.ruName}</code>, not the URL above.
                 </p>
               ) : null}
-              <p className="hint">Connect, refresh listings, test, and disconnect are in the toolbar. Refresh reads active listings and does not change anything on eBay.</p>
+              <p className="hint">
+                <Link href="/admin/integrations/ebay/listings">Browse listings</Link> shows every active listing.
+                Match a row when its custom label is not an item. Refresh reads listings and does not change anything on eBay.
+              </p>
               <h3>Recent log</h3>
               {ebay.logs.length > 0 ? (
                 <table className="log-table">

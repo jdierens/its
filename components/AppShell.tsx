@@ -18,6 +18,7 @@ import {
   PackagePlus,
   ScanLine,
   Landmark,
+  List,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -67,6 +68,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/admin/integrations": Plug,
   "/admin/integrations/quickbooks": Landmark,
   "/admin/integrations/ebay": Store,
+  "/admin/integrations/ebay/listings": List,
 };
 
 type ShellContextValue = {
@@ -215,7 +217,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className="nav-group-label">{group.label}</div>
                 {group.items.map((item) => {
                   const Icon = ICONS[item.href] ?? Package;
-                  const childActive = item.children?.some((child) => isNavActive(child.href, pathname)) ?? false;
+                  const matchingChildren = item.children?.filter((child) => isNavActive(child.href, pathname)) ?? [];
+                  const specificHref = matchingChildren.reduce(
+                    (best, child) => (child.href.length > best.length ? child.href : best),
+                    "",
+                  );
+                  const childActive = specificHref.length > 0;
                   const active = isNavActive(item.href, pathname) || childActive;
                   const current = pathname === item.href;
                   return (
@@ -232,7 +239,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       </Link>
                       {item.children?.map((child) => {
                         const ChildIcon = ICONS[child.href] ?? Package;
-                        const onChild = isNavActive(child.href, pathname);
+                        const onChild = child.href === specificHref;
                         return (
                           <Link
                             key={child.href}
