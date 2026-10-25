@@ -354,25 +354,6 @@ function visibleComment(entry: ReceivingEntry, pending: ReceiptPatch["item"] | n
   return commentWithPrepStatus(entry.comment, prep, picked ? false : entry.cleaned, picked ? false : entry.wiped);
 }
 
-function PrepBox({ entry, saving, onToggle }: { entry: ReceivingEntry; saving: boolean; onToggle: (checked: boolean) => void }) {
-  const prep = receivePrepKind({ shortCode: entry.shortCode, longCode: entry.longCode, taxonomyName: entry.taxonomyName });
-  if (!prep) return null;
-  const label = prep === "cleaned" ? "Cleaned" : "Wiped";
-  const checked = prep === "cleaned" ? entry.cleaned === true : entry.wiped === true;
-  return (
-    <label className="receive-inline-prep">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={saving}
-        aria-label={label}
-        onChange={(event) => onToggle(event.target.checked)}
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
-
 function ConfirmBar({
   initials,
   confirm,
@@ -432,7 +413,6 @@ export function ReceiptTableRow({
 }) {
   const edit = useReceiptEdit(entry, onSaved);
   const shown = receiptLineAfterPick(entry, edit.pendingItem ?? null);
-  const prep = receivePrepKind({ shortCode: entry.shortCode, longCode: entry.longCode, taxonomyName: entry.taxonomyName });
   const note = visibleComment(entry, edit.pendingItem);
   function open(next: Field) {
     if (edit.saving) return;
@@ -536,15 +516,6 @@ export function ReceiptTableRow({
             <CellButton align="right" value={String(entry.qty)} onClick={() => open("qty")} />
           )}
         </td>
-        <td className="prep">
-          {prep ? (
-            <PrepBox
-              entry={entry}
-              saving={edit.saving}
-              onToggle={(checked) => edit.apply(prep === "cleaned" ? { cleaned: checked } : { wiped: checked })}
-            />
-          ) : null}
-        </td>
         <td className="putaway" title="Putaway is the destination bin stored on the receipt. It is not changed from this table.">
           {entry.putaway}
         </td>
@@ -558,7 +529,7 @@ export function ReceiptTableRow({
       </tr>
       {edit.confirm || edit.error ? (
         <tr className="receive-edit-row">
-          <td colSpan={13}>
+          <td colSpan={12}>
             <ConfirmBar
               initials={initials}
               confirm={edit.confirm}
@@ -600,7 +571,6 @@ export function ReceiptCard({
 }) {
   const edit = useReceiptEdit(entry, onSaved);
   const shown = receiptLineAfterPick(entry, edit.pendingItem ?? null);
-  const prep = receivePrepKind({ shortCode: entry.shortCode, longCode: entry.longCode, taxonomyName: entry.taxonomyName });
   const note = visibleComment(entry, edit.pendingItem);
   function open(next: Field) {
     if (edit.saving) return;
@@ -706,15 +676,6 @@ export function ReceiptCard({
             <CellButton align="right" value={String(entry.qty)} onClick={() => open("qty")} />
           )}
         </CardLine>
-        {prep ? (
-          <CardLine label={prep === "cleaned" ? "Cleaned" : "Wiped"}>
-            <PrepBox
-              entry={entry}
-              saving={edit.saving}
-              onToggle={(checked) => edit.apply(prep === "cleaned" ? { cleaned: checked } : { wiped: checked })}
-            />
-          </CardLine>
-        ) : null}
         <CardLine label="Putaway location">
           <span title="Putaway is the destination bin stored on the receipt. It is not changed from this list.">{entry.putaway}</span>
         </CardLine>

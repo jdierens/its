@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   RECEIVING_DATE_EDITABLE,
+  RECEIVING_PAGE_SIZE,
   formatReceivedOn,
   beginReceiptSave,
   finishReceiptSave,
@@ -12,6 +13,8 @@ import {
   receiptSavedNote,
   receivingDateToStore,
   receivingEntryForViewer,
+  receivingLastPage,
+  receivingPageOffset,
   warehouseToday,
 } from "@/lib/receivingSettings";
 
@@ -155,5 +158,17 @@ describe("recent receiving rows", () => {
     );
     assert.equal(putawayLabel("20042-B", null), "20042-B");
     assert.equal(putawayLabel(null, "HWS.03.01.02"), "HWS.03.01.02");
+  });
+});
+
+describe("receiving pages", () => {
+  it("pages 50 receipts and treats an empty list as one page", () => {
+    assert.equal(RECEIVING_PAGE_SIZE, 50);
+    assert.equal(receivingLastPage(0), 1);
+    assert.equal(receivingLastPage(50), 1);
+    assert.equal(receivingLastPage(51), 2);
+    assert.equal(receivingPageOffset(1), 0);
+    assert.equal(receivingPageOffset(3), 100);
+    assert.equal(receivingPageOffset(0), 0);
   });
 });

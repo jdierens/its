@@ -5,7 +5,19 @@
  */
 export const RECEIVING_DATE_EDITABLE = true;
 
-export const RECEIVING_PAGE_SIZE = 20;
+export const RECEIVING_PAGE_SIZE = 50;
+
+/** Last page of a receipt list. An empty list is still page 1. */
+export function receivingLastPage(total: number): number {
+  if (!Number.isFinite(total) || total < 1) return 1;
+  return Math.ceil(total / RECEIVING_PAGE_SIZE);
+}
+
+/** Zero-based row offset for a 1-based page. */
+export function receivingPageOffset(page: number): number {
+  const safe = Number.isInteger(page) && page > 0 ? page : 1;
+  return (safe - 1) * RECEIVING_PAGE_SIZE;
+}
 
 const MONEY_FIELDS = ["unit_cost", "cost", "price", "extended_cost", "landed_cost"] as const;
 
