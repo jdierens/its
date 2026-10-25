@@ -281,6 +281,15 @@ export function SalesOrderForm({
         <span className="sku">{number}</span>
         <Badge tone={status}>{salesOrderStatusLabel(status)}</Badge>
       </p>
+      {order?.ebayOrderId || order?.buyerName || order?.buyerUsername ? (
+        <p className="hint">
+          eBay {order.ebayOrderId ? `order ${order.ebayOrderId}` : "order"}
+          {order.ebaySalesRecordRef ? ` · record ${order.ebaySalesRecordRef}` : ""}
+          {order.buyerName || order.buyerUsername
+            ? ` · buyer ${[order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ")}`
+            : ""}
+        </p>
+      ) : null}
       <form
         onSubmit={(event) => {
           event.preventDefault();

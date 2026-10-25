@@ -11,7 +11,7 @@ export const INTEGRATIONS = [
     id: "ebay",
     label: "eBay",
     href: "/admin/integrations/ebay",
-    description: "Seller connection and active listings.",
+    description: "Seller connection, active listings, and draft orders.",
   },
   {
     id: "google",

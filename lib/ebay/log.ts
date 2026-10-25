@@ -1,7 +1,7 @@
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
 
 export async function writeEbayLog(entry: {
-  entity: "connection" | "notification" | "test" | "listings";
+  entity: "connection" | "notification" | "test" | "listings" | "orders";
   direction: "oauth" | "notification" | "read";
   status: "ok" | "error";
   message: string;

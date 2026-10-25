@@ -120,6 +120,10 @@ export type SalesOrderView = {
   ebayLabelFee: string;
   ebayAdFee: string;
   ebayOrderEarnings: string;
+  ebayOrderId: string;
+  ebaySalesRecordRef: string;
+  buyerName: string;
+  buyerUsername: string;
   lines: SalesLineView[];
   notes: SalesNoteView[];
   attachments: SoAttachmentView[];
@@ -282,7 +286,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
   const { data, error } = await (await getSupabase())
     .from("sales_orders")
     .select(
-      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
+      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -383,6 +387,10 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     ebayLabelFee: shown.ebayLabelFee,
     ebayAdFee: shown.ebayAdFee,
     ebayOrderEarnings: shown.ebayOrderEarnings,
+    ebayOrderId: text(data.ebay_order_id),
+    ebaySalesRecordRef: text(data.ebay_sales_record_ref),
+    buyerName: buyerNames(data.buyer).name,
+    buyerUsername: buyerNames(data.buyer).username,
     lines,
     notes,
     attachments: await loadSoAttachments(String(data.id)),
@@ -550,6 +558,15 @@ function rpcRow(data: unknown): { id?: string; so_number?: string } {
 function firstRelation<T>(value: T | T[] | null): T | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function buyerNames(value: unknown): { name: string; username: string } {
+  if (!value || typeof value !== "object") return { name: "", username: "" };
+  const row = value as { name?: unknown; username?: unknown };
+  return {
+    name: typeof row.name === "string" ? row.name : "",
+    username: typeof row.username === "string" ? row.username : "",
+  };
 }
 
 function text(value: unknown): string {

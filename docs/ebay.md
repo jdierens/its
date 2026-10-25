@@ -1,6 +1,6 @@
 # eBay seller connection
 
-**Admin > Integrations > eBay** stores the seller connection only. Later steps will create listings from items, sync quantity, import orders into sales orders, and push tracking. Nothing in this step lists an item or reads orders.
+**Admin > Integrations > eBay** stores the seller connection, reads active listings, and can pull eBay orders into draft sales orders. Later steps will create listings from items, sync quantity, and push tracking.
 
 Copy these into `.env.local`. They are server-only. Do not prefix them with `NEXT_PUBLIC_` and do not commit the file.
 
@@ -61,3 +61,18 @@ Pushing an adjusted SKU to eBay and ending a listing are not available. Each row
 The items table has an eBay column for listings matched directly to that item. Each id links to `https://www.ebay.com/itm/<id>`. A pack greater than 1 shows beside the id, for example `4x`. Several ids show the first and then +N, which opens the rest. A separate control, such as `in 3 kit listings`, opens the kit listings that use the item. That list has the listing id, the kit SKU linked to the kit item, and how many of this item are in the listing. The item page splits the same facts into **Listed directly** (listing id and pack size, including `1x`) and **In kit listings**.
 
 Kit use is computed when the item is read. It walks `kit_components`, including a kit that contains a kit, and does not add listing rows for the components. Quantity is the component quantity along the recipe, multiplied, times the kit listing's `pack_qty`. Searching an eBay item id finds the listed item or kit only. It does not find components. Ended rows are not shown, but the id still finds the listed item.
+
+## Orders
+
+**Pull orders** reads the Fulfillment API `getOrders` and writes draft sales orders. It does not approve an order, release it, or call `reserve_sales_order_number`. `so_number` stays empty until someone approves the draft, and that number comes from `so_counter`, the same series as every other sales order. The button is admin only. A paid eBay order is still a draft.
+
+Every new draft uses the existing customer named `eBay Customer` with QuickBooks id `1`. The pull does not create a customer for a buyer. Buyer name, username, email, and phone go on `sales_orders.buyer`. The ship-to address is the buyer's. The eBay order id is stored in `ebay_order_id` and `source_ref`. The sales record number, when it is digits, is stored in `ebay_sales_record_ref`. `source` is `ebay` and `channel` is `ebay`. A line whose SKU matches one item is allocated to that item. A line whose SKU matches nothing, or matches more than one item, stays on the draft without an allocation. `operator_id` stays null. The history row is labeled `eBay`.
+
+If `ebay_order_id` already matches a sales order, that order is used and a second draft is not created. A draft that nobody has edited is refreshed. Any other match is linked: empty eBay ids are filled, and lines, status, and the SO number are left as they are. A sales record reference is used only when it matches exactly one sales order. Several matches are left alone.
+
+The pull reads orders whose order date is **1 Jan 2026 or later**, in 90-day windows. That is the inventory cutover: beginning inventory is as of that date, and later sales orders are what should move stock. An eBay order dated before then is left out of the pull. A later change can flag those for manual review. Pull orders stays disabled until the legacy log map has been applied, because ITS sales orders do not yet have `ebay_order_id` filled. **Apply log map** takes the CSV export (it is not stored) and, for each eBay order id, sets `ebay_order_id` and `ebay_sales_record_ref` on the sales order whose `so_number` matches the sheet REF (`SO#27254` or a suffixed `SO#27254-01`). It does not create sales orders, including for orders dated before 2026. When one eBay order id is on two SO numbers, the lower number is linked and the other is counted as a conflict. A later pull of a 2026-or-later order then finds the linked order instead of inserting a draft. The CSV stays out of git.
+
+`supabase/migrations/20261025020829_ebay_order_pull.sql` adds `ebay_order_seed` (one row, row level security on, `service_role` only) and lets `ebay_sync_log.entity` be `orders`. Apply it yourself. Deploying does not run it. The log row for a pull has counts only.
+
+A seller who connected before order access was granted has to reconnect. The pull says so and does not mark the token expired on its own. Tracking is not pushed back to eBay.
+

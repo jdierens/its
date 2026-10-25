@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readEbayConfig } from "@/lib/ebay/config";
 import { listingsSummary } from "@/lib/ebay/listings";
+import { orderPullSummary } from "@/lib/ebay/orders";
 import { publicOrigin } from "@/lib/ebay/origin";
 import { connectionStatus } from "@/lib/ebay/oauth";
 import { stockSettingsWritable } from "@/lib/stockAccess";
@@ -32,6 +33,13 @@ export async function GET(request: NextRequest) {
   let expiresAt: string | null = null;
   let message: string | null = null;
   let listings = { available: false, active: null as number | null, unmatched: null as number | null, fetchedAt: null as string | null };
+  let orders = {
+    available: false,
+    seeded: false,
+    seededAt: null as string | null,
+    linked: null as number | null,
+    watermark: null as string | null,
+  };
   let canRefreshListings = false;
 
   if (!serviceRole) {
@@ -53,6 +61,11 @@ export async function GET(request: NextRequest) {
     } catch (error) {
       if (!message) message = error instanceof Error ? error.message : "Could not read eBay listings.";
     }
+    try {
+      orders = await orderPullSummary();
+    } catch (error) {
+      if (!message) message = error instanceof Error ? error.message : "Could not read the eBay order pull.";
+    }
   }
 
   canRefreshListings = await stockSettingsWritable();
@@ -69,6 +82,7 @@ export async function GET(request: NextRequest) {
       ebayUserId,
       expiresAt,
       listings,
+      orders,
       canRefreshListings,
       acceptUrl: `${origin}/api/ebay/callback`,
       deletionUrl: `${origin}/api/ebay/account-deletion`,

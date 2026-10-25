@@ -42,3 +42,11 @@ export function privilegeUrl(environment: EbayEnvironment): string {
 export function tradingUrl(environment: EbayEnvironment): string {
   return `${apiBase(environment)}/ws/api.dll`;
 }
+
+export function ordersUrl(environment: EbayEnvironment, filter: string, limit = 200, offset = 0): string {
+  const url = new URL(`${apiBase(environment)}/sell/fulfillment/v1/order`);
+  url.searchParams.set("filter", filter);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+  return url.toString();
+}
