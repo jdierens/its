@@ -276,6 +276,45 @@ export function salesOrderListScope(view: string | undefined): "drafts" | "all" 
   return view === "all" ? "all" : "drafts";
 }
 
+export const SALES_ORDER_LIST_VIEW_KEY = "its.salesOrders.listView";
+
+export type SalesOrderListView = "drafts" | "all";
+
+export function salesOrderListHref(view: SalesOrderListView): string {
+  return view === "all" ? "/sales/orders?view=all" : "/sales/orders?view=drafts";
+}
+
+export function readSalesOrderListView(storage: Pick<Storage, "getItem">): SalesOrderListView | null {
+  try {
+    const value = storage.getItem(SALES_ORDER_LIST_VIEW_KEY);
+    if (value === "all" || value === "drafts") return value;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeSalesOrderListView(storage: Pick<Storage, "setItem">, view: SalesOrderListView): void {
+  try {
+    storage.setItem(SALES_ORDER_LIST_VIEW_KEY, view);
+  } catch {
+    // Private mode and blocked storage still leave the switch usable for this visit.
+  }
+}
+
+/**
+ * A bare /sales/orders visit uses the view this browser last chose.
+ * Returns the view to open when that differs from the page already rendered.
+ */
+export function salesOrderListViewToRestore(input: {
+  hasViewParam: boolean;
+  stored: SalesOrderListView | null;
+}): SalesOrderListView | null {
+  if (input.hasViewParam) return null;
+  if (input.stored === "all") return "all";
+  return null;
+}
+
 /** Display form of the integer so_number. Drafts have none until a legacy number is applied. */
 export function formatSalesOrderNumber(value: number | string | null | undefined): string | null {
   if (value == null || value === "") return null;

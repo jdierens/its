@@ -46,7 +46,7 @@ Ship-to is shown above bill-to. Choosing a customer copies both addresses, and t
 
 Choosing a customer also fills customer PO, channel, order date, requested ship date, terms, Incoterms, ship method, and carrier account from that customer's latest sales order. It does not copy an internal reference.
 
-The list defaults to drafts that still need processing. **All orders** shows every status. Rows are newest order date first, and an order with no order date sorts last. The same date sorts by the time the row was created, newest first. Columns are number, customer, order reference, status, order date, ship date, and total. Order reference is the eBay order id, or the customer PO when the order is not from eBay. A draft with no SO number is labeled Draft.
+The list defaults to drafts that still need processing. **All orders** shows every status. This browser keeps that choice in localStorage, so leaving the list and opening Sales orders again returns to the same switch. A choice with no saved view still opens drafts. Rows are newest order date first, and an order with no order date sorts last. The same date sorts by the time the row was created, newest first. Columns are number, customer, order reference, status, order date, ship date, and total. Order reference is the eBay order id, or the customer PO when the order is not from eBay. A draft with no SO number is labeled Draft.
 
 On a line, quantity, unit price, and extension stay consistent. Changing the unit price recomputes the extension. Changing the extension, or the quantity, recomputes the unit price and keeps the extension. Unit price is four decimals. Extension is cents. The extension is editable. `write_sales_order` stores the extension as the cent rounding of quantity times unit price.
 
