@@ -55,6 +55,7 @@ export type ParsedEbayLine = {
   sku: string | null;
   title: string | null;
   qty: number;
+  /** Unit price after eBay's discount. Not a hardcoded percent. */
   unitPrice: number | null;
 };
 
@@ -68,7 +69,19 @@ export type ParsedEbayOrder = {
   paymentStatus: "unpaid" | "partial" | "paid";
   paymentDate: string | null;
   transactionFee: number | null;
+  /**
+   * paymentSummary.totalDueSeller. For a normal paid order this is the buyer
+   * total minus totalMarketplaceFee. It is not the merchandise total, and a
+   * later shipping-label debit does not change it.
+   */
   earnings: number | null;
+  /** Buyer shipping charged on the order, after any delivery discount. */
+  shippingAmount: number | null;
+  /**
+   * Seller's eBay shipping-label debit. Undefined until a finances read sets it.
+   * Null means the read found no label. A number is the net debit.
+   */
+  labelFee?: number | null;
   lines: ParsedEbayLine[];
 };
 
@@ -88,7 +101,7 @@ export type PullAction =
 
 export type DraftLine = {
   line_no: number;
-  line_kind: "product";
+  line_kind: "product" | "freight";
   customer_part_number: string | null;
   customer_description: string | null;
   qty: number;
@@ -246,10 +259,64 @@ function money(value: unknown): { currency: string | null; amount: number | null
   if (!value || typeof value !== "object") return { currency: null, amount: null };
   const row = value as { value?: unknown; currency?: unknown };
   const currency = typeof row.currency === "string" && /^[A-Z]{3}$/.test(row.currency) ? row.currency : null;
-  if (typeof row.value !== "string" || !/^\d+(\.\d+)?$/.test(row.value)) return { currency, amount: null };
+  if (typeof row.value !== "string" || !/^-?\d+(\.\d+)?$/.test(row.value)) return { currency, amount: null };
   const amount = Math.round(Number(row.value) * 100) / 100;
   if (!Number.isFinite(amount)) return { currency, amount: null };
   return { currency, amount };
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** eBay sends delivery and price discounts as negative numbers. A positive value is the same reduction. */
+function netCharge(gross: number | null, discount: number | null): number | null {
+  if (gross == null && discount == null) return null;
+  const off = discount == null ? 0 : Math.abs(discount);
+  const net = roundMoney((gross ?? 0) - off);
+  return net > 0 ? net : null;
+}
+
+function promotionDiscount(line: Record<string, unknown>): number {
+  if (!Array.isArray(line.appliedPromotions)) return 0;
+  let sum = 0;
+  for (const promo of line.appliedPromotions) {
+    if (!promo || typeof promo !== "object") continue;
+    const amount = money((promo as { discountAmount?: unknown }).discountAmount).amount;
+    if (amount != null && amount > 0) sum += amount;
+  }
+  return roundMoney(sum);
+}
+
+/**
+ * Merchandise for one line after the discount eBay actually applied.
+ * discountedLineItemCost wins. Otherwise lineItemCost minus appliedPromotions.
+ * The promotion title can say 5% while the amount is a cap, so the percent is never assumed.
+ */
+function merchandiseAfterDiscount(line: Record<string, unknown>): { amount: number | null; discounted: boolean } {
+  const discounted = money(line.discountedLineItemCost).amount;
+  if (discounted != null) return { amount: Math.max(0, discounted), discounted: true };
+  const cost = money(line.lineItemCost).amount;
+  if (cost == null) return { amount: null, discounted: false };
+  const off = promotionDiscount(line);
+  if (off <= 0) return { amount: Math.max(0, cost), discounted: false };
+  return { amount: Math.max(0, roundMoney(cost - off)), discounted: true };
+}
+
+/** Spread an order-level discount across line merchandise. The last line absorbs the remainder. */
+export function allocateDiscount(amounts: readonly number[], discount: number): number[] {
+  const off = Math.min(Math.abs(discount), amounts.reduce((sum, amount) => sum + Math.max(0, amount), 0));
+  if (!(off > 0)) return amounts.map((amount) => roundMoney(amount));
+  const base = amounts.reduce((sum, amount) => sum + Math.max(0, amount), 0);
+  let remaining = off;
+  return amounts.map((amount, index) => {
+    const safe = Math.max(0, amount);
+    if (index === amounts.length - 1) return roundMoney(Math.max(0, safe - remaining));
+    const share = roundMoney(off * (safe / base));
+    const take = Math.min(share, remaining, safe);
+    remaining = roundMoney(remaining - take);
+    return roundMoney(safe - take);
+  });
 }
 
 function dateOnly(value: unknown): string | null {
@@ -277,6 +344,28 @@ function extension(qty: number, unit: number | null): number | null {
 
 function emptyAddress(): SoAddress {
   return addressFromRecord(null);
+}
+
+function lineShipping(order: Record<string, unknown>): number | null {
+  if (!Array.isArray(order.lineItems)) return null;
+  let sum = 0;
+  let any = false;
+  for (const raw of order.lineItems) {
+    if (!raw || typeof raw !== "object") continue;
+    const delivery = (raw as { deliveryCost?: unknown }).deliveryCost;
+    if (!delivery || typeof delivery !== "object") continue;
+    const row = delivery as Record<string, unknown>;
+    const gross = roundMoney(
+      (money(row.shippingCost).amount ?? 0) + (money(row.handlingCost).amount ?? 0) + (money(row.importCharges).amount ?? 0),
+    );
+    const net = netCharge(gross, money(row.discountAmount).amount);
+    if (net == null) continue;
+    any = true;
+    sum += net;
+  }
+  if (!any) return null;
+  const total = roundMoney(sum);
+  return total > 0 ? total : null;
 }
 
 function readShip(order: Record<string, unknown>): { shipTo: SoAddress; name: string | null; email: string | null; phone: string | null } {
@@ -337,23 +426,47 @@ export function parseFulfillmentOrders(body: unknown): ParsedEbayOrder[] {
     const paid = payments.find(
       (entry) => entry && typeof entry === "object" && (entry as { paymentStatus?: unknown }).paymentStatus === "PAID",
     ) as { paymentDate?: unknown } | undefined;
-    const lines: ParsedEbayLine[] = [];
+    const pending: { sku: string | null; title: string | null; qty: number; amount: number | null; discounted: boolean }[] = [];
     if (Array.isArray(order.lineItems)) {
       for (const rawLine of order.lineItems) {
         if (!rawLine || typeof rawLine !== "object") continue;
         const line = rawLine as Record<string, unknown>;
         const qty = typeof line.quantity === "number" ? line.quantity : Number(line.quantity);
         if (!Number.isFinite(qty) || qty <= 0) continue;
-        const cost = money(line.lineItemCost);
-        lines.push({
+        const merch = merchandiseAfterDiscount(line);
+        pending.push({
           sku: text(line.sku, 80),
           title: text(line.title, 500),
           qty,
-          unitPrice: cost.amount == null ? null : unitFromTotal(cost.amount, qty),
+          amount: merch.amount,
+          discounted: merch.discounted,
         });
       }
     }
+    const lineDiscounted = pending.some((line) => line.discounted);
+    const orderDiscount = money(pricing.priceDiscount).amount;
+    const amounts = pending.map((line) => line.amount);
+    if (!lineDiscounted && orderDiscount != null && orderDiscount !== 0) {
+      const indexes = pending.flatMap((line, index) => (line.amount == null ? [] : [index]));
+      const allocated = allocateDiscount(
+        indexes.map((index) => pending[index].amount ?? 0),
+        orderDiscount,
+      );
+      indexes.forEach((index, slot) => {
+        amounts[index] = allocated[slot];
+      });
+    }
+    const lines: ParsedEbayLine[] = pending.map((line, index) => ({
+      sku: line.sku,
+      title: line.title,
+      qty: line.qty,
+      unitPrice: amounts[index] == null ? null : unitFromTotal(amounts[index], line.qty),
+    }));
     const currency = total.currency ?? fee.currency ?? earnings.currency ?? "USD";
+    const shippingKnown = pricing.deliveryCost != null || pricing.deliveryDiscount != null;
+    const shippingAmount = shippingKnown
+      ? netCharge(money(pricing.deliveryCost).amount, money(pricing.deliveryDiscount).amount)
+      : lineShipping(order);
     out.push({
       ebayOrderId,
       salesRecordRef: SALES_RECORD.test(salesRaw) ? salesRaw : null,
@@ -370,6 +483,7 @@ export function parseFulfillmentOrders(body: unknown): ParsedEbayOrder[] {
       paymentDate: status === "paid" ? dateOnly(paid?.paymentDate) : null,
       transactionFee: fee.amount,
       earnings: earnings.amount,
+      shippingAmount,
       lines,
     });
   }
@@ -490,7 +604,7 @@ export function draftOrderRow(input: {
     payment_method: input.order.paymentStatus === "paid" ? "ebay" : null,
     payment_date: input.order.paymentDate,
     ebay_transaction_fee: input.order.transactionFee,
-    ebay_label_fee: null,
+    ebay_label_fee: input.order.labelFee === undefined ? null : input.order.labelFee,
     ebay_ad_fee: null,
     ebay_order_earnings: input.order.earnings,
     operator_id: null,
@@ -500,7 +614,7 @@ export function draftOrderRow(input: {
 }
 
 export function draftLines(order: ParsedEbayOrder, itemIds: readonly (string | null)[]): DraftLine[] {
-  return order.lines.map((line, index) => {
+  const lines: DraftLine[] = order.lines.map((line, index) => {
     const description = line.title ?? (line.sku ? null : "eBay item");
     return {
       line_no: index + 1,
@@ -513,6 +627,56 @@ export function draftLines(order: ParsedEbayOrder, itemIds: readonly (string | n
       item_id: itemIds[index] ?? null,
     };
   });
+  if (order.shippingAmount != null && order.shippingAmount > 0) {
+    const unit = unitFromTotal(order.shippingAmount, 1);
+    lines.push({
+      line_no: lines.length + 1,
+      line_kind: "freight",
+      customer_part_number: null,
+      customer_description: "Shipping",
+      qty: 1,
+      unit_price: unit,
+      ext_price: extension(1, unit),
+      item_id: null,
+    });
+  }
+  return lines;
+}
+
+export function labelFeeFilter(now: Date): string {
+  return `transactionType:{SHIPPING_LABEL},transactionDate:[${EBAY_ORDER_CUTOFF}T00:00:00.000Z..${now.toISOString()}]`;
+}
+
+/** Net shipping-label debit per eBay order. Credits reduce the fee. Other transaction types are ignored. */
+export function addLabelFees(target: Map<string, number>, body: unknown): void {
+  if (!body || typeof body !== "object" || !Array.isArray((body as { transactions?: unknown }).transactions)) return;
+  for (const raw of (body as { transactions: unknown[] }).transactions) {
+    if (!raw || typeof raw !== "object") continue;
+    const txn = raw as Record<string, unknown>;
+    if (txn.transactionType !== "SHIPPING_LABEL") continue;
+    const orderId = text(txn.orderId, 40) ?? "";
+    if (!ORDER_ID.test(orderId)) continue;
+    const amount = money(txn.amount).amount;
+    if (amount == null) continue;
+    const signed = txn.bookingEntry === "CREDIT" ? -amount : amount;
+    target.set(orderId, roundMoney((target.get(orderId) ?? 0) + signed));
+  }
+}
+
+/** Stamp a completed label scan onto parsed orders. Missing ids mean no label, so the fee is null. */
+export function applyLabelFees(orders: readonly ParsedEbayOrder[], fees: ReadonlyMap<string, number>): void {
+  for (const order of orders) {
+    const fee = fees.get(order.ebayOrderId) ?? 0;
+    order.labelFee = fee > 0 ? roundMoney(fee) : null;
+  }
+}
+
+export function positiveLabelFees(fees: ReadonlyMap<string, number>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const [orderId, fee] of fees) {
+    if (fee > 0) out.set(orderId, roundMoney(fee));
+  }
+  return out;
 }
 
 export function orderInPullWindow(orderDate: string | null): boolean {
@@ -547,6 +711,11 @@ export function orderPullWindows(now: Date, watermark: string | null): { filter:
 export function rawOrderCount(body: unknown): number {
   if (!body || typeof body !== "object" || !Array.isArray((body as { orders?: unknown }).orders)) return 0;
   return (body as { orders: unknown[] }).orders.length;
+}
+
+export function rawTransactionCount(body: unknown): number {
+  if (!body || typeof body !== "object" || !Array.isArray((body as { transactions?: unknown }).transactions)) return 0;
+  return (body as { transactions: unknown[] }).transactions.length;
 }
 
 export function pageNext(body: unknown): string | null {

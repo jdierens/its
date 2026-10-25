@@ -191,6 +191,15 @@ export function formatSalesMoney(amount: number | null, currency: string): strin
   }
 }
 
+/** Seller earnings minus a shipping label bought on eBay. Earnings already exclude marketplace fees. */
+export function sellerNet(earnings: string, labelFee: string): number | null {
+  if (!earnings.trim()) return null;
+  const earned = Number(earnings);
+  const label = labelFee.trim() ? Number(labelFee) : 0;
+  if (!Number.isFinite(earned) || !Number.isFinite(label)) return null;
+  return Math.round((earned - label) * 100) / 100;
+}
+
 export function salesOrderTotal(lines: { extPrice: string }[]): number | null {
   let sum = 0;
   let any = false;

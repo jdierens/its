@@ -42,6 +42,8 @@ export default async function SalesOrdersPage() {
               <thead>
                 <tr>
                   <th>Number</th>
+                  <th>eBay order</th>
+                  <th>Sales record</th>
                   <th>Customer</th>
                   <th>Status</th>
                   <th>Order date</th>
@@ -55,6 +57,8 @@ export default async function SalesOrdersPage() {
                     <td className="sku">
                       <Link href={`/sales/orders/${order.id}`}>{order.number}</Link>
                     </td>
+                    <td>{order.ebayOrderId}</td>
+                    <td>{order.ebaySalesRecordRef}</td>
                     <td>{order.customerName}</td>
                     <td>
                       <Badge tone={order.status}>{salesOrderStatusLabel(order.status)}</Badge>
@@ -72,6 +76,18 @@ export default async function SalesOrdersPage() {
               <li className="so-card" key={order.id}>
                 <Link href={`/sales/orders/${order.id}`}>{order.number}</Link>
                 <dl>
+                  {order.ebayOrderId ? (
+                    <>
+                      <dt>eBay order</dt>
+                      <dd>{order.ebayOrderId}</dd>
+                    </>
+                  ) : null}
+                  {order.ebaySalesRecordRef ? (
+                    <>
+                      <dt>Sales record</dt>
+                      <dd>{order.ebaySalesRecordRef}</dd>
+                    </>
+                  ) : null}
                   <dt>Customer</dt>
                   <dd>{order.customerName}</dd>
                   <dt>Status</dt>

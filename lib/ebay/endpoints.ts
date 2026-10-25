@@ -5,6 +5,7 @@ export const EBAY_SCOPES = [
   "https://api.ebay.com/oauth/api_scope/sell.inventory",
   "https://api.ebay.com/oauth/api_scope/sell.account",
   "https://api.ebay.com/oauth/api_scope/sell.fulfillment",
+  "https://api.ebay.com/oauth/api_scope/sell.finances",
   "https://api.ebay.com/oauth/api_scope/sell.marketing",
   "https://api.ebay.com/oauth/api_scope/commerce.identity.readonly",
 ].join(" ");
@@ -45,6 +46,15 @@ export function tradingUrl(environment: EbayEnvironment): string {
 
 export function ordersUrl(environment: EbayEnvironment, filter: string, limit = 200, offset = 0): string {
   const url = new URL(`${apiBase(environment)}/sell/fulfillment/v1/order`);
+  url.searchParams.set("filter", filter);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+  return url.toString();
+}
+
+/** Finances transactions, including SHIPPING_LABEL debits. Host is apiz, not the sell host. */
+export function financesTransactionsUrl(environment: EbayEnvironment, filter: string, limit = 200, offset = 0): string {
+  const url = new URL(`${apizBase(environment)}/sell/finances/v1/transaction`);
   url.searchParams.set("filter", filter);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));

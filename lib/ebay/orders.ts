@@ -1,22 +1,27 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { apiBase, ordersUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
+import { apiBase, apizBase, financesTransactionsUrl, ordersUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
 import { ebayRead } from "@/lib/ebay/http";
 import { writeEbayLog } from "@/lib/ebay/log";
 import {
+  addLabelFees,
+  applyLabelFees,
   draftLines,
   draftOrderRow,
   EBAY_ORDER_CUSTOMER_NAME,
   EBAY_ORDER_CUSTOMER_QBO_ID,
   EBAY_PULL_OPERATOR_LABEL,
+  labelFeeFilter,
   ORDER_PAGE_LIMIT,
   ORDER_PAGE_SIZE,
   orderPullWindows,
   pageNext,
   parseFulfillmentOrders,
+  positiveLabelFees,
   parseLegacyLogCsv,
   planLegacySeed,
   planOrderPull,
   rawOrderCount,
+  rawTransactionCount,
   SEED_REQUIRED_MESSAGE,
   type ExistingPullOrder,
   type ExistingSeedOrder,
@@ -29,6 +34,12 @@ import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
 
 const MIGRATION = "Apply supabase/migrations/20261025020829_ebay_order_pull.sql before pulling eBay orders.";
+/** First successful pull that stored this revision rewrote unedited drafts with discount, shipping, and label fees. */
+const ORDER_PRICE_REVISION = "discount-shipping-v1";
+
+export function watermarkForPriceRevision(watermark: string | null, revisionApplied: boolean): string | null {
+  return revisionApplied ? watermark : null;
+}
 
 export class SeedRequiredError extends Error {
   constructor() {
@@ -44,6 +55,8 @@ export type OrderPullResult = {
   skipped: number;
   fetchedAt: string;
   history: boolean;
+  /** Orders with a shipping-label debit. Null when the finances read did not finish. */
+  labels: number | null;
 };
 
 export type OrderPullSummary = {
@@ -67,6 +80,7 @@ type OrderStore = {
     actions: PullAction[],
     customer: { id: string; billTo: SoAddress | null },
   ): Promise<{ created: number; updated: number; linked: number }>;
+  syncLabelFees?(fees: ReadonlyMap<string, number>): Promise<void>;
   setWatermark(iso: string): Promise<void>;
 };
 
@@ -75,6 +89,16 @@ export function allowOrdersNext(url: string, environment: EbayEnvironment): bool
     const parsed = new URL(url);
     const base = new URL(apiBase(environment));
     return parsed.origin === base.origin && parsed.pathname === "/sell/fulfillment/v1/order";
+  } catch {
+    return false;
+  }
+}
+
+export function allowFinancesNext(url: string, environment: EbayEnvironment): boolean {
+  try {
+    const parsed = new URL(url);
+    const base = new URL(apizBase(environment));
+    return parsed.origin === base.origin && parsed.pathname === "/sell/finances/v1/transaction";
   } catch {
     return false;
   }
@@ -154,8 +178,17 @@ export async function runOrderPull(input: {
   fetchPage: (url: string) => Promise<{ body: unknown; rlogid: string | null; requestId: string | null }>;
   pageUrl: (filter: string, offset: number) => string;
   allowNext: (url: string) => boolean;
+  loadLabelFees?: () => Promise<Map<string, number> | null>;
   store: OrderStore;
 }): Promise<OrderPullResult & { rlogid: string | null; requestId: string | null }> {
+  let labelFees: Map<string, number> | null = null;
+  if (input.loadLabelFees) {
+    try {
+      labelFees = await input.loadLabelFees();
+    } catch {
+      labelFees = null;
+    }
+  }
   const windows = orderPullWindows(input.now, input.watermark);
   let created = 0;
   let updated = 0;
@@ -190,6 +223,7 @@ export async function runOrderPull(input: {
       url = input.pageUrl(window.filter, offset);
     }
     const orders = [...seen.values()];
+    if (labelFees) applyLabelFees(orders, labelFees);
     if (orders.length === 0) continue;
     const existing = await input.store.existing(
       orders.map((order) => order.ebayOrderId),
@@ -209,6 +243,9 @@ export async function runOrderPull(input: {
   if (truncated) {
     throw new Error("eBay returned more orders than this pull reads. The next pull starts again and does not create a second draft for an order already saved.");
   }
+  if (labelFees && input.store.syncLabelFees) {
+    await input.store.syncLabelFees(labelFees);
+  }
   await input.store.setWatermark(input.now.toISOString());
   return {
     created,
@@ -217,6 +254,7 @@ export async function runOrderPull(input: {
     skipped,
     fetchedAt: input.now.toISOString(),
     history: windows.some((window) => window.history),
+    labels: labelFees ? positiveLabelFees(labelFees).size : null,
     rlogid,
     requestId,
   };
@@ -310,6 +348,7 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
               payment_date: patch.payment_date,
               ebay_transaction_fee: patch.ebay_transaction_fee,
               ebay_order_earnings: patch.ebay_order_earnings,
+              ...(action.order.labelFee !== undefined ? { ebay_label_fee: action.order.labelFee } : {}),
               currency: patch.currency,
               updated_at: new Date().toISOString(),
             })
@@ -354,11 +393,69 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
       }
       return { created, updated, linked };
     },
+    async syncLabelFees(fees) {
+      const ids = [...fees.keys()];
+      for (const chunk of chunks(ids, 100)) {
+        if (chunk.length === 0) continue;
+        const { data, error } = await admin.from("sales_orders").select("id, ebay_order_id, ebay_label_fee").in("ebay_order_id", chunk);
+        if (error) throw new Error(error.message);
+        for (const row of data ?? []) {
+          const orderId = row.ebay_order_id == null ? "" : String(row.ebay_order_id);
+          const next = fees.get(orderId) ?? 0;
+          const amount = next > 0 ? Math.round(next * 100) / 100 : null;
+          const current = row.ebay_label_fee == null || row.ebay_label_fee === "" ? null : Number(row.ebay_label_fee);
+          const same = amount == null ? current == null : current != null && Math.abs(current - amount) < 0.001;
+          if (same) continue;
+          const updated = await admin
+            .from("sales_orders")
+            .update({ ebay_label_fee: amount, updated_at: new Date().toISOString() })
+            .eq("id", row.id);
+          if (updated.error) throw new Error("A shipping label fee could not be saved.");
+        }
+      }
+    },
     async setWatermark(iso) {
       const { error } = await admin.from("ebay_order_seed").update({ orders_watermark: iso }).eq("id", 1);
       if (error) throw new Error(error.message);
     },
   };
+}
+
+const LABEL_PAGE_SIZE = 200;
+
+export async function readShippingLabelFees(input: {
+  now: Date;
+  fetchPage: (url: string) => Promise<{ ok: true; body: unknown } | { ok: false; status: number; message: string }>;
+  pageUrl: (offset: number) => string;
+  allowNext: (url: string) => boolean;
+}): Promise<Map<string, number> | null> {
+  const fees = new Map<string, number>();
+  let url = input.pageUrl(0);
+  let offset = 0;
+  for (let page = 0; page < ORDER_PAGE_LIMIT; page += 1) {
+    const result = await input.fetchPage(url);
+    if (!result.ok) {
+      if (result.status === 403) return null;
+      throw new Error(result.message);
+    }
+    addLabelFees(fees, result.body);
+    const next = pageNext(result.body);
+    const full = rawTransactionCount(result.body) >= LABEL_PAGE_SIZE;
+    if (next && input.allowNext(next)) {
+      url = next;
+      if (page === ORDER_PAGE_LIMIT - 1) {
+        throw new Error("eBay returned more shipping labels than this pull reads. Order drafts were still saved. Pull orders again to finish the label fees.");
+      }
+      continue;
+    }
+    if (!full) return fees;
+    if (page === ORDER_PAGE_LIMIT - 1) {
+      throw new Error("eBay returned more shipping labels than this pull reads. Order drafts were still saved. Pull orders again to finish the label fees.");
+    }
+    offset += LABEL_PAGE_SIZE;
+    url = input.pageUrl(offset);
+  }
+  return fees;
 }
 
 async function linkOrder(admin: SupabaseClient, id: string, ebayOrderId: string, salesRecordRef: string | null): Promise<void> {
@@ -385,6 +482,23 @@ async function linkOrder(admin: SupabaseClient, id: string, ebayOrderId: string,
     .is("source_ref", null);
   if (source.error && source.error.code !== "23505") throw new Error("An existing sales order could not be linked.");
   await insertEvent(admin, id, "linked", null, null);
+}
+
+async function priceRevisionApplied(admin: SupabaseClient): Promise<boolean> {
+  const { data, error } = await admin
+    .from("ebay_sync_log")
+    .select("detail")
+    .eq("entity", "orders")
+    .eq("status", "ok")
+    .order("created_at", { ascending: false })
+    .limit(8);
+  if (error || !data) return false;
+  return data.some((row) => {
+    const detail = row.detail;
+    return Boolean(
+      detail && typeof detail === "object" && (detail as { priceRevision?: unknown }).priceRevision === ORDER_PRICE_REVISION,
+    );
+  });
 }
 
 async function readSeed(admin: SupabaseClient): Promise<SeedState> {
@@ -440,6 +554,14 @@ export async function orderPullSummary(): Promise<OrderPullSummary> {
   };
 }
 
+export function orderPullMessage(result: Pick<OrderPullResult, "created" | "updated" | "linked" | "labels">): string {
+  const labels =
+    result.labels == null
+      ? "Shipping label fees were not read. Reconnect eBay, then pull orders again."
+      : `Found shipping label fees for ${result.labels} ${result.labels === 1 ? "order" : "orders"}.`;
+  return `Created ${result.created} draft sales orders. Updated ${result.updated}. Linked ${result.linked}. ${labels}`;
+}
+
 export async function pullEbayOrders(): Promise<OrderPullResult> {
   const admin = getServiceSupabase();
   if (!admin) throw new Error("Set SUPABASE_SERVICE_ROLE_KEY on the server.");
@@ -450,10 +572,11 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
   const { connection } = await validAccessToken();
   const now = new Date();
   let token = connection.access_token;
+  const revisionApplied = await priceRevisionApplied(admin);
   try {
     const result = await runOrderPull({
       now,
-      watermark: seed.watermark,
+      watermark: watermarkForPriceRevision(seed.watermark, revisionApplied),
       customer,
       pageUrl: (filter, offset) => ordersUrl(connection.environment, filter, ORDER_PAGE_SIZE, offset),
       allowNext: (url) => allowOrdersNext(url, connection.environment),
@@ -475,19 +598,39 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
         }
         return { body: response.body, rlogid: response.rlogid, requestId: response.requestId };
       },
+      loadLabelFees: () =>
+        readShippingLabelFees({
+          now,
+          pageUrl: (offset) => financesTransactionsUrl(connection.environment, labelFeeFilter(now), LABEL_PAGE_SIZE, offset),
+          allowNext: (url) => allowFinancesNext(url, connection.environment),
+          fetchPage: async (url) => {
+            const response = await ebayRead<unknown>({
+              url,
+              token,
+              refresh: async () => {
+                token = (await forceRefreshAccessToken()).access_token;
+                return token;
+              },
+            });
+            if (!response.ok) return { ok: false, status: response.status, message: response.message };
+            return { ok: true, body: response.body };
+          },
+        }),
       store: supabaseStore(admin),
     });
     await writeEbayLog({
       entity: "orders",
       direction: "read",
       status: "ok",
-      message: `Created ${result.created} draft sales orders. Updated ${result.updated}. Linked ${result.linked}.`,
+      message: orderPullMessage(result),
       detail: {
         created: result.created,
         updated: result.updated,
         linked: result.linked,
         skipped: result.skipped,
+        labels: result.labels,
         history: result.history ? 1 : 0,
+        priceRevision: ORDER_PRICE_REVISION,
         rlogid: result.rlogid,
         requestId: result.requestId,
       },
@@ -499,6 +642,7 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
       skipped: result.skipped,
       fetchedAt: result.fetchedAt,
       history: result.history,
+      labels: result.labels,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "eBay order pull failed.";

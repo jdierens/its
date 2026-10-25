@@ -11,6 +11,7 @@ import {
   partMatches,
   partPrefix,
   salesOrderTotal,
+  sellerNet,
   toSalesOrderPayload,
   type SoDraftInput,
 } from "./salesOrderDraft.ts";
@@ -68,6 +69,9 @@ describe("sales order draft", () => {
     });
     assert.equal(salesOrderTotal([{ extPrice: "10.00" }, { extPrice: "2.50" }]), 12.5);
     assert.equal(salesOrderTotal([{ extPrice: "" }]), null);
+    assert.equal(sellerNet("5631.59", ""), 5631.59);
+    assert.equal(sellerNet("5631.59", "9.42"), 5622.17);
+    assert.equal(sellerNet("", "9.42"), null);
   });
 
   it("shows an integer sales-order number as SO plus the digits", () => {

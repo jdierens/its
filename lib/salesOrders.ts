@@ -57,6 +57,8 @@ export type SalesOrderListItem = {
   shipDate: string | null;
   currency: string;
   total: number | null;
+  ebayOrderId: string;
+  ebaySalesRecordRef: string;
 };
 
 export type SalesAllocationView = {
@@ -255,7 +257,9 @@ export async function listSalesOrders(): Promise<SalesOrderListItem[]> {
   const access = await salesPageAccess();
   const { data, error } = await (await getSupabase())
     .from("sales_orders")
-    .select("id, so_number, status, order_date, ship_date, currency, customers(display_name), so_lines(ext_price)")
+    .select(
+      "id, so_number, status, order_date, ship_date, currency, ebay_order_id, ebay_sales_record_ref, customers(display_name), so_lines(ext_price)",
+    )
     .order("created_at", { ascending: false });
   if (error) throw new Error(salesError(error));
   return (data ?? []).map((row) => {
@@ -273,6 +277,8 @@ export async function listSalesOrders(): Promise<SalesOrderListItem[]> {
         shipDate: dateValue(row.ship_date),
         currency: text(row.currency) || "USD",
         total: salesOrderTotal(lines),
+        ebayOrderId: text(row.ebay_order_id),
+        ebaySalesRecordRef: text(row.ebay_sales_record_ref),
       },
       access.canViewMoney,
     );

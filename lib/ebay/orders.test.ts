@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ordersUrl } from "./endpoints.ts";
 import {
+  addLabelFees,
+  allocateDiscount,
+  applyLabelFees,
   draftLines,
   draftOrderRow,
+  labelFeeFilter,
   orderPullWindows,
   parseFulfillmentOrders,
   parseLegacyLogCsv,
@@ -13,7 +17,8 @@ import {
   type ExistingSeedOrder,
   type ParsedEbayOrder,
 } from "./orderMap.ts";
-import { allowOrdersNext, runOrderPull, SeedRequiredError } from "./orders.ts";
+import { allowFinancesNext, allowOrdersNext, readShippingLabelFees, runOrderPull, SeedRequiredError, watermarkForPriceRevision } from "./orders.ts";
+import { financesTransactionsUrl } from "./endpoints.ts";
 import { SEED_REQUIRED_MESSAGE } from "./orderMap.ts";
 
 const ORDER = "12-03456-78901";
@@ -39,6 +44,7 @@ function ebayOrder(overrides: Partial<ParsedEbayOrder> = {}): ParsedEbayOrder {
     paymentDate: "2026-10-20",
     transactionFee: 1.25,
     earnings: 8.75,
+    shippingAmount: null,
     lines: [{ sku: "SKU-1", title: "Memory", qty: 2, unitPrice: 5 }],
     ...overrides,
   };
@@ -300,6 +306,172 @@ test("a pull creates one draft and links an order that already has the sales rec
   assert.equal(result.created, 1);
   assert.equal(result.linked, 1);
   assert.equal(result.history, false);
+});
+
+test("unit and extended prices use the eBay discount amount, not a fixed 5 percent", () => {
+  const parsed = parseFulfillmentOrders({
+    orders: [
+      {
+        orderId: "20-15321-25072",
+        salesRecordReference: "19283",
+        creationDate: "2026-10-25T02:14:40.000Z",
+        orderPaymentStatus: "PAID",
+        pricingSummary: {
+          priceSubtotal: { value: "6388.0", currency: "USD" },
+          priceDiscount: { value: "-50.0", currency: "USD" },
+          deliveryCost: { value: "12.79", currency: "USD" },
+          total: { value: "6350.79", currency: "USD" },
+        },
+        totalMarketplaceFee: { value: "719.2", currency: "USD" },
+        paymentSummary: {
+          totalDueSeller: { value: "5631.59", currency: "USD" },
+          payments: [{ paymentStatus: "PAID", paymentDate: "2026-10-25T02:14:40.000Z" }],
+        },
+        lineItems: [
+          {
+            sku: "106683(x2)",
+            title: "Memory",
+            quantity: 1,
+            lineItemCost: { value: "6388.0", currency: "USD" },
+            discountedLineItemCost: { value: "6338.0", currency: "USD" },
+            total: { value: "6350.79", currency: "USD" },
+            appliedPromotions: [{ description: "Extra 5% off with coupon", discountAmount: { value: "50.0", currency: "USD" } }],
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].salesRecordRef, "19283");
+  assert.equal(parsed[0].lines[0].unitPrice, 6338);
+  assert.equal(parsed[0].shippingAmount, 12.79);
+  assert.equal(parsed[0].earnings, 5631.59);
+  assert.equal(parsed[0].transactionFee, 719.2);
+  const lines = draftLines(parsed[0], [null]);
+  assert.equal(lines[0].line_kind, "product");
+  assert.equal(lines[0].unit_price, 6338);
+  assert.equal(lines[0].ext_price, 6338);
+  assert.equal(Math.round(lines[0].qty * (lines[0].unit_price ?? 0) * 100) / 100, lines[0].ext_price);
+  assert.equal(lines[1].line_kind, "freight");
+  assert.equal(lines[1].customer_description, "Shipping");
+  assert.equal(lines[1].qty, 1);
+  assert.equal(lines[1].unit_price, 12.79);
+  assert.equal(lines[1].ext_price, 12.79);
+  assert.equal(lines[1].item_id, null);
+  assert.notEqual(lines[0].ext_price, Math.round(6388 * 0.95 * 100) / 100);
+  const row = draftOrderRow({ order: parsed[0], customerId: "customer-ebay", billTo: null });
+  assert.equal(row.ebay_order_id, "20-15321-25072");
+  assert.equal(row.ebay_sales_record_ref, "19283");
+  assert.equal(row.ebay_order_earnings, 5631.59);
+  assert.equal(row.ebay_label_fee, null);
+});
+
+test("a delivery discount reduces the shipping line, and a 5 percent coupon uses its amount", () => {
+  const parsed = parseFulfillmentOrders({
+    orders: [
+      {
+        orderId: "25-15004-67273",
+        salesRecordReference: "1",
+        creationDate: "2026-08-02T00:00:00.000Z",
+        pricingSummary: {
+          deliveryCost: { value: "87.9", currency: "USD" },
+          deliveryDiscount: { value: "-43.11", currency: "USD" },
+          priceDiscount: { value: "-50.0", currency: "USD" },
+        },
+        lineItems: [
+          {
+            sku: "PACK",
+            title: "Modules",
+            quantity: 10,
+            lineItemCost: { value: "1488.8", currency: "USD" },
+            discountedLineItemCost: { value: "1438.8", currency: "USD" },
+            appliedPromotions: [{ description: "Extra 5% off with coupon", discountAmount: { value: "50.0", currency: "USD" } }],
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(parsed[0].shippingAmount, 44.79);
+  assert.equal(parsed[0].lines[0].unitPrice, 143.88);
+  const lines = draftLines(parsed[0], ["item-1"]);
+  assert.equal(lines[0].ext_price, 1438.8);
+  assert.equal(lines[0].item_id, "item-1");
+  assert.equal(lines[1].ext_price, 44.79);
+  assert.equal(Math.round(lines[0].qty * (lines[0].unit_price ?? 0) * 100) / 100, lines[0].ext_price);
+});
+
+test("an order-level discount is applied when the line has no discounted cost", () => {
+  const parsed = parseFulfillmentOrders({
+    orders: [
+      {
+        orderId: "11-00001-00009",
+        salesRecordReference: "9",
+        creationDate: "2026-08-02T00:00:00.000Z",
+        pricingSummary: { priceDiscount: { value: "-5.00", currency: "USD" } },
+        lineItems: [{ sku: "SKU-9", title: "Board", quantity: 2, lineItemCost: { value: "100.00", currency: "USD" } }],
+      },
+    ],
+  });
+  assert.equal(parsed[0].lines[0].unitPrice, 47.5);
+  assert.equal(draftLines(parsed[0], [null])[0].ext_price, 95);
+  assert.deepEqual(allocateDiscount([60, 40], -25), [45, 30]);
+});
+
+test("shipping label debits net of credits, and the pull stores that fee without changing earnings", async () => {
+  const fees = new Map<string, number>();
+  addLabelFees(fees, {
+    transactions: [
+      { transactionType: "SALE", bookingEntry: "CREDIT", orderId: ORDER, amount: { value: "118.07", currency: "USD" } },
+      { transactionType: "SHIPPING_LABEL", bookingEntry: "DEBIT", orderId: ORDER, amount: { value: "9.42", currency: "USD" } },
+      { transactionType: "SHIPPING_LABEL", bookingEntry: "DEBIT", orderId: ORDER, amount: { value: "1.00", currency: "USD" } },
+      { transactionType: "SHIPPING_LABEL", bookingEntry: "CREDIT", orderId: ORDER, amount: { value: "1.00", currency: "USD" } },
+      { transactionType: "SHIPPING_LABEL", bookingEntry: "DEBIT", orderId: "not-an-order", amount: { value: "4.00", currency: "USD" } },
+    ],
+  });
+  assert.equal(fees.get(ORDER), 9.42);
+  assert.equal(fees.has("not-an-order"), false);
+  const order = ebayOrder({ earnings: 5631.59 });
+  applyLabelFees([order], fees);
+  const row = draftOrderRow({ order, customerId: "customer-ebay", billTo: null });
+  assert.equal(row.ebay_label_fee, 9.42);
+  assert.equal(row.ebay_order_earnings, 5631.59);
+
+  const read = await readShippingLabelFees({
+    now: new Date("2026-10-25T00:00:00.000Z"),
+    pageUrl: (offset) => financesTransactionsUrl("production", labelFeeFilter(new Date("2026-10-25T00:00:00.000Z")), 200, offset),
+    allowNext: (url) => allowFinancesNext(url, "production"),
+    fetchPage: async (url) => {
+      if (url.includes("offset=0")) {
+        assert.equal(url.includes("transactionType"), true);
+        return {
+          ok: true,
+          body: {
+            next: "https://apiz.ebay.com/sell/finances/v1/transaction?offset=200",
+            transactions: [
+              { transactionType: "SHIPPING_LABEL", bookingEntry: "DEBIT", orderId: "16-15324-63126", amount: { value: "9.42", currency: "USD" } },
+            ],
+          },
+        };
+      }
+      return { ok: true, body: { transactions: [] } };
+    },
+  });
+  assert.equal(read?.get("16-15324-63126"), 9.42);
+  const denied = await readShippingLabelFees({
+    now: new Date("2026-10-25T00:00:00.000Z"),
+    pageUrl: () => "https://apiz.ebay.com/sell/finances/v1/transaction",
+    allowNext: () => false,
+    fetchPage: async () => ({ ok: false, status: 403, message: "denied" }),
+  });
+  assert.equal(denied, null);
+  assert.equal(allowFinancesNext("https://apiz.ebay.com/sell/finances/v1/transaction?offset=200", "production"), true);
+  assert.equal(allowFinancesNext("https://api.ebay.com/sell/finances/v1/transaction", "production"), false);
+});
+
+test("the first priced pull ignores the watermark so existing drafts can be rewritten", () => {
+  assert.equal(watermarkForPriceRevision("2026-10-25T03:00:09.189Z", false), null);
+  assert.equal(watermarkForPriceRevision("2026-10-25T03:00:09.189Z", true), "2026-10-25T03:00:09.189Z");
+  assert.equal(watermarkForPriceRevision(null, true), null);
 });
 
 test("seed is required before history can create drafts", () => {
