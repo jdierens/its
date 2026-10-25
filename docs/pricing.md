@@ -1,6 +1,6 @@
 # Item pricing
 
-An existing item shows **Pricing** under the item form. Ecommerce price, market price, and MSRP are USD and share one row with **Save**. Each price stores the time it last changed. Saving the item form does not change them. **Save** is an icon on that row. It stays off until one of those amounts changes, and it writes only those three amounts.
+An existing item shows **Pricing** under the item form. Ecommerce price, market price, and MSRP are USD and share one row with **Save**. Each price stores the time it last changed. Saving the item form does not change them. **Save** is an icon on that row. It stays off until one of those amounts changes, and it writes only those three amounts. The captions on that row are right-aligned with the amounts.
 
 **Update pricing** looks up the part number. When the part number is blank, it uses the model. Each result is a new price quote. Older quotes stay. **Last updated** is the time of that lookup.
 
@@ -18,6 +18,6 @@ The page lists which providers ran, how many quotes they returned, and any error
 
 **Transactions** lists buys and sells. Filter by type and by date. **Add transaction** records a manual row. The total is quantity times unit price, rounded to cents in the database. A sell can name a customer. A buy can name a vendor. A later QuickBooks or eBay import can insert rows the same way. The same source, reference, and item cannot be inserted twice.
 
-**Admin > Settings** has **Pricing/sales window (days)** and a **Labels** section. The window starts at 90. Last sold price and last bought price are the newest transaction of that type. Quantity sold, revenue, average sell price, quantity bought, and spend count transactions inside the window. The item label starts as Barcode (current) unless a template was already saved. QR code is the other item choice. Pallet, Crate, Box, and Rack location show as coming soon. A missing or unknown item template stays on the barcode.
+**Admin > Settings** has **Pricing/sales window (days)** and a **Labels** section. The window starts at 90. Last sold price and last bought price are the newest transaction of that type. Quantity sold, revenue, average sell price, quantity bought, and spend count transactions inside the window. Those metrics stay in the same cards. Each name is right-aligned with its figure. Price, quantity, unit price, and total column names are right-aligned with those numbers. Add quote and add transaction use the same alignment on Price, Qty, and Unit price. The item label starts as Barcode (current) unless a template was already saved. QR code is the other item choice. Pallet, Crate, Box, and Rack location show as coming soon. A missing or unknown item template stays on the barcode.
 
 `price_quotes`, `item_transactions`, and `app_settings` hold prices, the sales window, and the label templates. `label_template_item` is the item template. `label_template` is the older key and is still read when the new one is missing. They are not credentials. Row level security stays off on them, matching `items`.

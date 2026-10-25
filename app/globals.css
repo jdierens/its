@@ -2981,6 +2981,20 @@ button.ebay-more {
   white-space: nowrap;
 }
 
+#item-pricing .price-field > span:first-child,
+.item-form label:has(> input.num),
+.item-form label:has(> input.num) > .attr-caption,
+#item-pricing label:has(> input.num),
+#item-pricing label:has(> .money-input):not(.price-field),
+.kit-add label:has(> input.num) {
+  text-align: right;
+}
+
+.item-form label:has(> input.num) > .hint,
+.item-form label:has(> input.num) > .field-error {
+  text-align: left;
+}
+
 #item-pricing .price-save-caption {
   visibility: hidden;
 }
@@ -3047,6 +3061,7 @@ button.ebay-more {
   margin: 0;
   color: var(--muted);
   font-size: 0.78rem;
+  text-align: right;
 }
 
 .stat strong {
@@ -5928,6 +5943,12 @@ input.num-input {
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--line);
+}
+
+.kit-table th.num,
+.kit-table td.num,
+.kit-table td.num input {
+  text-align: right;
 }
 
 .kit-table input {

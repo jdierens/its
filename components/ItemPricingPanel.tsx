@@ -515,8 +515,8 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
               <thead>
                 <tr>
                   <SortHeader label="Source" column="source" sort={sort} onSort={toggleSort} />
-                  <SortHeader label="Price" column="price" sort={sort} onSort={toggleSort} />
-                  <SortHeader label="Qty" column="qty" sort={sort} onSort={toggleSort} />
+                  <SortHeader label="Price" column="price" sort={sort} onSort={toggleSort} numeric />
+                  <SortHeader label="Qty" column="qty" sort={sort} onSort={toggleSort} numeric />
                   <SortHeader label="Condition" column="condition" sort={sort} onSort={toggleSort} />
                   <SortHeader label="Seller" column="seller" sort={sort} onSort={toggleSort} />
                   <SortHeader label="Captured" column="captured" sort={sort} onSort={toggleSort} />
@@ -661,9 +661,9 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 <tr>
                   <th>Type</th>
                   <th>Date</th>
-                  <th>Qty</th>
-                  <th>Unit price</th>
-                  <th>Total</th>
+                  <th className="num">Qty</th>
+                  <th className="num">Unit price</th>
+                  <th className="num">Total</th>
                   <th>Party</th>
                   <th>Reference</th>
                   <th>Source</th>
@@ -828,15 +828,17 @@ function SortHeader({
   column,
   sort,
   onSort,
+  numeric = false,
 }: {
   label: string;
   column: QuoteSortKey;
   sort: { key: QuoteSortKey; dir: "asc" | "desc" };
   onSort: (key: QuoteSortKey) => void;
+  numeric?: boolean;
 }) {
   const active = sort.key === column;
   return (
-    <th aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+    <th className={numeric ? "num" : undefined} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
       <button type="button" className="th-sort" aria-pressed={active} onClick={() => onSort(column)}>
         {label}
         {active ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}
