@@ -3,6 +3,7 @@
 import { Ban, Check, Save } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
+import { initialSalesRep } from "@/lib/ebaySalesRep";
 import { cleanSkuAllocation } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
@@ -114,6 +115,7 @@ export function SalesOrderForm({
   showMoney,
   today,
   suggestedNumber,
+  defaultEbaySalesRep,
 }: {
   order: SalesOrderView | null;
   lookups: SalesLookups;
@@ -121,6 +123,7 @@ export function SalesOrderForm({
   showMoney: boolean;
   today: string;
   suggestedNumber: number | null;
+  defaultEbaySalesRep: string;
 }) {
   const router = useRouter();
   const locked = !canEdit || (order != null && order.status !== "draft");
@@ -144,7 +147,13 @@ export function SalesOrderForm({
   const [shipMethod, setShipMethod] = useState(order?.shipMethod ?? "");
   const [carrierAccount, setCarrierAccount] = useState(order?.carrierAccount ?? "");
   const [currency, setCurrency] = useState(order?.currency || "USD");
-  const [salesRep, setSalesRep] = useState(order?.salesRep ?? "");
+  const [salesRep, setSalesRep] = useState(
+    initialSalesRep({
+      stored: order?.salesRep,
+      ebay: Boolean(order?.ebayOrderId || order?.ebaySalesRecordRef || (order?.channel ?? "").toLowerCase() === "ebay"),
+      setting: defaultEbaySalesRep,
+    }),
+  );
   const [paymentRequirement] = useState(order?.paymentRequirement || "terms");
   const [paymentMethod, setPaymentMethod] = useState(order?.paymentMethod ?? "");
   const [paymentDate, setPaymentDate] = useState(order?.paymentDate ?? "");
@@ -245,7 +254,10 @@ export function SalesOrderForm({
       setShipMethod(defaults.shipMethod);
       setCarrierAccount(defaults.carrierAccount);
       if (defaults.currency) setCurrency(defaults.currency);
+      const ebayPick =
+        defaults.channel.trim().toLowerCase() === "ebay" || hit.name.trim().toLowerCase() === EBAY_ORDER_CUSTOMER_NAME.toLowerCase();
       if (defaults.salesRep) setSalesRep(defaults.salesRep);
+      else if (ebayPick) setSalesRep((current) => current.trim() || defaultEbaySalesRep);
     } catch (error) {
       setMessage(errorText(error));
     }
@@ -487,26 +499,19 @@ export function SalesOrderForm({
           ) : null}
         </div>
         <header className="ds-banner">
-          {order?.ebaySalesRecordRef || order?.buyerName || order?.buyerUsername ? (
-            <dl className="so-ebay-refs">
-              {order.ebaySalesRecordRef ? (
-                <>
-                  <dt>Sales record number</dt>
-                  <dd>{order.ebaySalesRecordRef}</dd>
-                </>
-              ) : null}
-              {order.buyerName || order.buyerUsername ? (
-                <>
-                  <dt>Buyer</dt>
-                  <dd>{[order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ")}</dd>
-                </>
-              ) : null}
-            </dl>
-          ) : null}
-          <div className="so-head-row">
+          <div className={ebayOrder ? "so-head-row so-head-ebay" : "so-head-row"}>
           <label>
             Channel
-            <select id="so-channel" value={channel} disabled={locked} onChange={(event) => setChannel(event.target.value)}>
+            <select
+              id="so-channel"
+              value={channel}
+              disabled={locked}
+              onChange={(event) => {
+                const value = event.target.value;
+                setChannel(value);
+                if (value.trim().toLowerCase() === "ebay") setSalesRep((current) => current.trim() || defaultEbaySalesRep);
+              }}
+            >
               <option value="">Choose a channel</option>
               {lookups.channels.map((row) => (
                 <option key={row.code} value={row.code}>
@@ -515,9 +520,11 @@ export function SalesOrderForm({
               ))}
             </select>
           </label>
-          <label>
-            Sales rep initials
+          <label className="so-field-rep">
+            Sales rep
             <input
+              id="so-sales-rep"
+              aria-label="Sales rep"
               value={salesRep}
               maxLength={2}
               autoCapitalize="characters"
@@ -565,7 +572,13 @@ export function SalesOrderForm({
               </ul>
             ) : null}
           </label>
-          <label>
+          {ebayOrder ? (
+            <label>
+              Buyer
+              <input id="so-buyer" aria-label="Buyer" value={buyerText(order)} disabled />
+            </label>
+          ) : null}
+          <label className="so-field-date">
             Order date
             <input type="date" value={orderDate} disabled={locked} onChange={(event) => setOrderDate(event.target.value)} />
           </label>
@@ -577,6 +590,12 @@ export function SalesOrderForm({
               <input id="so-order-reference" aria-label="Order reference" value={customerPo} disabled={locked} onChange={(event) => setCustomerPo(event.target.value)} />
             )}
           </label>
+          {ebayOrder ? (
+            <label className="so-field-record">
+              eBay sales record number
+              <input id="so-ebay-sales-record" aria-label="eBay sales record number" value={order?.ebaySalesRecordRef ?? ""} disabled />
+            </label>
+          ) : null}
         </div>
         </header>
         <div className="so-workspace">
@@ -1148,6 +1167,11 @@ function blankLine(): FormLine {
     condition: "",
     allocations: [],
   };
+}
+
+function buyerText(order: SalesOrderView | null): string {
+  if (!order) return "";
+  return [order.buyerName, order.buyerUsername ? `(${order.buyerUsername})` : ""].filter(Boolean).join(" ");
 }
 
 function formatWhen(iso: string): string {

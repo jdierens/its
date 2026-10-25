@@ -1,3 +1,4 @@
+import { ebaySalesRepFromSetting } from "@/lib/ebaySalesRep";
 import { allocationQtyForLine, assignListingSku } from "@/lib/ebay/packs";
 import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 
@@ -720,10 +721,13 @@ export function draftOrderRow(input: {
   customerId: string;
   billTo: SoAddress | null;
   soNumber?: number | null;
+  /** app_settings ebay_default_sales_rep. Empty becomes MT. */
+  salesRep?: string | null;
 }): Record<string, unknown> {
   return {
     status: "draft",
     so_number: input.soNumber ?? null,
+    sales_rep: ebaySalesRepFromSetting(input.salesRep),
     ...(input.soNumber != null ? { sheet_ref: `SO#${input.soNumber}` } : {}),
     customer_id: input.customerId,
     order_date: input.order.orderDate,

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readEbayDefaultSalesRep } from "@/lib/ebaySalesRep";
 import { apiBase, apizBase, financesTransactionsUrl, ordersUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
 import { ebayRead } from "@/lib/ebay/http";
 import { writeEbayLog } from "@/lib/ebay/log";
@@ -278,7 +279,7 @@ export async function runOrderPull(input: {
   };
 }
 
-function supabaseStore(admin: SupabaseClient): OrderStore {
+function supabaseStore(admin: SupabaseClient, salesRep: string): OrderStore {
   return {
     async existing(orderIds, salesRefs) {
       const rows = new Map<
@@ -393,6 +394,7 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
             customerId: customer.id,
             billTo: customer.billTo,
             soNumber: action.soNumber,
+            salesRep,
           });
           const updatedRow = await admin
             .from("sales_orders")
@@ -444,6 +446,7 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
               customerId: customer.id,
               billTo: customer.billTo,
               soNumber: action.soNumber,
+              salesRep,
             }),
           )
           .select("id")
@@ -456,6 +459,7 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
                 order: action.order,
                 customerId: customer.id,
                 billTo: customer.billTo,
+                salesRep,
               }),
             )
             .select("id")
@@ -682,6 +686,7 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
   if (seed.missingTable) throw new Error(MIGRATION);
   if (!seed.seeded) throw new SeedRequiredError();
   const customer = await ebayCustomer(admin);
+  const salesRep = await readEbayDefaultSalesRep(admin);
   const { connection } = await validAccessToken();
   const now = new Date();
   let token = connection.access_token;
@@ -729,7 +734,7 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
             return { ok: true, body: response.body };
           },
         }),
-      store: supabaseStore(admin),
+      store: supabaseStore(admin, salesRep),
     });
     await writeEbayLog({
       entity: "orders",

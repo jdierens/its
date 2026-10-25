@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SalesOrderForm } from "@/components/SalesOrderForm";
 import { errorText } from "@/lib/errors";
+import { fetchEbayDefaultSalesRep } from "@/lib/ebaySalesRepSettings";
 import { pacificToday } from "@/lib/salesOrderDraft";
 import { listSalesLookups, suggestSalesOrderNumber } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
@@ -21,7 +22,11 @@ export default async function NewSalesOrderPage() {
   }
 
   try {
-    const [lookups, suggestedNumber] = await Promise.all([listSalesLookups(), suggestSalesOrderNumber()]);
+    const [lookups, suggestedNumber, defaultEbaySalesRep] = await Promise.all([
+      listSalesLookups(),
+      suggestSalesOrderNumber(),
+      fetchEbayDefaultSalesRep(),
+    ]);
     return (
       <SalesOrderForm
         order={null}
@@ -30,6 +35,7 @@ export default async function NewSalesOrderPage() {
         showMoney={access.canViewMoney}
         today={pacificToday()}
         suggestedNumber={suggestedNumber}
+        defaultEbaySalesRep={defaultEbaySalesRep}
       />
     );
   } catch (error) {

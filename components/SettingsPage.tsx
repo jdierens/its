@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { fetchEbayDefaultSalesRep, saveEbayDefaultSalesRep } from "@/lib/ebaySalesRepSettings";
+import { normalizeSalesRep } from "@/lib/ebaySalesRep";
 import { fetchSalesWindowDays, saveSalesWindowDays } from "@/lib/itemPricing";
 import { errorText } from "@/lib/errors";
 import { fetchBinCounter, saveBinNextNumber } from "@/lib/binActions";
@@ -20,6 +22,7 @@ import { PutawaySettings } from "@/components/PutawaySettings";
 
 export function SettingsPage() {
   const [days, setDays] = useState("90");
+  const [ebaySalesRep, setEbaySalesRep] = useState("MT");
   const [template, setTemplate] = useState<LabelTemplateId>(DEFAULT_LABEL_TEMPLATE);
   const [binTemplates, setBinTemplates] = useState<BinLabelTemplates>(emptyBinLabelTemplates);
   const [nextNumber, setNextNumber] = useState("20000");
@@ -33,14 +36,16 @@ export function SettingsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [value, labelTemplate, binLabelTemplates, counter] = await Promise.all([
+        const [value, labelTemplate, binLabelTemplates, counter, salesRep] = await Promise.all([
           fetchSalesWindowDays(),
           fetchLabelTemplate(),
           fetchBinLabelTemplates(),
           fetchBinCounter(),
+          fetchEbayDefaultSalesRep(),
         ]);
         if (!cancelled) {
           setDays(String(value));
+          setEbaySalesRep(salesRep);
           setTemplate(labelTemplate);
           setBinTemplates(binLabelTemplates);
           setNextNumber(String(counter.nextNumber));
@@ -71,6 +76,11 @@ export function SettingsPage() {
       setSaved(false);
       return;
     }
+    if (ebaySalesRep.trim() !== "" && !normalizeSalesRep(ebaySalesRep)) {
+      setError("eBay sales rep is 2 letters.");
+      setSaved(false);
+      return;
+    }
     const proposedNext = Number(nextNumber);
     setSaving(true);
     setError(null);
@@ -84,10 +94,12 @@ export function SettingsPage() {
         return;
       }
       const savedNext = await saveBinNextNumber(proposedNext);
+      const savedRep = await saveEbayDefaultSalesRep(ebaySalesRep);
       await saveSalesWindowDays(parsed);
       await saveLabelTemplate(template);
       await saveBinLabelTemplates(binTemplates);
       setDays(String(parsed));
+      setEbaySalesRep(savedRep);
       setNextNumber(String(savedNext));
       setHighestIssued(counter.highestIssued);
       setSaved(true);
@@ -120,6 +132,25 @@ export function SettingsPage() {
         </label>
         <span className="hint">
           Item sales totals count buys and sells in this many days. The default is 90.
+        </span>
+        <label htmlFor="ebay-sales-rep">
+          <span>eBay sales rep</span>
+          <input
+            id="ebay-sales-rep"
+            className="ebay-sales-rep"
+            value={ebaySalesRep}
+            maxLength={2}
+            autoCapitalize="characters"
+            autoComplete="off"
+            disabled={loading}
+            onChange={(event) => {
+              setEbaySalesRep(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2));
+              setSaved(false);
+            }}
+          />
+        </label>
+        <span className="hint">
+          New and pulled eBay drafts start with these initials. Two letters. An empty value stays MT.
         </span>
         <fieldset className="label-settings">
           <legend>Labels</legend>

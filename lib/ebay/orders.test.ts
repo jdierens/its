@@ -102,6 +102,8 @@ test("a paid eBay order becomes an unnumbered draft under the given customer", (
   const row = draftOrderRow({ order: action.order, customerId: "customer-ebay", billTo: null });
   assert.equal(row.status, "draft");
   assert.equal(row.so_number, null);
+  assert.equal(row.sales_rep, "MT");
+  assert.equal(draftOrderRow({ order: action.order, customerId: "customer-ebay", billTo: null, salesRep: "jd" }).sales_rep, "JD");
   assert.equal(row.approved_at, null);
   assert.equal(row.customer_id, "customer-ebay");
   assert.equal(row.operator_id, null);
