@@ -17,7 +17,6 @@ import {
   labelCommitAction,
   labelHighlightedChoice,
   labelSearchOutcome,
-  labelShownText,
 } from "@/lib/labelDeskSelection";
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
 import type { BinLabelTemplates, LabelTemplateId } from "@/lib/labelTemplates";
@@ -34,7 +33,7 @@ import {
   suggestBins,
 } from "@/lib/receivingActions";
 import { distinctRecentProjects, projectToRestore, readStoredProject, writeStoredProject } from "@/lib/receivingProjects";
-import { receiptSearchQuery, scanSearchNote } from "@/lib/receivingScan";
+import { receiptSearchQuery, scanSearchNote, searchFieldAfterPick } from "@/lib/receivingScan";
 import {
   RECEIVING_DATE_EDITABLE,
   beginReceiptSave,
@@ -274,18 +273,15 @@ export function ReceivingPage() {
   }
 
   function choose(next: LabelItem, rawScan: string | null = null, typedQuery: string | null = null) {
-    const shown = labelShownText(next);
-    holdQuery.current = shown;
-    typed.current = shown;
-    setHeld((current) => current + 1);
-    setIdentifier(shown);
+    const search = searchFieldAfterPick(typed.current, next);
+    holdQuery.current = search.trim();
     setItem(next);
     setMatches([]);
     setTruncated(false);
     setActive(-1);
     setSettledQuery("");
     setError(null);
-    setSearchQuery(receiptSearchQuery(typedQuery));
+    setSearchQuery(receiptSearchQuery(typedQuery ?? search));
     if (rawScan) setComment((current) => (current.trim() ? current : rawScan));
     setCleaned(false);
     setWiped(false);

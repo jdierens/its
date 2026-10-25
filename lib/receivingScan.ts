@@ -17,6 +17,12 @@ export function receiptSearchQuery(raw: string | null | undefined): string | nul
   return text ? text : null;
 }
 
+/** Search keeps the text that was typed. The selected SKU is shown in its own field. */
+export function searchFieldAfterPick(typed: string, picked: { sku: string }): string {
+  void picked;
+  return typed;
+}
+
 /** Which token the search used. A single token needs no extra line. */
 export function scanSearchNote(input: { token: string | null; tried: readonly string[]; found: boolean }): string | null {
   if (!input.token || input.tried.length < 2) return null;
