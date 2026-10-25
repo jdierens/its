@@ -347,7 +347,7 @@ test("unit and extended prices use the eBay discount amount, not a fixed 5 perce
   assert.equal(parsed[0].shippingAmount, 12.79);
   assert.equal(parsed[0].earnings, 5631.59);
   assert.equal(parsed[0].transactionFee, 719.2);
-  const lines = draftLines(parsed[0], [null]);
+  const lines = draftLines(parsed[0], [null], "item-4343");
   assert.equal(lines[0].line_kind, "product");
   assert.equal(lines[0].unit_price, 6338);
   assert.equal(lines[0].ext_price, 6338);
@@ -369,7 +369,7 @@ test("unit and extended prices use the eBay discount amount, not a fixed 5 perce
   assert.equal(lines[1].qty, 1);
   assert.equal(lines[1].unit_price, 12.79);
   assert.equal(lines[1].ext_price, 12.79);
-  assert.equal(lines[1].item_id, null);
+  assert.equal(lines[1].item_id, "item-4343");
   assert.notEqual(lines[0].ext_price, Math.round(6388 * 0.95 * 100) / 100);
   const row = draftOrderRow({ order: parsed[0], customerId: "customer-ebay", billTo: null });
   assert.equal(row.ebay_order_id, "20-15321-25072");
@@ -405,11 +405,42 @@ test("a delivery discount reduces the shipping line, and a 5 percent coupon uses
   });
   assert.equal(parsed[0].shippingAmount, 44.79);
   assert.equal(parsed[0].lines[0].unitPrice, 143.88);
-  const lines = draftLines(parsed[0], ["item-1"]);
+  const lines = draftLines(parsed[0], ["item-1"], "item-4343");
   assert.equal(lines[0].ext_price, 1438.8);
   assert.equal(lines[0].item_id, "item-1");
   assert.equal(lines[1].ext_price, 44.79);
+  assert.equal(lines[1].item_id, "item-4343");
+  assert.equal(lines[1].qty, 1);
   assert.equal(Math.round(lines[0].qty * (lines[0].unit_price ?? 0) * 100) / 100, lines[0].ext_price);
+});
+
+test("eBay shipping is allocated to item 4343 for the line quantity", () => {
+  const [action] = planOrderPull(
+    [ebayOrder({ shippingAmount: 12.79 })],
+    [],
+    [
+      { id: "item-1", sku: "SKU-1" },
+      { id: "item-ship", sku: "4343" },
+    ],
+  );
+  assert.equal(action.kind, "create");
+  if (action.kind !== "create") return;
+  assert.equal(action.shippingItemId, "item-ship");
+  const lines = draftLines(action.order, action.itemIds, action.shippingItemId);
+  const freight = lines.find((line) => line.line_kind === "freight");
+  assert.ok(freight);
+  assert.equal(freight.qty, 1);
+  assert.equal(freight.item_id, "item-ship");
+  assert.equal(freight.customer_description, "Shipping");
+  const [plain] = planOrderPull([ebayOrder()], [], [{ id: "item-ship", sku: "4343" }]);
+  assert.equal(plain.kind, "create");
+  if (plain.kind === "create") {
+    assert.equal(plain.shippingItemId, "item-ship");
+    assert.equal(draftLines(plain.order, plain.itemIds, plain.shippingItemId).some((line) => line.line_kind === "freight"), false);
+  }
+  const [missing] = planOrderPull([ebayOrder({ shippingAmount: 4 })], [], [{ id: "item-1", sku: "SKU-1" }]);
+  assert.equal(missing.kind, "create");
+  if (missing.kind === "create") assert.equal(missing.shippingItemId, null);
 });
 
 test("an order-level discount is applied when the line has no discounted cost", () => {

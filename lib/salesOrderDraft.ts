@@ -31,6 +31,16 @@ export function lineRequiresItem(lineKind: string): boolean {
   return (lineKind || "product") === "product";
 }
 
+/** eBay buyer-shipping lines with no allocation take this item for the line quantity. */
+export function withEbayShippingItem(lines: SoLineInput[], itemId: string, ebay: boolean): SoLineInput[] {
+  if (!ebay || !itemId) return lines;
+  return lines.map((line) => {
+    if ((line.lineKind || "product") !== "freight") return line;
+    if (line.allocations.some((row) => row.itemId && Number(row.qty) > 0)) return line;
+    return { ...line, allocations: [{ itemId, qty: line.qty || "1" }] };
+  });
+}
+
 export const SO_NOTE_KINDS = [
   { id: "warranty", label: "Warranty" },
   { id: "shipping_instruction", label: "Shipping instruction" },
