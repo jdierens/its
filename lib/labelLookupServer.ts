@@ -1,11 +1,10 @@
 "use server";
 
 import { errorText } from "@/lib/errors";
-import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
+import { itemIdsMatchingListQuery } from "@/lib/itemListSearch";
 import { findItemForLabel } from "@/lib/items";
 import {
   escapeLike,
-  labelLikeOr,
   labelTaxonomyFields,
   LABEL_RESULT_CAP,
   sortLabelMatches,
@@ -13,6 +12,7 @@ import {
 } from "@/lib/labelLookup";
 import { getSupabase } from "@/lib/supabase";
 import type { LabelItem } from "@/lib/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLUMNS = "id, sku, name, description, taxonomies(short_code, long_code, name)";
@@ -38,6 +38,24 @@ function toHit(row: Row): LabelItem {
   };
 }
 
+const ID_CHUNK = 100;
+
+async function labelRowsById(supabase: SupabaseClient, ids: string[]): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (let start = 0; start < ids.length; start += ID_CHUNK * 5) {
+    const batches: string[][] = [];
+    for (let offset = start; offset < ids.length && batches.length < 5; offset += ID_CHUNK) {
+      batches.push(ids.slice(offset, offset + ID_CHUNK));
+    }
+    const results = await Promise.all(batches.map((chunk) => supabase.from("items").select(COLUMNS).in("id", chunk)));
+    for (const result of results) {
+      if (result.error) throw new Error(errorText(result.error));
+      rows.push(...((result.data ?? []) as unknown as Row[]));
+    }
+  }
+  return rows;
+}
+
 export async function searchItemsForLabel(raw: string): Promise<LabelLookupResult> {
   const query = raw.trim().slice(0, 200);
   if (!query) return { exact: null, matches: [], truncated: false };
@@ -48,34 +66,32 @@ export async function searchItemsForLabel(raw: string): Promise<LabelLookupResul
   }
 
   const supabase = await getSupabase();
-  const [exactQuery, listed, alnumIds] = await Promise.all([
+  const [exactQuery, matchedIds] = await Promise.all([
     supabase.from("items").select(COLUMNS).ilike("sku", escapeLike(query)).limit(5),
-    supabase.from("items").select(COLUMNS).or(labelLikeOr(query)).order("sku").limit(LABEL_RESULT_CAP + 1),
-    itemIdsMatchingAlnum(supabase, query, {
-      columns: ["sku", "name", "description"],
-      limit: LABEL_RESULT_CAP + 1,
-    }),
+    itemIdsMatchingListQuery(supabase, query),
   ]);
   if (exactQuery.error) throw new Error(errorText(exactQuery.error));
-  if (listed.error) throw new Error(errorText(listed.error));
   const exactRow = ((exactQuery.data ?? []) as unknown as Row[]).find(
     (row) => (row.sku ?? "").trim().toLowerCase() === query.toLowerCase(),
   );
 
-  const rows = (listed.data ?? []) as unknown as Row[];
-  const seen = new Set(rows.map((row) => row.id));
-  const extraIds = alnumIds.filter((id) => !seen.has(id)).slice(0, LABEL_RESULT_CAP + 1);
-  let extraRows: Row[] = [];
-  if (extraIds.length > 0) {
-    const extra = await supabase.from("items").select(COLUMNS).in("id", extraIds);
-    if (extra.error) throw new Error(errorText(extra.error));
-    extraRows = (extra.data ?? []) as unknown as Row[];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  if (exactRow && !seen.has(exactRow.id)) {
+    seen.add(exactRow.id);
+    ids.push(exactRow.id);
   }
-  const combined = [...rows, ...extraRows];
-  const matches = sortLabelMatches(combined.map(toHit), query);
+  for (const id of matchedIds ?? []) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+
+  const rows = await labelRowsById(supabase, ids);
+  const matches = sortLabelMatches(rows.map(toHit), query).slice(0, LABEL_RESULT_CAP);
   return {
     exact: exactRow ? toHit(exactRow) : null,
-    matches: matches.slice(0, LABEL_RESULT_CAP),
-    truncated: rows.length > LABEL_RESULT_CAP || alnumIds.length > LABEL_RESULT_CAP || combined.length > LABEL_RESULT_CAP,
+    matches,
+    truncated: ids.length > LABEL_RESULT_CAP,
   };
 }
