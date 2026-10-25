@@ -698,7 +698,7 @@ export function SalesOrderForm({
 
         <div className="so-addresses">
           <AddressFields legend="Ship to" address={shipTo} disabled={locked} showAttention onChange={setShipTo} />
-          <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />
+          {ebayOrder ? null : <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />}
         </div>
         {!locked ? (
           <label className="so-check">
