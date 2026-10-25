@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Save } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Save, TriangleAlert } from "lucide-react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
 import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
@@ -44,6 +44,7 @@ import {
   originQtyInput,
   receiptSavedNote,
   receiveLineQty,
+  systemQtyMultipleWarning,
   warehouseToday,
   type ReceiptSaveGate,
   type ReceivingEntry,
@@ -183,7 +184,13 @@ export function ReceivingPage() {
   const [qty, setQty] = useState("");
   const [comment, setComment] = useState("");
   const [suggestions, setSuggestions] = useState<BinSuggestion[]>([]);
-  const [receipt, setReceipt] = useState<{ result: ReceiptResult; item: LabelItem; qty: number; printedOn: string } | null>(null);
+  const [receipt, setReceipt] = useState<{
+    result: ReceiptResult;
+    item: LabelItem;
+    qty: number;
+    printedOn: string;
+    qtyWarning: string | null;
+  } | null>(null);
   const [templates, setTemplates] = useState<BinLabelTemplates>(emptyBinLabelTemplates);
   const [itemTemplate, setItemTemplate] = useState<LabelTemplateId>("barcode");
   const [pageOrigin, setPageOrigin] = useState("");
@@ -582,6 +589,7 @@ export function ReceivingPage() {
       setError("Enter a receiving date.");
       return;
     }
+    const qtyWarning = systemQtyMultipleWarning(parsed.qty, originParsed.qty);
     const flags = receiptFlagsForPrep(
       receivePrepKind({ shortCode: item.shortCode, longCode: item.longCode, taxonomyName: item.taxonomyName }),
       cleaned,
@@ -608,7 +616,7 @@ export function ReceivingPage() {
       });
       const printedOn = todayLabel(new Date());
       const savedItem = item;
-      setReceipt({ result, item: savedItem, qty: parsed.qty, printedOn });
+      setReceipt({ result, item: savedItem, qty: parsed.qty, printedOn, qtyWarning });
       typed.current = "";
       holdQuery.current = null;
       binTyped.current = "";
@@ -721,6 +729,10 @@ export function ReceivingPage() {
   }
 
   const openCycle = confirmed?.cycles.find((cycle) => cycle.status === "open") ?? null;
+  const lineQty = receiveLineQty(qty);
+  const lineOriginQty = originQtyInput(originQty);
+  const qtyMultipleWarning =
+    lineQty.ok && lineOriginQty.ok ? systemQtyMultipleWarning(lineQty.qty, lineOriginQty.qty) : null;
   const listOpen = matches.length > 0;
   const prep = receivePrepKind({
     shortCode: item?.shortCode,
@@ -806,6 +818,12 @@ export function ReceivingPage() {
               })}{" "}
               <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
             </p>
+            {receipt.qtyWarning ? (
+              <p className="banner warn" id="receive-saved-qty-warn" role="status">
+                <TriangleAlert size={18} strokeWidth={1.75} aria-hidden />
+                <span>{receipt.qtyWarning}</span>
+              </p>
+            ) : null}
             <div className="receive-actions">
               <button
                 type="button"
@@ -908,7 +926,12 @@ export function ReceivingPage() {
                 ) : null}
               </div>
               <label className="receive-line-qty" htmlFor="receive-qty">
-                <span>Qty</span>
+                <span>
+                  {qtyMultipleWarning ? (
+                    <TriangleAlert className="receive-qty-warn-icon" size={15} strokeWidth={1.75} aria-hidden />
+                  ) : null}
+                  Qty
+                </span>
                 <input
                   id="receive-qty"
                   ref={qtyField}
@@ -917,6 +940,7 @@ export function ReceivingPage() {
                   inputMode="numeric"
                   autoComplete="off"
                   disabled={busy}
+                  aria-describedby={qtyMultipleWarning ? "receive-qty-warn" : undefined}
                   onChange={(event) => setQty(event.target.value)}
                 />
               </label>
@@ -1015,6 +1039,12 @@ export function ReceivingPage() {
                 </button>
               </div>
             </div>
+            {qtyMultipleWarning ? (
+              <p className="banner warn" id="receive-qty-warn" role="status">
+                <TriangleAlert size={18} strokeWidth={1.75} aria-hidden />
+                <span>{qtyMultipleWarning}</span>
+              </p>
+            ) : null}
             {suggestions.some((suggestion) => skuAlreadyInBinNote(suggestion.locationCode, suggestion.qty)) ? (
               <div className="receive-bin-notes">
                 {suggestions.map((suggestion) => {
