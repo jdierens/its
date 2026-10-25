@@ -1,3 +1,15 @@
+import {
+  extensionFromUnit,
+  formatExtension,
+  formatUnitPrice,
+  parseExtension,
+  parseQty,
+  parseUnitCost,
+  roundPlaces,
+  unitFromExtension,
+  UNIT_DECIMALS,
+} from "@/lib/poLineMoney";
+
 export const INCOTERMS = ["EXW", "FCA", "FOB", "CIF", "DAP", "DDP"] as const;
 
 export const SO_CURRENCIES = ["USD", "EUR", "GBP", "HKD"] as const;
@@ -125,6 +137,75 @@ export function lineExtension(qty: string, unitPrice: string): string | null {
   return (Math.round(quantity * price * 100) / 100).toFixed(2);
 }
 
+export type SalesPriceEdit = "qty" | "unit" | "ext";
+
+const UNIT_STEP = 10 ** -UNIT_DECIMALS;
+
+/** A four-decimal unit whose cent rounding of qty × unit is the extension. */
+function unitForExtension(qty: number, ext: number): number {
+  const target = roundPlaces(ext, 2);
+  const direct = unitFromExtension(qty, target);
+  if (extensionFromUnit(qty, direct) === target) return direct;
+  for (let step = 1; step <= 50; step += 1) {
+    const lower = roundPlaces(direct - step * UNIT_STEP, UNIT_DECIMALS);
+    const higher = roundPlaces(direct + step * UNIT_STEP, UNIT_DECIMALS);
+    if (lower >= 0 && extensionFromUnit(qty, lower) === target) return lower;
+    if (extensionFromUnit(qty, higher) === target) return higher;
+  }
+  return direct;
+}
+
+function canonicalUnit(value: string): string {
+  const parsed = parseUnitCost(value);
+  return parsed == null ? value : formatUnitPrice(parsed);
+}
+
+function canonicalExt(value: string): string {
+  const parsed = parseExtension(value);
+  return parsed == null ? value : formatExtension(parsed);
+}
+
+/**
+ * Keep qty × unit price = ext.
+ * Editing the extension, or the quantity, recomputes the unit and keeps the extension.
+ * Editing the unit price recomputes the extension.
+ * Unit price is four decimals. Extension is cents.
+ */
+export function syncSalesLineMoney(input: {
+  qty: string;
+  unitPrice: string;
+  extPrice: string;
+  edited: SalesPriceEdit;
+  commit?: boolean;
+}): { unitPrice: string; extPrice: string } {
+  const unitPrice = input.commit && input.edited === "unit" ? canonicalUnit(input.unitPrice) : input.unitPrice;
+  const extPrice = input.commit && input.edited === "ext" ? canonicalExt(input.extPrice) : input.extPrice;
+  const qty = parseQty(input.qty);
+  const unit = parseUnitCost(unitPrice);
+  const ext = parseExtension(extPrice);
+  if (qty == null || qty <= 0) return { unitPrice, extPrice };
+
+  if (input.edited === "unit") {
+    if (unit == null) return { unitPrice, extPrice };
+    return { unitPrice, extPrice: formatExtension(extensionFromUnit(qty, unit)) };
+  }
+
+  if (ext != null) {
+    const nextUnit = unitForExtension(qty, ext);
+    const achieved = extensionFromUnit(qty, nextUnit);
+    return {
+      unitPrice: formatUnitPrice(nextUnit),
+      extPrice: achieved === roundPlaces(ext, 2) ? (input.commit || input.edited === "qty" ? formatExtension(ext) : extPrice) : formatExtension(achieved),
+    };
+  }
+
+  if (input.edited === "qty" && unit != null) {
+    return { unitPrice, extPrice: formatExtension(extensionFromUnit(qty, unit)) };
+  }
+
+  return { unitPrice, extPrice };
+}
+
 export function allocationsCover(qty: string, allocations: SoAllocationInput[]): boolean {
   const quantity = Number(qty);
   if (!Number.isFinite(quantity) || quantity <= 0) return false;
@@ -147,7 +228,44 @@ export function addressFromRecord(value: unknown): SoAddress {
   };
 }
 
-/** Display form of the integer so_number. Drafts have none. */
+/**
+ * List column. An eBay order shows the eBay order id. Any other order shows the customer PO.
+ * The stored internal reference is not shown.
+ */
+export function salesOrderListReference(input: {
+  ebayOrderId?: string | null;
+  customerPo?: string | null;
+}): string {
+  const ebay = (input.ebayOrderId ?? "").trim();
+  if (ebay) return ebay;
+  return (input.customerPo ?? "").trim();
+}
+
+export type SalesOrderListSortKey = {
+  orderDate: string | null;
+  createdAt: string;
+};
+
+/**
+ * Newest order date first. An order with no order date sorts after every dated order.
+ * The same date, and undated orders among themselves, sort by created time, newest first.
+ */
+export function compareSalesOrderList(left: SalesOrderListSortKey, right: SalesOrderListSortKey): number {
+  const leftDate = left.orderDate?.trim() || "";
+  const rightDate = right.orderDate?.trim() || "";
+  if (leftDate && rightDate && leftDate !== rightDate) return leftDate < rightDate ? 1 : -1;
+  if (leftDate && !rightDate) return -1;
+  if (!leftDate && rightDate) return 1;
+  if (left.createdAt === right.createdAt) return 0;
+  return left.createdAt < right.createdAt ? 1 : -1;
+}
+
+/** Drafts that still need processing, unless the list is explicitly every order. */
+export function salesOrderListScope(view: string | undefined): "drafts" | "all" {
+  return view === "all" ? "all" : "drafts";
+}
+
+/** Display form of the integer so_number. Drafts have none until a legacy number is applied. */
 export function formatSalesOrderNumber(value: number | string | null | undefined): string | null {
   if (value == null || value === "") return null;
   const numeric = typeof value === "number" ? value : Number(value);

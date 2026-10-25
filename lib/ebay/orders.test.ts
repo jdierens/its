@@ -351,6 +351,18 @@ test("unit and extended prices use the eBay discount amount, not a fixed 5 perce
   assert.equal(lines[0].line_kind, "product");
   assert.equal(lines[0].unit_price, 6338);
   assert.equal(lines[0].ext_price, 6338);
+  const [packed] = planOrderPull(
+    [ebayOrder({ ebayOrderId: "20-15321-25072", lines: [{ sku: "106683(x2)", title: "Lot of 2", qty: 1, unitPrice: 6338 }] })],
+    [],
+    [{ id: "item-106683", sku: "106683" }],
+  );
+  assert.equal(packed.kind, "create");
+  if (packed.kind === "create") {
+    assert.equal(packed.order.lines[0].qty, 2);
+    assert.equal(packed.order.lines[0].unitPrice, 3169);
+    assert.equal(packed.itemIds[0], "item-106683");
+    assert.equal(draftLines(packed.order, packed.itemIds)[0].ext_price, 6338);
+  }
   assert.equal(Math.round(lines[0].qty * (lines[0].unit_price ?? 0) * 100) / 100, lines[0].ext_price);
   assert.equal(lines[1].line_kind, "freight");
   assert.equal(lines[1].customer_description, "Shipping");

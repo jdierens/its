@@ -1,4 +1,4 @@
-import { resolveSkuMap } from "@/lib/ebay/packs";
+import { assignListingSku, parsePackLabel, perPieceUnit, pieceQtyForPack } from "@/lib/ebay/packs";
 import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 
 export const EBAY_ORDER_CUSTOMER_NAME = "eBay Customer";
@@ -36,9 +36,32 @@ export type SeedUpdate = {
   salesRecordRef: string | null;
 };
 
+export type SeedDraft = {
+  id: string;
+  status: string;
+  soNumber: number | null;
+  ebayOrderId: string | null;
+  ebaySalesRecordRef: string | null;
+};
+
+export type SoNumberAssignment = {
+  id: string;
+  soNumber: number;
+  salesRecordRef: string | null;
+};
+
+export type LegacyMapEntry = {
+  ebayOrderId: string;
+  soNumber: number;
+  salesRecordRef: string | null;
+};
+
 export type SeedPlan = {
   updates: SeedUpdate[];
+  assignments: SoNumberAssignment[];
+  map: LegacyMapEntry[];
   linked: number;
+  assigned: number;
   skipped: number;
   conflicts: number;
   missing: number;
@@ -91,11 +114,17 @@ export type ExistingPullOrder = {
   ebayOrderId: string | null;
   ebaySalesRecordRef: string | null;
   personEdited: boolean;
+  soNumber?: number | null;
+};
+
+export type LegacySoNumber = {
+  ebayOrderId: string;
+  soNumber: number;
 };
 
 export type PullAction =
-  | { kind: "create"; order: ParsedEbayOrder; itemIds: (string | null)[] }
-  | { kind: "update"; id: string; order: ParsedEbayOrder; itemIds: (string | null)[] }
+  | { kind: "create"; order: ParsedEbayOrder; itemIds: (string | null)[]; soNumber: number | null }
+  | { kind: "update"; id: string; order: ParsedEbayOrder; itemIds: (string | null)[]; soNumber: number | null }
   | { kind: "link"; id: string; ebayOrderId: string; salesRecordRef: string | null }
   | { kind: "skip"; ebayOrderId: string; reason: "ambiguous" | "unchanged" | "before-cutoff" };
 
@@ -189,7 +218,11 @@ export function parseLegacyLogCsv(text: string): LegacyLogRow[] {
   return out;
 }
 
-export function planLegacySeed(rows: readonly LegacyLogRow[], existing: readonly ExistingSeedOrder[]): SeedPlan {
+export function planLegacySeed(
+  rows: readonly LegacyLogRow[],
+  existing: readonly ExistingSeedOrder[],
+  drafts: readonly SeedDraft[] = [],
+): SeedPlan {
   const byNumber = new Map<number, ExistingSeedOrder[]>();
   for (const order of existing) {
     const list = byNumber.get(order.soNumber) ?? [];
@@ -204,32 +237,70 @@ export function planLegacySeed(rows: readonly LegacyLogRow[], existing: readonly
   }
 
   const updates: SeedUpdate[] = [];
+  const assignments: SoNumberAssignment[] = [];
+  const map: LegacyMapEntry[] = [];
   const claimed = new Set<string>();
+  const claimedNumbers = new Set<number>(existing.map((order) => order.soNumber));
   let linked = 0;
+  let assigned = 0;
   let skipped = 0;
   let conflicts = 0;
   let missing = 0;
 
   for (const [ebayOrderId, group] of byOrderId) {
     const soNumbers = [...new Set(group.map((row) => row.soNumber))].sort((a, b) => a - b);
+    const records = [...new Set(group.map((row) => row.salesRecordRef).filter((value): value is string => Boolean(value)))];
+    const canonicalNumber = soNumbers[0];
+    const canonicalRecord = records.length === 1 ? records[0] : null;
+    if (canonicalNumber != null) {
+      map.push({ ebayOrderId, soNumber: canonicalNumber, salesRecordRef: canonicalRecord });
+    }
     const found = new Map<string, ExistingSeedOrder>();
     for (const soNumber of soNumbers) {
       for (const order of byNumber.get(soNumber) ?? []) found.set(order.id, order);
     }
     const sorted = [...found.values()].sort((a, b) => a.soNumber - b.soNumber || a.id.localeCompare(b.id));
     if (sorted.length === 0) {
-      missing += 1;
+      const matching = drafts.filter((draft) => draft.ebayOrderId === ebayOrderId);
+      const already = matching.find((draft) => draft.soNumber === canonicalNumber);
+      if (already) {
+        skipped += 1;
+        continue;
+      }
+      const open = matching.filter(
+        (draft) => draft.status === "draft" && draft.soNumber == null && !claimed.has(draft.id),
+      );
+      const numberTaken = canonicalNumber != null && claimedNumbers.has(canonicalNumber);
+      if (!numberTaken && open.length === 1 && canonicalNumber != null) {
+        const draft = open[0];
+        assignments.push({
+          id: draft.id,
+          soNumber: canonicalNumber,
+          salesRecordRef: draft.ebaySalesRecordRef == null ? canonicalRecord : null,
+        });
+        claimed.add(draft.id);
+        claimedNumbers.add(canonicalNumber);
+        assigned += 1;
+        if (soNumbers.length > 1) conflicts += soNumbers.length - 1;
+        if (records.length > 1) conflicts += 1;
+        continue;
+      }
+      if (matching.length === 0 && !numberTaken) {
+        missing += 1;
+        continue;
+      }
+      conflicts += 1;
       continue;
     }
     const target = sorted.find(
       (order) => !claimed.has(order.id) && (order.ebayOrderId == null || order.ebayOrderId === ebayOrderId),
     );
-    if (!target) {
+    const draftOwnsId = drafts.some((draft) => draft.id !== target?.id && draft.ebayOrderId === ebayOrderId);
+    if (!target || draftOwnsId) {
       conflicts += 1;
       continue;
     }
     const extras = sorted.filter((order) => order.id !== target.id).length;
-    const records = [...new Set(group.map((row) => row.salesRecordRef).filter((value): value is string => Boolean(value)))];
     const recordConflict =
       records.length > 1 || (records.length === 1 && target.ebaySalesRecordRef != null && target.ebaySalesRecordRef !== records[0]);
     const salesRecordRef = records.length === 1 && target.ebaySalesRecordRef == null ? records[0] : null;
@@ -245,7 +316,7 @@ export function planLegacySeed(rows: readonly LegacyLogRow[], existing: readonly
     conflicts += extras + (recordConflict ? 1 : 0);
   }
 
-  return { updates, linked, skipped, conflicts, missing };
+  return { updates, assignments, map, linked, assigned, skipped, conflicts, missing };
 }
 
 function text(value: unknown, max: number): string | null {
@@ -490,10 +561,31 @@ export function parseFulfillmentOrders(body: unknown): ParsedEbayOrder[] {
   return out;
 }
 
+function orderForItems(
+  order: ParsedEbayOrder,
+  items: readonly { id: string; sku: string }[],
+): { order: ParsedEbayOrder; itemIds: (string | null)[] } {
+  const itemIds: (string | null)[] = [];
+  const lines = order.lines.map((line) => {
+    const sku = line.sku?.trim() ?? "";
+    const assigned = sku ? assignListingSku(sku, items) : { itemId: null, packQty: 1, baseSku: null };
+    itemIds.push(assigned.itemId);
+    const packQty = assigned.packQty > 1 ? assigned.packQty : (parsePackLabel(sku)?.packQty ?? 1);
+    if (assigned.itemId && assigned.packQty === 1) return line;
+    if (packQty <= 1) return line;
+    const pieces = pieceQtyForPack(line.qty, packQty);
+    if (pieces === line.qty) return line;
+    const unitPrice = line.unitPrice == null ? null : perPieceUnit(line.qty, line.unitPrice, pieces);
+    return { ...line, qty: pieces, unitPrice: unitPrice ?? line.unitPrice };
+  });
+  return { order: { ...order, lines }, itemIds };
+}
+
 export function planOrderPull(
   orders: readonly ParsedEbayOrder[],
   existing: readonly ExistingPullOrder[],
   items: readonly { id: string; sku: string }[],
+  legacy: readonly LegacySoNumber[] = [],
 ): PullAction[] {
   const byOrderId = new Map<string, ExistingPullOrder[]>();
   const byRecord = new Map<string, ExistingPullOrder[]>();
@@ -511,13 +603,27 @@ export function planOrderPull(
   };
   for (const row of existing) remember(row);
 
-  const skuMap = resolveSkuMap(
-    orders.flatMap((order) => order.lines.map((line) => line.sku).filter((sku): sku is string => Boolean(sku))),
-    items,
-  );
+  const legacyById = new Map<string, number>();
+  for (const row of legacy) {
+    if (!legacyById.has(row.ebayOrderId) && Number.isSafeInteger(row.soNumber) && row.soNumber >= 1) {
+      legacyById.set(row.ebayOrderId, row.soNumber);
+    }
+  }
+  const takenNumbers = new Set<number>();
+  for (const row of existing) {
+    if (row.soNumber != null && Number.isSafeInteger(row.soNumber) && row.soNumber >= 1) takenNumbers.add(row.soNumber);
+  }
+  const claimLegacy = (ebayOrderId: string, current: number | null | undefined): number | null => {
+    if (current != null) return null;
+    const wanted = legacyById.get(ebayOrderId);
+    if (wanted == null || takenNumbers.has(wanted)) return null;
+    takenNumbers.add(wanted);
+    return wanted;
+  };
   const actions: PullAction[] = [];
   const seen = new Set<string>();
-  for (const order of orders) {
+  for (const source of orders) {
+    const order = source;
     if (seen.has(order.ebayOrderId)) {
       actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "unchanged" });
       continue;
@@ -541,20 +647,28 @@ export function planOrderPull(
       }
       match = recordHits[0] ?? null;
     }
-    const itemIds = order.lines.map((line) => (line.sku ? skuMap.get(line.sku) ?? null : null));
+    const prepared = orderForItems(order, items);
     if (!match) {
+      const soNumber = claimLegacy(order.ebayOrderId, null);
       remember({
         id: `new:${order.ebayOrderId}`,
         status: "draft",
         ebayOrderId: order.ebayOrderId,
         ebaySalesRecordRef: order.salesRecordRef,
         personEdited: false,
+        soNumber,
       });
-      actions.push({ kind: "create", order, itemIds });
+      actions.push({ kind: "create", order: prepared.order, itemIds: prepared.itemIds, soNumber });
       continue;
     }
     if (match.status === "draft" && !match.personEdited && !match.id.startsWith("new:")) {
-      actions.push({ kind: "update", id: match.id, order, itemIds });
+      actions.push({
+        kind: "update",
+        id: match.id,
+        order: prepared.order,
+        itemIds: prepared.itemIds,
+        soNumber: claimLegacy(order.ebayOrderId, match.soNumber),
+      });
       continue;
     }
     if (match.id.startsWith("new:")) {
@@ -584,10 +698,12 @@ export function draftOrderRow(input: {
   order: ParsedEbayOrder;
   customerId: string;
   billTo: SoAddress | null;
+  soNumber?: number | null;
 }): Record<string, unknown> {
   return {
     status: "draft",
-    so_number: null,
+    so_number: input.soNumber ?? null,
+    ...(input.soNumber != null ? { sheet_ref: `SO#${input.soNumber}` } : {}),
     customer_id: input.customerId,
     order_date: input.order.orderDate,
     ship_to: input.order.shipTo,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { applyPackToLine, parsePackLabel } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
@@ -13,12 +14,12 @@ import {
   INCOTERMS,
   lineExtension,
   lineRequiresItem,
+  syncSalesLineMoney,
   parseSalesOrderNumber,
   salesOrderStatusLabel,
   salesOrderTotal,
   sellerNet,
   SO_CURRENCIES,
-  SO_LINE_KINDS,
   SO_NOTE_KINDS,
   type SoAddress,
   type SoDraftInput,
@@ -39,7 +40,7 @@ import {
 } from "@/lib/salesOrders";
 
 type FormAllocation = { itemId: string; sku: string; name: string; qty: string };
-type FormLine = Omit<SalesLineView, "allocations" | "extPrice"> & { allocations: FormAllocation[] };
+type FormLine = Omit<SalesLineView, "allocations"> & { allocations: FormAllocation[] };
 
 const NOTE_RESPONSES = [
   { id: "", label: "No response yet" },
@@ -72,7 +73,8 @@ export function SalesOrderForm({
   const [customerHits, setCustomerHits] = useState<SalesCustomerHit[]>([]);
   const [customerOpen, setCustomerOpen] = useState(false);
   const [customerPo, setCustomerPo] = useState(order?.customerPo ?? "");
-  const [reference, setReference] = useState(order?.reference ?? "");
+  // Preserved on save so an existing sales_orders.reference is not cleared. The form does not show it.
+  const [reference] = useState(order?.reference ?? "");
   const [channel, setChannel] = useState(order?.channel ?? "");
   const [orderDate, setOrderDate] = useState(order?.orderDate || today);
   const [shipDate, setShipDate] = useState(order?.shipDate ?? "");
@@ -95,12 +97,15 @@ export function SalesOrderForm({
   const [ebayOrderEarnings, setEbayOrderEarnings] = useState(order?.ebayOrderEarnings ?? "");
   const [exportNotes, setExportNotes] = useState(order?.exportNotes ?? "");
   const [internalNotes, setInternalNotes] = useState(order?.internalNotes ?? "");
-  const [lines, setLines] = useState<FormLine[]>(order?.lines.length ? order.lines : [blankLine()]);
+  const [lines, setLines] = useState<FormLine[]>(
+    order?.lines.length ? order.lines.map((line) => ({ ...line, extPrice: line.extPrice || lineExtension(line.qty, line.unitPrice) || "" })) : [blankLine()],
+  );
   const [notes, setNotes] = useState<SalesNoteView[]>(order?.notes ?? []);
   const [orderNumber, setOrderNumber] = useState(
     order?.number ?? (suggestedNumber ? formatSalesOrderNumber(suggestedNumber) ?? "" : ""),
   );
   const [suggestions, setSuggestions] = useState<Record<number, SalesSkuHit[]>>({});
+  const [allocateQuery, setAllocateQuery] = useState<Record<number, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -171,7 +176,6 @@ export function SalesOrderForm({
       setBillTo(defaults.billTo);
       setShipTo(defaults.shipTo);
       setCustomerPo(defaults.customerPo);
-      setReference(defaults.reference);
       setChannel(defaults.channel);
       setOrderDate(defaults.orderDate || today);
       setShipDate(defaults.shipDate);
@@ -190,30 +194,112 @@ export function SalesOrderForm({
     setLines((current) => current.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line)));
   }
 
-  async function loadSuggestions(index: number, part: string, lineKind: string) {
+  function changeLineMoney(index: number, field: "qty" | "unit" | "ext", value: string, commit = false) {
+    setLines((current) =>
+      current.map((line, lineIndex) => {
+        if (lineIndex !== index) return line;
+        const qty = field === "qty" ? value : line.qty;
+        if (!showMoney) return { ...line, qty };
+        const synced = syncSalesLineMoney({
+          qty,
+          unitPrice: field === "unit" ? value : line.unitPrice,
+          extPrice: field === "ext" ? value : line.extPrice,
+          edited: field,
+          commit,
+        });
+        return { ...line, qty, unitPrice: synced.unitPrice, extPrice: synced.extPrice };
+      }),
+    );
+  }
+
+  function pricedFromPack(line: FormLine, qty: string, unitPrice: string): Pick<FormLine, "qty" | "unitPrice" | "extPrice"> {
+    if (!showMoney) return { qty, unitPrice: line.unitPrice, extPrice: line.extPrice };
+    return { qty, unitPrice, extPrice: lineExtension(qty, unitPrice) ?? line.extPrice };
+  }
+
+  function rememberSuggestions(index: number, hits: SalesSkuHit[], part: string, expand: boolean) {
+    setSuggestions((current) => ({ ...current, [index]: hits }));
+    setLines((current) =>
+      current.map((line, lineIndex) => {
+        if (lineIndex !== index) return line;
+        const fromTyped = applyPackToLine({ part, qty: line.qty, unitPrice: line.unitPrice });
+        const fromPn = applyPackToLine({ part: line.customerPartNumber, qty: line.qty, unitPrice: line.unitPrice });
+        const applied = fromTyped.packQty != null ? fromTyped : fromPn;
+        const open = line.allocations.length === 0;
+        const priced = pricedFromPack(
+          line,
+          expand && open ? applied.qty : line.qty,
+          expand && open && showMoney ? applied.unitPrice : line.unitPrice,
+        );
+        const next = { ...line, ...priced };
+        if (!open || hits.length !== 1 || next.allocations.some((row) => row.itemId === hits[0].id)) return next;
+        return {
+          ...next,
+          allocations: [{ itemId: hits[0].id, sku: hits[0].sku, name: hits[0].name, qty: next.qty || "1" }],
+        };
+      }),
+    );
+  }
+
+  async function lookupSkus(index: number, part: string, lineKind: string, expand: boolean) {
     if (!lineRequiresItem(lineKind)) {
       setSuggestions((current) => ({ ...current, [index]: [] }));
       return;
     }
+    const applied = applyPackToLine({ part, qty: "1", unitPrice: "" });
+    const term = applied.search;
+    setAllocateQuery((current) => ({ ...current, [index]: term }));
+    if (!term) {
+      setSuggestions((current) => ({ ...current, [index]: [] }));
+      return;
+    }
     try {
-      const hits = await suggestSalesSkus(part);
-      setSuggestions((current) => ({ ...current, [index]: hits }));
+      const hits = await suggestSalesSkus(term);
+      rememberSuggestions(index, hits, part, expand);
     } catch (error) {
       setMessage(errorText(error));
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    (order?.lines ?? []).forEach((line, index) => {
+      if (!lineRequiresItem(line.lineKind || "product")) return;
+      const applied = applyPackToLine({ part: line.customerPartNumber, qty: line.qty, unitPrice: line.unitPrice });
+      if (!applied.search) return;
+      setAllocateQuery((current) => ({ ...current, [index]: applied.search }));
+      void suggestSalesSkus(applied.search)
+        .then((hits) => {
+          if (!cancelled) rememberSuggestions(index, hits, line.customerPartNumber, true);
+        })
+        .catch((error) => {
+          if (!cancelled) setMessage(errorText(error));
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Look up the saved customer part once, including a pack suffix already on the draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id]);
 
   function addAllocation(index: number, hit: SalesSkuHit) {
     setLines((current) =>
       current.map((line, lineIndex) => {
         if (lineIndex !== index) return line;
         if (line.allocations.some((row) => row.itemId === hit.id)) return line;
-        const used = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
-        const remaining = Math.round((Number(line.qty) - used) * 100) / 100;
-        return {
+        const applied = applyPackToLine({ part: line.customerPartNumber, qty: line.qty, unitPrice: line.unitPrice });
+        const open = line.allocations.length === 0;
+        const next = {
           ...line,
+          ...pricedFromPack(line, open ? applied.qty : line.qty, open && showMoney ? applied.unitPrice : line.unitPrice),
+        };
+        const used = next.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+        const remaining = Math.round((Number(next.qty) - used) * 100) / 100;
+        return {
+          ...next,
           allocations: [
-            ...line.allocations,
+            ...next.allocations,
             { itemId: hit.id, sku: hit.sku, name: hit.name, qty: remaining > 0 ? String(remaining) : "1" },
           ],
         };
@@ -279,7 +365,7 @@ export function SalesOrderForm({
   const filesEditable = canEdit && status !== "cancelled" && status !== "closed";
   const ebayOrder = Boolean(order?.ebayOrderId || order?.ebaySalesRecordRef);
   const buyerTotal = showMoney
-    ? salesOrderTotal(lines.map((line) => ({ extPrice: lineExtension(line.qty, line.unitPrice) ?? "" })))
+    ? salesOrderTotal(lines.map((line) => ({ extPrice: line.extPrice || lineExtension(line.qty, line.unitPrice) || "" })))
     : null;
   const net = showMoney ? sellerNet(ebayOrderEarnings, ebayLabelFee) : null;
 
@@ -363,10 +449,6 @@ export function SalesOrderForm({
             <label>
               Customer PO
               <input value={customerPo} disabled={locked} onChange={(event) => setCustomerPo(event.target.value)} />
-            </label>
-            <label>
-              Internal reference
-              <input value={reference} disabled={locked} onChange={(event) => setReference(event.target.value)} />
             </label>
             <label>
               Channel
@@ -515,8 +597,9 @@ export function SalesOrderForm({
         <fieldset>
           <legend>Lines</legend>
           {lines.map((line, index) => {
-            const extension = showMoney ? lineExtension(line.qty, line.unitPrice) : null;
             const needsItem = lineRequiresItem(line.lineKind);
+            const pack = parsePackLabel(line.customerPartNumber);
+            const allocatedQty = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
             const covered = allocationsCover(
               line.qty,
               line.allocations.map((row) => ({ itemId: row.itemId, qty: row.qty })),
@@ -535,58 +618,36 @@ export function SalesOrderForm({
                     </button>
                   ) : null}
                 </div>
-                <div className="so-grid">
+                <div className="so-line-fields">
                   <label>
-                    Kind
-                    <select
-                      id={`so-line-kind-${index}`}
-                      value={line.lineKind || "product"}
-                      disabled={locked}
-                      onChange={(event) => {
-                        const lineKind = event.target.value;
-                        updateLine(index, { lineKind });
-                        if (!lineRequiresItem(lineKind)) {
-                          setSuggestions((current) => ({ ...current, [index]: [] }));
-                        }
-                      }}
-                    >
-                      {SO_LINE_KINDS.map((kind) => (
-                        <option key={kind.id} value={kind.id}>
-                          {kind.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Customer part number
+                    Customer PN
                     <input
                       id={`so-line-part-${index}`}
                       value={line.customerPartNumber}
                       disabled={locked}
                       onChange={(event) => updateLine(index, { customerPartNumber: event.target.value })}
                       onBlur={(event) => {
-                        if (!locked) void loadSuggestions(index, event.target.value, line.lineKind);
+                        if (!locked) void lookupSkus(index, event.target.value, line.lineKind, true);
                       }}
                     />
                   </label>
-                  <label>
-                    Description
+                  <label className="wide">
+                    Customer Description
                     <input
                       value={line.customerDescription}
                       disabled={locked}
                       onChange={(event) => updateLine(index, { customerDescription: event.target.value })}
                     />
                   </label>
-                </div>
-                <div className="so-line-money">
                   <label>
-                    Qty
+                    QTY
                     <input
                       className="num-input"
                       inputMode="decimal"
                       value={line.qty}
                       disabled={locked}
-                      onChange={(event) => updateLine(index, { qty: event.target.value })}
+                      onChange={(event) => changeLineMoney(index, "qty", event.target.value)}
+                      onBlur={(event) => changeLineMoney(index, "qty", event.target.value, true)}
                     />
                   </label>
                   {showMoney ? (
@@ -597,40 +658,83 @@ export function SalesOrderForm({
                         inputMode="decimal"
                         value={line.unitPrice}
                         disabled={locked}
-                        onChange={(event) => updateLine(index, { unitPrice: event.target.value })}
+                        onChange={(event) => changeLineMoney(index, "unit", event.target.value)}
+                        onBlur={(event) => changeLineMoney(index, "unit", event.target.value, true)}
                       />
                     </label>
                   ) : null}
                   {showMoney ? (
                     <label>
-                      Ext
-                      <input className="num-input" value={extension ?? ""} readOnly tabIndex={-1} />
+                      Ext price
+                      <input
+                        className="num-input"
+                        inputMode="decimal"
+                        value={line.extPrice}
+                        disabled={locked}
+                        onChange={(event) => changeLineMoney(index, "ext", event.target.value)}
+                        onBlur={(event) => changeLineMoney(index, "ext", event.target.value, true)}
+                      />
                     </label>
                   ) : null}
                 </div>
-                <label>
-                  Condition
-                  <select value={line.condition} disabled={locked} onChange={(event) => updateLine(index, { condition: event.target.value })}>
-                    <option value="">Condition</option>
-                    <option value="New">New</option>
-                    <option value="Used">Used</option>
-                  </select>
-                </label>
-                {!locked && (suggestions[index]?.length ?? 0) > 0 ? (
-                  <div className="so-suggest" id={`so-suggest-${index}`}>
-                    {suggestions[index].map((hit) => (
-                      <button
-                        key={hit.id}
-                        type="button"
-                        className="suggestion"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => addAllocation(index, hit)}
-                      >
-                        {hit.sku} {hit.partNumber}
-                      </button>
-                    ))}
+                {needsItem ? (
+                  <div className="so-allocate">
+                    <p className="hint">
+                      Pick one or more ITS items. Their quantities have to add up to the line quantity
+                      {pack ? `. ${line.customerPartNumber.trim()} is ${pack.packQty} × ${pack.baseSku}` : ""}.
+                    </p>
+                    {!locked ? (
+                      <div className="so-find-sku">
+                        <label>
+                          Find SKU
+                          <input
+                            id={`so-allocate-${index}`}
+                            value={allocateQuery[index] ?? ""}
+                            placeholder="ITS SKU"
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setAllocateQuery((current) => ({ ...current, [index]: value }));
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void lookupSkus(index, event.currentTarget.value || line.customerPartNumber, line.lineKind, true);
+                              }
+                            }}
+                            onBlur={(event) => {
+                              void lookupSkus(index, event.target.value || line.customerPartNumber, line.lineKind, true);
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => void lookupSkus(index, allocateQuery[index] || line.customerPartNumber, line.lineKind, true)}
+                        >
+                          Find SKU
+                        </button>
+                      </div>
+                    ) : null}
+                    {(suggestions[index]?.length ?? 0) > 0 ? (
+                      <div className="so-suggest" id={`so-suggest-${index}`}>
+                        {suggestions[index].map((hit) => (
+                          <button
+                            key={hit.id}
+                            type="button"
+                            className="suggestion"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => addAllocation(index, hit)}
+                          >
+                            Allocate {hit.sku}
+                            {hit.partNumber ? ` ${hit.partNumber}` : ""}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                ) : (
+                  <p className="hint">This line does not need an ITS item.</p>
+                )}
                 {line.allocations.map((allocation, allocationIndex) => (
                   <div className="so-allocation" key={`${allocation.itemId}-${allocationIndex}`}>
                     <span>
@@ -667,13 +771,13 @@ export function SalesOrderForm({
                     ) : null}
                   </div>
                 ))}
-                <p className={needsItem || line.allocations.length > 0 ? (covered ? "hint" : "hint so-gap") : "hint"}>
-                  {needsItem || line.allocations.length > 0
-                    ? covered
-                      ? "Allocated."
-                      : "Allocate this line to SKUs that add up to the quantity."
-                    : "No SKU is required for this line."}
-                </p>
+                {needsItem || line.allocations.length > 0 ? (
+                  <p className={covered ? "hint" : "hint so-gap"}>
+                    {covered
+                      ? `Allocated ${allocatedQty} of ${line.qty}.`
+                      : `Allocated ${allocatedQty} of ${line.qty}. Add ITS items until the quantities match.`}
+                  </p>
+                ) : null}
               </div>
             );
           })}
@@ -929,6 +1033,7 @@ function blankLine(): FormLine {
     customerDescription: "",
     qty: "1",
     unitPrice: "",
+    extPrice: "",
     condition: "",
     allocations: [],
   };

@@ -149,6 +149,23 @@ tr:last-child td {
   font-variant-numeric: tabular-nums;
 }
 
+/* Numeric field titles sit on the right, on every page. */
+th.num,
+td.num,
+label:has(> input.num),
+label:has(> input.num-input),
+label:has(> .money-input) {
+  text-align: right;
+}
+
+label:has(> input.num) > .hint,
+label:has(> input.num-input) > .hint,
+label:has(> input.num) > .field-error,
+label:has(> input.num-input) > .field-error,
+label:has(> .money-input) > .hint {
+  text-align: left;
+}
+
 #item-pricing .stat strong {
   display: block;
 }
@@ -597,11 +614,28 @@ button.thumb-delete {
   border-left: 1px solid var(--input-border);
 }
 
-.label-segments button[aria-pressed="true"] {
+.label-segments button[aria-pressed="true"],
+.label-segments a[aria-current="page"] {
   background: #0f172a;
   background-image: none;
   color: #fff;
   font-weight: 600;
+}
+
+.label-segments a {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 0.85rem;
+  height: 100%;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.label-segments a + a,
+.label-segments button + a,
+.label-segments a + button {
+  border-left: 1px solid var(--input-border);
 }
 
 .label-segments button:hover:not([aria-pressed="true"]) {
@@ -5887,10 +5921,45 @@ input.num-input {
 .so-grid,
 .so-addresses,
 .so-line-money,
+.so-line-fields,
 .so-file-add {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem 0.85rem;
+}
+
+.so-line-fields {
+  grid-template-columns: minmax(7rem, 1.1fr) minmax(10rem, 2fr) 6.5rem 7.5rem 7.5rem;
+  align-items: end;
+}
+
+.so-list-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.so-find-sku {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.6rem;
+}
+
+.so-find-sku label {
+  flex: 1 1 12rem;
+}
+
+.so-find-sku button {
+  margin: 0;
+}
+
+.so-money-summary dt,
+.so-money-summary dd {
+  text-align: right;
 }
 
 .so-addresses {
@@ -6026,6 +6095,7 @@ input.num-input {
   .so-grid,
   .so-addresses,
   .so-line-money,
+  .so-line-fields,
   .so-file-add {
     grid-template-columns: 1fr;
   }
