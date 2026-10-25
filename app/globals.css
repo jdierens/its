@@ -5918,6 +5918,8 @@ input.num-input {
   gap: 0.15rem;
 }
 
+.so-head-row,
+.so-pay-row,
 .so-grid,
 .so-addresses,
 .so-line-money,
@@ -5931,6 +5933,57 @@ input.num-input {
 .so-line-fields {
   grid-template-columns: minmax(7rem, 1.1fr) minmax(10rem, 2fr) 6.5rem 7.5rem 7.5rem;
   align-items: end;
+}
+
+.so-head-row,
+.so-pay-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 0.9rem;
+}
+
+.so-pay-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.so-notes textarea {
+  min-height: 6.5rem;
+}
+
+.so-lines-scroll {
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+}
+
+.so-lines {
+  width: 100%;
+  min-width: 46rem;
+  border-collapse: collapse;
+}
+
+.so-lines th,
+.so-lines td {
+  padding: 0.35rem 0.4rem;
+  vertical-align: middle;
+  text-align: left;
+}
+
+.so-lines th.num,
+.so-lines td.num {
+  width: 7.5rem;
+  text-align: right;
+}
+
+.so-lines th.so-line-remove,
+.so-lines td.so-line-remove {
+  width: 6.5rem;
+  text-align: right;
+}
+
+.so-lines .so-line-extra td {
+  padding-top: 0.1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--line);
 }
 
 .so-list-switch {
@@ -6094,6 +6147,8 @@ input.num-input {
 
   .so-grid,
   .so-addresses,
+  .so-head-row,
+  .so-pay-row,
   .so-line-money,
   .so-line-fields,
   .so-file-add {

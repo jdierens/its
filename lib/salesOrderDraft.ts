@@ -97,6 +97,7 @@ export type SoDraftInput = {
   paymentMethod: string;
   paymentDate: string;
   paymentRef: string;
+  paymentAmount: string;
   ebayTransactionFee: string;
   ebayLabelFee: string;
   ebayAdFee: string;
@@ -341,6 +342,7 @@ export function hideSalesMoney<
     ebayLabelFee?: string;
     ebayAdFee?: string;
     ebayOrderEarnings?: string;
+    paymentAmount?: string;
   },
 >(row: T, canViewMoney: boolean): T {
   if (canViewMoney) return row;
@@ -354,6 +356,7 @@ export function hideSalesMoney<
     ...(row.ebayLabelFee !== undefined ? { ebayLabelFee: "" } : {}),
     ...(row.ebayAdFee !== undefined ? { ebayAdFee: "" } : {}),
     ...(row.ebayOrderEarnings !== undefined ? { ebayOrderEarnings: "" } : {}),
+    ...(row.paymentAmount !== undefined ? { paymentAmount: "" } : {}),
   };
 }
 
@@ -381,6 +384,7 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
     payment_method: input.paymentMethod,
     payment_date: input.paymentDate,
     payment_ref: input.paymentRef,
+    payment_amount: input.paymentAmount,
     ebay_transaction_fee: input.ebayTransactionFee,
     ebay_label_fee: input.ebayLabelFee,
     ebay_ad_fee: input.ebayAdFee,

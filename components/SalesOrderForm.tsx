@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { applyPackToLine, parsePackLabel } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
@@ -87,10 +87,11 @@ export function SalesOrderForm({
   const [carrierAccount, setCarrierAccount] = useState(order?.carrierAccount ?? "");
   const [currency, setCurrency] = useState(order?.currency || "USD");
   const [salesRep, setSalesRep] = useState(order?.salesRep ?? "");
-  const [paymentRequirement, setPaymentRequirement] = useState(order?.paymentRequirement || "terms");
+  const [paymentRequirement] = useState(order?.paymentRequirement || "terms");
   const [paymentMethod, setPaymentMethod] = useState(order?.paymentMethod ?? "");
   const [paymentDate, setPaymentDate] = useState(order?.paymentDate ?? "");
   const [paymentRef, setPaymentRef] = useState(order?.paymentRef ?? "");
+  const [paymentAmount, setPaymentAmount] = useState(order?.paymentAmount ?? "");
   const [ebayTransactionFee, setEbayTransactionFee] = useState(order?.ebayTransactionFee ?? "");
   const [ebayLabelFee, setEbayLabelFee] = useState(order?.ebayLabelFee ?? "");
   const [ebayAdFee, setEbayAdFee] = useState(order?.ebayAdFee ?? "");
@@ -146,6 +147,7 @@ export function SalesOrderForm({
       paymentMethod,
       paymentDate,
       paymentRef,
+      paymentAmount: showMoney ? paymentAmount : "",
       ebayTransactionFee: showMoney ? ebayTransactionFee : "",
       ebayLabelFee: showMoney ? ebayLabelFee : "",
       ebayAdFee: showMoney ? ebayAdFee : "",
@@ -375,14 +377,8 @@ export function SalesOrderForm({
         <span className="sku">{number}</span>
         <Badge tone={status}>{salesOrderStatusLabel(status)}</Badge>
       </p>
-      {order?.ebayOrderId || order?.ebaySalesRecordRef || order?.buyerName || order?.buyerUsername ? (
+      {order?.ebaySalesRecordRef || order?.buyerName || order?.buyerUsername ? (
         <dl className="so-ebay-refs">
-          {order.ebayOrderId ? (
-            <>
-              <dt>eBay order number</dt>
-              <dd>{order.ebayOrderId}</dd>
-            </>
-          ) : null}
           {order.ebaySalesRecordRef ? (
             <>
               <dt>Sales record number</dt>
@@ -403,423 +399,145 @@ export function SalesOrderForm({
           if (!locked) void onSave();
         }}
       >
-        <fieldset>
-          <legend>Customer</legend>
-          <div className="so-grid">
-            <label className="combo wide">
-              Customer
-              <input
-                id="so-customer"
-                role="combobox"
-                aria-expanded={customerOpen}
-                aria-controls="so-customer-list"
-                aria-autocomplete="list"
-                value={customerQuery}
-                autoComplete="off"
-                disabled={locked}
-                onFocus={() => setCustomerOpen(true)}
-                onChange={(event) => {
-                  setCustomerQuery(event.target.value);
-                  setCustomerOpen(true);
-                  if (event.target.value.trim() !== customerName) setCustomerId("");
-                }}
-                onBlur={() => {
-                  window.setTimeout(() => setCustomerOpen(false), 250);
-                }}
-              />
-              {customerOpen && !locked ? (
-                <ul className="combo-menu" id="so-customer-list" role="listbox">
-                  {customerHits.map((hit) => (
-                    <li key={hit.id}>
-                      <button
-                        type="button"
-                        className="combo-option"
-                        role="option"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => void pickCustomer(hit)}
-                      >
-                        {hit.name}
-                      </button>
-                    </li>
-                  ))}
-                  {customerQuery.trim() && customerHits.length === 0 ? <li className="combo-empty">No matching customer.</li> : null}
-                </ul>
-              ) : null}
-            </label>
-            <label>
-              Customer PO
-              <input value={customerPo} disabled={locked} onChange={(event) => setCustomerPo(event.target.value)} />
-            </label>
-            <label>
-              Channel
-              <select id="so-channel" value={channel} disabled={locked} onChange={(event) => setChannel(event.target.value)}>
-                <option value="">Choose a channel</option>
-                {lookups.channels.map((row) => (
-                  <option key={row.code} value={row.code}>
-                    {row.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Order date
-              <input type="date" value={orderDate} disabled={locked} onChange={(event) => setOrderDate(event.target.value)} />
-            </label>
-            <label>
-              Requested ship date
-              <input type="date" value={shipDate} disabled={locked} onChange={(event) => setShipDate(event.target.value)} />
-            </label>
-            <label>
-              Terms
-              <select value={terms} disabled={locked} onChange={(event) => setTerms(event.target.value)}>
-                <option value="">Choose terms</option>
-                {lookups.terms.map((term) => (
-                  <option key={term.code} value={term.code}>
-                    {term.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Incoterms
-              <select value={incoterms} disabled={locked} onChange={(event) => setIncoterms(event.target.value)}>
-                <option value="">Choose Incoterms</option>
-                {INCOTERMS.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Ship method
-              <select value={shipMethod} disabled={locked} onChange={(event) => setShipMethod(event.target.value)}>
-                <option value="">Choose a ship method</option>
-                {lookups.shipMethods.map((method) => (
-                  <option key={method.code} value={method.code}>
-                    {method.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Carrier account
-              <input value={carrierAccount} disabled={locked} onChange={(event) => setCarrierAccount(event.target.value)} />
-            </label>
-            <label>
-              Sales rep
-              <input
-                value={salesRep}
-                maxLength={2}
-                autoCapitalize="characters"
-                disabled={locked}
-                onChange={(event) => setSalesRep(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))}
-              />
-            </label>
-            {showMoney ? (
-              <label>
-                Currency
-                <select value={currency} disabled={locked} onChange={(event) => setCurrency(event.target.value)}>
-                  {SO_CURRENCIES.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <label>
-              Payment
-              <select value={paymentRequirement} disabled={locked} onChange={(event) => setPaymentRequirement(event.target.value)}>
-                <option value="terms">Terms</option>
-                <option value="prepay">Prepay</option>
-              </select>
-            </label>
-            <label>
-              Payment method
-              <select id="so-payment-method" value={paymentMethod} disabled={locked} onChange={(event) => setPaymentMethod(event.target.value)}>
-                <option value="">Choose a payment method</option>
-                {lookups.paymentMethods.map((method) => (
-                  <option key={method.code} value={method.code}>
-                    {method.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Payment date
-              <input type="date" value={paymentDate} disabled={locked} onChange={(event) => setPaymentDate(event.target.value)} />
-            </label>
-            <label>
-              Payment reference
-              <input value={paymentRef} disabled={locked} onChange={(event) => setPaymentRef(event.target.value)} />
-            </label>
-            {showMoney ? (
-              <label>
-                eBay transaction fee
-                <input id="so-ebay-transaction-fee" className="num-input" inputMode="decimal" value={ebayTransactionFee} disabled={locked} onChange={(event) => setEbayTransactionFee(event.target.value)} />
-              </label>
-            ) : null}
-            {showMoney ? (
-              <label>
-                eBay label fee
-                <input className="num-input" inputMode="decimal" value={ebayLabelFee} disabled={locked} onChange={(event) => setEbayLabelFee(event.target.value)} />
-                <span className="hint">Deducted when a label is bought on eBay. The next order pull fills this in.</span>
-              </label>
-            ) : null}
-            {showMoney ? (
-              <label>
-                eBay ad fee
-                <input className="num-input" inputMode="decimal" value={ebayAdFee} disabled={locked} onChange={(event) => setEbayAdFee(event.target.value)} />
-              </label>
-            ) : null}
-            {showMoney ? (
-              <label>
-                Seller earnings
-                <input className="num-input" inputMode="decimal" value={ebayOrderEarnings} disabled={locked} onChange={(event) => setEbayOrderEarnings(event.target.value)} />
-                <span className="hint">eBay&apos;s total due the seller. Marketplace fees are already out. A shipping label is not.</span>
-              </label>
-            ) : null}
-          </div>
-        </fieldset>
-
-        <div className="so-addresses">
-          <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />
-          <AddressFields legend="Ship to" address={shipTo} disabled={locked} showAttention onChange={setShipTo} />
-        </div>
-        {!locked ? (
-          <label className="so-check">
-            <input type="checkbox" checked={saveAddress} onChange={(event) => setSaveAddress(event.target.checked)} />
-            Save address to customer
+        <div className="so-head-row">
+          <label>
+            Channel
+            <select id="so-channel" value={channel} disabled={locked} onChange={(event) => setChannel(event.target.value)}>
+              <option value="">Choose a channel</option>
+              {lookups.channels.map((row) => (
+                <option key={row.code} value={row.code}>
+                  {row.label}
+                </option>
+              ))}
+            </select>
           </label>
-        ) : null}
-
-        <fieldset>
-          <legend>Lines</legend>
-          {lines.map((line, index) => {
-            const needsItem = lineRequiresItem(line.lineKind);
-            const pack = parsePackLabel(line.customerPartNumber);
-            const allocatedQty = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
-            const covered = allocationsCover(
-              line.qty,
-              line.allocations.map((row) => ({ itemId: row.itemId, qty: row.qty })),
-            );
-            return (
-              <div className="so-line" key={index}>
-                <div className="so-line-head">
-                  <strong>Line {index + 1}</strong>
-                  {!locked && lines.length > 1 ? (
+          <label>
+            Sales rep initials
+            <input
+              value={salesRep}
+              maxLength={2}
+              autoCapitalize="characters"
+              disabled={locked}
+              onChange={(event) => setSalesRep(event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))}
+            />
+          </label>
+          <label className="combo">
+            Customer
+            <input
+              id="so-customer"
+              role="combobox"
+              aria-expanded={customerOpen}
+              aria-controls="so-customer-list"
+              aria-autocomplete="list"
+              value={customerQuery}
+              autoComplete="off"
+              disabled={locked}
+              onFocus={() => setCustomerOpen(true)}
+              onChange={(event) => {
+                setCustomerQuery(event.target.value);
+                setCustomerOpen(true);
+                if (event.target.value.trim() !== customerName) setCustomerId("");
+              }}
+              onBlur={() => {
+                window.setTimeout(() => setCustomerOpen(false), 250);
+              }}
+            />
+            {customerOpen && !locked ? (
+              <ul className="combo-menu" id="so-customer-list" role="listbox">
+                {customerHits.map((hit) => (
+                  <li key={hit.id}>
                     <button
                       type="button"
-                      className="secondary"
-                      onClick={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}
+                      className="combo-option"
+                      role="option"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void pickCustomer(hit)}
                     >
-                      Remove line
+                      {hit.name}
                     </button>
-                  ) : null}
-                </div>
-                <div className="so-line-fields">
-                  <label>
-                    Customer PN
-                    <input
-                      id={`so-line-part-${index}`}
-                      value={line.customerPartNumber}
-                      disabled={locked}
-                      onChange={(event) => updateLine(index, { customerPartNumber: event.target.value })}
-                      onBlur={(event) => {
-                        if (!locked) void lookupSkus(index, event.target.value, line.lineKind, true);
-                      }}
-                    />
-                  </label>
-                  <label className="wide">
-                    Customer Description
-                    <input
-                      value={line.customerDescription}
-                      disabled={locked}
-                      onChange={(event) => updateLine(index, { customerDescription: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    QTY
-                    <input
-                      className="num-input"
-                      inputMode="decimal"
-                      value={line.qty}
-                      disabled={locked}
-                      onChange={(event) => changeLineMoney(index, "qty", event.target.value)}
-                      onBlur={(event) => changeLineMoney(index, "qty", event.target.value, true)}
-                    />
-                  </label>
-                  {showMoney ? (
-                    <label>
-                      Unit price
-                      <input
-                        className="num-input"
-                        inputMode="decimal"
-                        value={line.unitPrice}
-                        disabled={locked}
-                        onChange={(event) => changeLineMoney(index, "unit", event.target.value)}
-                        onBlur={(event) => changeLineMoney(index, "unit", event.target.value, true)}
-                      />
-                    </label>
-                  ) : null}
-                  {showMoney ? (
-                    <label>
-                      Ext price
-                      <input
-                        className="num-input"
-                        inputMode="decimal"
-                        value={line.extPrice}
-                        disabled={locked}
-                        onChange={(event) => changeLineMoney(index, "ext", event.target.value)}
-                        onBlur={(event) => changeLineMoney(index, "ext", event.target.value, true)}
-                      />
-                    </label>
-                  ) : null}
-                </div>
-                {needsItem ? (
-                  <div className="so-allocate">
-                    <p className="hint">
-                      Pick one or more ITS items. Their quantities have to add up to the line quantity
-                      {pack ? `. ${line.customerPartNumber.trim()} is ${pack.packQty} × ${pack.baseSku}` : ""}.
-                    </p>
-                    {!locked ? (
-                      <div className="so-find-sku">
-                        <label>
-                          Find SKU
-                          <input
-                            id={`so-allocate-${index}`}
-                            value={allocateQuery[index] ?? ""}
-                            placeholder="ITS SKU"
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setAllocateQuery((current) => ({ ...current, [index]: value }));
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.preventDefault();
-                                void lookupSkus(index, event.currentTarget.value || line.customerPartNumber, line.lineKind, true);
-                              }
-                            }}
-                            onBlur={(event) => {
-                              void lookupSkus(index, event.target.value || line.customerPartNumber, line.lineKind, true);
-                            }}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => void lookupSkus(index, allocateQuery[index] || line.customerPartNumber, line.lineKind, true)}
-                        >
-                          Find SKU
-                        </button>
-                      </div>
-                    ) : null}
-                    {(suggestions[index]?.length ?? 0) > 0 ? (
-                      <div className="so-suggest" id={`so-suggest-${index}`}>
-                        {suggestions[index].map((hit) => (
-                          <button
-                            key={hit.id}
-                            type="button"
-                            className="suggestion"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => addAllocation(index, hit)}
-                          >
-                            Allocate {hit.sku}
-                            {hit.partNumber ? ` ${hit.partNumber}` : ""}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="hint">This line does not need an ITS item.</p>
-                )}
-                {line.allocations.map((allocation, allocationIndex) => (
-                  <div className="so-allocation" key={`${allocation.itemId}-${allocationIndex}`}>
-                    <span>
-                      {allocation.sku || "SKU"} {allocation.name}
-                    </span>
-                    <label>
-                      Allocated qty
-                      <input
-                        className="num-input"
-                        inputMode="decimal"
-                        value={allocation.qty}
-                        disabled={locked}
-                        onChange={(event) =>
-                          updateLine(index, {
-                            allocations: line.allocations.map((row, rowIndex) =>
-                              rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
-                            ),
-                          })
-                        }
-                      />
-                    </label>
-                    {!locked ? (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() =>
-                          updateLine(index, {
-                            allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
-                          })
-                        }
-                      >
-                        Remove SKU
-                      </button>
-                    ) : null}
-                  </div>
+                  </li>
                 ))}
-                {needsItem || line.allocations.length > 0 ? (
-                  <p className={covered ? "hint" : "hint so-gap"}>
-                    {covered
-                      ? `Allocated ${allocatedQty} of ${line.qty}.`
-                      : `Allocated ${allocatedQty} of ${line.qty}. Add ITS items until the quantities match.`}
-                  </p>
-                ) : null}
-              </div>
-            );
-          })}
-          {!locked ? (
-            <button type="button" className="secondary" onClick={() => setLines((current) => [...current, blankLine()])}>
-              Add line
-            </button>
-          ) : null}
-        </fieldset>
-
-        {showMoney ? (
-          <dl className="so-money-summary">
-            <div>
-              <dt>Buyer total</dt>
-              <dd>{buyerTotal == null ? "" : formatSalesMoney(buyerTotal, currency)}</dd>
-            </div>
-            {ebayOrder ? (
-              <>
-                <div>
-                  <dt>Seller earnings</dt>
-                  <dd>{ebayOrderEarnings.trim() ? formatSalesMoney(Number(ebayOrderEarnings), currency) : ""}</dd>
-                </div>
-                <div>
-                  <dt>Shipping label</dt>
-                  <dd>{ebayLabelFee.trim() ? formatSalesMoney(Number(ebayLabelFee), currency) : "None yet"}</dd>
-                </div>
-                <div>
-                  <dt>Seller net</dt>
-                  <dd>{net == null ? "" : formatSalesMoney(net, currency)}</dd>
-                </div>
-              </>
+                {customerQuery.trim() && customerHits.length === 0 ? <li className="combo-empty">No matching customer.</li> : null}
+              </ul>
             ) : null}
-          </dl>
-        ) : null}
-        {showMoney && ebayOrder ? (
-          <p className="hint">
-            Buyer total is the lines after the eBay discount, plus the shipping the buyer paid. Seller earnings is the amount eBay reports as due the seller, which already excludes marketplace fees. Seller net subtracts a shipping label bought on eBay.
-          </p>
-        ) : null}
+          </label>
+          <label>
+            Order date
+            <input type="date" value={orderDate} disabled={locked} onChange={(event) => setOrderDate(event.target.value)} />
+          </label>
+          <label>
+            Order reference
+            {order?.ebayOrderId ? (
+              <input value={order.ebayOrderId} disabled />
+            ) : (
+              <input value={customerPo} disabled={locked} onChange={(event) => setCustomerPo(event.target.value)} />
+            )}
+            {order?.ebayOrderId ? <span className="hint">eBay order id</span> : null}
+          </label>
+        </div>
+        <div className="so-head-row">
+          <label>
+            Currency
+            <select value={currency} disabled={locked || !showMoney} onChange={(event) => setCurrency(event.target.value)}>
+              {SO_CURRENCIES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Payment terms
+            <select value={terms} disabled={locked} onChange={(event) => setTerms(event.target.value)}>
+              <option value="">Choose terms</option>
+              {lookups.terms.map((term) => (
+                <option key={term.code} value={term.code}>
+                  {term.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Incoterms
+            <select value={incoterms} disabled={locked} onChange={(event) => setIncoterms(event.target.value)}>
+              <option value="">Choose Incoterms</option>
+              {INCOTERMS.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Ship method
+            <select value={shipMethod} disabled={locked} onChange={(event) => setShipMethod(event.target.value)}>
+              <option value="">Choose a ship method</option>
+              {lookups.shipMethods.map((method) => (
+                <option key={method.code} value={method.code}>
+                  {method.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Carrier account
+            <input value={carrierAccount} disabled={locked} onChange={(event) => setCarrierAccount(event.target.value)} />
+          </label>
+        </div>
 
-        <fieldset>
-          <legend>Customer notes</legend>
+        <fieldset className="so-notes">
+          <legend>Notes</legend>
+          <label>
+            Notes
+            <textarea value={exportNotes} disabled={locked} onChange={(event) => setExportNotes(event.target.value)} />
+            <span className="hint">Other details read from the customer PDF.</span>
+          </label>
+          {showMoney ? (
+            <label>
+              Internal notes
+              <textarea value={internalNotes} disabled={locked} onChange={(event) => setInternalNotes(event.target.value)} />
+            </label>
+          ) : null}
           {notes.map((note, index) => (
             <div className="so-note" key={index}>
               <label>
@@ -892,16 +610,313 @@ export function SalesOrderForm({
           ) : null}
         </fieldset>
 
-        {showMoney ? (
-          <label>
-            Internal notes
-            <textarea value={internalNotes} disabled={locked} onChange={(event) => setInternalNotes(event.target.value)} />
+        <div className="so-addresses">
+          <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />
+          <AddressFields legend="Ship to" address={shipTo} disabled={locked} showAttention onChange={setShipTo} />
+        </div>
+        {!locked ? (
+          <label className="so-check">
+            <input type="checkbox" checked={saveAddress} onChange={(event) => setSaveAddress(event.target.checked)} />
+            Save address to customer
           </label>
         ) : null}
-        <label>
-          Export notes
-          <textarea value={exportNotes} disabled={locked} onChange={(event) => setExportNotes(event.target.value)} />
-        </label>
+
+        <fieldset>
+          <legend>Lines</legend>
+          <div className="so-lines-scroll">
+            <table className="so-lines">
+              <thead>
+                <tr>
+                  <th>Customer part number</th>
+                  <th>Customer description</th>
+                  <th className="num">Customer qty</th>
+                  {showMoney ? <th className="num">Customer unit</th> : null}
+                  {showMoney ? <th className="num">Cust ext</th> : null}
+                  <th className="so-line-remove" />
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line, index) => {
+                  const needsItem = lineRequiresItem(line.lineKind);
+                  const pack = parsePackLabel(line.customerPartNumber);
+                  const allocatedQty = line.allocations.reduce((sum, row) => sum + (Number(row.qty) || 0), 0);
+                  const covered = allocationsCover(
+                    line.qty,
+                    line.allocations.map((row) => ({ itemId: row.itemId, qty: row.qty })),
+                  );
+                  return (
+                    <Fragment key={index}>
+                      <tr>
+                        <td>
+                          <input
+                            id={`so-line-part-${index}`}
+                            aria-label={`Customer part number ${index + 1}`}
+                            value={line.customerPartNumber}
+                            disabled={locked}
+                            onChange={(event) => updateLine(index, { customerPartNumber: event.target.value })}
+                            onBlur={(event) => {
+                              if (!locked) void lookupSkus(index, event.target.value, line.lineKind, true);
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            aria-label={`Customer description ${index + 1}`}
+                            value={line.customerDescription}
+                            disabled={locked}
+                            onChange={(event) => updateLine(index, { customerDescription: event.target.value })}
+                          />
+                        </td>
+                        <td className="num">
+                          <input
+                            className="num-input"
+                            aria-label={`Customer qty ${index + 1}`}
+                            inputMode="decimal"
+                            value={line.qty}
+                            disabled={locked}
+                            onChange={(event) => changeLineMoney(index, "qty", event.target.value)}
+                            onBlur={(event) => changeLineMoney(index, "qty", event.target.value, true)}
+                          />
+                        </td>
+                        {showMoney ? (
+                          <td className="num">
+                            <input
+                              className="num-input"
+                              aria-label={`Customer unit ${index + 1}`}
+                              inputMode="decimal"
+                              value={line.unitPrice}
+                              disabled={locked}
+                              onChange={(event) => changeLineMoney(index, "unit", event.target.value)}
+                              onBlur={(event) => changeLineMoney(index, "unit", event.target.value, true)}
+                            />
+                          </td>
+                        ) : null}
+                        {showMoney ? (
+                          <td className="num">
+                            <input
+                              className="num-input"
+                              aria-label={`Cust ext ${index + 1}`}
+                              inputMode="decimal"
+                              value={line.extPrice}
+                              disabled={locked}
+                              onChange={(event) => changeLineMoney(index, "ext", event.target.value)}
+                              onBlur={(event) => changeLineMoney(index, "ext", event.target.value, true)}
+                            />
+                          </td>
+                        ) : null}
+                        <td className="so-line-remove">
+                          {!locked && lines.length > 1 ? (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                      <tr className="so-line-extra">
+                        <td colSpan={showMoney ? 6 : 4}>
+                          {needsItem ? (
+                            <div className="so-allocate">
+                              <p className="hint">
+                                Pick one or more ITS items. Their quantities have to add up to the line quantity
+                                {pack ? `. ${line.customerPartNumber.trim()} is ${pack.packQty} × ${pack.baseSku}` : ""}.
+                              </p>
+                              {!locked ? (
+                                <div className="so-find-sku">
+                                  <label>
+                                    Find SKU
+                                    <input
+                                      id={`so-allocate-${index}`}
+                                      value={allocateQuery[index] ?? ""}
+                                      placeholder="ITS SKU"
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        setAllocateQuery((current) => ({ ...current, [index]: value }));
+                                      }}
+                                      onKeyDown={(event) => {
+                                        if (event.key === "Enter") {
+                                          event.preventDefault();
+                                          void lookupSkus(index, event.currentTarget.value || line.customerPartNumber, line.lineKind, true);
+                                        }
+                                      }}
+                                      onBlur={(event) => {
+                                        void lookupSkus(index, event.target.value || line.customerPartNumber, line.lineKind, true);
+                                      }}
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    className="secondary"
+                                    onClick={() => void lookupSkus(index, allocateQuery[index] || line.customerPartNumber, line.lineKind, true)}
+                                  >
+                                    Find SKU
+                                  </button>
+                                </div>
+                              ) : null}
+                              {(suggestions[index]?.length ?? 0) > 0 ? (
+                                <div className="so-suggest" id={`so-suggest-${index}`}>
+                                  {suggestions[index].map((hit) => (
+                                    <button
+                                      key={hit.id}
+                                      type="button"
+                                      className="suggestion"
+                                      onMouseDown={(event) => event.preventDefault()}
+                                      onClick={() => addAllocation(index, hit)}
+                                    >
+                                      Allocate {hit.sku}
+                                      {hit.partNumber ? ` ${hit.partNumber}` : ""}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <p className="hint">This line does not need an ITS item.</p>
+                          )}
+                          {line.allocations.map((allocation, allocationIndex) => (
+                            <div className="so-allocation" key={`${allocation.itemId}-${allocationIndex}`}>
+                              <span>
+                                {allocation.sku || "SKU"} {allocation.name}
+                              </span>
+                              <label>
+                                Allocated qty
+                                <input
+                                  className="num-input"
+                                  inputMode="decimal"
+                                  value={allocation.qty}
+                                  disabled={locked}
+                                  onChange={(event) =>
+                                    updateLine(index, {
+                                      allocations: line.allocations.map((row, rowIndex) =>
+                                        rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
+                                      ),
+                                    })
+                                  }
+                                />
+                              </label>
+                              {!locked ? (
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  onClick={() =>
+                                    updateLine(index, {
+                                      allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
+                                    })
+                                  }
+                                >
+                                  Remove SKU
+                                </button>
+                              ) : null}
+                            </div>
+                          ))}
+                          {needsItem || line.allocations.length > 0 ? (
+                            <p className={covered ? "hint" : "hint so-gap"}>
+                              {covered
+                                ? `Allocated ${allocatedQty} of ${line.qty}.`
+                                : `Allocated ${allocatedQty} of ${line.qty}. Add ITS items until the quantities match.`}
+                            </p>
+                          ) : null}
+                        </td>
+                      </tr>
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {!locked ? (
+            <button type="button" className="secondary" onClick={() => setLines((current) => [...current, blankLine()])}>
+              Add line
+            </button>
+          ) : null}
+        </fieldset>
+
+        {showMoney ? (
+          <fieldset>
+            <legend>eBay</legend>
+            <div className="so-pay-row">
+              <label>
+                eBay transaction fee
+                <input id="so-ebay-transaction-fee" className="num-input" inputMode="decimal" value={ebayTransactionFee} disabled={locked} onChange={(event) => setEbayTransactionFee(event.target.value)} />
+              </label>
+              <label>
+                eBay label fee
+                <input className="num-input" inputMode="decimal" value={ebayLabelFee} disabled={locked} onChange={(event) => setEbayLabelFee(event.target.value)} />
+                <span className="hint">Deducted when a label is bought on eBay. The next order pull fills this in.</span>
+              </label>
+              <label>
+                eBay ad fee
+                <input className="num-input" inputMode="decimal" value={ebayAdFee} disabled={locked} onChange={(event) => setEbayAdFee(event.target.value)} />
+              </label>
+              <label>
+                Seller earnings
+                <input className="num-input" inputMode="decimal" value={ebayOrderEarnings} disabled={locked} onChange={(event) => setEbayOrderEarnings(event.target.value)} />
+                <span className="hint">eBay&apos;s total due the seller. Marketplace fees are already out. A shipping label is not.</span>
+              </label>
+            </div>
+            <dl className="so-money-summary">
+              <div>
+                <dt>Buyer total</dt>
+                <dd>{buyerTotal == null ? "" : formatSalesMoney(buyerTotal, currency)}</dd>
+              </div>
+              {ebayOrder ? (
+                <>
+                  <div>
+                    <dt>Seller earnings</dt>
+                    <dd>{ebayOrderEarnings.trim() ? formatSalesMoney(Number(ebayOrderEarnings), currency) : ""}</dd>
+                  </div>
+                  <div>
+                    <dt>Shipping label</dt>
+                    <dd>{ebayLabelFee.trim() ? formatSalesMoney(Number(ebayLabelFee), currency) : "None yet"}</dd>
+                  </div>
+                  <div>
+                    <dt>Seller net</dt>
+                    <dd>{net == null ? "" : formatSalesMoney(net, currency)}</dd>
+                  </div>
+                </>
+              ) : null}
+            </dl>
+            {ebayOrder ? (
+              <p className="hint">
+                Buyer total is the lines after the eBay discount, plus the shipping the buyer paid. Seller earnings is the amount eBay reports as due the seller, which already excludes marketplace fees. Seller net subtracts a shipping label bought on eBay.
+              </p>
+            ) : null}
+          </fieldset>
+        ) : null}
+
+        <fieldset>
+          <legend>Payment</legend>
+          <div className="so-pay-row">
+            <label>
+              Payment date
+              <input type="date" value={paymentDate} disabled={locked} onChange={(event) => setPaymentDate(event.target.value)} />
+            </label>
+            <label>
+              Payment method
+              <select id="so-payment-method" value={paymentMethod} disabled={locked} onChange={(event) => setPaymentMethod(event.target.value)}>
+                <option value="">Choose a payment method</option>
+                {lookups.paymentMethods.map((method) => (
+                  <option key={method.code} value={method.code}>
+                    {method.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Payment reference
+              <input value={paymentRef} disabled={locked} onChange={(event) => setPaymentRef(event.target.value)} />
+            </label>
+            {showMoney ? (
+              <label>
+                Payment amount
+                <input className="num-input" inputMode="decimal" value={paymentAmount} disabled={locked} onChange={(event) => setPaymentAmount(event.target.value)} />
+              </label>
+            ) : null}
+          </div>
+        </fieldset>
 
         {showMoney ? (
           <SalesOrderAttachments orderId={orderId} attachments={order?.attachments ?? []} canEdit={filesEditable} />
