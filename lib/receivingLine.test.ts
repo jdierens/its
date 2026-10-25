@@ -8,6 +8,7 @@ import {
   prepStatusText,
   receiptFlagsForPrep,
   receivePrepKind,
+  receivingAutoFillFocus,
   skuAlreadyInBinNote,
   receivingBinDecision,
   receivingBinDefault,
@@ -60,6 +61,15 @@ describe("already in this bin", () => {
     );
     assert.equal(skuAlreadyInBinNote(null, 4), null);
     assert.equal(skuAlreadyInBinNote("HWS.00.00.00", 0), null);
+  });
+});
+
+describe("auto-filled search", () => {
+  it("moves focus to quantity only when the search fills the line", () => {
+    assert.equal(receivingAutoFillFocus("select"), "qty");
+    assert.equal(receivingAutoFillFocus("list"), null);
+    assert.equal(receivingAutoFillFocus("empty"), null);
+    assert.equal(receivingAutoFillFocus("missing"), null);
   });
 });
 

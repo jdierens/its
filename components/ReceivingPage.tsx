@@ -48,7 +48,7 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
-import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, skuAlreadyInBinNote } from "@/lib/receivingLine";
+import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingAutoFillFocus, receivingBinDecision, receivingBinDefault, skuAlreadyInBinNote } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
   type BinDetail,
@@ -139,6 +139,7 @@ function ReceiptPager({
 
 export function ReceivingPage() {
   const typed = useRef("");
+  const qtyField = useRef<HTMLInputElement>(null);
   const holdQuery = useRef<string | null>(null);
   const requestId = useRef(0);
   const binTyped = useRef("");
@@ -383,6 +384,9 @@ export function ReceivingPage() {
       setSettledQuery(query);
       if (outcome.type === "select") {
         choose(outcome.item, rawScan, query);
+        if (receivingAutoFillFocus(outcome.type) === "qty") {
+          queueMicrotask(() => qtyField.current?.focus());
+        }
         return;
       }
       if (outcome.type === "empty" || outcome.type === "missing") {
@@ -907,6 +911,7 @@ export function ReceivingPage() {
                 <span>Qty</span>
                 <input
                   id="receive-qty"
+                  ref={qtyField}
                   className="num-input"
                   value={qty}
                   inputMode="numeric"
