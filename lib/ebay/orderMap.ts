@@ -122,9 +122,18 @@ export type LegacySoNumber = {
   soNumber: number;
 };
 
+/** ITS item that receives every eBay buyer-shipping freight line. */
+export const EBAY_SHIPPING_ITEM_SKU = "4343";
+
+export function ebayShippingItemId(items: readonly { id: string; sku: string }[]): string | null {
+  const wanted = EBAY_SHIPPING_ITEM_SKU.toLowerCase();
+  const hit = items.find((item) => item.sku.trim().toLowerCase() === wanted);
+  return hit?.id ?? null;
+}
+
 export type PullAction =
-  | { kind: "create"; order: ParsedEbayOrder; itemIds: (string | null)[]; soNumber: number | null }
-  | { kind: "update"; id: string; order: ParsedEbayOrder; itemIds: (string | null)[]; soNumber: number | null }
+  | { kind: "create"; order: ParsedEbayOrder; itemIds: (string | null)[]; shippingItemId: string | null; soNumber: number | null }
+  | { kind: "update"; id: string; order: ParsedEbayOrder; itemIds: (string | null)[]; shippingItemId: string | null; soNumber: number | null }
   | { kind: "link"; id: string; ebayOrderId: string; salesRecordRef: string | null }
   | { kind: "skip"; ebayOrderId: string; reason: "ambiguous" | "unchanged" | "before-cutoff" };
 
@@ -648,6 +657,7 @@ export function planOrderPull(
       match = recordHits[0] ?? null;
     }
     const prepared = orderForItems(order, items);
+    const shippingItemId = ebayShippingItemId(items);
     if (!match) {
       const soNumber = claimLegacy(order.ebayOrderId, null);
       remember({
@@ -658,7 +668,7 @@ export function planOrderPull(
         personEdited: false,
         soNumber,
       });
-      actions.push({ kind: "create", order: prepared.order, itemIds: prepared.itemIds, soNumber });
+      actions.push({ kind: "create", order: prepared.order, itemIds: prepared.itemIds, shippingItemId, soNumber });
       continue;
     }
     if (match.status === "draft" && !match.personEdited && !match.id.startsWith("new:")) {
@@ -667,6 +677,7 @@ export function planOrderPull(
         id: match.id,
         order: prepared.order,
         itemIds: prepared.itemIds,
+        shippingItemId,
         soNumber: claimLegacy(order.ebayOrderId, match.soNumber),
       });
       continue;
@@ -729,7 +740,11 @@ export function draftOrderRow(input: {
   };
 }
 
-export function draftLines(order: ParsedEbayOrder, itemIds: readonly (string | null)[]): DraftLine[] {
+export function draftLines(
+  order: ParsedEbayOrder,
+  itemIds: readonly (string | null)[],
+  shippingItemId: string | null = null,
+): DraftLine[] {
   const lines: DraftLine[] = order.lines.map((line, index) => {
     const description = line.title ?? (line.sku ? null : "eBay item");
     return {
@@ -753,7 +768,7 @@ export function draftLines(order: ParsedEbayOrder, itemIds: readonly (string | n
       qty: 1,
       unit_price: unit,
       ext_price: extension(1, unit),
-      item_id: null,
+      item_id: shippingItemId,
     });
   }
   return lines;

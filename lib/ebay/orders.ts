@@ -6,6 +6,7 @@ import {
   addLabelFees,
   applyLabelFees,
   draftLines,
+  EBAY_SHIPPING_ITEM_SKU,
   draftOrderRow,
   EBAY_ORDER_CUSTOMER_NAME,
   EBAY_ORDER_CUSTOMER_QBO_ID,
@@ -153,7 +154,10 @@ async function insertEvent(
 }
 
 async function insertLines(admin: SupabaseClient, salesOrderId: string, action: Extract<PullAction, { kind: "create" | "update" }>): Promise<void> {
-  const lines = draftLines(action.order, action.itemIds);
+  const lines = draftLines(action.order, action.itemIds, action.shippingItemId);
+  if (lines.some((line) => line.line_kind === "freight" && !line.item_id)) {
+    throw new Error("eBay shipping could not be allocated to item 4343.");
+  }
   for (const line of lines) {
     const { data, error } = await admin
       .from("so_lines")
@@ -244,7 +248,7 @@ export async function runOrderPull(input: {
       const pack = parsePackLabel(sku);
       return pack ? [pack.baseSku] : [];
     });
-    const items = await input.store.itemsForSkus([...skus, ...bases]);
+    const items = await input.store.itemsForSkus([...skus, ...bases, EBAY_SHIPPING_ITEM_SKU]);
     const legacy = input.store.legacySoNumbers ? await input.store.legacySoNumbers(orders.map((order) => order.ebayOrderId)) : [];
     const actions = planOrderPull(orders, existing, items, legacy);
     const applied = await input.store.apply(actions, input.customer);
@@ -379,6 +383,9 @@ function supabaseStore(admin: SupabaseClient): OrderStore {
           await linkOrder(admin, action.id, action.ebayOrderId, action.salesRecordRef);
           linked += 1;
           continue;
+        }
+        if (action.order.shippingAmount != null && action.order.shippingAmount > 0 && !action.shippingItemId) {
+          throw new Error("eBay shipping could not be allocated to item 4343.");
         }
         if (action.kind === "update") {
           const patch = draftOrderRow({

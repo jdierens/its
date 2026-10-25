@@ -8,6 +8,7 @@ import {
   invoiceNumber,
   lineExtension,
   lineRequiresItem,
+  withEbayShippingItem,
   salesOrderListReference,
   salesOrderListScope,
   syncSalesLineMoney,
@@ -71,6 +72,27 @@ describe("sales order draft", () => {
     assert.equal(allocationsCover("10", [{ itemId: "a", qty: "7" }, { itemId: "b", qty: "3" }]), true);
     assert.equal(allocationsCover("10", [{ itemId: "a", qty: "7" }]), false);
     assert.equal(allocationsCover("10", [{ itemId: "", qty: "10" }]), false);
+  });
+
+  it("allocates an empty eBay freight line to the shipping item", () => {
+    const lines = [
+      { lineKind: "product", customerPartNumber: "1", customerDescription: "", qty: "1", unitPrice: "2", condition: "", allocations: [] },
+      { lineKind: "freight", customerPartNumber: "", customerDescription: "Shipping", qty: "1", unitPrice: "12.79", condition: "", allocations: [] },
+      {
+        lineKind: "freight",
+        customerPartNumber: "",
+        customerDescription: "Shipping",
+        qty: "2",
+        unitPrice: "4",
+        condition: "",
+        allocations: [{ itemId: "kept", qty: "2" }],
+      },
+    ];
+    const filled = withEbayShippingItem(lines, "item-4343", true);
+    assert.equal(filled[0].allocations.length, 0);
+    assert.deepEqual(filled[1].allocations, [{ itemId: "item-4343", qty: "1" }]);
+    assert.deepEqual(filled[2].allocations, [{ itemId: "kept", qty: "2" }]);
+    assert.equal(withEbayShippingItem(lines, "item-4343", false)[1].allocations.length, 0);
   });
 
   it("requires an item only for a product line", () => {

@@ -13,12 +13,14 @@ import {
   partPrefix,
   salesOrderTotal,
   toSalesOrderPayload,
+  withEbayShippingItem,
   type SoAddress,
   type SoDraftInput,
 } from "@/lib/salesOrderDraft";
 import { salesOperatorId, salesPageAccess } from "@/lib/salesSession";
 import { loadSoAttachments, type SoAttachmentView } from "@/lib/soAttachments";
 import { operatorInitials } from "@/lib/stockAccess";
+import { EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
 import { parsePackLabel } from "@/lib/ebay/packs";
 import { getSupabase } from "@/lib/supabase";
 
@@ -438,6 +440,37 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
   };
 }
 
+async function itemIdForSku(sku: string): Promise<string | null> {
+  const { data, error } = await (await getSupabase()).from("items").select("id, sku").ilike("sku", sku).limit(5);
+  if (error) throw new Error(error.message);
+  const wanted = sku.trim().toLowerCase();
+  const hit = (data ?? []).find((row) => String(row.sku ?? "").trim().toLowerCase() === wanted);
+  return hit ? String(hit.id) : null;
+}
+
+async function salesOrderIsEbay(input: SoDraftInput): Promise<boolean> {
+  if (input.channel.trim().toLowerCase() === "ebay") return true;
+  if (!input.id || !UUID.test(input.id)) return false;
+  const { data, error } = await (await getSupabase())
+    .from("sales_orders")
+    .select("source, channel, ebay_order_id")
+    .eq("id", input.id)
+    .maybeSingle();
+  if (error || !data) return false;
+  return data.source === "ebay" || data.channel === "ebay" || (data.ebay_order_id != null && String(data.ebay_order_id).trim() !== "");
+}
+
+/** Freight lines on an eBay order keep an allocation to item 4343 when the form did not send one. */
+async function attachEbayShipping(input: SoDraftInput): Promise<SoDraftInput> {
+  const missing = input.lines.some(
+    (line) => (line.lineKind || "product") === "freight" && !line.allocations.some((row) => row.itemId && Number(row.qty) > 0),
+  );
+  if (!missing || !(await salesOrderIsEbay(input))) return input;
+  const itemId = await itemIdForSku(EBAY_SHIPPING_ITEM_SKU);
+  if (!itemId) throw new Error("eBay shipping could not be allocated to item 4343.");
+  return { ...input, lines: withEbayShippingItem(input.lines, itemId, true) };
+}
+
 export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string; addressWarning: string | null }> {
   const access = await salesPageAccess();
   if (!access.canEdit || !access.canViewMoney) throw new Error(EDIT_DENIED);
@@ -459,8 +492,9 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   }
 
   const persisted = access.canViewMoney ? draft : { ...draft, internalNotes: input.id ? await readInternalNotes(input.id) : "" };
+  const allocated = await attachEbayShipping(persisted);
   const { data, error } = await (await getSupabase()).rpc("write_sales_order", {
-    p_payload: toSalesOrderPayload(persisted),
+    p_payload: toSalesOrderPayload(allocated),
     p_initials: await operatorInitials(),
     p_operator_id: await salesOperatorId(),
   });
