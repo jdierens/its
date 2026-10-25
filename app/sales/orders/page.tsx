@@ -24,7 +24,7 @@ export default async function SalesOrdersPage({
   }
 
   return (
-    <main className="page so-page">
+    <main className="page so-page ds">
       <p className="page-note">Create a sales order for a customer. A number is assigned when the order is approved.</p>
       {access.canEdit ? (
         <p>

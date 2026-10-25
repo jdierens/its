@@ -16,7 +16,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
     const suggestedNumber = order?.status === "draft" ? await suggestSalesOrderNumber() : null;
     if (!order) {
       return (
-        <main className="page so-page">
+        <main className="page so-page ds">
           <p>Sales order not found.</p>
           <p className="muted">
             <Link href="/sales/orders">Back to sales orders</Link>
@@ -36,7 +36,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
     );
   } catch (error) {
     return (
-      <main className="page so-page">
+      <main className="page so-page ds">
         <p className="banner error" role="alert">
           {errorText(error)}
         </p>

@@ -90,3 +90,22 @@ Tailwind utilities are available and live in a cascade layer under the hand-writ
 ## What not to restyle per screen
 
 Shell, item list, item detail, purchase orders, login, admin users, and Lens should pick up these tokens without a local palette. A new page uses `main.page`, `card` or `form`, `Button`, and `Badge` instead of new colors.
+
+## Zinc surface (opt in)
+
+Sales orders use a second surface. Add the class `ds` next to `page` (`main.page.so-page.ds`). Other pages can follow the same way. Do not copy these hexes into a one-off screen, and do not replace the `:root` glass tokens. The sidebar stays the app sidebar.
+
+| Token | Light | Dark |
+|---|---|---|
+| `--ds-canvas` | `#fafafa` | `#09090b` |
+| `--ds-card` | `#ffffff` | `#18181b` |
+| `--ds-ink` | `#18181b` | `#fafafa` |
+| `--ds-muted` | `#737373` | `#a1a1aa` |
+
+Dark follows `prefers-color-scheme: dark`. While that matches, `.shell-body:has(.ds)` paints the same canvas, including the top bar, so the violet mesh does not frame the page. `--ds-muted` is neutral-500 in light. In dark it lifts to zinc-400 so metadata still clears AA on `#18181b`.
+
+Cards, the order banner, and drawers use `--ds-card` and a soft shadow. They do not use a heavy border or the glass blur. Page padding is 24px, and 16px below 800px. Fields use a 10px radius, a hairline zinc border, and a 200ms transition into a soft indigo ring (`box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.28)`).
+
+Status chips inside `.ds` use a desaturated background and a rich foreground: draft and pending are warm amber (`#f5f0e6` / `#92400e`), not neon yellow. Cancelled is a quiet rose, not neon red. The chips in the glass section above stay as they are, so purchase orders do not change.
+
+On a sales order, a sticky header holds the order identity, the sales order number, and icon actions for save, approve, and cancel. The banner under it is the first field row. Terms and shipping sit in a drawer that starts open, because terms and ship method are required to approve. Notes and addresses sit in the narrow column. The line table, eBay amounts, and payment use the wide column. Below 960px that split stacks in the same field order.
