@@ -22,6 +22,24 @@ export function labelLikeOr(query: string): string {
   return ["sku", "name", "description"].map((column) => `${column}.ilike.${quoted}`).join(",");
 }
 
+export function labelTaxonomyFields(value: unknown): {
+  shortCode: string | null;
+  longCode: string | null;
+  taxonomyName: string | null;
+} {
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row || typeof row !== "object") return { shortCode: null, longCode: null, taxonomyName: null };
+  const record = row as Record<string, unknown>;
+  const short = String(record.short_code ?? "").trim().toUpperCase();
+  const long = String(record.long_code ?? "").trim().toUpperCase();
+  const name = String(record.name ?? "").trim();
+  return {
+    shortCode: short || null,
+    longCode: long || null,
+    taxonomyName: name || null,
+  };
+}
+
 export function descriptionSnippet(value: string, max = 80): string {
   const flat = value.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;
