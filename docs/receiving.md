@@ -32,7 +32,7 @@ The bin is one code field. A code that already exists and can take stock is acce
 
 A typed code that ends in `-B`, `-C`, or `-P` is that type. The database still says `Code 10099-C is a crate, but Box is selected` if an older client sends the wrong type.
 
-The receipt stores the signed-in person's two initials. With sign-in off, that value is `OP`. Saving does not change `items.quantity`. The button stays disabled while that click is saving. The click sends one `client_request_id`. A second click during the save is ignored, and a repeat of the same id returns the line already written instead of inserting another. After a save, the header stays filled, the line fields clear, and the cursor returns to the SKU. The success note and print buttons sit in the page above the line. The receipt is the first row in Recent entries for that project.
+The receipt stores the signed-in person's two initials. With sign-in off, that value is `OP`. Saving does not change `items.quantity`. The button stays disabled while that click is saving. The click sends one `client_request_id`. A second click during the save is ignored, and a repeat of the same id returns the line already written instead of inserting another. After a save, the header stays filled, the line fields clear, and the cursor returns to the SKU. The success note and print buttons sit in the page above the line. An empty bin reads `Put Away 4Pcs SKU94415 into EMPTY bin 10059-C`. A bin that already had stock reads `Added 4Pcs SKU94415 into bin 10059-C`. The receipt is the first row in Recent entries for that project.
 
 ## Recent entries
 

@@ -183,6 +183,20 @@ function omitMoney(row: Record<string, unknown>): Record<string, unknown> {
   return copy;
 }
 
+/** Success note after a receipt. EMPTY means this save opened the bin's fill period. */
+export function receiptSavedNote(input: {
+  qty: number;
+  sku: string;
+  name?: string;
+  reference: string;
+  cycleOpened: boolean;
+}): string {
+  const sku = input.sku.trim();
+  const item = sku ? `SKU${sku}` : (input.name ?? "").trim();
+  if (input.cycleOpened) return `Put Away ${input.qty}Pcs ${item} into EMPTY bin ${input.reference}`;
+  return `Added ${input.qty}Pcs ${item} into bin ${input.reference}`;
+}
+
 export function formatReceivedOn(isoDate: string): string {
   const match = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return isoDate;

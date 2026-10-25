@@ -8,10 +8,28 @@ import {
   originQtyInput,
   putawayLabel,
   receiptInitials,
+  receiptSavedNote,
   receivingDateToStore,
   receivingEntryForViewer,
   warehouseToday,
 } from "@/lib/receivingSettings";
+
+describe("saved receipt note", () => {
+  it("names an empty bin when this receipt opens the fill, and an existing bin otherwise", () => {
+    assert.equal(
+      receiptSavedNote({ qty: 4, sku: "94415", reference: "10059-C", cycleOpened: true }),
+      "Put Away 4Pcs SKU94415 into EMPTY bin 10059-C",
+    );
+    assert.equal(
+      receiptSavedNote({ qty: 4, sku: " 94415 ", reference: "10059-C", cycleOpened: false }),
+      "Added 4Pcs SKU94415 into bin 10059-C",
+    );
+    assert.equal(
+      receiptSavedNote({ qty: 1, sku: "", name: "Loose drive", reference: "20042-B", cycleOpened: false }),
+      "Added 1Pcs Loose drive into bin 20042-B",
+    );
+  });
+});
 
 describe("receiving date", () => {
   it("defaults to the warehouse calendar day", () => {

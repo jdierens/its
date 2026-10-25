@@ -40,6 +40,7 @@ import {
   finishReceiptSave,
   formatReceivedOn,
   originQtyInput,
+  receiptSavedNote,
   warehouseToday,
   type ReceiptSaveGate,
   type ReceivingEntry,
@@ -691,8 +692,13 @@ export function ReceivingPage() {
         {receipt ? (
           <section className="receive-saved" id="receive-saved" aria-label="Saved receipt">
             <p className="banner ok" role="status">
-              Saved {receipt.qty} of {receipt.item.sku ? `SKU ${receipt.item.sku}` : receipt.item.name} into {receipt.result.reference}.{" "}
-              {receipt.result.cycleOpened ? "A new cycle is open." : "Joined the open cycle."}{" "}
+              {receiptSavedNote({
+                qty: receipt.qty,
+                sku: receipt.item.sku,
+                name: receipt.item.name,
+                reference: receipt.result.reference,
+                cycleOpened: receipt.result.cycleOpened,
+              })}{" "}
               <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
             </p>
             <div className="receive-actions">
