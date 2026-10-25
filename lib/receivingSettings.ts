@@ -89,6 +89,7 @@ export type ReceivingEntry = {
   longCode: string | null;
   taxonomyName: string | null;
   putaway: string;
+  searchQuery: string | null;
 };
 
 /** Destination bin and the location it was put away to, in one cell. */
@@ -165,6 +166,7 @@ export function receivingEntryForViewer(row: Record<string, unknown>, canViewMon
     longCode: textOrNull(source.long_code) ?? textOrNull(taxonomy?.long_code),
     taxonomyName: textOrNull(source.taxonomy_name) ?? textOrNull(taxonomy?.name),
     putaway: putawayLabel(binReference, locationCode),
+    searchQuery: textOrNull(source.search_query),
   };
 }
 

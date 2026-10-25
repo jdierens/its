@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import { errorText } from "@/lib/errors";
 import { editReceipt, searchReceivingScan } from "@/lib/receivingActions";
 import { receiptFlagsForPrep, receivePrepKind } from "@/lib/receivingLine";
-import { receiptChangeSummary, scanSearchNote } from "@/lib/receivingScan";
+import { receiptChangeSummary, receiptSearchQuery, scanSearchNote } from "@/lib/receivingScan";
 import { originQtyInput, parseReceiptDate, type ReceivingEntry } from "@/lib/receivingSettings";
 import type { LabelItem } from "@/lib/types";
 
@@ -36,24 +36,27 @@ export function ReceiptRowEditor({
   const [itemName, setItemName] = useState(entry.itemName);
   const [qty, setQty] = useState(String(entry.qty));
   const [comment, setComment] = useState(entry.comment ?? "");
+  const [searchQuery, setSearchQuery] = useState(entry.searchQuery ?? "");
   const [shortCode, setShortCode] = useState(entry.shortCode);
   const [longCode, setLongCode] = useState(entry.longCode);
   const [taxonomyName, setTaxonomyName] = useState(entry.taxonomyName);
   const [cleaned, setCleaned] = useState(entry.cleaned === true);
   const [wiped, setWiped] = useState(entry.wiped === true);
   const [matches, setMatches] = useState<LabelItem[]>([]);
+  const [lookupQuery, setLookupQuery] = useState("");
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function pick(item: LabelItem) {
+  function pick(item: LabelItem, query: string) {
     setItemId(item.id);
     setSku(item.sku || item.name);
     setItemName(item.name);
     setShortCode(item.shortCode);
     setLongCode(item.longCode ?? null);
     setTaxonomyName(item.taxonomyName ?? null);
+    setSearchQuery(query);
     setCleaned(false);
     setWiped(false);
     setMatches([]);
@@ -71,13 +74,14 @@ export function ReceiptRowEditor({
     try {
       const result = await searchReceivingScan(query);
       const found = Boolean(result.exact || result.matches.length > 0);
+      setLookupQuery(query);
       setScanNote(scanSearchNote({ token: result.token, tried: result.tried, found }));
       if (result.exact) {
-        pick(result.exact);
+        pick(result.exact, query);
         return;
       }
       if (result.matches.length === 1) {
-        pick(result.matches[0]);
+        pick(result.matches[0], query);
         return;
       }
       setMatches(result.matches);
@@ -144,6 +148,7 @@ export function ReceiptRowEditor({
         confirmed: Boolean(summary),
         cleaned: flags.cleaned,
         wiped: flags.wiped,
+        searchQuery: receiptSearchQuery(searchQuery),
       });
       onSaved();
     } catch (saveError) {
@@ -190,6 +195,19 @@ export function ReceiptRowEditor({
         <label htmlFor={`edit-origin-qty-${entry.id}`}>
           <span>Originating system qty</span>
           <input id={`edit-origin-qty-${entry.id}`} className="num-input" inputMode="numeric" value={originQty} autoComplete="off" onChange={(event) => { setOriginQty(event.target.value); setConfirming(false); }} />
+        </label>
+        <label htmlFor={`edit-search-${entry.id}`}>
+          <span>Search</span>
+          <input
+            id={`edit-search-${entry.id}`}
+            value={searchQuery}
+            autoComplete="off"
+            autoCapitalize="off"
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setConfirming(false);
+            }}
+          />
         </label>
         <label htmlFor={`edit-sku-${entry.id}`}>
           <span>SKU</span>
@@ -261,7 +279,7 @@ export function ReceiptRowEditor({
       {matches.length > 0 ? (
         <div className="receive-actions">
           {matches.map((match) => (
-            <button key={match.id} type="button" className="secondary" onClick={() => pick(match)}>
+            <button key={match.id} type="button" className="secondary" onClick={() => pick(match, lookupQuery)}>
               {match.sku || match.name}
               {match.name ? ` · ${match.name}` : ""}
             </button>

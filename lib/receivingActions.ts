@@ -58,6 +58,8 @@ const RECEIPT_COLUMNS =
 const RECEIPT_LINE_COLUMNS =
   `${RECEIPT_COLUMNS}, cleaned, wiped, short_code, long_code, taxonomy_name, bin_reference, location_code`;
 
+const RECEIPT_SEARCH_COLUMNS = `${RECEIPT_LINE_COLUMNS}, search_query`;
+
 async function attachItemNames(detail: BinDetail): Promise<BinDetail> {
   const skus = [
     ...new Set(
@@ -236,6 +238,7 @@ export async function receiveIntoBin(input: {
   originQty: number | null;
   clientRequestId: string;
   scanRaw?: string | null;
+  searchQuery?: string | null;
   cleaned?: boolean | null;
   wiped?: boolean | null;
 }): Promise<ReceiptResult> {
@@ -255,12 +258,17 @@ export async function receiveIntoBin(input: {
     p_origin_qty: input.originQty,
     p_client_request_id: input.clientRequestId,
     p_scan_raw: input.scanRaw?.trim() || null,
+    p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
     p_cleaned: input.cleaned ?? null,
     p_wiped: input.wiped ?? null,
   };
   let { data, error } = await supabase.rpc("receive_into_bin", payload);
   if (error && (missingSchema(error) || missingColumn(error))) {
-    const { p_cleaned: _cleaned, p_wiped: _wiped, ...withoutFlags } = payload;
+    const { p_search_query: _search, ...withoutSearch } = payload;
+    ({ data, error } = await supabase.rpc("receive_into_bin", withoutSearch));
+  }
+  if (error && (missingSchema(error) || missingColumn(error))) {
+    const { p_cleaned: _cleaned, p_wiped: _wiped, p_search_query: _search, ...withoutFlags } = payload;
     ({ data, error } = await supabase.rpc("receive_into_bin", withoutFlags));
   }
   if (error && missingSchema(error)) {
@@ -297,6 +305,7 @@ export async function editReceipt(input: {
   confirmed: boolean;
   cleaned?: boolean | null;
   wiped?: boolean | null;
+  searchQuery?: string | null;
 }): Promise<void> {
   const initials = await operatorInitials();
   if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
@@ -316,10 +325,15 @@ export async function editReceipt(input: {
     p_confirmed: input.confirmed,
     p_cleaned: input.cleaned ?? null,
     p_wiped: input.wiped ?? null,
+    p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
   };
   let { error } = await supabase.rpc("edit_receipt", payload);
   if (error && (missingSchema(error) || missingColumn(error))) {
-    const { p_cleaned: _cleaned, p_wiped: _wiped, ...legacy } = payload;
+    const { p_search_query: _search, ...withoutSearch } = payload;
+    ({ error } = await supabase.rpc("edit_receipt", withoutSearch));
+  }
+  if (error && (missingSchema(error) || missingColumn(error))) {
+    const { p_cleaned: _cleaned, p_wiped: _wiped, p_search_query: _search, ...legacy } = payload;
     ({ error } = await supabase.rpc("edit_receipt", legacy));
   }
   if (error) rpcError(error);
@@ -342,7 +356,8 @@ export async function listReceivingEntries(
       .order("id", { ascending: false })
       .range(from, from + RECEIVING_PAGE_SIZE);
   };
-  let corrected = await receiptPage(RECEIPT_LINE_COLUMNS);
+  let corrected = await receiptPage(RECEIPT_SEARCH_COLUMNS);
+  if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_LINE_COLUMNS);
   if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_COLUMNS);
   if (!corrected.error) {
     const raw = Array.isArray(corrected.data) ? corrected.data : [];

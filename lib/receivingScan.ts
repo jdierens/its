@@ -11,6 +11,12 @@ export function scanTokensInSearchOrder(raw: string): string[] {
     .map((row) => row.token);
 }
 
+/** The text the operator typed to find the item. Blank is not stored. */
+export function receiptSearchQuery(raw: string | null | undefined): string | null {
+  const text = (raw ?? "").trim().slice(0, 500);
+  return text ? text : null;
+}
+
 /** Which token the search used. A single token needs no extra line. */
 export function scanSearchNote(input: { token: string | null; tried: readonly string[]; found: boolean }): string | null {
   if (!input.token || input.tried.length < 2) return null;

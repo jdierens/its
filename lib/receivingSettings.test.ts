@@ -112,6 +112,7 @@ describe("recent receiving rows", () => {
       longCode: null,
       taxonomyName: null,
       putaway: "",
+      searchQuery: null,
     });
     const shown = receivingEntryForViewer(row, true);
     assert.equal(shown.sku, "1001");
@@ -137,6 +138,10 @@ describe("recent receiving rows", () => {
     assert.equal(located.wiped, null);
     assert.equal(located.shortCode, "CPU");
     assert.equal(located.putaway, "20042-B · HWS.00.00.00");
+    assert.equal(
+      receivingEntryForViewer({ ...row, search_query: "  samsung 860  " }, true).searchQuery,
+      "samsung 860",
+    );
     assert.equal(putawayLabel("20042-B", null), "20042-B");
     assert.equal(putawayLabel(null, "HWS.03.01.02"), "HWS.03.01.02");
   });
