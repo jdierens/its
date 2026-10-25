@@ -420,53 +420,47 @@ export async function editReceipt(input: {
 export async function listReceivingEntries(
   project: string,
   offset: number,
-): Promise<{ rows: ReceivingEntry[]; nextOffset: number | null }> {
+): Promise<{ rows: ReceivingEntry[]; total: number }> {
   const from = Math.max(0, Math.floor(offset));
+  const to = from + RECEIVING_PAGE_SIZE - 1;
   const supabase = await getSupabase();
   const money = await viewerCanSeeMoney();
   const trimmed = project.trim();
   const receiptPage = (columns: string) => {
-    let viewed = supabase.from("receipt_lines").select(columns);
+    let viewed = supabase.from("receipt_lines").select(columns, { count: "exact" });
     viewed = trimmed ? viewed.eq("project", trimmed) : viewed.is("project", null);
     return viewed
       .order("received_on", { ascending: false, nullsFirst: false })
       .order("occurred_at", { ascending: false })
       .order("id", { ascending: false })
-      .range(from, from + RECEIVING_PAGE_SIZE);
+      .range(from, to);
   };
   let corrected = await receiptPage(RECEIPT_SEARCH_COLUMNS);
   if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_LINE_COLUMNS);
   if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_COLUMNS);
   if (!corrected.error) {
     const raw = Array.isArray(corrected.data) ? corrected.data : [];
-    const page = raw
-      .slice(0, RECEIVING_PAGE_SIZE)
-      .map((row) => receivingEntryForViewer(row as unknown as Record<string, unknown>, money));
-    return {
-      rows: page,
-      nextOffset: raw.length > RECEIVING_PAGE_SIZE ? from + RECEIVING_PAGE_SIZE : null,
-    };
+    const page = raw.map((row) => receivingEntryForViewer(row as unknown as Record<string, unknown>, money));
+    return { rows: page, total: corrected.count ?? page.length };
   }
   if (!missingSchema(corrected.error)) rpcError(corrected.error);
   let query = supabase
     .from("stock_events")
     .select(
       "id, item_id, received_on, occurred_at, project, qty, comment, operator_initials, incoming_tag, origin_description, origin_qty, items(sku, name)",
+      { count: "exact" },
     )
     .eq("event_type", "receive_into_bin");
   query = trimmed ? query.eq("project", trimmed) : query.is("project", null);
-  const { data, error } = await query
+  const { data, error, count } = await query
     .order("received_on", { ascending: false, nullsFirst: false })
     .order("occurred_at", { ascending: false })
     .order("id", { ascending: false })
-    .range(from, from + RECEIVING_PAGE_SIZE);
+    .range(from, to);
   if (error) rpcError(error);
   const raw = Array.isArray(data) ? data : [];
-  const page = raw.slice(0, RECEIVING_PAGE_SIZE).map((row) => receivingEntryForViewer(row as Record<string, unknown>, money));
-  return {
-    rows: page,
-    nextOffset: raw.length > RECEIVING_PAGE_SIZE ? from + RECEIVING_PAGE_SIZE : null,
-  };
+  const page = raw.map((row) => receivingEntryForViewer(row as Record<string, unknown>, money));
+  return { rows: page, total: count ?? page.length };
 }
 
 export async function moveBinToLocation(reference: string, locationCode: string): Promise<MoveResult> {

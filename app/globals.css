@@ -5258,27 +5258,25 @@ button.receive-cell.num {
   background: var(--ds-input, #fff);
 }
 
-.receive-table td.prep,
-.receive-table th.prep {
-  width: 1%;
-  white-space: nowrap;
+.receive-pager {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
 }
 
-.receive-inline-prep {
+.receive-pager button {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
 }
 
-.receive-inline-prep input[type="checkbox"] {
-  width: 1.05rem;
-  height: 1.05rem;
-  min-height: 0;
-  margin: 0;
-  accent-color: var(--ds-ink, var(--ink));
+.receive-pager .hint {
+  margin: 0 0 0 0.35rem;
 }
 
 .receive-sku-menu {

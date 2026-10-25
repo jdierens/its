@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
-import { Save } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Save } from "lucide-react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
 import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
@@ -36,6 +36,9 @@ import { distinctRecentProjects, projectToRestore, readStoredProject, writeStore
 import { receiptSearchQuery, scanSearchNote, searchFieldAfterPick } from "@/lib/receivingScan";
 import {
   RECEIVING_DATE_EDITABLE,
+  RECEIVING_PAGE_SIZE,
+  receivingLastPage,
+  receivingPageOffset,
   beginReceiptSave,
   finishReceiptSave,
   originQtyInput,
@@ -71,6 +74,69 @@ type BinPrompt =
   | { kind: "create"; reference: string; type: BinType; resumeSave: boolean }
   | { kind: "required"; nextNumber: number; type: BinType; resumeSave: boolean };
 
+function ReceiptPager({
+  page,
+  total,
+  loading,
+  onPage,
+}: {
+  page: number;
+  total: number;
+  loading: boolean;
+  onPage: (page: number) => void;
+}) {
+  const last = receivingLastPage(total);
+  const from = total === 0 ? 0 : receivingPageOffset(page) + 1;
+  const to = Math.min(receivingPageOffset(page) + RECEIVING_PAGE_SIZE, total);
+  return (
+    <nav className="receive-pager" aria-label="Pages">
+      <button
+        type="button"
+        className="secondary"
+        aria-label="First page"
+        title="First page"
+        disabled={loading || page <= 1}
+        onClick={() => onPage(1)}
+      >
+        <ChevronsLeft size={18} strokeWidth={1.75} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className="secondary"
+        aria-label="Previous page"
+        title="Previous page"
+        disabled={loading || page <= 1}
+        onClick={() => onPage(page - 1)}
+      >
+        <ChevronLeft size={18} strokeWidth={1.75} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className="secondary"
+        aria-label="Next page"
+        title="Next page"
+        disabled={loading || page >= last}
+        onClick={() => onPage(page + 1)}
+      >
+        <ChevronRight size={18} strokeWidth={1.75} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className="secondary"
+        aria-label="Last page"
+        title="Last page"
+        disabled={loading || page >= last}
+        onClick={() => onPage(last)}
+      >
+        <ChevronsRight size={18} strokeWidth={1.75} aria-hidden />
+      </button>
+      <span className="hint">
+        {from}–{to} of {total}
+      </span>
+    </nav>
+  );
+}
+
 export function ReceivingPage() {
   const typed = useRef("");
   const holdQuery = useRef<string | null>(null);
@@ -97,7 +163,9 @@ export function ReceivingPage() {
   const [origin, setOrigin] = useState("");
   const [originQty, setOriginQty] = useState("");
   const [entries, setEntries] = useState<ReceivingEntry[]>([]);
-  const [entriesNext, setEntriesNext] = useState<number | null>(null);
+  const [entryPage, setEntryPage] = useState(1);
+  const [entryTotal, setEntryTotal] = useState(0);
+  const listedProject = useRef<string | null>(null);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [listStamp, setListStamp] = useState(0);
   const [editorInitials, setEditorInitials] = useState("");
@@ -235,14 +303,25 @@ export function ReceivingPage() {
 
   useEffect(() => {
     if (!projectReady) return;
+    if (listedProject.current !== null && listedProject.current !== project && entryPage !== 1) {
+      listedProject.current = project;
+      setEntryPage(1);
+      return;
+    }
+    listedProject.current = project;
     let cancelled = false;
     const handle = window.setTimeout(() => {
       setEntriesLoading(true);
-      void listReceivingEntries(project, 0)
+      void listReceivingEntries(project, receivingPageOffset(entryPage))
         .then((page) => {
           if (cancelled) return;
+          const last = receivingLastPage(page.total);
+          if (entryPage > last) {
+            setEntryPage(last);
+            return;
+          }
           setEntries(page.rows);
-          setEntriesNext(page.nextOffset);
+          setEntryTotal(page.total);
         })
         .catch((cause: unknown) => {
           if (!cancelled) setError(errorText(cause));
@@ -255,22 +334,7 @@ export function ReceivingPage() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [project, listStamp, projectReady]);
-
-  async function loadMoreEntries() {
-    if (entriesNext == null) return;
-    setEntriesLoading(true);
-    setError(null);
-    try {
-      const page = await listReceivingEntries(project, entriesNext);
-      setEntries((current) => [...current, ...page.rows]);
-      setEntriesNext(page.nextOffset);
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setEntriesLoading(false);
-    }
-  }
+  }, [project, listStamp, projectReady, entryPage]);
 
   function choose(next: LabelItem, rawScan: string | null = null, typedQuery: string | null = null) {
     const search = searchFieldAfterPick(typed.current, next);
@@ -576,7 +640,8 @@ export function ReceivingPage() {
       }
       const page = await listReceivingEntries(project, 0);
       setEntries(page.rows);
-      setEntriesNext(page.nextOffset);
+      setEntryTotal(page.total);
+      setEntryPage(1);
       void recentReceivingProjects()
         .then((recent) => {
           setRecentProjects((current) =>
@@ -1062,7 +1127,6 @@ export function ReceivingPage() {
                       <th className="fit">SKU</th>
                       <th className="item">Item name</th>
                       <th className="num fit">Item Qty</th>
-                      <th className="prep">Prep</th>
                       <th className="putaway">Putaway</th>
                       <th className="note">Comment</th>
                     </tr>
@@ -1090,19 +1154,12 @@ export function ReceivingPage() {
                   </li>
                 ))}
               </ul>
-              {entriesNext != null ? (
-                <div className="actions">
-                  <button
-                    id="receive-load-more"
-                    type="button"
-                    className="secondary"
-                    disabled={entriesLoading}
-                    onClick={() => void loadMoreEntries()}
-                  >
-                    {entriesLoading ? "Loading…" : "Load more"}
-                  </button>
-                </div>
-              ) : null}
+              <ReceiptPager
+                page={entryPage}
+                total={entryTotal}
+                loading={entriesLoading}
+                onPage={setEntryPage}
+              />
             </>
           )}
         </section>
