@@ -22,7 +22,7 @@ The project field is filled when the page opens. This browser keeps the last val
 
 ## Line
 
-The line is one row: a short search, the SKU, the name, the quantity, the bin, then Cleaned or Wiped when the taxonomy asks for it, then the comment. Save receipt is the save icon at the end of that row. Its tooltip is Save receipt. On a phone the fields stack. The header fields stack the same way.
+The line is one row: a short search, the SKU, the name, the quantity, the bin, then Cleaned or Wiped when the taxonomy asks for it, then the comment. The quantity starts blank. Saving with it empty says the quantity is missing, and a blank field is not stored as 0 or 1. Save receipt is the save icon at the end of that row. Its tooltip is Save receipt. On a phone the fields stack. The header fields stack the same way.
 
 Search uses the same token order as before. The SKU and name fields show the item that search selected. They are not a second search.
 

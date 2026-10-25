@@ -41,6 +41,7 @@ import {
   finishReceiptSave,
   originQtyInput,
   receiptSavedNote,
+  receiveLineQty,
   warehouseToday,
   type ReceiptSaveGate,
   type ReceivingEntry,
@@ -61,13 +62,6 @@ function todayLabel(date: Date): string {
     month: "short",
     year: "numeric",
   });
-}
-
-function parseQty(value: string): number | null {
-  if (!/^\d+$/.test(value.trim())) return null;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000000) return null;
-  return parsed;
 }
 
 type PrintJob =
@@ -118,7 +112,7 @@ export function ReceivingPage() {
   const [created, setCreated] = useState<CreatedBin | null>(null);
   const [cleaned, setCleaned] = useState(false);
   const [wiped, setWiped] = useState(false);
-  const [qty, setQty] = useState("1");
+  const [qty, setQty] = useState("");
   const [comment, setComment] = useState("");
   const [suggestions, setSuggestions] = useState<BinSuggestion[]>([]);
   const [receipt, setReceipt] = useState<{ result: ReceiptResult; item: LabelItem; qty: number; printedOn: string } | null>(null);
@@ -506,10 +500,10 @@ export function ReceivingPage() {
       setError("Choose an item.");
       return;
     }
-    const parsed = parseQty(qty);
-    if (parsed == null) {
+    const parsed = receiveLineQty(qty);
+    if (!parsed.ok) {
       releaseSave(false);
-      setError("Enter a whole number of at least 1.");
+      setError(parsed.message);
       return;
     }
     const originParsed = originQtyInput(originQty);
@@ -534,7 +528,7 @@ export function ReceivingPage() {
       const result = await receiveIntoBin({
         reference,
         itemId: item.id,
-        qty: parsed,
+        qty: parsed.qty,
         comment,
         project,
         origin,
@@ -549,7 +543,7 @@ export function ReceivingPage() {
       });
       const printedOn = todayLabel(new Date());
       const savedItem = item;
-      setReceipt({ result, item: savedItem, qty: parsed, printedOn });
+      setReceipt({ result, item: savedItem, qty: parsed.qty, printedOn });
       typed.current = "";
       holdQuery.current = null;
       binTyped.current = "";
@@ -572,7 +566,7 @@ export function ReceivingPage() {
       setBinPrompt(null);
       setCleaned(false);
       setWiped(false);
-      setQty("1");
+      setQty("");
       setComment("");
       setScanRaw(null);
       setSearchQuery(null);
@@ -613,10 +607,10 @@ export function ReceivingPage() {
       setError("Choose an item.");
       return;
     }
-    const parsed = parseQty(qty);
-    if (parsed == null) {
+    const parsed = receiveLineQty(qty);
+    if (!parsed.ok) {
       releaseSave(false);
-      setError("Enter a whole number of at least 1.");
+      setError(parsed.message);
       return;
     }
     const rawBin = (binTyped.current || binCode).trim();

@@ -6,6 +6,7 @@ import {
   beginReceiptSave,
   finishReceiptSave,
   originQtyInput,
+  receiveLineQty,
   putawayLabel,
   receiptInitials,
   receiptSavedNote,
@@ -68,6 +69,16 @@ describe("originating system qty", () => {
     assert.deepEqual(originQtyInput("0"), { ok: true, qty: 0 });
     assert.deepEqual(originQtyInput("12.5"), { ok: false });
     assert.deepEqual(originQtyInput("-1"), { ok: false });
+  });
+});
+
+describe("receiving line qty", () => {
+  it("stays missing when blank and refuses a number below 1", () => {
+    assert.deepEqual(receiveLineQty(""), { ok: false, message: "Enter a quantity." });
+    assert.deepEqual(receiveLineQty("   "), { ok: false, message: "Enter a quantity." });
+    assert.deepEqual(receiveLineQty("0"), { ok: false, message: "Enter a whole number of at least 1." });
+    assert.deepEqual(receiveLineQty("1.5"), { ok: false, message: "Enter a whole number of at least 1." });
+    assert.deepEqual(receiveLineQty(" 4 "), { ok: true, qty: 4 });
   });
 });
 
