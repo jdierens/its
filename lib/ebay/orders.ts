@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { readEbayDefaultSalesRep } from "@/lib/ebaySalesRep";
+import { readEbayDraftDefaults } from "@/lib/ebayOrderDefaults";
 import { apiBase, apizBase, financesTransactionsUrl, ordersUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
 import { ebayRead } from "@/lib/ebay/http";
 import { writeEbayLog } from "@/lib/ebay/log";
@@ -279,7 +279,34 @@ export async function runOrderPull(input: {
   };
 }
 
-function supabaseStore(admin: SupabaseClient, salesRep: string): OrderStore {
+/** A refresh keeps payment terms and Incoterms that are already set. */
+async function fillBlankEbayTerms(
+  admin: SupabaseClient,
+  id: string,
+  paymentTerms: string,
+  incoterms: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const terms = await admin
+    .from("sales_orders")
+    .update({ terms: paymentTerms, updated_at: now })
+    .eq("id", id)
+    .eq("status", "draft")
+    .is("terms", null);
+  if (terms.error) throw new Error("A draft sales order could not be updated.");
+  const trade = await admin
+    .from("sales_orders")
+    .update({ incoterms, updated_at: now })
+    .eq("id", id)
+    .eq("status", "draft")
+    .is("incoterms", null);
+  if (trade.error) throw new Error("A draft sales order could not be updated.");
+}
+
+function supabaseStore(
+  admin: SupabaseClient,
+  defaults: { salesRep: string; paymentTerms: string; incoterms: string },
+): OrderStore {
   return {
     async existing(orderIds, salesRefs) {
       const rows = new Map<
@@ -394,7 +421,9 @@ function supabaseStore(admin: SupabaseClient, salesRep: string): OrderStore {
             customerId: customer.id,
             billTo: customer.billTo,
             soNumber: action.soNumber,
-            salesRep,
+            salesRep: defaults.salesRep,
+            paymentTerms: defaults.paymentTerms,
+            incoterms: defaults.incoterms,
           });
           const updatedRow = await admin
             .from("sales_orders")
@@ -422,6 +451,7 @@ function supabaseStore(admin: SupabaseClient, salesRep: string): OrderStore {
             linked += 1;
             continue;
           }
+          await fillBlankEbayTerms(admin, action.id, defaults.paymentTerms, defaults.incoterms);
           if (action.soNumber != null) {
             const numbered = await admin
               .from("sales_orders")
@@ -446,7 +476,9 @@ function supabaseStore(admin: SupabaseClient, salesRep: string): OrderStore {
               customerId: customer.id,
               billTo: customer.billTo,
               soNumber: action.soNumber,
-              salesRep,
+              salesRep: defaults.salesRep,
+              paymentTerms: defaults.paymentTerms,
+              incoterms: defaults.incoterms,
             }),
           )
           .select("id")
@@ -459,7 +491,9 @@ function supabaseStore(admin: SupabaseClient, salesRep: string): OrderStore {
                 order: action.order,
                 customerId: customer.id,
                 billTo: customer.billTo,
-                salesRep,
+                salesRep: defaults.salesRep,
+                paymentTerms: defaults.paymentTerms,
+                incoterms: defaults.incoterms,
               }),
             )
             .select("id")
@@ -686,7 +720,7 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
   if (seed.missingTable) throw new Error(MIGRATION);
   if (!seed.seeded) throw new SeedRequiredError();
   const customer = await ebayCustomer(admin);
-  const salesRep = await readEbayDefaultSalesRep(admin);
+  const ebayDefaults = await readEbayDraftDefaults(admin);
   const { connection } = await validAccessToken();
   const now = new Date();
   let token = connection.access_token;
@@ -734,7 +768,7 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
             return { ok: true, body: response.body };
           },
         }),
-      store: supabaseStore(admin, salesRep),
+      store: supabaseStore(admin, ebayDefaults),
     });
     await writeEbayLog({
       entity: "orders",

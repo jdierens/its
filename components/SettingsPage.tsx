@@ -1,7 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { fetchEbayDefaultSalesRep, saveEbayDefaultSalesRep } from "@/lib/ebaySalesRepSettings";
+import { INCOTERMS } from "@/lib/salesOrderDraft";
+import { fetchEbayDraftDefaults, fetchSalesPaymentTerms, saveEbayDefaultIncoterms, saveEbayDefaultPaymentTerms } from "@/lib/ebayOrderDefaultsSettings";
+import { saveEbayDefaultSalesRep } from "@/lib/ebaySalesRepSettings";
 import { normalizeSalesRep } from "@/lib/ebaySalesRep";
 import { fetchSalesWindowDays, saveSalesWindowDays } from "@/lib/itemPricing";
 import { errorText } from "@/lib/errors";
@@ -23,6 +25,9 @@ import { PutawaySettings } from "@/components/PutawaySettings";
 export function SettingsPage() {
   const [days, setDays] = useState("90");
   const [ebaySalesRep, setEbaySalesRep] = useState("MT");
+  const [ebayPaymentTerms, setEbayPaymentTerms] = useState("Payment In Advance");
+  const [ebayIncoterms, setEbayIncoterms] = useState("FOB");
+  const [paymentTerms, setPaymentTerms] = useState<{ code: string; label: string }[]>([]);
   const [template, setTemplate] = useState<LabelTemplateId>(DEFAULT_LABEL_TEMPLATE);
   const [binTemplates, setBinTemplates] = useState<BinLabelTemplates>(emptyBinLabelTemplates);
   const [nextNumber, setNextNumber] = useState("20000");
@@ -36,16 +41,20 @@ export function SettingsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [value, labelTemplate, binLabelTemplates, counter, salesRep] = await Promise.all([
+        const [value, labelTemplate, binLabelTemplates, counter, ebayDefaults, termChoices] = await Promise.all([
           fetchSalesWindowDays(),
           fetchLabelTemplate(),
           fetchBinLabelTemplates(),
           fetchBinCounter(),
-          fetchEbayDefaultSalesRep(),
+          fetchEbayDraftDefaults(),
+          fetchSalesPaymentTerms(),
         ]);
         if (!cancelled) {
           setDays(String(value));
-          setEbaySalesRep(salesRep);
+          setEbaySalesRep(ebayDefaults.salesRep);
+          setEbayPaymentTerms(ebayDefaults.paymentTerms);
+          setEbayIncoterms(ebayDefaults.incoterms);
+          setPaymentTerms(termChoices);
           setTemplate(labelTemplate);
           setBinTemplates(binLabelTemplates);
           setNextNumber(String(counter.nextNumber));
@@ -81,6 +90,11 @@ export function SettingsPage() {
       setSaved(false);
       return;
     }
+    if (paymentTerms.length > 0 && !paymentTerms.some((term) => term.code === ebayPaymentTerms)) {
+      setError("Payment In Advance is not a payment term yet. Apply supabase/migrations/20261025120000_ebay_default_terms.sql.");
+      setSaved(false);
+      return;
+    }
     const proposedNext = Number(nextNumber);
     setSaving(true);
     setError(null);
@@ -95,11 +109,15 @@ export function SettingsPage() {
       }
       const savedNext = await saveBinNextNumber(proposedNext);
       const savedRep = await saveEbayDefaultSalesRep(ebaySalesRep);
+      const savedTerms = await saveEbayDefaultPaymentTerms(ebayPaymentTerms);
+      const savedIncoterms = await saveEbayDefaultIncoterms(ebayIncoterms);
       await saveSalesWindowDays(parsed);
       await saveLabelTemplate(template);
       await saveBinLabelTemplates(binTemplates);
       setDays(String(parsed));
       setEbaySalesRep(savedRep);
+      setEbayPaymentTerms(savedTerms);
+      setEbayIncoterms(savedIncoterms);
       setNextNumber(String(savedNext));
       setHighestIssued(counter.highestIssued);
       setSaved(true);
@@ -151,6 +169,50 @@ export function SettingsPage() {
         </label>
         <span className="hint">
           New and pulled eBay drafts start with these initials. Two letters. An empty value stays MT.
+        </span>
+        <label htmlFor="ebay-payment-terms">
+          <span>eBay payment terms</span>
+          <select
+            id="ebay-payment-terms"
+            className="ebay-payment-terms"
+            value={ebayPaymentTerms}
+            disabled={loading}
+            onChange={(event) => {
+              setEbayPaymentTerms(event.target.value);
+              setSaved(false);
+            }}
+          >
+            {paymentTermOptions(paymentTerms, ebayPaymentTerms).map((term) => (
+              <option key={term.code} value={term.code}>
+                {term.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="hint">
+          New and pulled eBay drafts use this when payment terms are empty. An empty value stays Payment In Advance.
+        </span>
+        <label htmlFor="ebay-incoterms">
+          <span>eBay Incoterms</span>
+          <select
+            id="ebay-incoterms"
+            className="ebay-incoterms"
+            value={ebayIncoterms}
+            disabled={loading}
+            onChange={(event) => {
+              setEbayIncoterms(event.target.value);
+              setSaved(false);
+            }}
+          >
+            {INCOTERMS.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="hint">
+          New and pulled eBay drafts use this when Incoterms are empty. An empty value stays FOB.
         </span>
         <fieldset className="label-settings">
           <legend>Labels</legend>
@@ -256,4 +318,12 @@ export function SettingsPage() {
       <PutawaySettings />
     </main>
   );
+}
+
+function paymentTermOptions(
+  terms: { code: string; label: string }[],
+  selected: string,
+): { code: string; label: string }[] {
+  if (!selected || terms.some((term) => term.code === selected)) return terms;
+  return [...terms, { code: selected, label: selected }];
 }

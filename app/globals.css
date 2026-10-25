@@ -6628,6 +6628,14 @@ input.num-input {
   max-width: 5rem;
 }
 
+.settings-page select.ebay-payment-terms {
+  max-width: 16rem;
+}
+
+.settings-page select.ebay-incoterms {
+  max-width: 8rem;
+}
+
 .so-sticky {
   position: sticky;
   top: 0;

@@ -3,6 +3,7 @@
 import { Ban, Check, Save } from "lucide-react";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
+import { initialEbayText } from "@/lib/ebayOrderDefaults";
 import { initialSalesRep } from "@/lib/ebaySalesRep";
 import { cleanSkuAllocation } from "@/lib/ebay/packs";
 import { useRouter } from "next/navigation";
@@ -116,6 +117,8 @@ export function SalesOrderForm({
   today,
   suggestedNumber,
   defaultEbaySalesRep,
+  defaultEbayPaymentTerms,
+  defaultEbayIncoterms,
 }: {
   order: SalesOrderView | null;
   lookups: SalesLookups;
@@ -124,6 +127,8 @@ export function SalesOrderForm({
   today: string;
   suggestedNumber: number | null;
   defaultEbaySalesRep: string;
+  defaultEbayPaymentTerms: string;
+  defaultEbayIncoterms: string;
 }) {
   const router = useRouter();
   const locked = !canEdit || (order != null && order.status !== "draft");
@@ -142,15 +147,20 @@ export function SalesOrderForm({
   const [billTo, setBillTo] = useState<SoAddress>(order?.billTo ?? emptyAddress());
   const [shipTo, setShipTo] = useState<SoAddress>(order?.shipTo ?? emptyAddress());
   const [saveAddress, setSaveAddress] = useState(false);
-  const [terms, setTerms] = useState(order?.terms ?? "");
-  const [incoterms, setIncoterms] = useState(order?.incoterms ?? "");
+  const openedAsEbay = orderIsEbay(order);
+  const [terms, setTerms] = useState(
+    initialEbayText({ stored: order?.terms, ebay: openedAsEbay, setting: defaultEbayPaymentTerms }),
+  );
+  const [incoterms, setIncoterms] = useState(
+    initialEbayText({ stored: order?.incoterms, ebay: openedAsEbay, setting: defaultEbayIncoterms }),
+  );
   const [shipMethod, setShipMethod] = useState(order?.shipMethod ?? "");
   const [carrierAccount, setCarrierAccount] = useState(order?.carrierAccount ?? "");
   const [currency, setCurrency] = useState(order?.currency || "USD");
   const [salesRep, setSalesRep] = useState(
     initialSalesRep({
       stored: order?.salesRep,
-      ebay: Boolean(order?.ebayOrderId || order?.ebaySalesRecordRef || (order?.channel ?? "").toLowerCase() === "ebay"),
+      ebay: openedAsEbay,
       setting: defaultEbaySalesRep,
     }),
   );
@@ -249,8 +259,6 @@ export function SalesOrderForm({
       setChannel(defaults.channel);
       setOrderDate(defaults.orderDate || today);
       setShipDate(defaults.shipDate);
-      setTerms(defaults.terms);
-      setIncoterms(defaults.incoterms);
       setShipMethod(defaults.shipMethod);
       setCarrierAccount(defaults.carrierAccount);
       if (defaults.currency) setCurrency(defaults.currency);
@@ -258,6 +266,13 @@ export function SalesOrderForm({
         defaults.channel.trim().toLowerCase() === "ebay" || hit.name.trim().toLowerCase() === EBAY_ORDER_CUSTOMER_NAME.toLowerCase();
       if (defaults.salesRep) setSalesRep(defaults.salesRep);
       else if (ebayPick) setSalesRep((current) => current.trim() || defaultEbaySalesRep);
+      if (ebayPick) {
+        setTerms((current) => defaults.terms.trim() || current.trim() || defaultEbayPaymentTerms);
+        setIncoterms((current) => defaults.incoterms.trim() || current.trim() || defaultEbayIncoterms);
+      } else {
+        setTerms(defaults.terms);
+        setIncoterms(defaults.incoterms);
+      }
     } catch (error) {
       setMessage(errorText(error));
     }
@@ -509,7 +524,11 @@ export function SalesOrderForm({
               onChange={(event) => {
                 const value = event.target.value;
                 setChannel(value);
-                if (value.trim().toLowerCase() === "ebay") setSalesRep((current) => current.trim() || defaultEbaySalesRep);
+                if (value.trim().toLowerCase() === "ebay") {
+                  setSalesRep((current) => current.trim() || defaultEbaySalesRep);
+                  setTerms((current) => current.trim() || defaultEbayPaymentTerms);
+                  setIncoterms((current) => current.trim() || defaultEbayIncoterms);
+                }
               }}
             >
               <option value="">Choose a channel</option>
@@ -615,7 +634,7 @@ export function SalesOrderForm({
           </label>
           <label>
             Payment terms
-            <select value={terms} disabled={locked} onChange={(event) => setTerms(event.target.value)}>
+            <select id="so-terms" value={terms} disabled={locked} onChange={(event) => setTerms(event.target.value)}>
               <option value="">Choose terms</option>
               {lookups.terms.map((term) => (
                 <option key={term.code} value={term.code}>
@@ -626,7 +645,7 @@ export function SalesOrderForm({
           </label>
           <label>
             Incoterms
-            <select value={incoterms} disabled={locked} onChange={(event) => setIncoterms(event.target.value)}>
+            <select id="so-incoterms" value={incoterms} disabled={locked} onChange={(event) => setIncoterms(event.target.value)}>
               <option value="">Choose Incoterms</option>
               {INCOTERMS.map((code) => (
                 <option key={code} value={code}>
@@ -1167,6 +1186,11 @@ function blankLine(): FormLine {
     condition: "",
     allocations: [],
   };
+}
+
+function orderIsEbay(order: SalesOrderView | null): boolean {
+  if (!order) return false;
+  return Boolean(order.ebayOrderId || order.ebaySalesRecordRef || order.channel.toLowerCase() === "ebay");
 }
 
 function buyerText(order: SalesOrderView | null): string {
