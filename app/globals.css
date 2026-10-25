@@ -5097,10 +5097,18 @@ button.receive-bin-note {
 
 .receive-readout.receive-name,
 .receive-comment {
-  flex: 1 1 8rem;
   width: auto;
-  min-width: 6rem;
   margin-top: 0;
+}
+
+.receive-readout.receive-name {
+  flex: 1.65 1 12rem;
+  min-width: 9rem;
+}
+
+.receive-comment {
+  flex: 0.7 1 5rem;
+  min-width: 4.5rem;
 }
 
 .receive-bin-field {
@@ -5488,11 +5496,13 @@ button.receive-card-open {
 
   .receive-search,
   .receive-readout,
+  .receive-readout.receive-name,
   .receive-bin-field,
   .receive-comment {
     flex: 1 1 100%;
     width: 100%;
     max-width: none;
+    min-width: 0;
   }
 
   .receive-segments button {

@@ -154,6 +154,11 @@ export function lastPutawayBinReference(row: unknown): string | null {
   return parseReceivingBinCode(raw)?.reference ?? null;
 }
 
+/** A search that fills the line on its own moves the cursor to quantity. Choosing a listed row does not. */
+export function receivingAutoFillFocus(outcome: "select" | "list" | "empty" | "missing"): "qty" | null {
+  return outcome === "select" ? "qty" : null;
+}
+
 /**
  * What the bin field shows before the clerk types.
  * A value they typed stays. Otherwise the last putaway bin for that SKU, or blank.
