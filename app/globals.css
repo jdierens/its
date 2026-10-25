@@ -2708,6 +2708,40 @@ a.product-url-open {
   white-space: nowrap;
 }
 
+.ebay-order-seed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: end;
+  margin: 0.8rem 0;
+}
+
+.ebay-order-seed label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ebay-order-seed input[type="file"] {
+  font-weight: 500;
+}
+
+.ebay-order-seed button {
+  min-height: 36px;
+}
+
+@media (max-width: 800px) {
+  .ebay-order-seed input[type="file"] {
+    font-size: 16px;
+  }
+
+  .ebay-order-seed button {
+    min-height: 44px;
+  }
+}
+
 .ebay-ids {
   display: flex;
   flex-wrap: wrap;

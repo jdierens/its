@@ -1,6 +1,6 @@
 # Sales orders
 
-Phase 1 is the manual sales order: a draft, lines, SKU allocations, customer notes, a customer PO file, and approval. Fulfillment and invoice tables are created now so later phases do not add them. Capture from email, WhatsApp, and eBay is not in this phase.
+Phase 1 is the manual sales order: a draft, lines, SKU allocations, customer notes, a customer PO file, and approval. Fulfillment and invoice tables are created now so later phases do not add them. Capture from email and WhatsApp is not in this phase. An eBay pull can create a draft under the one eBay customer. Jan reviews that draft and approves it. The pull does not assign `so_number` and does not approve the order.
 
 Sales orders do not share tables, counters, payment terms, or carrier checks with purchase orders. `so_counter` is separate from `po_counter`. Terms live in `so_payment_terms` (Net 7 is stored as `Net7` and sent to QuickBooks as `Net 7`). Ship methods live in `so_ship_methods` (DHL WPX, FedEx IP, UPS Saver, and so on).
 
@@ -10,7 +10,9 @@ A draft has no number. `so_number` is an integer, and the order is shown as `SO`
 
 Approval suggests the lowest unused number at or above the counter. The person approving can type a different number. `approve_sales_order` locks `so_counter`, rejects a number that is already on a sales order, and never moves the counter backwards. A number above the counter moves the counter past it. A number below the counter is allowed when it is free, and the counter stays where it is. Cancelling keeps a number that was already issued.
 
-eBay orders use this same series. `ebay_order_id` is unique when set, and `ebay_sales_record_ref` stores the eBay sales record reference.
+eBay orders use this same series. `ebay_order_id` is unique when set, and `ebay_sales_record_ref` stores the eBay sales record reference. A draft created from eBay still has no number. Approval assigns it from `so_counter`, the same way as any other draft.
+
+Before the first eBay history pull, seed `ebay_order_id` and `ebay_sales_record_ref` from the legacy log map (Order Number and Sales Record No on the row whose REF is that SO number). The map stays out of git. Admin > Integrations > eBay accepts the CSV, updates matching sales orders, and does not create orders. Pull orders stays off until that seed row exists. An eBay order that already matches `ebay_order_id`, or a single `ebay_sales_record_ref`, updates that sales order instead of inserting another one. The customer on a new draft is the existing eBay Customer record. Buyer name and username are stored on the order. No per-buyer customer is created.
 
 The internal reference is a separate note on the order. The SO number itself is the reference assigned at approval.
 

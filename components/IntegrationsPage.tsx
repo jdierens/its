@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Building, Cable, Contact, List, Plug, RefreshCw, Unplug } from "lucide-react";
 import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
 import { isDirty } from "@/lib/formDirty";
@@ -61,6 +61,13 @@ type EbayStatus = {
     unmatched: number | null;
     fetchedAt: string | null;
   };
+  orders?: {
+    available: boolean;
+    seeded: boolean;
+    seededAt: string | null;
+    linked: number | null;
+    watermark: string | null;
+  };
   canRefreshListings: boolean;
   message: string | null;
   logs: LogEntry[];
@@ -80,10 +87,12 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
   const [error, setError] = useState<string | null>(null);
   const [ebayError, setEbayError] = useState<string | null>(null);
   const [busy, setBusy] = useState<
-    "sync" | "customer" | "vendor" | "disconnect" | "ebay-test" | "ebay-disconnect" | "ebay-listings" | null
+    "sync" | "customer" | "vendor" | "disconnect" | "ebay-test" | "ebay-disconnect" | "ebay-listings" | "ebay-orders" | "ebay-seed" | null
   >(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [ebayNotice, setEbayNotice] = useState<string | null>(null);
+  const [seedFile, setSeedFile] = useState<File | null>(null);
+  const [seedInputKey, setSeedInputKey] = useState(0);
   const [entities, setEntities] = useState<SyncEntity[]>(DEFAULT_ENTITIES);
   const [direction, setDirection] = useState<SyncDirection>("both");
   const [full, setFull] = useState(false);
@@ -226,6 +235,52 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
       await load();
     } catch (err) {
       setEbayError(err instanceof Error ? err.message : "eBay listings could not be refreshed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function pullEbayOrders() {
+    setBusy("ebay-orders");
+    setEbayNotice(null);
+    setEbayError(null);
+    try {
+      const response = await fetch("/api/ebay/orders", { method: "POST" });
+      const body = (await response.json()) as { message?: string };
+      if (body.message === EBAY_RECONNECT_MESSAGE) setEbayError(EBAY_RECONNECT_MESSAGE);
+      else if (!response.ok) setEbayError(body.message || "eBay orders could not be pulled.");
+      else setEbayNotice(body.message || "eBay orders pulled.");
+      await load();
+    } catch (err) {
+      setEbayError(err instanceof Error ? err.message : "eBay orders could not be pulled.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function applyEbaySeed(event: FormEvent) {
+    event.preventDefault();
+    if (!seedFile) return;
+    setBusy("ebay-seed");
+    setEbayNotice(null);
+    setEbayError(null);
+    try {
+      const csv = await seedFile.text();
+      const response = await fetch("/api/ebay/order-seed", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: csv,
+      });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) setEbayError(body.message || "The log map could not be applied.");
+      else {
+        setEbayNotice(body.message || "Legacy log map applied.");
+        setSeedFile(null);
+        setSeedInputKey((key) => key + 1);
+      }
+      await load();
+    } catch (err) {
+      setEbayError(err instanceof Error ? err.message : "The log map could not be applied.");
     } finally {
       setBusy(null);
     }
@@ -401,6 +456,16 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
             {busy === "ebay-listings" ? "Refreshing listings…" : "Refresh listings"}
           </button>
         ) : null}
+        {focus === "ebay" && ebay?.canRefreshListings ? (
+          <button
+            type="button"
+            className="secondary toolbar-text"
+            disabled={!ebayConnected || !ebay.orders?.seeded || busy !== null}
+            onClick={() => void pullEbayOrders()}
+          >
+            {busy === "ebay-orders" ? "Pulling orders…" : "Pull orders"}
+          </button>
+        ) : null}
         <ToolbarButton
           icon={Cable}
           label="Test eBay connection"
@@ -512,9 +577,39 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
                   <dt>Listings fetched</dt>
                   <dd>{ebay.listings?.fetchedAt ? formatWhen(ebay.listings.fetchedAt) : "Never"}</dd>
                 </div>
+                <div>
+                  <dt>Orders pulled</dt>
+                  <dd>{ebay.orders?.watermark ? formatWhen(ebay.orders.watermark) : "Never"}</dd>
+                </div>
               </dl>
               {ebay.listings && !ebay.listings.available ? (
                 <p className="hint">The listings table is not in the database yet.</p>
+              ) : null}
+              {ebay.orders && !ebay.orders.available ? (
+                <p className="hint">Apply the eBay order migration before seeding or pulling orders.</p>
+              ) : null}
+              {ebay.orders?.available ? (
+                <p className="hint">
+                  {ebay.orders.seeded
+                    ? `Legacy log map applied${ebay.orders.seededAt ? ` ${formatWhen(ebay.orders.seededAt)}` : ""}. ${ebay.orders.linked ?? 0} sales ${(ebay.orders.linked ?? 0) === 1 ? "order" : "orders"} linked.`
+                    : "Legacy log map is not applied. Pull orders stays off until it is, so history does not create a second draft."}
+                </p>
+              ) : null}
+              {ebay.canRefreshListings && ebay.orders?.available ? (
+                <form className="ebay-order-seed" onSubmit={(event) => void applyEbaySeed(event)}>
+                  <label>
+                    Legacy log CSV
+                    <input
+                      key={seedInputKey}
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(event) => setSeedFile(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                  <button type="submit" className="secondary" disabled={!seedFile || busy !== null}>
+                    {busy === "ebay-seed" ? "Applying log map…" : "Apply log map"}
+                  </button>
+                </form>
               ) : null}
               {ebayNeedsReconnect ? <p className="banner error">{EBAY_RECONNECT_MESSAGE}</p> : null}
               {ebay.message ? <p className="banner error">{ebay.message}</p> : null}
@@ -537,7 +632,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
               ) : null}
               <p className="hint">
                 <Link href="/admin/integrations/ebay/listings">Browse listings</Link> shows every active listing.
-                Match a row when its custom label is not an item. Refresh reads listings and does not change anything on eBay.
+                Match a row when its custom label is not an item. Connect, refresh listings, pull orders, test, and disconnect are in the toolbar. Refresh reads listings and does not change anything on eBay. Pull orders creates draft sales orders under the eBay customer. It does not approve them or assign an SO number.
               </p>
               <h3>Recent log</h3>
               {ebay.logs.length > 0 ? (
