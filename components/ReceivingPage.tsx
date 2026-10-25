@@ -8,7 +8,7 @@ import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { ReceiptCard, ReceiptTableRow } from "@/components/ReceiptInline";
-import { ReceivingProjectField } from "@/components/ReceivingProjectField";
+import { ReceivingOriginField, ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, formatBinReference, type BinType } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
@@ -28,10 +28,12 @@ import {
   listReceivingEntries,
   receiveIntoBin,
   receivingClerkInitials,
+  recentReceivingOrigins,
   recentReceivingProjects,
   searchReceivingScan,
   suggestBins,
 } from "@/lib/receivingActions";
+import { distinctRecentOrigins } from "@/lib/receivingOrigins";
 import { distinctRecentProjects, projectToRestore, readStoredProject, writeStoredProject } from "@/lib/receivingProjects";
 import { receiptSearchQuery, scanSearchNote, searchFieldAfterPick } from "@/lib/receivingScan";
 import {
@@ -160,6 +162,7 @@ export function ReceivingPage() {
   const [searching, setSearching] = useState(false);
   const [project, setProject] = useState("");
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
+  const [recentOrigins, setRecentOrigins] = useState<string[]>([]);
   const [projectReady, setProjectReady] = useState(false);
   const [projectStorageKey, setProjectStorageKey] = useState<string | null>(null);
   const [receivedOn, setReceivedOn] = useState("");
@@ -216,6 +219,18 @@ export function ReceivingPage() {
         setTemplates(binChoice);
       })
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void recentReceivingOrigins()
+      .then((origins) => {
+        if (!cancelled) setRecentOrigins(origins);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -744,6 +759,11 @@ export function ReceivingPage() {
           distinctRecentProjects([{ project }, ...current.map((name) => ({ project: name }))]),
         );
       }
+      if (origin.trim()) {
+        setRecentOrigins((current) =>
+          distinctRecentOrigins([{ origin_description: origin }, ...current.map((name) => ({ origin_description: name }))]),
+        );
+      }
       const page = await listReceivingEntries(project, 0);
       setEntries(page.rows);
       setEntryTotal(page.total);
@@ -754,6 +774,16 @@ export function ReceivingPage() {
             distinctRecentProjects([
               ...current.map((name) => ({ project: name })),
               ...recent.projects.map((name) => ({ project: name })),
+            ]),
+          );
+        })
+        .catch(() => undefined);
+      void recentReceivingOrigins()
+        .then((origins) => {
+          setRecentOrigins((current) =>
+            distinctRecentOrigins([
+              ...current.map((name) => ({ origin_description: name })),
+              ...origins.map((name) => ({ origin_description: name })),
             ]),
           );
         })
@@ -872,16 +902,7 @@ export function ReceivingPage() {
                 onChange={(event) => setIncomingTag(event.target.value)}
               />
             </label>
-            <label htmlFor="receive-origin">
-              <span>Originating system</span>
-              <input
-                id="receive-origin"
-                value={origin}
-                autoComplete="off"
-                disabled={busy}
-                onChange={(event) => setOrigin(event.target.value)}
-              />
-            </label>
+            <ReceivingOriginField value={origin} origins={recentOrigins} disabled={busy} onChange={setOrigin} />
             <label htmlFor="receive-origin-qty">
               <span>Orig. system qty</span>
               <input
