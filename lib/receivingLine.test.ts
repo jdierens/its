@@ -9,6 +9,7 @@ import {
   receiptFlagsForPrep,
   receivePrepKind,
   receivingAutoFillFocus,
+  receivingSkuOverride,
   skuAlreadyInBinNote,
   receivingBinDecision,
   receivingBinDefault,
@@ -70,6 +71,20 @@ describe("auto-filled search", () => {
     assert.equal(receivingAutoFillFocus("list"), null);
     assert.equal(receivingAutoFillFocus("empty"), null);
     assert.equal(receivingAutoFillFocus("missing"), null);
+  });
+});
+
+describe("sku override", () => {
+  it("replaces the item only when the typed SKU is an exact match", () => {
+    assert.equal(receivingSkuOverride({ typedSku: "106880", currentSku: "50077", exactSku: "106880" }), "apply");
+    assert.equal(receivingSkuOverride({ typedSku: " 106880 ", currentSku: "50077", exactSku: "106880" }), "apply");
+    assert.equal(receivingSkuOverride({ typedSku: "abc", currentSku: "50077", exactSku: "ABC" }), "apply");
+    assert.equal(receivingSkuOverride({ typedSku: "106880", currentSku: "50077", exactSku: null }), "pending");
+    assert.equal(receivingSkuOverride({ typedSku: "10688", currentSku: "50077", exactSku: null }), "pending");
+    assert.equal(receivingSkuOverride({ typedSku: "106880", currentSku: "50077", exactSku: "99999" }), "pending");
+    assert.equal(receivingSkuOverride({ typedSku: "50077", currentSku: "50077", exactSku: null }), "same");
+    assert.equal(receivingSkuOverride({ typedSku: "50077", currentSku: "50077", exactSku: "50077" }), "same");
+    assert.equal(receivingSkuOverride({ typedSku: "", currentSku: "50077", exactSku: null }), "same");
   });
 });
 

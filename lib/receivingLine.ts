@@ -160,6 +160,24 @@ export function receivingAutoFillFocus(outcome: "select" | "list" | "empty" | "m
 }
 
 /**
+ * A SKU typed over the receiving line. An exact SKU replaces the item.
+ * The same SKU, a blank field, or a value that is not that exact SKU does not.
+ * The original search text is not part of this decision and stays as typed.
+ */
+export function receivingSkuOverride(input: {
+  typedSku: string;
+  currentSku: string;
+  exactSku: string | null;
+}): "same" | "apply" | "pending" {
+  const typed = input.typedSku.trim();
+  const current = input.currentSku.trim();
+  if (!typed || typed.toLowerCase() === current.toLowerCase()) return "same";
+  const exact = (input.exactSku ?? "").trim();
+  if (exact && exact.toLowerCase() === typed.toLowerCase()) return "apply";
+  return "pending";
+}
+
+/**
  * What the bin field shows before the clerk types.
  * A value they typed stays. Otherwise the last putaway bin for that SKU, or blank.
  * The next counter number is not a field value.
