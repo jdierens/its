@@ -194,10 +194,9 @@ function SkuEdit({
   onCancel,
 }: {
   entry: ReceivingEntry;
-  onPick: (item: LabelItem, query: string) => void;
+  onPick: (item: LabelItem) => void;
   onCancel: () => void;
 }) {
-  const typed = useRef(entry.sku);
   const [query, setQuery] = useState(entry.sku);
   const [matches, setMatches] = useState<LabelItem[]>([]);
   const [active, setActive] = useState(-1);
@@ -254,7 +253,7 @@ function SkuEdit({
             truncated: result.truncated,
           });
           if (outcome.type === "select" && outcome.item) {
-            onPickRef.current(outcome.item, text);
+            onPickRef.current(outcome.item);
             return;
           }
           if (outcome.type === "list") {
@@ -277,7 +276,7 @@ function SkuEdit({
 
   function pickHighlighted() {
     const choice = labelHighlightedChoice({ identifier: query.trim(), settledQuery: settled, matches, active });
-    if (choice) onPick(choice, query);
+    if (choice) onPick(choice);
   }
 
   return (
@@ -292,10 +291,7 @@ function SkuEdit({
         value={query}
         autoComplete="off"
         spellCheck={false}
-        onChange={(event) => {
-          typed.current = event.target.value;
-          setQuery(event.target.value);
-        }}
+        onChange={(event) => setQuery(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -333,7 +329,7 @@ function SkuEdit({
                 role="option"
                 aria-selected={index === active}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onPick(match, query)}
+                onClick={() => onPick(match)}
               >
                 <strong className="label-hit-sku">{match.sku || match.name}</strong>
                 <span>{match.name}</span>
@@ -412,7 +408,7 @@ function ConfirmBar({
   );
 }
 
-function itemPatch(item: LabelItem, query: string): ReceiptPatch {
+function itemPatch(item: LabelItem): ReceiptPatch {
   return {
     item: {
       id: item.id,
@@ -422,7 +418,6 @@ function itemPatch(item: LabelItem, query: string): ReceiptPatch {
       longCode: item.longCode,
       taxonomyName: item.taxonomyName,
     },
-    searchQuery: query,
   };
 }
 
@@ -520,7 +515,7 @@ export function ReceiptTableRow({
         </td>
         <td className="fit sku">
           {edit.field === "sku" ? (
-            <SkuEdit entry={entry} onPick={(item, query) => edit.apply(itemPatch(item, query))} onCancel={() => edit.setField(null)} />
+            <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
           ) : (
             <CellButton value={shown.sku} title="Find another item" onClick={() => open("sku")} />
           )}
@@ -690,7 +685,7 @@ export function ReceiptCard({
         </CardLine>
         <CardLine label="SKU">
           {edit.field === "sku" ? (
-            <SkuEdit entry={entry} onPick={(item, query) => edit.apply(itemPatch(item, query))} onCancel={() => edit.setField(null)} />
+            <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
           ) : (
             <CellButton value={shown.sku} onClick={() => open("sku")} />
           )}
