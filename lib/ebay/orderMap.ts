@@ -4,6 +4,9 @@ import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 export const EBAY_ORDER_CUSTOMER_NAME = "eBay Customer";
 export const EBAY_ORDER_CUSTOMER_QBO_ID = "1";
 export const EBAY_PULL_OPERATOR_LABEL = "eBay";
+/** Orders before this date stay out of the pull. Beginning inventory is 2026-01-01. */
+export const EBAY_ORDER_CUTOFF = "2026-01-01";
+const EBAY_ORDER_CUTOFF_MS = Date.parse("2026-01-01T00:00:00.000Z");
 export const SEED_REQUIRED_MESSAGE =
   "Seed the legacy log map before pulling eBay orders. Imported history would otherwise create duplicate drafts.";
 export const ORDER_PAGE_SIZE = 200;
@@ -81,7 +84,7 @@ export type PullAction =
   | { kind: "create"; order: ParsedEbayOrder; itemIds: (string | null)[] }
   | { kind: "update"; id: string; order: ParsedEbayOrder; itemIds: (string | null)[] }
   | { kind: "link"; id: string; ebayOrderId: string; salesRecordRef: string | null }
-  | { kind: "skip"; ebayOrderId: string; reason: "ambiguous" | "unchanged" };
+  | { kind: "skip"; ebayOrderId: string; reason: "ambiguous" | "unchanged" | "before-cutoff" };
 
 export type DraftLine = {
   line_no: number;
@@ -406,6 +409,10 @@ export function planOrderPull(
       continue;
     }
     seen.add(order.ebayOrderId);
+    if (!orderInPullWindow(order.orderDate)) {
+      actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "before-cutoff" });
+      continue;
+    }
     const idHits = byOrderId.get(order.ebayOrderId) ?? [];
     if (idHits.length > 1) {
       actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "ambiguous" });
@@ -508,16 +515,27 @@ export function draftLines(order: ParsedEbayOrder, itemIds: readonly (string | n
   });
 }
 
+export function orderInPullWindow(orderDate: string | null): boolean {
+  return orderDate != null && orderDate >= EBAY_ORDER_CUTOFF;
+}
+
 export function orderPullWindows(now: Date, watermark: string | null): { filter: string; history: boolean }[] {
   const stamp = (date: Date) => date.toISOString();
   const range = (field: string, start: Date, end: Date) => `${field}:[${stamp(start)}..${stamp(end)}]`;
-  if (watermark && !Number.isNaN(Date.parse(watermark))) {
-    return [{ filter: range("lastmodifieddate", new Date(Date.parse(watermark) - DAY_MS), now), history: false }];
-  }
   const end = now.getTime();
-  const start = end - 729 * DAY_MS;
+  if (!(end > EBAY_ORDER_CUTOFF_MS)) return [];
+  const cutoff = new Date(EBAY_ORDER_CUTOFF_MS);
+  if (watermark && !Number.isNaN(Date.parse(watermark))) {
+    const modifiedStart = new Date(Math.max(Date.parse(watermark) - DAY_MS, EBAY_ORDER_CUTOFF_MS));
+    return [
+      {
+        filter: `${range("creationdate", cutoff, now)},${range("lastmodifieddate", modifiedStart, now)}`,
+        history: false,
+      },
+    ];
+  }
   const windows: { filter: string; history: boolean }[] = [];
-  for (let cursor = start; cursor < end; cursor += 90 * DAY_MS) {
+  for (let cursor = EBAY_ORDER_CUTOFF_MS; cursor < end; cursor += 90 * DAY_MS) {
     windows.push({
       filter: range("creationdate", new Date(cursor), new Date(Math.min(cursor + 90 * DAY_MS, end))),
       history: true,

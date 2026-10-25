@@ -195,15 +195,39 @@ test("fulfillment orders drop tax identifiers and keep the buyer on the order", 
   assert.equal(row.so_number, null);
 });
 
-test("the first pull is history and a watermark pulls changes since the day before", () => {
+test("the pull starts on 1 Jan 2026 and a watermark stays inside that window", () => {
   const now = new Date("2026-10-25T00:00:00.000Z");
   const history = orderPullWindows(now, null);
   assert.ok(history.length > 1);
-  assert.ok(history.every((window) => window.history && window.filter.startsWith("creationdate:[")));
+  assert.ok(history.every((window) => window.history && window.filter.startsWith("creationdate:[2026-")));
+  assert.equal(history[0].filter.startsWith("creationdate:[2026-01-01T00:00:00.000Z.."), true);
+  assert.equal(history.some((window) => window.filter.includes("2025-")), false);
+  assert.deepEqual(orderPullWindows(new Date("2025-12-31T00:00:00.000Z"), null), []);
   const next = orderPullWindows(now, "2026-10-20T00:00:00.000Z");
   assert.deepEqual(next, [
-    { filter: "lastmodifieddate:[2026-10-19T00:00:00.000Z..2026-10-25T00:00:00.000Z]", history: false },
+    {
+      filter:
+        "creationdate:[2026-01-01T00:00:00.000Z..2026-10-25T00:00:00.000Z],lastmodifieddate:[2026-10-19T00:00:00.000Z..2026-10-25T00:00:00.000Z]",
+      history: false,
+    },
   ]);
+});
+
+test("orders before 2026 are skipped and a seeded 2026 order is not drafted again", () => {
+  const actions = planOrderPull(
+    [
+      ebayOrder({ ebayOrderId: "10-00001-00001", orderDate: "2025-12-31", salesRecordRef: "100" }),
+      ebayOrder({ ebayOrderId: "11-00001-00001", orderDate: "2026-01-01", salesRecordRef: "101" }),
+      ebayOrder({ ebayOrderId: "12-00001-00009", orderDate: "2026-01-01", salesRecordRef: null, lines: [] }),
+      ebayOrder({ orderDate: null }),
+    ],
+    [{ id: "seeded", status: "shipped", ebayOrderId: "11-00001-00001", ebaySalesRecordRef: "101", personEdited: true }],
+    [],
+  );
+  assert.deepEqual(
+    actions.map((action) => (action.kind === "skip" ? action.reason : action.kind)),
+    ["before-cutoff", "unchanged", "create", "before-cutoff"],
+  );
 });
 
 test("order reads stay on the eBay fulfillment host", () => {

@@ -632,7 +632,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
               ) : null}
               <p className="hint">
                 <Link href="/admin/integrations/ebay/listings">Browse listings</Link> shows every active listing.
-                Match a row when its custom label is not an item. Connect, refresh listings, pull orders, test, and disconnect are in the toolbar. Refresh reads listings and does not change anything on eBay. Pull orders creates draft sales orders under the eBay customer. It does not approve them or assign an SO number.
+                Match a row when its custom label is not an item. Connect, refresh listings, pull orders, test, and disconnect are in the toolbar. Refresh reads listings and does not change anything on eBay. Pull orders creates draft sales orders, dated 1 Jan 2026 or later, under the eBay customer. It does not approve them or assign an SO number.
               </p>
               <h3>Recent log</h3>
               {ebay.logs.length > 0 ? (
