@@ -48,7 +48,7 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
-import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault } from "@/lib/receivingLine";
+import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, skuAlreadyInBinNote } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
   type BinDetail,
@@ -818,33 +818,6 @@ export function ReceivingPage() {
 
         <section className="card receive-card" id="receive-line">
           <h2>Line</h2>
-          {item && suggestions.length > 0 ? (
-            <div>
-              <p className="hint">This SKU is already in these bins on this project.</p>
-              <div className="receive-actions">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.cycleId}
-                    type="button"
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => {
-                      binSource.current = "user";
-                      prefilledBin.current = "";
-                      binEdit.current += 1;
-                      void lookupBin(suggestion.reference, false);
-                    }}
-                  >
-                    {suggestion.reference}
-                    {suggestion.locationCode ? ` · ${suggestion.locationCode}` : ""} · {suggestion.qty}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {item && suggestions.length === 0 ? (
-            <p className="hint">No open bin on this project already holds that SKU.</p>
-          ) : null}
           <form onSubmit={onSave}>
             <div className="receive-line-row">
               <div className="receive-search">
@@ -989,25 +962,29 @@ export function ReceivingPage() {
               {prep === "cleaned" ? (
                 <label className="receive-prep" htmlFor="receive-cleaned">
                   <span>Cleaned</span>
-                  <input
-                    id="receive-cleaned"
-                    type="checkbox"
-                    checked={cleaned}
-                    disabled={busy}
-                    onChange={(event) => setCleaned(event.target.checked)}
-                  />
+                  <div className="receive-prep-control">
+                    <input
+                      id="receive-cleaned"
+                      type="checkbox"
+                      checked={cleaned}
+                      disabled={busy}
+                      onChange={(event) => setCleaned(event.target.checked)}
+                    />
+                  </div>
                 </label>
               ) : null}
               {prep === "wiped" ? (
                 <label className="receive-prep" htmlFor="receive-wiped">
                   <span>Wiped</span>
-                  <input
-                    id="receive-wiped"
-                    type="checkbox"
-                    checked={wiped}
-                    disabled={busy}
-                    onChange={(event) => setWiped(event.target.checked)}
-                  />
+                  <div className="receive-prep-control">
+                    <input
+                      id="receive-wiped"
+                      type="checkbox"
+                      checked={wiped}
+                      disabled={busy}
+                      onChange={(event) => setWiped(event.target.checked)}
+                    />
+                  </div>
                 </label>
               ) : null}
               <label className="receive-comment" htmlFor="receive-comment">
@@ -1033,6 +1010,30 @@ export function ReceivingPage() {
                 </button>
               </div>
             </div>
+            {suggestions.some((suggestion) => skuAlreadyInBinNote(suggestion.locationCode, suggestion.qty)) ? (
+              <div className="receive-bin-notes">
+                {suggestions.map((suggestion) => {
+                  const note = skuAlreadyInBinNote(suggestion.locationCode, suggestion.qty);
+                  if (!note) return null;
+                  return (
+                    <button
+                      key={suggestion.cycleId}
+                      type="button"
+                      className="receive-bin-note"
+                      disabled={busy}
+                      onClick={() => {
+                        binSource.current = "user";
+                        prefilledBin.current = "";
+                        binEdit.current += 1;
+                        void lookupBin(suggestion.reference, false);
+                      }}
+                    >
+                      {note}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             {scanNote ? (
               <p className="hint" id="receive-scan-note">
                 {scanNote}

@@ -4915,10 +4915,35 @@ button.bin-label-hit:focus-visible {
 }
 
 .receive-line-row {
+  --receive-text-inset: calc(0.6rem + 1px);
   display: flex;
   align-items: end;
   gap: 0.55rem;
   min-width: 0;
+  padding-bottom: 1.9rem;
+}
+
+.receive-bin-notes {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: -0.2rem;
+}
+
+button.receive-bin-note {
+  justify-self: start;
+  margin: 0;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  background-image: none;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
 }
 
 .receive-toggle-field,
@@ -5025,6 +5050,19 @@ button.bin-label-hit:focus-visible {
   position: relative;
 }
 
+.receive-line-row .receive-search > label > span,
+.receive-line-row .receive-readout > span,
+.receive-line-row .receive-bin-field > span,
+.receive-line-row .receive-comment > span,
+.receive-line-row .receive-prep > span {
+  padding-left: var(--receive-text-inset);
+}
+
+.receive-line-row .receive-line-qty > span {
+  padding-right: var(--receive-text-inset);
+  text-align: right;
+}
+
 .receive-name > span {
   font-size: 0.86rem;
   line-height: 1.2;
@@ -5033,7 +5071,9 @@ button.bin-label-hit:focus-visible {
 
 .receive-name-value {
   display: block;
+  box-sizing: border-box;
   min-height: calc(1.45em + 1rem + 2px);
+  padding-left: var(--receive-text-inset);
   line-height: calc(1.45em + 1rem + 2px);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5044,7 +5084,7 @@ button.bin-label-hit:focus-visible {
 .receive-name-desc {
   position: absolute;
   top: calc(100% + 0.15rem);
-  left: 0;
+  left: var(--receive-text-inset);
   right: 0;
   margin: 0;
   color: var(--ds-muted, var(--muted));
@@ -5076,16 +5116,28 @@ button.bin-label-hit:focus-visible {
 
 .receive-prep {
   flex: 0 0 auto;
-  grid-template-rows: auto calc(1.45em + 1rem + 2px);
+  justify-items: start;
+}
+
+.receive-prep-control {
+  display: flex;
   align-items: center;
-  justify-items: center;
+  box-sizing: border-box;
+  height: calc(1.45em + 1rem + 2px);
+  min-height: calc(1.45em + 1rem + 2px);
+  padding-left: var(--receive-text-inset);
 }
 
 .receive-prep input[type="checkbox"] {
-  width: 1.25rem;
-  height: 1.25rem;
-  min-height: 1.25rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  min-width: 1.15rem;
+  min-height: 0;
   margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
   accent-color: var(--ds-ink, var(--ink));
 }
 
@@ -5423,6 +5475,15 @@ button.receive-card-open {
   .receive-line-row {
     flex-wrap: wrap;
     gap: 0.55rem;
+    padding-bottom: 0.35rem;
+  }
+
+  .receive-readout.receive-name:has(.receive-name-desc) {
+    margin-bottom: 1.4rem;
+  }
+
+  .receive-prep-control {
+    font-size: 16px;
   }
 
   .receive-search,
@@ -6967,6 +7028,7 @@ input.num-input {
 .ds.receiving-page .receive-name > span,
 .ds.receiving-page .hint,
 .ds.receiving-page .page-note,
+.ds.receiving-page .receive-bin-note,
 .ds.receiving-page .receive-card-row dt {
   color: var(--ds-muted);
 }
