@@ -1,4 +1,4 @@
-import { assignListingSku, parsePackLabel, perPieceUnit, pieceQtyForPack } from "@/lib/ebay/packs";
+import { allocationQtyForLine, assignListingSku } from "@/lib/ebay/packs";
 import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 
 export const EBAY_ORDER_CUSTOMER_NAME = "eBay Customer";
@@ -132,8 +132,8 @@ export function ebayShippingItemId(items: readonly { id: string; sku: string }[]
 }
 
 export type PullAction =
-  | { kind: "create"; order: ParsedEbayOrder; itemIds: (string | null)[]; shippingItemId: string | null; soNumber: number | null }
-  | { kind: "update"; id: string; order: ParsedEbayOrder; itemIds: (string | null)[]; shippingItemId: string | null; soNumber: number | null }
+  | { kind: "create"; order: ParsedEbayOrder; itemIds: (string | null)[]; allocationQtys: (number | null)[]; shippingItemId: string | null; soNumber: number | null }
+  | { kind: "update"; id: string; order: ParsedEbayOrder; itemIds: (string | null)[]; allocationQtys: (number | null)[]; shippingItemId: string | null; soNumber: number | null }
   | { kind: "link"; id: string; ebayOrderId: string; salesRecordRef: string | null }
   | { kind: "skip"; ebayOrderId: string; reason: "ambiguous" | "unchanged" | "before-cutoff" };
 
@@ -146,6 +146,8 @@ export type DraftLine = {
   unit_price: number | null;
   ext_price: number | null;
   item_id: string | null;
+  /** Pieces allocated to item_id. A pack label can be larger than the customer qty. */
+  allocation_qty: number | null;
 };
 
 export function parseCsv(text: string): string[][] {
@@ -573,21 +575,21 @@ export function parseFulfillmentOrders(body: unknown): ParsedEbayOrder[] {
 function orderForItems(
   order: ParsedEbayOrder,
   items: readonly { id: string; sku: string }[],
-): { order: ParsedEbayOrder; itemIds: (string | null)[] } {
+): { order: ParsedEbayOrder; itemIds: (string | null)[]; allocationQtys: (number | null)[] } {
   const itemIds: (string | null)[] = [];
-  const lines = order.lines.map((line) => {
+  const allocationQtys: (number | null)[] = [];
+  for (const line of order.lines) {
     const sku = line.sku?.trim() ?? "";
     const assigned = sku ? assignListingSku(sku, items) : { itemId: null, packQty: 1, baseSku: null };
     itemIds.push(assigned.itemId);
-    const packQty = assigned.packQty > 1 ? assigned.packQty : (parsePackLabel(sku)?.packQty ?? 1);
-    if (assigned.itemId && assigned.packQty === 1) return line;
-    if (packQty <= 1) return line;
-    const pieces = pieceQtyForPack(line.qty, packQty);
-    if (pieces === line.qty) return line;
-    const unitPrice = line.unitPrice == null ? null : perPieceUnit(line.qty, line.unitPrice, pieces);
-    return { ...line, qty: pieces, unitPrice: unitPrice ?? line.unitPrice };
-  });
-  return { order: { ...order, lines }, itemIds };
+    if (!assigned.itemId) {
+      allocationQtys.push(null);
+      continue;
+    }
+    // An exact item, including a label that is itself a SKU, allocates the customer quantity.
+    allocationQtys.push(assigned.packQty > 1 ? allocationQtyForLine(sku, line.qty) : line.qty);
+  }
+  return { order, itemIds, allocationQtys };
 }
 
 export function planOrderPull(
@@ -668,7 +670,14 @@ export function planOrderPull(
         personEdited: false,
         soNumber,
       });
-      actions.push({ kind: "create", order: prepared.order, itemIds: prepared.itemIds, shippingItemId, soNumber });
+      actions.push({
+        kind: "create",
+        order: prepared.order,
+        itemIds: prepared.itemIds,
+        allocationQtys: prepared.allocationQtys,
+        shippingItemId,
+        soNumber,
+      });
       continue;
     }
     if (match.status === "draft" && !match.personEdited && !match.id.startsWith("new:")) {
@@ -677,6 +686,7 @@ export function planOrderPull(
         id: match.id,
         order: prepared.order,
         itemIds: prepared.itemIds,
+        allocationQtys: prepared.allocationQtys,
         shippingItemId,
         soNumber: claimLegacy(order.ebayOrderId, match.soNumber),
       });
@@ -744,9 +754,12 @@ export function draftLines(
   order: ParsedEbayOrder,
   itemIds: readonly (string | null)[],
   shippingItemId: string | null = null,
+  allocationQtys?: readonly (number | null)[],
 ): DraftLine[] {
   const lines: DraftLine[] = order.lines.map((line, index) => {
     const description = line.title ?? (line.sku ? null : "eBay item");
+    const itemId = itemIds[index] ?? null;
+    const allocated = allocationQtys?.[index];
     return {
       line_no: index + 1,
       line_kind: "product" as const,
@@ -755,7 +768,8 @@ export function draftLines(
       qty: line.qty,
       unit_price: line.unitPrice,
       ext_price: extension(line.qty, line.unitPrice),
-      item_id: itemIds[index] ?? null,
+      item_id: itemId,
+      allocation_qty: itemId ? (allocated ?? line.qty) : null,
     };
   });
   if (order.shippingAmount != null && order.shippingAmount > 0) {
@@ -769,6 +783,7 @@ export function draftLines(
       unit_price: unit,
       ext_price: extension(1, unit),
       item_id: shippingItemId,
+      allocation_qty: shippingItemId ? 1 : null,
     });
   }
   return lines;

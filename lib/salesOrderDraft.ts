@@ -321,10 +321,14 @@ export function formatSalesMoney(amount: number | null, currency: string): strin
 }
 
 /** Seller earnings minus a shipping label bought on eBay. Earnings already exclude marketplace fees. */
+function numericMoney(value: string): number {
+  return Number(value.replace(/[$,\s]/g, ""));
+}
+
 export function sellerNet(earnings: string, labelFee: string): number | null {
   if (!earnings.trim()) return null;
-  const earned = Number(earnings);
-  const label = labelFee.trim() ? Number(labelFee) : 0;
+  const earned = numericMoney(earnings);
+  const label = labelFee.trim() ? numericMoney(labelFee) : 0;
   if (!Number.isFinite(earned) || !Number.isFinite(label)) return null;
   return Math.round((earned - label) * 100) / 100;
 }
@@ -334,7 +338,7 @@ export function salesOrderTotal(lines: { extPrice: string }[]): number | null {
   let any = false;
   for (const line of lines) {
     if (!line.extPrice.trim()) continue;
-    const value = Number(line.extPrice);
+    const value = numericMoney(line.extPrice);
     if (!Number.isFinite(value)) continue;
     any = true;
     sum += value;

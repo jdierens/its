@@ -358,10 +358,43 @@ test("unit and extended prices use the eBay discount amount, not a fixed 5 perce
   );
   assert.equal(packed.kind, "create");
   if (packed.kind === "create") {
-    assert.equal(packed.order.lines[0].qty, 2);
-    assert.equal(packed.order.lines[0].unitPrice, 3169);
+    assert.equal(packed.order.lines[0].qty, 1);
+    assert.equal(packed.order.lines[0].unitPrice, 6338);
     assert.equal(packed.itemIds[0], "item-106683");
-    assert.equal(draftLines(packed.order, packed.itemIds)[0].ext_price, 6338);
+    assert.deepEqual(packed.allocationQtys, [2]);
+    const drafted = draftLines(packed.order, packed.itemIds, null, packed.allocationQtys);
+    assert.equal(drafted[0].qty, 1);
+    assert.equal(drafted[0].unit_price, 6338);
+    assert.equal(drafted[0].ext_price, 6338);
+    assert.equal(drafted[0].allocation_qty, 2);
+    assert.equal(drafted[0].customer_part_number, "106683(x2)");
+  }
+  const underscore = planOrderPull(
+    [ebayOrder({ ebayOrderId: "20-15321-25073", lines: [{ sku: "106683_2PK", title: "Lot of 2", qty: 1, unitPrice: 6338 }] })],
+    [],
+    [{ id: "item-106683", sku: "106683" }],
+  );
+  assert.equal(underscore[0].kind, "create");
+  if (underscore[0].kind === "create") {
+    assert.equal(underscore[0].order.lines[0].qty, 1);
+    assert.equal(underscore[0].order.lines[0].unitPrice, 6338);
+    assert.deepEqual(underscore[0].allocationQtys, [2]);
+  }
+  const twoOfThem = planOrderPull(
+    [ebayOrder({ ebayOrderId: "20-15321-25074", lines: [{ sku: "106683_2PK", title: "Lot of 2", qty: 2, unitPrice: 6338 }] })],
+    [],
+    [{ id: "item-106683", sku: "106683" }],
+  );
+  if (twoOfThem[0].kind === "create") assert.deepEqual(twoOfThem[0].allocationQtys, [4]);
+  const exactPack = planOrderPull(
+    [ebayOrder({ ebayOrderId: "20-15321-25075", lines: [{ sku: "106683_2PK", title: "The pack item", qty: 1, unitPrice: 6338 }] })],
+    [],
+    [{ id: "item-pack", sku: "106683_2PK" }],
+  );
+  if (exactPack[0].kind === "create") {
+    assert.equal(exactPack[0].itemIds[0], "item-pack");
+    assert.deepEqual(exactPack[0].allocationQtys, [1]);
+    assert.equal(exactPack[0].order.lines[0].qty, 1);
   }
   assert.equal(Math.round(lines[0].qty * (lines[0].unit_price ?? 0) * 100) / 100, lines[0].ext_price);
   assert.equal(lines[1].line_kind, "freight");
