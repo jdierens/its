@@ -5946,8 +5946,43 @@ input.num-input {
   margin-bottom: 0;
 }
 
-.so-notes textarea {
+.so-notes textarea,
+.so-notes-files textarea {
   min-height: 6.5rem;
+}
+
+.so-notes-files-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 24px;
+  align-items: start;
+}
+
+.so-notes-files-one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.so-notes-col,
+.so-files {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.so-col-label {
+  margin: 0;
+  color: var(--ds-muted, var(--muted));
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1.2;
+}
+
+.so-file-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 0;
 }
 
 .so-lines-scroll {
@@ -5995,19 +6030,72 @@ input.num-input {
   margin: 0.5rem 0 1rem;
 }
 
-.so-find-sku {
+.so-allocate {
+  padding: 16px 0 4px;
+}
+
+.so-alloc-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
-  gap: 0.6rem;
+  align-items: flex-end;
+  gap: 12px 16px;
 }
 
-.so-find-sku label {
-  flex: 1 1 12rem;
-}
-
-.so-find-sku button {
+.so-alloc-row .so-find-sku {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  flex: 0 0 8.75rem;
+  width: 8.75rem;
+  max-width: 10rem;
   margin: 0;
+}
+
+.so-alloc-row .so-find-sku span,
+.so-alloc-row .so-alloc-qty span {
+  color: var(--ds-muted, var(--muted));
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1.2;
+}
+
+.so-alloc-row .so-allocation {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  min-width: 0;
+}
+
+.so-alloc-sku {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+  margin: 0;
+  padding-bottom: 0.55rem;
+  color: var(--ds-ink, var(--ink));
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.so-alloc-qty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 6.5rem;
+  width: 6.5rem;
+  margin: 0;
+}
+
+.so-alloc-note {
+  flex: 1 1 12rem;
+  margin: 0 0 0.55rem;
+}
+
+.so-alloc-row button {
+  margin: 0;
+  flex: none;
 }
 
 .so-money-summary dt,
@@ -6256,6 +6344,7 @@ input.num-input {
 
 .so-addresses {
   align-items: start;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .so-grid .wide {
@@ -6782,6 +6871,10 @@ input.num-input {
   .so-workspace {
     grid-template-columns: 1fr;
     gap: 16px;
+  }
+
+  .so-notes-files-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

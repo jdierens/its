@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { allocationQtyForLine, applyPackToLine, assignListingSku, kitListingUses, parsePackLabel, pieceQtyForPack } from "./packs.ts";
+import { allocationQtyForLine, applyPackToLine, assignListingSku, cleanSkuAllocation, kitListingUses, parsePackLabel, pieceQtyForPack } from "./packs.ts";
 
 const baseAndPackItem = [
   { id: "base", sku: "12345" },
@@ -43,6 +43,39 @@ test("underscore and parenthesis pack labels become a base sku and a piece count
   assert.equal(twoPacks.qty, "2");
   assert.equal(twoPacks.unitPrice, "6338");
   assert.equal(twoPacks.allocationQty, "4");
+});
+
+test("a clean sku match allocates without a confirm step", () => {
+  const memory = { id: "item-106683", sku: "106683", name: "KCD6XLUL15T3" };
+  const extra = { id: "other", sku: "1066830", name: "other" };
+  assert.deepEqual(cleanSkuAllocation("106683_2PK", "1", [memory, extra]), {
+    itemId: "item-106683",
+    sku: "106683",
+    name: "KCD6XLUL15T3",
+    qty: "2",
+  });
+  assert.equal(cleanSkuAllocation("106683(x2)", "2", [memory])?.qty, "4");
+  assert.deepEqual(cleanSkuAllocation("106683", "1", [memory, extra]), {
+    itemId: "item-106683",
+    sku: "106683",
+    name: "KCD6XLUL15T3",
+    qty: "1",
+  });
+  const packItem = { id: "item-pack", sku: "106683_2PK", name: "The pack" };
+  assert.deepEqual(cleanSkuAllocation("106683_2PK", "1", [packItem, memory]), {
+    itemId: "item-pack",
+    sku: "106683_2PK",
+    name: "The pack",
+    qty: "1",
+  });
+  assert.equal(cleanSkuAllocation("106683_2PK", "1", [extra]), null);
+  assert.equal(cleanSkuAllocation("106683_2PK", "0", [memory]), null);
+  assert.deepEqual(cleanSkuAllocation("4343", "1", [{ id: "ship", sku: "4343", name: "SERVICE\\FREIGHT-OUT" }]), {
+    itemId: "ship",
+    sku: "4343",
+    name: "SERVICE\\FREIGHT-OUT",
+    qty: "1",
+  });
 });
 
 test("an exact sku wins over the pack pattern", () => {

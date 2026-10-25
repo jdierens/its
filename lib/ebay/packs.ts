@@ -84,6 +84,46 @@ export function formatAllocationQty(qty: number): string {
   return String(Math.round(qty * 1000) / 1000);
 }
 
+export type CleanSkuHit = { id: string; sku: string; name: string };
+
+function uniqueSku<T extends { id: string; sku: string }>(hits: readonly T[], sku: string): T | null {
+  const wanted = sku.trim().toLowerCase();
+  if (!wanted) return null;
+  const matches = hits.filter((hit) => hit.id && hit.sku.trim().toLowerCase() === wanted);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * An exact ITS SKU, or a pack label whose base SKU is exactly one item.
+ * `106683_2PK` with customer quantity 1 allocates item `106683` quantity 2.
+ * A label that is itself an item allocates the customer quantity.
+ * A fuzzy part-number hit is not a match.
+ */
+export function cleanSkuAllocation(
+  part: string,
+  lineQty: string,
+  hits: readonly CleanSkuHit[],
+): { itemId: string; sku: string; name: string; qty: string } | null {
+  const label = part.trim();
+  if (!label) return null;
+  const qtyNumber = Number(lineQty);
+  if (!Number.isFinite(qtyNumber) || qtyNumber <= 0) return null;
+  const exact = uniqueSku(hits, label);
+  if (exact) {
+    return { itemId: exact.id, sku: exact.sku, name: exact.name, qty: formatAllocationQty(qtyNumber) };
+  }
+  const pack = parsePackLabel(label);
+  if (!pack) return null;
+  const base = uniqueSku(hits, pack.baseSku);
+  if (!base) return null;
+  return {
+    itemId: base.id,
+    sku: base.sku,
+    name: base.name,
+    qty: formatAllocationQty(allocationQtyForLine(label, qtyNumber)),
+  };
+}
+
 /**
  * What Customer PN blur and Find SKU do with a pack label.
  * `106683_2PK` with quantity 1 and unit 6338 stays 1 × 6338.
