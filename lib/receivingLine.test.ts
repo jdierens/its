@@ -8,6 +8,7 @@ import {
   prepStatusText,
   receiptFlagsForPrep,
   receivePrepKind,
+  skuAlreadyInBinNote,
   receivingBinDecision,
   receivingBinDefault,
 } from "@/lib/receivingLine";
@@ -44,6 +45,21 @@ describe("receive prep", () => {
     assert.equal(commentWithPrepStatus("  date code  ", "wiped", null, true), "Wiped date code");
     assert.equal(commentWithPrepStatus("dirty already", "cleaned", null, null), "dirty already");
     assert.equal(commentWithPrepStatus("keep dirty word", null, null, null), "keep dirty word");
+  });
+});
+
+describe("already in this bin", () => {
+  it("glues the location and quantity after st", () => {
+    assert.equal(
+      skuAlreadyInBinNote("HWS.00.00.00.00", 96),
+      "This SKU is already in this bin st HWS.00.00.00.00.96PCS",
+    );
+    assert.equal(
+      skuAlreadyInBinNote("  HWR.01.04.06.n ", 4),
+      "This SKU is already in this bin st HWR.01.04.06.n.4PCS",
+    );
+    assert.equal(skuAlreadyInBinNote(null, 4), null);
+    assert.equal(skuAlreadyInBinNote("HWS.00.00.00", 0), null);
   });
 });
 

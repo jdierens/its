@@ -40,6 +40,16 @@ export function receivePrepKind(input: {
   return null;
 }
 
+/**
+ * Note under the bin field when this SKU is already in an open bin.
+ * Location and quantity are glued: `HWS.00.00.00.00.96PCS`.
+ */
+export function skuAlreadyInBinNote(locationCode: string | null | undefined, qty: number): string | null {
+  const location = (locationCode ?? "").trim();
+  if (!location || !Number.isFinite(qty) || qty <= 0) return null;
+  return `This SKU is already in this bin st ${location}.${qty}PCS`;
+}
+
 /** Store only the flag that taxonomy asked for. The other stays null. */
 export function receiptFlagsForPrep(
   prep: ReceivePrep | null,
