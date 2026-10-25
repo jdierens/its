@@ -54,6 +54,21 @@ test("a SKU prefix that matches one row waits for Enter", () => {
   assert.equal(labelLookupChoice({ submitted: true, exact: false, matchCount: 1, truncated: false }), "select");
 });
 
+test("receiving selects the only row without Enter, and still waits when more rows may exist", () => {
+  assert.equal(
+    labelLookupChoice({ submitted: false, exact: false, matchCount: 1, truncated: false, loneSelects: true }),
+    "select",
+  );
+  assert.equal(
+    labelLookupChoice({ submitted: false, exact: false, matchCount: 1, truncated: true, loneSelects: true }),
+    "list",
+  );
+  assert.equal(
+    labelLookupChoice({ submitted: false, exact: false, matchCount: 2, truncated: false, loneSelects: true }),
+    "list",
+  );
+});
+
 test("several matches stay a list, and a capped result is not treated as the only row", () => {
   assert.equal(labelLookupChoice({ submitted: true, exact: false, matchCount: 4, truncated: false }), "list");
   assert.equal(labelLookupChoice({ submitted: true, exact: false, matchCount: 1, truncated: true }), "list");

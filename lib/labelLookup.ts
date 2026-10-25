@@ -62,6 +62,7 @@ export function sortLabelMatches(matches: readonly LabelItem[], query: string): 
 /**
  * An exact SKU selects immediately. A typed prefix does not, even when one row matches.
  * Enter selects only when the search comes back with a single row.
+ * Receiving can select that single row without Enter.
  */
 /** Enter applies the result. A live search applies only while the field still shows that query. */
 export function labelResultApplies(typed: string, query: string, submitted: boolean): boolean {
@@ -74,9 +75,10 @@ export function labelLookupChoice(input: {
   exact: boolean;
   matchCount: number;
   truncated: boolean;
+  loneSelects?: boolean;
 }): LabelLookupChoice {
   if (input.exact) return "select";
   if (input.matchCount === 0) return "empty";
-  if (input.submitted && input.matchCount === 1 && !input.truncated) return "select";
+  if ((input.submitted || input.loneSelects) && input.matchCount === 1 && !input.truncated) return "select";
   return "list";
 }

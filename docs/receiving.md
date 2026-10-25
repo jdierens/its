@@ -24,7 +24,7 @@ The project field is filled when the page opens. This browser keeps the last val
 
 The line is one row: a short search, the SKU, the name, the quantity, the bin, then Cleaned or Wiped when the taxonomy asks for it, then the comment. The quantity starts blank. Saving with it empty says the quantity is missing, and a blank field is not stored as 0 or 1. Save receipt is the save icon at the end of that row. Its tooltip is Save receipt. On a phone the fields stack. The header fields stack the same way.
 
-Search uses the same token order as before. Choosing a result leaves that typed text in Search. The SKU and name fields show the item that was selected. They are not a second search.
+Search uses the same token order as before. Choosing a result leaves that typed text in Search. A search that comes back with one item selects that item, the same as choosing it, and the typed text stays in Search. The SKU is shown beside Search. The name is that item's name, as text, not a field. The description sits under the name. Changing the item is done from Search.
 
 The comment is only the text the clerk types. It does not start with `cleaned`, `dirty`, `Wiped`, or `Pending Wipe`. A CPU taxonomy shows Cleaned, unchecked. An HDD or SSD taxonomy shows Wiped, unchecked. Memory and the other taxonomies show neither box. The taxonomy is the item's short code, long code, or taxonomy name: `CPU` or `CPU/…` is a processor, and `HDD`, `SSD`, `DSK/HDD`, or `DSK/SSD` is a drive. Checking the box stores true. Leaving it stores false. The other flag stays empty. A blank comment still takes a multi-token scan, and that scan is stored as written.
 
