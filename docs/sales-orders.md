@@ -16,7 +16,9 @@ An eBay draft's product lines store the unit price and extension after the eBay 
 
 Before the first eBay pull, seed `ebay_order_id` and `ebay_sales_record_ref` from the legacy log map (Order Number and Sales Record No on the row whose REF is that SO number). The map stays out of git. Admin > Integrations > eBay accepts the CSV, updates matching sales orders, and does not create orders. Pull orders stays off until that seed row exists. Inside the 2026 window, an eBay order that already matches `ebay_order_id`, or a single `ebay_sales_record_ref`, updates that sales order instead of inserting another one. The customer on a new draft is the existing eBay Customer record. Buyer name and username are stored on the order. No per-buyer customer is created.
 
-The form does not ask for an internal reference, and nothing requires one. `sales_orders.reference` stays in the database and is not shown on the list, the draft, or the order. A save of an order that already has one keeps that value. Customer PO stays on the form. An eBay order shows its eBay order number on the list and on the order. The sales record number stays on the order and is not a list column. The SO number itself is assigned at approval.
+The form does not ask for an internal reference, and nothing requires one. `sales_orders.reference` stays in the database and is not shown on the list, the draft, or the order. A save of an order that already has one keeps that value. Order reference on the form is the customer PO. An eBay order shows its eBay order id in that field, and the sales record number stays on the order. Neither the internal reference nor the sales record number is a list column. The SO number itself is assigned at approval.
+
+The form is three rows, then notes, then bill-to and ship-to, then the line table, then the eBay amounts, then payment. Row 1 is channel, sales rep initials, customer, order date, and order reference. Row 2 is currency, payment terms, Incoterms, ship method, and carrier account. Notes are for other details read from the customer PDF. The line table columns are customer part number, customer description, customer qty, customer unit, and cust ext. Kind and condition stay off the screen. Payment is payment date, payment method, payment reference, and payment amount. `payment_amount` is nullable cents on the sales order. Apply `supabase/migrations/20261025083100_sales_order_payment_amount.sql` before relying on that amount. Deploying does not run it. Requested ship date stays stored and on the list, and is not a field on this form.
 
 ## Channel
 
@@ -52,7 +54,7 @@ A customer part such as `106683_2PK` or `106683(x2)` is searched as ITS SKU `106
 
 Unit price, extension, order total, internal notes, and the eBay money columns are removed on the server when `can_view_financials` is false. Those columns are `ebay_transaction_fee`, `ebay_label_fee`, `ebay_ad_fee`, and `ebay_order_earnings`, all nullable. Admin, staff, and read-only can see prices. Other roles see parts and quantities. Files can contain prices, so those roles receive no attachments. Admin and staff can edit. Read-only cannot.
 
-`payment_method` is a foreign key to `so_payment_methods`: `wire_ach`, `ebay`, `credit_card`, `check`, `paypal`, and `other`. `payment_date` and `payment_ref` record when and under what reference the payment arrived. Those three are not amounts. Row level security is on for `so_payment_methods`, and only `service_role` can read or write it.
+`payment_method` is a foreign key to `so_payment_methods`: `wire_ach`, `ebay`, `credit_card`, `check`, `paypal`, and `other`. `payment_date` and `payment_ref` record when and under what reference the payment arrived. `payment_amount` is the amount received, numeric(14,2), and stays on the sales order for now. Row level security is on for `so_payment_methods`, and only `service_role` can read or write it.
 
 ## History
 

@@ -92,6 +92,7 @@ describe("sales order draft", () => {
         ebayLabelFee: "0.50",
         ebayAdFee: "0.20",
         ebayOrderEarnings: "10.00",
+        paymentAmount: "25.00",
       },
       false,
     );
@@ -104,6 +105,7 @@ describe("sales order draft", () => {
       ebayLabelFee: "",
       ebayAdFee: "",
       ebayOrderEarnings: "",
+      paymentAmount: "",
     });
     assert.equal(salesOrderTotal([{ extPrice: "10.00" }, { extPrice: "2.50" }]), 12.5);
     assert.equal(salesOrderTotal([{ extPrice: "" }]), null);
@@ -132,6 +134,7 @@ describe("sales order draft", () => {
     assert.equal(payload.channel, "direct");
     assert.equal(payload.payment_method, "wire_ach");
     assert.equal(payload.ebay_transaction_fee, "1.25");
+    assert.equal(payload.payment_amount, "20.00");
     assert.equal(lines[0].line_kind, "product");
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
@@ -179,6 +182,7 @@ function sampleDraft(): SoDraftInput {
     paymentMethod: "wire_ach",
     paymentDate: "2026-10-24",
     paymentRef: "WIRE-1",
+    paymentAmount: "20.00",
     ebayTransactionFee: "1.25",
     ebayLabelFee: "",
     ebayAdFee: "",

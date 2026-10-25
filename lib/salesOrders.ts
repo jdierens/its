@@ -121,6 +121,7 @@ export type SalesOrderView = {
   paymentMethod: string;
   paymentDate: string;
   paymentRef: string;
+  paymentAmount: string;
   ebayTransactionFee: string;
   ebayLabelFee: string;
   ebayAdFee: string;
@@ -304,14 +305,29 @@ export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promi
 export async function loadSalesOrder(id: string): Promise<SalesOrderView | null> {
   if (!UUID.test(id)) return null;
   const access = await salesPageAccess();
-  const { data, error } = await (await getSupabase())
+  const supabase = await getSupabase();
+  const withAmount = await supabase
     .from("sales_orders")
     .select(
-      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
+      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, payment_amount, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
     )
     .eq("id", id)
     .maybeSingle();
-  if (error) throw new Error(salesError(error));
+  const missingAmount =
+    withAmount.error != null &&
+    /payment_amount/i.test(withAmount.error.message ?? "") &&
+    /schema cache|could not find|does not exist/i.test(withAmount.error.message ?? "");
+  const loaded = missingAmount
+    ? await supabase
+        .from("sales_orders")
+        .select(
+          "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
+        )
+        .eq("id", id)
+        .maybeSingle()
+    : withAmount;
+  if (loaded.error) throw new Error(salesError(loaded.error));
+  const data = loaded.data ? { ...loaded.data, payment_amount: "payment_amount" in loaded.data ? loaded.data.payment_amount : null } : null;
   if (!data) return null;
 
   const customer = firstRelation(data.customers);
@@ -375,6 +391,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
       ebayLabelFee: moneyText(data.ebay_label_fee),
       ebayAdFee: moneyText(data.ebay_ad_fee),
       ebayOrderEarnings: moneyText(data.ebay_order_earnings),
+      paymentAmount: moneyText(data.payment_amount),
     },
     access.canViewMoney,
   );
@@ -404,6 +421,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     paymentMethod: text(data.payment_method),
     paymentDate: dateValue(data.payment_date) ?? "",
     paymentRef: text(data.payment_ref),
+    paymentAmount: shown.paymentAmount,
     ebayTransactionFee: shown.ebayTransactionFee,
     ebayLabelFee: shown.ebayLabelFee,
     ebayAdFee: shown.ebayAdFee,
@@ -436,7 +454,7 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   for (const note of draft.notes) {
     if (note.response === "countered" && !note.counterText.trim()) throw new Error("Enter the counter text.");
   }
-  for (const amount of [draft.ebayTransactionFee, draft.ebayLabelFee, draft.ebayAdFee, draft.ebayOrderEarnings]) {
+  for (const amount of [draft.ebayTransactionFee, draft.ebayLabelFee, draft.ebayAdFee, draft.ebayOrderEarnings, draft.paymentAmount]) {
     if (amount.trim() && !/^-?[0-9]+(\.[0-9]+)?$/.test(amount.trim())) throw new Error("Enter a valid amount.");
   }
 
