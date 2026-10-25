@@ -5,8 +5,10 @@ import { errorText } from "@/lib/errors";
 import type { PostalAddress } from "@/lib/qbo/map";
 import {
   addressFromRecord,
+  compareSalesOrderList,
   formatSalesOrderNumber,
   hideSalesMoney,
+  salesOrderListReference,
   partMatches,
   partPrefix,
   salesOrderTotal,
@@ -17,6 +19,7 @@ import {
 import { salesOperatorId, salesPageAccess } from "@/lib/salesSession";
 import { loadSoAttachments, type SoAttachmentView } from "@/lib/soAttachments";
 import { operatorInitials } from "@/lib/stockAccess";
+import { parsePackLabel } from "@/lib/ebay/packs";
 import { getSupabase } from "@/lib/supabase";
 
 export type SalesCustomerHit = { id: string; name: string };
@@ -52,13 +55,13 @@ export type SalesOrderListItem = {
   id: string;
   number: string;
   customerName: string;
+  /** eBay order id, otherwise the customer PO. The internal reference is not shown. */
+  orderReference: string;
   status: string;
   orderDate: string | null;
   shipDate: string | null;
   currency: string;
   total: number | null;
-  ebayOrderId: string;
-  ebaySalesRecordRef: string;
 };
 
 export type SalesAllocationView = {
@@ -213,9 +216,10 @@ export async function salesCustomerDefaults(customerId: string): Promise<SalesCu
 }
 
 export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
-  const compact = partPrefix(part);
+  const term = (parsePackLabel(part)?.baseSku ?? part).trim();
+  const compact = partPrefix(term);
   if (compact.length < 3) return [];
-  const raw = part.trim().replace(/[%_,]/g, "");
+  const raw = term.replace(/[%_,]/g, "");
   if (!raw) return [];
   const pattern = `%${raw}%`;
   const compactPattern = `%${compact}%`;
@@ -240,9 +244,9 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
   return (data ?? [])
     .filter(
       (row) =>
-        partMatches(part, String(row.part_number ?? "")) ||
-        partMatches(part, String(row.oem_part_number ?? "")) ||
-        partMatches(part, String(row.sku ?? "")),
+        partMatches(term, String(row.part_number ?? "")) ||
+        partMatches(term, String(row.oem_part_number ?? "")) ||
+        partMatches(term, String(row.sku ?? "")),
     )
     .slice(0, 8)
     .map((row) => ({
@@ -253,16 +257,25 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
     }));
 }
 
-export async function listSalesOrders(): Promise<SalesOrderListItem[]> {
+export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promise<SalesOrderListItem[]> {
   const access = await salesPageAccess();
-  const { data, error } = await (await getSupabase())
+  let query = (await getSupabase())
     .from("sales_orders")
     .select(
-      "id, so_number, status, order_date, ship_date, currency, ebay_order_id, ebay_sales_record_ref, customers(display_name), so_lines(ext_price)",
+      "id, so_number, status, order_date, ship_date, currency, customer_po, reference, ebay_order_id, created_at, customers(display_name), so_lines(ext_price)",
     )
+    .order("order_date", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
+  if (scope === "drafts") query = query.eq("status", "draft");
+  const { data, error } = await query;
   if (error) throw new Error(salesError(error));
-  return (data ?? []).map((row) => {
+  const rows = [...(data ?? [])].sort((left, right) =>
+    compareSalesOrderList(
+      { orderDate: dateValue(left.order_date), createdAt: String(left.created_at ?? "") },
+      { orderDate: dateValue(right.order_date), createdAt: String(right.created_at ?? "") },
+    ),
+  );
+  return rows.map((row) => {
     const customer = firstRelation(row.customers);
     const lines = (Array.isArray(row.so_lines) ? row.so_lines : []).map((line) => ({
       extPrice: line.ext_price == null ? "" : Number(line.ext_price).toFixed(2),
@@ -272,13 +285,15 @@ export async function listSalesOrders(): Promise<SalesOrderListItem[]> {
         id: String(row.id),
         number: formatSalesOrderNumber(row.so_number) ?? "Draft",
         customerName: String(customer?.display_name ?? ""),
+        orderReference: salesOrderListReference({
+          ebayOrderId: text(row.ebay_order_id),
+          customerPo: text(row.customer_po),
+        }),
         status: String(row.status),
         orderDate: dateValue(row.order_date),
         shipDate: dateValue(row.ship_date),
         currency: text(row.currency) || "USD",
         total: salesOrderTotal(lines),
-        ebayOrderId: text(row.ebay_order_id),
-        ebaySalesRecordRef: text(row.ebay_sales_record_ref),
       },
       access.canViewMoney,
     );

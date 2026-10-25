@@ -33,15 +33,89 @@ export type ItemEbayView = {
   kits: KitListingUse[];
 };
 
-const PACK_LABEL = /^(.+)-([1-9]\d*)pk$/i;
+/** Suffix forms, first match wins. Hyphen packs stay valid for listings already stored that way. */
+const PACK_LABELS = [
+  /^(.+)_([1-9]\d*)pk$/i,
+  /^(.+)\(x([1-9]\d*)\)$/i,
+  /^(.+)-([1-9]\d*)pk$/i,
+];
 
 export function parsePackLabel(label: string): PackLabel | null {
-  const match = PACK_LABEL.exec(label.trim());
-  if (!match) return null;
-  const baseSku = match[1]?.trim() ?? "";
-  const packQty = Number(match[2]);
-  if (!baseSku || !Number.isSafeInteger(packQty) || packQty < 1) return null;
-  return { baseSku, packQty };
+  const trimmed = label.trim();
+  for (const pattern of PACK_LABELS) {
+    const match = pattern.exec(trimmed);
+    if (!match) continue;
+    const baseSku = match[1]?.trim() ?? "";
+    const packQty = Number(match[2]);
+    if (!baseSku || !/[A-Za-z0-9]/.test(baseSku) || !Number.isSafeInteger(packQty) || packQty < 1) continue;
+    return { baseSku, packQty };
+  }
+  return null;
+}
+
+/**
+ * Piece count for a pack label.
+ * eBay's line quantity is how many packs were bought. `106683(x2)` with quantity 1 is 2 pieces.
+ * A quantity that is already at least one pack and divides evenly is left alone, so applying
+ * the same label again does not multiply a second time.
+ */
+export function pieceQtyForPack(lineQty: number, packQty: number): number {
+  if (!Number.isInteger(packQty) || packQty <= 1) return lineQty;
+  if (!Number.isFinite(lineQty) || lineQty <= 0) return lineQty;
+  const qtyMillis = Math.round(lineQty * 1000);
+  const packMillis = packQty * 1000;
+  if (qtyMillis >= packMillis && qtyMillis % packMillis === 0) return lineQty;
+  const pieces = Math.round(lineQty * packQty * 1000) / 1000;
+  return Number.isFinite(pieces) && pieces > 0 ? pieces : lineQty;
+}
+
+function formatPieceQty(qty: number): string {
+  if (Number.isInteger(qty)) return String(qty);
+  return String(Math.round(qty * 1000) / 1000);
+}
+
+function formatPieceUnit(unit: number): string {
+  const rounded = Math.round(unit * 10000) / 10000;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/**
+ * What Customer PN blur and Find SKU do with a pack label.
+ * `106683_2PK` or `106683(x2)` with line quantity 1 searches ITS SKU `106683` and becomes 2 pieces.
+ * The unit price is divided so the extension stays the amount the buyer paid.
+ * A quantity that is already the piece count is not multiplied again.
+ */
+export function applyPackToLine(input: { part: string; qty: string; unitPrice: string }): {
+  search: string;
+  qty: string;
+  unitPrice: string;
+  packQty: number | null;
+} {
+  const pack = parsePackLabel(input.part);
+  const search = (pack?.baseSku ?? input.part).trim();
+  if (!pack) return { search, qty: input.qty, unitPrice: input.unitPrice, packQty: null };
+  const qty = Number(input.qty);
+  const pieces = pieceQtyForPack(Number.isFinite(qty) ? qty : 0, pack.packQty);
+  if (!(qty > 0) || pieces === qty) {
+    return { search, qty: input.qty, unitPrice: input.unitPrice, packQty: pack.packQty };
+  }
+  const price = Number(input.unitPrice);
+  const unit = Number.isFinite(price) ? perPieceUnit(qty, price, pieces) : null;
+  return {
+    search,
+    qty: formatPieceQty(pieces),
+    unitPrice: unit == null ? input.unitPrice : formatPieceUnit(unit),
+    packQty: pack.packQty,
+  };
+}
+
+/** Keep the buyer extension when a pack quantity becomes a piece quantity. */
+export function perPieceUnit(lineQty: number, unitPrice: number, pieceQty: number): number | null {
+  if (!(lineQty > 0) || !(pieceQty > 0) || !Number.isFinite(unitPrice) || unitPrice < 0) return null;
+  const total = Math.round(lineQty * unitPrice * 100) / 100;
+  const unit = Math.round((total / pieceQty) * 10000) / 10000;
+  return Number.isFinite(unit) && unit >= 0 ? unit : null;
 }
 
 export function resolveSkuMap(wanted: readonly string[], items: readonly { id: string; sku: string }[]): Map<string, string> {

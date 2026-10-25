@@ -66,6 +66,7 @@ type EbayStatus = {
     seeded: boolean;
     seededAt: string | null;
     linked: number | null;
+    assigned: number | null;
     watermark: string | null;
   };
   canRefreshListings: boolean;
@@ -87,7 +88,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
   const [error, setError] = useState<string | null>(null);
   const [ebayError, setEbayError] = useState<string | null>(null);
   const [busy, setBusy] = useState<
-    "sync" | "customer" | "vendor" | "disconnect" | "ebay-test" | "ebay-disconnect" | "ebay-listings" | "ebay-orders" | "ebay-seed" | null
+    "sync" | "customer" | "vendor" | "disconnect" | "ebay-test" | "ebay-disconnect" | "ebay-listings" | "ebay-orders" | "ebay-seed" | "ebay-backfill" | null
   >(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [ebayNotice, setEbayNotice] = useState<string | null>(null);
@@ -281,6 +282,23 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
       await load();
     } catch (err) {
       setEbayError(err instanceof Error ? err.message : "The log map could not be applied.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function assignLegacySoNumbers() {
+    setBusy("ebay-backfill");
+    setEbayNotice(null);
+    setEbayError(null);
+    try {
+      const response = await fetch("/api/ebay/order-seed/backfill", { method: "POST" });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) setEbayError(body.message || "Legacy SO numbers could not be assigned.");
+      else setEbayNotice(body.message || "Legacy SO numbers assigned.");
+      await load();
+    } catch (err) {
+      setEbayError(err instanceof Error ? err.message : "Legacy SO numbers could not be assigned.");
     } finally {
       setBusy(null);
     }
@@ -591,7 +609,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
               {ebay.orders?.available ? (
                 <p className="hint">
                   {ebay.orders.seeded
-                    ? `Legacy log map applied${ebay.orders.seededAt ? ` ${formatWhen(ebay.orders.seededAt)}` : ""}. ${ebay.orders.linked ?? 0} sales ${(ebay.orders.linked ?? 0) === 1 ? "order" : "orders"} linked.`
+                    ? `Legacy log map applied${ebay.orders.seededAt ? ` ${formatWhen(ebay.orders.seededAt)}` : ""}. ${ebay.orders.linked ?? 0} sales ${(ebay.orders.linked ?? 0) === 1 ? "order" : "orders"} linked.${ebay.orders.assigned == null ? "" : ` ${ebay.orders.assigned} draft ${(ebay.orders.assigned ?? 0) === 1 ? "order was" : "orders were"} given a legacy SO number.`}`
                     : "Legacy log map is not applied. Pull orders stays off until it is, so history does not create a second draft."}
                 </p>
               ) : null}
@@ -610,6 +628,13 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
                     {busy === "ebay-seed" ? "Applying log map…" : "Apply log map"}
                   </button>
                 </form>
+              ) : null}
+              {ebay.canRefreshListings && ebay.orders?.seeded ? (
+                <p>
+                  <button type="button" className="secondary" disabled={busy !== null} onClick={() => void assignLegacySoNumbers()}>
+                    {busy === "ebay-backfill" ? "Assigning SO numbers…" : "Assign legacy SO numbers"}
+                  </button>
+                </p>
               ) : null}
               {ebayNeedsReconnect ? <p className="banner error">{EBAY_RECONNECT_MESSAGE}</p> : null}
               {ebay.message ? <p className="banner error">{ebay.message}</p> : null}

@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   allocationsCover,
+  compareSalesOrderList,
   formatSalesOrderNumber,
   hideSalesMoney,
   invoiceNumber,
   lineExtension,
   lineRequiresItem,
+  salesOrderListReference,
+  salesOrderListScope,
+  syncSalesLineMoney,
   parseSalesOrderNumber,
   partMatches,
   partPrefix,
@@ -27,6 +31,40 @@ describe("sales order draft", () => {
   it("extends a line from quantity and unit price", () => {
     assert.equal(lineExtension("10", "12.5"), "125.00");
     assert.equal(lineExtension("0", "12.5"), null);
+  });
+
+  it("keeps quantity, unit price, and extension consistent", () => {
+    const fromUnit = syncSalesLineMoney({ qty: "2", unitPrice: "10.125", extPrice: "", edited: "unit" });
+    assert.equal(fromUnit.unitPrice, "10.125");
+    assert.equal(fromUnit.extPrice, "20.25");
+
+    const fromExt = syncSalesLineMoney({ qty: "3", unitPrice: "", extPrice: "10.00", edited: "ext" });
+    assert.equal(fromExt.unitPrice, "3.3333");
+    assert.equal(fromExt.extPrice, "10.00");
+    assert.equal(lineExtension("3", fromExt.unitPrice), "10.00");
+
+    const fromQty = syncSalesLineMoney({ qty: "2", unitPrice: "6338", extPrice: "6338.00", edited: "qty" });
+    assert.equal(fromQty.extPrice, "6338.00");
+    assert.equal(fromQty.unitPrice, "3169.00");
+    assert.equal(lineExtension("2", fromQty.unitPrice), "6338.00");
+  });
+
+  it("lists an eBay order id or a customer PO and skips the internal reference", () => {
+    assert.equal(salesOrderListReference({ ebayOrderId: "12-03456-78901", customerPo: "PO-1" }), "12-03456-78901");
+    assert.equal(salesOrderListReference({ customerPo: "PO-1" }), "PO-1");
+    assert.equal(salesOrderListReference({ customerPo: "" }), "");
+    assert.equal(salesOrderListScope(undefined), "drafts");
+    assert.equal(salesOrderListScope("all"), "all");
+    assert.equal(
+      compareSalesOrderList(
+        { orderDate: "2026-10-01", createdAt: "2026-10-01T00:00:00Z" },
+        { orderDate: "2026-10-02", createdAt: "2026-09-01T00:00:00Z" },
+      ),
+      1,
+    );
+    assert.ok(
+      compareSalesOrderList({ orderDate: null, createdAt: "2026-10-03T00:00:00Z" }, { orderDate: "2026-10-01", createdAt: "2026-01-01T00:00:00Z" }) > 0,
+    );
   });
 
   it("requires allocations to add up to the line", () => {

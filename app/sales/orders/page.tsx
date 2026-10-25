@@ -1,18 +1,24 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
-import { formatSalesMoney, salesOrderStatusLabel } from "@/lib/salesOrderDraft";
+import { formatSalesMoney, salesOrderListScope, salesOrderStatusLabel } from "@/lib/salesOrderDraft";
 import { listSalesOrders } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
 
 export const dynamic = "force-dynamic";
 
-export default async function SalesOrdersPage() {
+export default async function SalesOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
   const access = await salesPageAccess();
+  const scope = salesOrderListScope((await searchParams).view);
+  const showAll = scope === "all";
   let orders: Awaited<ReturnType<typeof listSalesOrders>> = [];
   let problem: string | null = null;
   try {
-    orders = await listSalesOrders();
+    orders = await listSalesOrders(scope);
   } catch (error) {
     problem = errorText(error);
   }
@@ -29,12 +35,25 @@ export default async function SalesOrdersPage() {
       ) : (
         <p className="muted">You can view sales orders. Creating and approving is limited to admin and staff.</p>
       )}
+      <div className="so-list-switch">
+        <p className="label-caption">{showAll ? "Every sales order" : "Drafts that still need processing"}</p>
+        <nav className="label-segments" aria-label="Which sales orders to show">
+          <Link href="/sales/orders" aria-current={showAll ? undefined : "page"}>
+            Drafts to process
+          </Link>
+          <Link href="/sales/orders?view=all" aria-current={showAll ? "page" : undefined}>
+            All orders
+          </Link>
+        </nav>
+      </div>
       {problem ? (
         <p className="banner error" role="alert">
           {problem}
         </p>
       ) : null}
-      {!problem && orders.length === 0 ? <p className="muted">No sales orders yet.</p> : null}
+      {!problem && orders.length === 0 ? (
+        <p className="muted">{showAll ? "No sales orders yet." : "No drafts to process."}</p>
+      ) : null}
       {orders.length > 0 ? (
         <>
           <div className="card so-table-scroll">
@@ -42,9 +61,8 @@ export default async function SalesOrdersPage() {
               <thead>
                 <tr>
                   <th>Number</th>
-                  <th>eBay order</th>
-                  <th>Sales record</th>
                   <th>Customer</th>
+                  <th>Order reference</th>
                   <th>Status</th>
                   <th>Order date</th>
                   <th>Ship date</th>
@@ -57,9 +75,8 @@ export default async function SalesOrdersPage() {
                     <td className="sku">
                       <Link href={`/sales/orders/${order.id}`}>{order.number}</Link>
                     </td>
-                    <td>{order.ebayOrderId}</td>
-                    <td>{order.ebaySalesRecordRef}</td>
                     <td>{order.customerName}</td>
+                    <td>{order.orderReference}</td>
                     <td>
                       <Badge tone={order.status}>{salesOrderStatusLabel(order.status)}</Badge>
                     </td>
@@ -76,20 +93,10 @@ export default async function SalesOrdersPage() {
               <li className="so-card" key={order.id}>
                 <Link href={`/sales/orders/${order.id}`}>{order.number}</Link>
                 <dl>
-                  {order.ebayOrderId ? (
-                    <>
-                      <dt>eBay order</dt>
-                      <dd>{order.ebayOrderId}</dd>
-                    </>
-                  ) : null}
-                  {order.ebaySalesRecordRef ? (
-                    <>
-                      <dt>Sales record</dt>
-                      <dd>{order.ebaySalesRecordRef}</dd>
-                    </>
-                  ) : null}
                   <dt>Customer</dt>
                   <dd>{order.customerName}</dd>
+                  <dt>Order reference</dt>
+                  <dd>{order.orderReference}</dd>
                   <dt>Status</dt>
                   <dd>{salesOrderStatusLabel(order.status)}</dd>
                   <dt>Order date</dt>

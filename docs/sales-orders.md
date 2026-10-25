@@ -16,7 +16,7 @@ An eBay draft's product lines store the unit price and extension after the eBay 
 
 Before the first eBay pull, seed `ebay_order_id` and `ebay_sales_record_ref` from the legacy log map (Order Number and Sales Record No on the row whose REF is that SO number). The map stays out of git. Admin > Integrations > eBay accepts the CSV, updates matching sales orders, and does not create orders. Pull orders stays off until that seed row exists. Inside the 2026 window, an eBay order that already matches `ebay_order_id`, or a single `ebay_sales_record_ref`, updates that sales order instead of inserting another one. The customer on a new draft is the existing eBay Customer record. Buyer name and username are stored on the order. No per-buyer customer is created.
 
-The internal reference is a separate note on the order. The SO number itself is the reference assigned at approval.
+The form does not ask for an internal reference, and nothing requires one. `sales_orders.reference` stays in the database and is not shown on the list, the draft, or the order. A save of an order that already has one keeps that value. Customer PO stays on the form. An eBay order shows its eBay order number on the list and on the order. The sales record number stays on the order and is not a list column. The SO number itself is assigned at approval.
 
 ## Channel
 
@@ -42,7 +42,13 @@ Suggested SKUs are a prefix match after uppercasing and stripping spaces, `/`, a
 
 Bill-to and ship-to are copied from the customer and can be edited. **Save address to customer** writes them back with `updateContact`. A customer that already has a QuickBooks id is marked `pending`, and the existing customer push sends the change. If ship-to line 2 is blank, attention is copied into line 2. The ship-to phone updates the customer phone.
 
-Choosing a customer also fills customer PO, internal reference, channel, order date, requested ship date, terms, Incoterms, ship method, and carrier account from that customer's latest sales order.
+Choosing a customer also fills customer PO, channel, order date, requested ship date, terms, Incoterms, ship method, and carrier account from that customer's latest sales order. It does not copy an internal reference.
+
+The list defaults to drafts that still need processing. **All orders** shows every status. Rows are newest order date first, and an order with no order date sorts last. The same date sorts by the time the row was created, newest first. Columns are number, customer, order reference, status, order date, ship date, and total. Order reference is the eBay order id, or the customer PO when the order is not from eBay. A draft with no SO number is labeled Draft.
+
+On a line, quantity, unit price, and extension stay consistent. Changing the unit price recomputes the extension. Changing the extension, or the quantity, recomputes the unit price and keeps the extension. Unit price is four decimals. Extension is cents. The extension is editable. `write_sales_order` stores the extension as the cent rounding of quantity times unit price.
+
+A customer part such as `106683_2PK` or `106683(x2)` is searched as ITS SKU `106683`. Leaving that field, or using Find SKU, sets the line quantity to the piece count when the typed quantity is still the pack count. A quantity of 1 on `106683(x2)` becomes 2, and the unit price is split so the extension stays the same. A quantity that is already the piece count is not multiplied again. Production does not do this until this change is deployed.
 
 Unit price, extension, order total, internal notes, and the eBay money columns are removed on the server when `can_view_financials` is false. Those columns are `ebay_transaction_fee`, `ebay_label_fee`, `ebay_ad_fee`, and `ebay_order_earnings`, all nullable. Admin, staff, and read-only can see prices. Other roles see parts and quantities. Files can contain prices, so those roles receive no attachments. Admin and staff can edit. Read-only cannot.
 
