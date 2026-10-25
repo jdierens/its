@@ -49,7 +49,7 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
-import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingAutoFillFocus, receivingBinDecision, receivingBinDefault, skuAlreadyInBinNote } from "@/lib/receivingLine";
+import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, skuAlreadyInBinNote } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
   type BinDetail,
@@ -357,6 +357,7 @@ export function ReceivingPage() {
     if (rawScan) setComment((current) => (current.trim() ? current : rawScan));
     setCleaned(false);
     setWiped(false);
+    queueMicrotask(() => qtyField.current?.focus());
   }
 
   async function runSearch(raw: string, submitted: boolean) {
@@ -391,9 +392,6 @@ export function ReceivingPage() {
       setSettledQuery(query);
       if (outcome.type === "select") {
         choose(outcome.item, rawScan, query);
-        if (receivingAutoFillFocus(outcome.type) === "qty") {
-          queueMicrotask(() => qtyField.current?.focus());
-        }
         return;
       }
       if (outcome.type === "empty" || outcome.type === "missing") {
