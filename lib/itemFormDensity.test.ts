@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isMemoryTaxonomy, memoryAttributeSlot, memorySlotRank, type MemorySlot } from "./itemFormDensity.ts";
+import {
+  isMemoryTaxonomy,
+  memoryAttributeSlot,
+  memoryRowLabel,
+  memorySlotRank,
+  type MemorySlot,
+} from "./itemFormDensity.ts";
 
 test("memory attributes line up as family, speed, capacity, ranking, form factor", () => {
   const names = ["form factor", "voltage", "ranking", "capacity_gb", "speed", "Family"];
@@ -13,6 +19,15 @@ test("memory attributes line up as family, speed, capacity, ranking, form factor
   assert.equal(memoryAttributeSlot("capacity"), "capacity");
   assert.equal(memoryAttributeSlot("form_factor"), "form_factor");
   assert.equal(memoryAttributeSlot("voltage"), null);
+});
+
+test("the memory capacity label reads capacity (GB)", () => {
+  assert.equal(memoryRowLabel("capacity_gb", "GB"), "capacity (GB)");
+  assert.equal(memoryRowLabel("capacity", "GB"), "capacity (GB)");
+  assert.equal(memoryRowLabel("capacity_gb", null), "capacity (GB)");
+  assert.equal(memoryRowLabel("speed", "MT/s"), "speed (MT/s)");
+  assert.equal(memoryRowLabel("form_factor", null), "form_factor");
+  assert.equal(memoryRowLabel("ranking", "  "), "ranking");
 });
 
 test("the memory row is the MEM short code", () => {

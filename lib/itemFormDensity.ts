@@ -25,3 +25,9 @@ export function memoryAttributeSlot(name: string): MemorySlot | null {
 export function memorySlotRank(slot: MemorySlot): number {
   return MEMORY_SLOTS.indexOf(slot);
 }
+
+export function memoryRowLabel(name: string, unit: string | null): string {
+  if (memoryAttributeSlot(name) === "capacity") return "capacity (GB)";
+  const trimmed = unit?.trim() ?? "";
+  return trimmed ? `${name} (${trimmed})` : name;
+}

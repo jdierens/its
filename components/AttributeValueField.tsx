@@ -1,4 +1,5 @@
 import { FastInput } from "@/components/FastField";
+import { memoryRowLabel } from "@/lib/itemFormDensity";
 import { attributeValueError } from "@/lib/itemFields";
 
 export { attributeValueError };
@@ -42,7 +43,11 @@ export function AttributeValueField({ attribute, value, onChange, onDraft, slot 
 
   return (
     <label data-slot={slot || undefined}>
-      {attributeLabel(attribute.name, attribute.unit)}
+      <span className="attr-caption">
+        {slot
+          ? memoryRowLabel(attribute.name, attribute.unit)
+          : attributeLabel(attribute.name, attribute.unit)}
+      </span>
       <FastInput
         list={attribute.uses_list && attribute.allowedValues.length > 0 ? listId : undefined}
         className={attribute.data_type === "text" ? undefined : "num"}
