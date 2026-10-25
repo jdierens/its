@@ -75,6 +75,19 @@ test("several matches stay a list, and a capped result is not treated as the onl
   assert.equal(labelLookupChoice({ submitted: true, exact: false, matchCount: 0, truncated: false }), "empty");
 });
 
+test("a hyphenated query ranks the name that stores the part without those hyphens", () => {
+  const sorted = sortLabelMatches(
+    [
+      item({ id: "ccat", sku: "102847", name: "CARD\\NIC\\E30\\100G_2Q\\LP-FH\\MCX516A-CCAT" }),
+      item({ id: "short", sku: "999", name: "CDAT" }),
+      item({ id: "fsb", sku: "107109", name: "CARD\\NIC\\E30\\100G_2Q\\LP-FH\\MCX516A-CDAT_FSB" }),
+      item({ id: "cdat", sku: "106823", name: "CARD\\NIC\\E30\\100G_2Q\\LP-FH\\MCX516A-CDAT" }),
+    ],
+    "MCX-516A-CDAT",
+  );
+  assert.deepEqual(sorted.map((row) => row.sku), ["106823", "107109", "999", "102847"]);
+});
+
 test("matches put the SKU hit ahead of a name or description hit", () => {
   const sorted = sortLabelMatches(
     [

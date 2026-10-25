@@ -1,6 +1,7 @@
 "use server";
 
 import { errorText } from "@/lib/errors";
+import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
 import { type PurchaseAccess } from "@/lib/purchaseAccess";
 import { normalizeShipments, parseFreightIn, type ShipmentInput } from "@/lib/poCharges";
 import { formatExtension, formatUnitPrice } from "@/lib/poLineMoney";
@@ -89,14 +90,27 @@ export async function searchPurchaseItems(query: string): Promise<PurchaseItemHi
   const needle = query.trim().replace(/[%_,]/g, "");
   if (needle.length < 1) return [];
   const pattern = `%${needle}%`;
-  const { data, error } = await (await getSupabase())
-    .from("items")
-    .select("id, sku, name, description")
-    .or(`sku.ilike.${pattern},name.ilike.${pattern},description.ilike.${pattern}`)
-    .order("sku")
-    .limit(8);
-  if (error) throw new Error(errorText(error));
-  return (data ?? []).map((row) => ({
+  const supabase = await getSupabase();
+  const [listed, alnumIds] = await Promise.all([
+    supabase
+      .from("items")
+      .select("id, sku, name, description")
+      .or(`sku.ilike.${pattern},name.ilike.${pattern},description.ilike.${pattern}`)
+      .order("sku")
+      .limit(8),
+    itemIdsMatchingAlnum(supabase, query, { columns: ["sku", "name", "description"], limit: 8 }),
+  ]);
+  if (listed.error) throw new Error(errorText(listed.error));
+  const ilikeRows = [...(listed.data ?? [])];
+  const seen = new Set(ilikeRows.map((row) => String(row.id)));
+  const missing = alnumIds.filter((id) => !seen.has(id));
+  const extraRows: typeof ilikeRows = [];
+  if (missing.length > 0) {
+    const extra = await supabase.from("items").select("id, sku, name, description").in("id", missing);
+    if (extra.error) throw new Error(errorText(extra.error));
+    extraRows.push(...(extra.data ?? []));
+  }
+  return [...extraRows, ...ilikeRows].slice(0, 8).map((row) => ({
     id: String(row.id),
     sku: String(row.sku ?? ""),
     name: String(row.name ?? ""),

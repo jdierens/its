@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { listingMatchSku, listingsColumnMissing, listingsTableMissing } from "@/lib/ebay/listings";
 import { ebayItemUrl } from "@/lib/ebay/itemUrl";
 import { safeHttpsUrl } from "@/lib/ebay/trading";
+import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
 import { escapeLike } from "@/lib/labelLookup";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
@@ -114,20 +115,28 @@ export async function searchItemsToMatch(query: string): Promise<EbayMatchItem[]
   const admin = getServiceSupabase();
   if (!admin) throw new Error("Set SUPABASE_SERVICE_ROLE_KEY on the server.");
   const quoted = quotedLike(trimmed);
-  const selected = await admin
-    .from("items")
-    .select("id, sku, name")
-    .or(`sku.ilike.${quoted},name.ilike.${quoted}`)
-    .order("sku")
-    .limit(MATCH_SEARCH_LIMIT);
+  const [selected, alnumIds] = await Promise.all([
+    admin.from("items").select("id, sku, name").or(`sku.ilike.${quoted},name.ilike.${quoted}`).order("sku").limit(MATCH_SEARCH_LIMIT),
+    itemIdsMatchingAlnum(admin, trimmed, { columns: ["sku", "name"], limit: MATCH_SEARCH_LIMIT }),
+  ]);
   if (selected.error) throw new Error(selected.error.message);
+  const ilikeRows = [...(selected.data ?? [])];
+  const seen = new Set(ilikeRows.flatMap((row) => (typeof row.id === "string" ? [row.id] : [])));
+  const missing = alnumIds.filter((id) => !seen.has(id));
+  const rows = [...ilikeRows];
+  if (missing.length > 0) {
+    const extra = await admin.from("items").select("id, sku, name").in("id", missing);
+    if (extra.error) throw new Error(extra.error.message);
+    rows.unshift(...(extra.data ?? []));
+  }
   const items: EbayMatchItem[] = [];
-  for (const row of selected.data ?? []) {
+  for (const row of rows) {
     if (typeof row.id !== "string") continue;
     const sku = typeof row.sku === "string" ? row.sku : "";
     const name = typeof row.name === "string" ? row.name : "";
     if (!sku && !name) continue;
     items.push({ id: row.id, sku, name });
+    if (items.length === MATCH_SEARCH_LIMIT) break;
   }
   return items;
 }
@@ -178,13 +187,13 @@ function quotedLike(value: string): string {
 
 async function itemIdsMatchingQuery(admin: SupabaseClient, query: string): Promise<string[]> {
   const quoted = quotedLike(query);
-  const selected = await admin
-    .from("items")
-    .select("id")
-    .or(`sku.ilike.${quoted},name.ilike.${quoted}`)
-    .limit(ITEM_LOOKUP_LIMIT);
-  if (selected.error) return [];
-  return (selected.data ?? []).flatMap((row) => (typeof row.id === "string" ? [row.id] : []));
+  const [selected, alnumIds] = await Promise.all([
+    admin.from("items").select("id").or(`sku.ilike.${quoted},name.ilike.${quoted}`).limit(ITEM_LOOKUP_LIMIT),
+    itemIdsMatchingAlnum(admin, query, { columns: ["sku", "name"], limit: ITEM_LOOKUP_LIMIT }),
+  ]);
+  if (selected.error) return alnumIds.slice(0, ITEM_LOOKUP_LIMIT);
+  const ids = (selected.data ?? []).flatMap((row) => (typeof row.id === "string" ? [row.id] : []));
+  return [...new Set([...alnumIds, ...ids])].slice(0, ITEM_LOOKUP_LIMIT);
 }
 
 type ListingPage = {

@@ -48,7 +48,7 @@ Apply `supabase/migrations/20261023070123_receipt_edits.sql` before corrections.
 
 ## Scanning a line
 
-The SKU field splits the text on spaces and searches the longest token first. When two tokens are the same length, the one with both letters and digits is first. `KR M393A8G40BB4-CWE 2349` searches `M393A8G40BB4-CWE`, then `2349`, then `KR`. The line under the field says which token was used. If that token misses, the next token is tried.
+The SKU field splits the text on spaces and searches the longest token first. When two tokens are the same length, the one with both letters and digits is first. `KR M393A8G40BB4-CWE 2349` searches `M393A8G40BB4-CWE`, then `2349`, then `KR`. The line under the field says which token was used. If that token misses, the next token is tried. A token also matches when the query and the SKU, name, or description contain each other after every character that is not a letter or digit is removed, so `MCX-516A-CDAT` finds `CARD\NIC\E30\100G_2Q\LP-FH\MCX516A-CDAT`. That extra match waits on `supabase/migrations/20261025230000_item_alnum_search.sql`. Until it is applied, search keeps the current contains match. One hit still selects itself. The typed text stays in Search.
 
 The full scan is stored on `stock_events.scan_raw` only when the search tried more than one token. A single typed SKU, name, or description is not a scan. When the comment is blank, that multi-token scan is stored as the comment so the country of origin and the date code stay on the line. Apply `supabase/migrations/20261023070124_receipt_scan_raw.sql` for the column. It is additive and has not been applied. Until it is applied, a save still keeps the scan in the comment when that field was blank.
 
