@@ -34,7 +34,7 @@ import {
   suggestBins,
 } from "@/lib/receivingActions";
 import { distinctRecentProjects, projectToRestore, readStoredProject, writeStoredProject } from "@/lib/receivingProjects";
-import { scanSearchNote } from "@/lib/receivingScan";
+import { receiptSearchQuery, scanSearchNote } from "@/lib/receivingScan";
 import {
   RECEIVING_DATE_EDITABLE,
   beginReceiptSave,
@@ -112,6 +112,7 @@ export function ReceivingPage() {
   const [phoneLayout, setPhoneLayout] = useState(false);
   const [editorInitials, setEditorInitials] = useState("");
   const [scanRaw, setScanRaw] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [binCode, setBinCode] = useState("");
   const [binHeld, setBinHeld] = useState(0);
@@ -286,7 +287,7 @@ export function ReceivingPage() {
     }
   }
 
-  function choose(next: LabelItem, rawScan: string | null = null) {
+  function choose(next: LabelItem, rawScan: string | null = null, typedQuery: string | null = null) {
     const shown = labelShownText(next);
     holdQuery.current = shown;
     typed.current = shown;
@@ -298,6 +299,7 @@ export function ReceivingPage() {
     setActive(-1);
     setSettledQuery("");
     setError(null);
+    setSearchQuery(receiptSearchQuery(typedQuery));
     if (rawScan) setComment((current) => (current.trim() ? current : rawScan));
     setCleaned(false);
     setWiped(false);
@@ -309,6 +311,7 @@ export function ReceivingPage() {
       setItem(null);
       setMatches([]);
       setScanRaw(null);
+      setSearchQuery(null);
       setScanNote(null);
       setError("Enter a SKU, name, or description.");
       return;
@@ -332,7 +335,7 @@ export function ReceivingPage() {
       });
       setSettledQuery(query);
       if (outcome.type === "select") {
-        choose(outcome.item, rawScan);
+        choose(outcome.item, rawScan, query);
         return;
       }
       if (outcome.type === "empty" || outcome.type === "missing") {
@@ -381,7 +384,7 @@ export function ReceivingPage() {
       active,
     });
     if (highlighted) {
-      choose(highlighted);
+      choose(highlighted, null, settledQuery || field);
       return;
     }
     void runSearch(field, true);
@@ -548,6 +551,7 @@ export function ReceivingPage() {
         originQty: originParsed.qty,
         clientRequestId: requestId,
         scanRaw,
+        searchQuery,
         cleaned: flags.cleaned,
         wiped: flags.wiped,
       });
@@ -579,6 +583,7 @@ export function ReceivingPage() {
       setQty("1");
       setComment("");
       setScanRaw(null);
+      setSearchQuery(null);
       setScanNote(null);
       setFocusSku((current) => current + 1);
       if (project.trim()) {
@@ -833,6 +838,7 @@ export function ReceivingPage() {
                       setTruncated(false);
                       setActive(-1);
                       setScanRaw(null);
+                      setSearchQuery(null);
                       setScanNote(null);
                       setError(null);
                     }}
@@ -850,7 +856,7 @@ export function ReceivingPage() {
                           role="option"
                           aria-selected={index === active}
                           onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => choose(match)}
+                          onClick={() => choose(match, null, settledQuery)}
                         >
                           <strong>{match.sku || match.name}</strong>
                           <span>{match.name}</span>

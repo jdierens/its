@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { receiptChangeSummary, scanSearchNote, scanTokensInSearchOrder } from "@/lib/receivingScan";
+import { receiptChangeSummary, receiptSearchQuery, scanSearchNote, scanTokensInSearchOrder } from "@/lib/receivingScan";
 
 describe("receiving scan tokens", () => {
   it("searches the part number before the date code and the country", () => {
@@ -16,6 +16,14 @@ describe("receiving scan tokens", () => {
       "Searched M393A8G40BB4-CWE.",
     );
     assert.equal(scanSearchNote({ token: "1001", tried: ["1001"], found: true }), null);
+  });
+
+  it("keeps the typed find text and drops a blank search", () => {
+    assert.equal(receiptSearchQuery("  94415  "), "94415");
+    assert.equal(receiptSearchQuery("samsung 860"), "samsung 860");
+    assert.equal(receiptSearchQuery("   "), null);
+    assert.equal(receiptSearchQuery(null), null);
+    assert.equal(receiptSearchQuery("x".repeat(600))?.length, 500);
   });
 
   it("asks before a qty or SKU change", () => {
