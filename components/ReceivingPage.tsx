@@ -1029,14 +1029,7 @@ export function ReceivingPage() {
                             }
                           }}
                         >
-                          <td className="fit">
-                            {formatReceivedOn(entry.receivedOn)}
-                            {entry.edited ? (
-                              <span className="receive-edited" title={entry.editedBy ? `Edited by ${entry.editedBy}` : "Edited"}>
-                                edited
-                              </span>
-                            ) : null}
-                          </td>
+                          <td className="fit">{formatReceivedOn(entry.receivedOn)}</td>
                           <td className="fit initials">{entry.initials}</td>
                           <td className="fit">{entry.project ?? ""}</td>
                           <td className="fit">{entry.incomingBin ?? ""}</td>
@@ -1107,11 +1100,6 @@ export function ReceivingPage() {
                           <dt>Comment</dt>
                           <dd>{entry.comment ?? ""}</dd>
                         </dl>
-                        {entry.edited ? (
-                          <span className="receive-edited" title={entry.editedBy ? `Edited by ${entry.editedBy}` : "Edited"}>
-                            edited
-                          </span>
-                        ) : null}
                       </button>
                     )}
                   </li>
