@@ -1377,7 +1377,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
 
         <fieldset>
           <legend>Trade compliance</legend>
-          <div className="grid">
+          <div className="item-trade-row">
             <label>
               ECCN
               <FastInput
