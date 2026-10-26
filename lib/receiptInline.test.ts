@@ -98,7 +98,7 @@ describe("inline receipt edit", () => {
     assert.equal(wiped.body.wiped, true);
   });
 
-  it("rejects a bad date or qty and leaves the destination bin alone once an item is linked", () => {
+  it("rejects a bad date or qty and asks before a posted putaway bin change", () => {
     assert.equal(planReceiptEdit(entry(), { receivedOn: "yesterday" }, false).action, "invalid");
     assert.equal(planReceiptEdit(entry(), { qty: "-1" }, false).action, "invalid");
     assert.equal(planReceiptEdit(entry(), { originQty: "" }, false).action, "save");
@@ -107,9 +107,24 @@ describe("inline receipt edit", () => {
     assert.equal(cleared.body.originQty, null);
     assert.equal(cleared.body.binReference, "20042-B");
     const moved = planReceiptEdit(entry(), { bin: "10059-C" }, false);
-    assert.equal(moved.action, "invalid");
-    if (moved.action !== "invalid") return;
-    assert.match(moved.message, /once an item is linked/);
+    assert.equal(moved.action, "confirm");
+    if (moved.action !== "confirm") return;
+    assert.match(moved.summary, /Move 4 pcs of 94415 from bin 20042-B to bin 10059-C/);
+    assert.match(moved.summary, /out of the old bin/);
+    const saved = planReceiptEdit(entry(), { bin: "10059-c" }, true);
+    assert.equal(saved.action, "save");
+    if (saved.action !== "save") return;
+    assert.equal(saved.body.binReference, "10059-C");
+    assert.equal(planReceiptEdit(entry(), { bin: "20042-B" }, false).action, "unchanged");
+    const bad = planReceiptEdit(entry(), { bin: "nope" }, false);
+    assert.equal(bad.action, "invalid");
+    if (bad.action !== "invalid") return;
+    assert.match(bad.message, /five digits/);
+    const both = planReceiptEdit(entry(), { bin: "10059-C", qty: "6" }, false);
+    assert.equal(both.action, "confirm");
+    if (both.action !== "confirm") return;
+    assert.match(both.summary, /qty from 4 to 6/);
+    assert.match(both.summary, /to bin 10059-C/);
   });
 
   it("keeps the stored search when another cell or the SKU changes, and saves a search correction without a stock confirm", () => {

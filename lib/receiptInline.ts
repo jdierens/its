@@ -5,7 +5,7 @@ import { parseReceivingBinCode } from "@/lib/stockReceive";
 
 const BIN_CODE_MESSAGE = "A bin code is five digits, a hyphen, and B, C, or P.";
 
-/** Fields a clerk can change on a recent receipt. Putaway is not one of them. */
+/** Fields a clerk can change on a recent receipt, including the putaway bin. */
 export type ReceiptPatch = {
   receivedOn?: string;
   project?: string;
@@ -96,9 +96,9 @@ export function receiptBinReference(entry: { binReference?: string | null; putaw
 
 /**
  * One cell change, checked against the receipt already on screen.
- * On a posted line, qty or a different item asks for confirmation.
- * A pending line can change search, qty, comment, and bin without an item.
- * Choosing the item posts stock and asks first. The bin stays fixed after that link.
+ * On a posted line, qty, a different item, or a different putaway bin asks for confirmation.
+ * A pending line can change search, qty, comment, and bin without an item and without moving stock.
+ * Choosing the item posts stock and asks first.
  */
 export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, confirmed: boolean): ReceiptEditPlan {
   let receivedOn = "";
@@ -136,10 +136,8 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
   const binReference = patch.bin === undefined ? currentBin : (parseReceivingBinCode(patch.bin)?.reference ?? "");
   if (patch.bin !== undefined && !binReference) return { action: "invalid", message: BIN_CODE_MESSAGE };
   if (pending && !binReference) return { action: "invalid", message: "Enter a bin." };
-  if (!pending && patch.bin !== undefined && binReference !== currentBin) {
-    return { action: "invalid", message: "The putaway bin stays as stored once an item is linked." };
-  }
   if (pending && qty < 1) return { action: "invalid", message: "Enter a whole number of at least 1." };
+  const binMoved = !pending && binReference !== currentBin;
 
   const linking = pending && Boolean(itemId);
   const itemChanged = Boolean(itemId) && itemId !== entry.itemId;
@@ -200,6 +198,13 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
   let summary = pending ? null : receiptChangeSummary({ sku: entry.sku, nextSku: sku, qty: entry.qty, nextQty: qty });
   if (!pending && !summary && itemChanged) {
     summary = `Change SKU from ${text(entry.sku) || "blank"} to ${sku || "blank"}? This posts an adjustment. The bin can't go below 0.`;
+  }
+  if (binMoved) {
+    const fromBin = currentBin ? `bin ${currentBin}` : "the stored bin";
+    const moved = `move ${qty} pcs of ${sku || "this item"} from ${fromBin} to bin ${binReference}`;
+    summary = summary
+      ? `${summary.replace(/\?[\s\S]*$/, "")} and ${moved}? This posts an adjustment and takes them out of the old bin.`
+      : `Move ${qty} pcs of ${sku || "this item"} from ${fromBin} to bin ${binReference}? This takes them out of the old bin.`;
   }
   if (summary && !confirmed) return { action: "confirm", summary, body };
   return { action: "save", body };

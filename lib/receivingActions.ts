@@ -483,6 +483,9 @@ export async function editReceipt(input: {
     p_bin_reference: input.binReference?.trim() || null,
   };
   let { error } = await supabase.rpc("edit_receipt", payload);
+  if (error && /putaway bin stays as stored/i.test(error.message ?? "")) {
+    throw new Error("Apply supabase/migrations/20261026201500_receipt_putaway_bin.sql before changing the bin on a posted receipt.");
+  }
   if (!payload.p_item_id && error && (missingSchema(error) || missingColumn(error) || /choose an item/i.test(error.message ?? ""))) {
     throw new Error("Apply the unmatched receipt migration before saving a line without an item.");
   }
