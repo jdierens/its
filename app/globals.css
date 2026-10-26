@@ -5289,6 +5289,27 @@ button.receive-bin-note {
   min-width: 3.25rem;
 }
 
+/* The title is the column's min width. A 1% fit cell with an empty button would otherwise collapse it. */
+.receiving-page .receive-table th.num.fit {
+  white-space: nowrap;
+  min-width: 7.25rem;
+}
+
+.receiving-page .receive-table th.sku,
+.receiving-page .receive-table td.sku {
+  min-width: 12ch;
+}
+
+.receiving-page .receive-table td.sku input.receive-cell-input {
+  min-width: 16ch;
+}
+
+.receive-table th.locations,
+.receive-table td.locations {
+  white-space: nowrap;
+  text-align: left;
+}
+
 .receive-table td.item {
   width: 60ch;
   min-width: 60ch;
@@ -5359,6 +5380,17 @@ button.receive-cell {
 
 button.receive-cell.num {
   text-align: right;
+}
+
+button.receive-cell.is-placeholder {
+  width: max-content;
+  max-width: none;
+  min-width: 9ch;
+  color: var(--ds-ink, var(--ink));
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 .receive-table input.receive-cell-input,
@@ -5488,12 +5520,18 @@ button.receive-card-open {
   white-space: nowrap;
 }
 
+/* --ink stays the light-theme navy. On the dark receiving surface that hides System Qty and Item Qty. */
 .receiving-page td.num,
-.receiving-page th.num,
 .receive-cards .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+  color: var(--ds-ink, var(--ink));
+}
+
+.receiving-page th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ds-muted, var(--muted));
 }
 
 .receive-cards {

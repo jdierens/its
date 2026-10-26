@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   receiptReportFileName,
   receiptsDetailCsv,
+  formatPutawayQty,
   summarizeReceipts,
   summaryCsv,
   type ReceiptSummaryRow,
@@ -48,14 +49,36 @@ describe("receipt summary", () => {
     ]);
 
     assert.deepEqual(
-      rows.map((row) => [row.sku, row.name, row.search, row.qty, row.lines, row.pending]),
+      rows.map((row) => [row.sku, row.name, row.search, row.qty, row.lines, row.pending, row.locations]),
       [
-        ["100", "apple", "", 5, 2, false],
-        ["200", "Zebra", "", 2, 1, false],
-        ["", "", "samsung 860", 4, 2, true],
-        ["", "", "", 10, 2, true],
+        ["100", "apple", "", 5, 2, false, ""],
+        ["200", "Zebra", "", 2, 1, false, ""],
+        ["", "", "samsung 860", 4, 2, true, "(x3)10010-C"],
+        ["", "", "", 10, 2, true, ""],
       ],
     );
+  });
+
+  it("lists quantity in each putaway bin", () => {
+    assert.equal(
+      formatPutawayQty(
+        new Map([
+          ["10037", 8],
+          ["10002-C", 14],
+        ]),
+      ),
+      "(x14)10002-C | (x8)10037",
+    );
+    const rows = summarizeReceipts([
+      entry({ id: "1", itemId: "a", sku: "100", itemName: "Drive", qty: 14, binReference: "10002-C", putaway: "10002-C · HWS.00.00.00" }),
+      entry({ id: "2", itemId: "a", sku: "100", itemName: "Drive", qty: 8, putaway: "10037-B · HWS.01.02.03" }),
+      entry({ id: "3", itemId: "a", sku: "100", itemName: "Drive", qty: 1, binReference: "10002-c" }),
+      entry({ id: "4", qty: 2, searchQuery: "loose dimm", putaway: "10082-C · HWS.00.00.00" }),
+      entry({ id: "5", qty: 4, searchQuery: "loose dimm", binReference: "11103-P" }),
+    ]);
+    assert.equal(rows[0]?.qty, 23);
+    assert.equal(rows[0]?.locations, "(x15)10002-C | (x8)10037-B");
+    assert.equal(rows[1]?.locations, "(x2)10082-C | (x4)11103-P");
   });
 
   it("does not merge a pending search into a matched SKU", () => {
@@ -73,13 +96,13 @@ describe("receipt summary", () => {
 describe("receipt csv", () => {
   it("writes a summary with a pending bucket and neutralizes formulas", () => {
     const rows: ReceiptSummaryRow[] = [
-      { sku: "100", name: "apple", search: "", qty: 5, lines: 2, pending: false },
-      { sku: "", name: "", search: "=cmd|", qty: 4, lines: 1, pending: true },
+      { sku: "100", name: "apple", search: "", qty: 5, lines: 2, locations: "(x14)10002-C | (x8)10037", pending: false },
+      { sku: "", name: "", search: "=cmd|", qty: 4, lines: 1, locations: "", pending: true },
     ];
     const csv = summaryCsv(rows);
-    assert.ok(csv.startsWith("\uFEFFSKU,Item name,Search,Qty,Lines,Status\r\n"));
-    assert.match(csv, /100,apple,,5,2,\r\n/);
-    assert.match(csv, /,,'=cmd\|,4,1,Pending item\r\n/);
+    assert.ok(csv.startsWith("\uFEFFSKU,Item name,Search,Qty,Putaway,Lines,Status\r\n"));
+    assert.match(csv, /100,apple,,5,\(x14\)10002-C \| \(x8\)10037,2,\r\n/);
+    assert.match(csv, /,,'=cmd\|,4,,1,Pending item\r\n/);
   });
 
   it("exports unmatched lines with cleaned and wiped columns", () => {

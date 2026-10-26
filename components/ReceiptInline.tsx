@@ -173,18 +173,26 @@ function TextEdit({
 
 function CellButton({
   value,
+  placeholder,
   title,
   align,
   onClick,
 }: {
   value: string;
+  placeholder?: string;
   title?: string;
   align?: "right";
   onClick: () => void;
 }) {
+  const empty = value.trim() === "";
   return (
-    <button type="button" className={`receive-cell${align === "right" ? " num" : ""}`} title={title} onClick={onClick}>
-      {value || "\u00a0"}
+    <button
+      type="button"
+      className={`receive-cell${align === "right" ? " num" : ""}${empty && placeholder ? " is-placeholder" : ""}`}
+      title={title}
+      onClick={onClick}
+    >
+      {empty ? placeholder || "\u00a0" : value}
     </button>
   );
 }
@@ -498,7 +506,12 @@ export function ReceiptTableRow({
           {edit.field === "sku" ? (
             <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
           ) : (
-            <CellButton value={shown.sku} title={entry.itemId ? "Find another item" : "Pending item"} onClick={() => open("sku")} />
+            <CellButton
+              value={shown.sku}
+              placeholder={entry.itemId ? undefined : "Link item"}
+              title={entry.itemId ? "Find another item" : "Link an item"}
+              onClick={() => open("sku")}
+            />
           )}
         </td>
         <td className="item" title={shown.itemName}>
@@ -669,7 +682,12 @@ export function ReceiptCard({
           {edit.field === "sku" ? (
             <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
           ) : (
-            <CellButton value={shown.sku} title={entry.itemId ? "Find another item" : "Pending item"} onClick={() => open("sku")} />
+            <CellButton
+              value={shown.sku}
+              placeholder={entry.itemId ? undefined : "Link item"}
+              title={entry.itemId ? "Find another item" : "Link an item"}
+              onClick={() => open("sku")}
+            />
           )}
         </CardLine>
         <CardLine label="Item name">

@@ -145,8 +145,8 @@ export function ReceiptReports({
       {open ? (
         <div className="receive-summary">
           <p className="hint">
-            One row per SKU for this project, sorted by item name. Lines with no item are grouped by the exact search
-            and listed after the SKUs.
+            One row per SKU for this project, sorted by item name. Putaway is the quantity in each bin, for example
+            (x14)10002-C | (x8)10037. Lines with no item are grouped by the exact search and listed after the SKUs.
           </p>
           <div className="receive-actions">
             <button type="button" className="secondary" disabled={disabled || !rows} onClick={() => void exportCsv("summary")}>
@@ -171,6 +171,7 @@ export function ReceiptReports({
                       <th className="item">Item name</th>
                       <th className="search">Search</th>
                       <th className="num fit">Qty</th>
+                      <th className="locations">Putaway</th>
                       <th className="num fit">Lines</th>
                       <th className="fit">Status</th>
                     </tr>
@@ -187,6 +188,9 @@ export function ReceiptReports({
                           {row.search}
                         </td>
                         <td className="num fit">{row.qty}</td>
+                        <td className="locations" title={row.locations || undefined}>
+                          {row.locations}
+                        </td>
                         <td className="num fit">{row.lines}</td>
                         <td className="fit">{row.pending ? "Pending item" : ""}</td>
                       </tr>
