@@ -9,7 +9,7 @@ The receiving screen posts a known SKU into a bin. The top of the form is the re
 | Project | `stock_events.project` and, when a cycle opens, `bin_cycles.project` | A combobox. Focusing it lists this person's 10 most recently used projects from receipts with their initials, newest first. Typing narrows that list. A name that is not listed is still stored as typed. |
 | Receiving date | `stock_events.received_on` | Defaults to today in America/Los_Angeles. |
 | Incoming bin | `stock_events.incoming_tag` and, when a cycle opens, `bin_cycles.incoming_tag` | The database column is still `incoming_tag`. |
-| Originating system | `stock_events.origin_description` and, when a cycle opens, `bin_cycles.origin_description` | The database column is still `origin_description`. |
+| Originating system | `stock_events.origin_description` and, when a cycle opens, `bin_cycles.origin_description` | A combobox, like Project. Focusing it lists originating systems already stored on receipts, newest first. Typing narrows that list. A name that is not listed is still stored as typed, and the next receipt offers it. Older receipts keep the text already stored. The database column is still `origin_description`. There is no separate system table. |
 | Orig. system qty | `stock_events.origin_qty` | Optional whole number. The field label is shortened so the header stays on one row. This is the quantity the originating system reports, not the quantity put in the bin. |
 
 A bin that already holds stock keeps the cycle it opened with. The receipt line still stores the header that was on the form.

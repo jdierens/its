@@ -39,6 +39,7 @@ import {
 } from "@/lib/stockReceive";
 import type { BinType } from "@/lib/bins";
 import { lastPutawayBinReference } from "@/lib/receivingLine";
+import { RECENT_ORIGIN_SCAN, distinctRecentOrigins } from "@/lib/receivingOrigins";
 import { getSupabase } from "@/lib/supabase";
 
 function rpcError(error: { message?: string } | null): never {
@@ -244,6 +245,29 @@ export type RecentReceivingProjects = {
   projects: string[];
   latest: string | null;
 };
+
+export async function recentReceivingOrigins(): Promise<string[]> {
+  const supabase = await getSupabase();
+  const viewed = await supabase
+    .from("receipt_lines")
+    .select("origin_description")
+    .order("received_on", { ascending: false, nullsFirst: false })
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(RECENT_ORIGIN_SCAN);
+  if (!viewed.error) return distinctRecentOrigins((viewed.data ?? []) as { origin_description?: string | null }[]);
+  if (!missingSchema(viewed.error)) rpcError(viewed.error);
+  const legacy = await supabase
+    .from("stock_events")
+    .select("origin_description")
+    .eq("event_type", "receive_into_bin")
+    .order("received_on", { ascending: false, nullsFirst: false })
+    .order("occurred_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(RECENT_ORIGIN_SCAN);
+  if (legacy.error) rpcError(legacy.error);
+  return distinctRecentOrigins((legacy.data ?? []) as { origin_description?: string | null }[]);
+}
 
 export async function recentReceivingProjects(): Promise<RecentReceivingProjects> {
   const initials = await operatorInitials();
