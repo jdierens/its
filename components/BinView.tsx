@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useLayoutEffect, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { fetchBin, reprintBin } from "@/lib/binActions";
-import { readBinReceiptsOpen, writeBinReceiptsOpen } from "@/lib/binReceiptsOpen";
+import { readBinSectionOpen, writeBinSectionOpen, type BinSection } from "@/lib/binSectionOpen";
 import { binTypeLabel, type BinRecord } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
@@ -96,12 +96,113 @@ function todayLabel(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function BinSection({
+  id,
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  id: string;
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="bin-section" aria-labelledby={id}>
+      <h2 id={id}>
+        <button
+          type="button"
+          className="bin-section-toggle"
+          aria-expanded={open}
+          aria-controls={`${id}-panel`}
+          onClick={onToggle}
+        >
+          <ChevronRight
+            size={18}
+            strokeWidth={2}
+            aria-hidden
+            className={open ? "bin-section-chevron is-open" : "bin-section-chevron"}
+          />
+          <span>{title}</span>
+        </button>
+      </h2>
+      <div id={`${id}-panel`} className="bin-section-panel" hidden={!open}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function LocationValue({
+  location,
+  busy,
+  onMove,
+}: {
+  location: string | null;
+  busy: boolean;
+  onMove: (code: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  function start() {
+    setDraft(location ?? "");
+    setEditing(true);
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    try {
+      await onMove(draft);
+      setEditing(false);
+    } catch {
+      // The page banner shows the move error. Leave the location open to edit.
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button type="button" className="bin-location" disabled={busy} onClick={start}>
+        {location ?? "No location yet"}
+      </button>
+    );
+  }
+
+  return (
+    <form className="bin-location-edit" onSubmit={(event) => void submit(event)}>
+      <input
+        aria-label="Move to location"
+        value={draft}
+        autoFocus
+        autoComplete="off"
+        autoCapitalize="characters"
+        spellCheck={false}
+        disabled={busy}
+        placeholder="HWS.00.00.00"
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setEditing(false);
+          }
+        }}
+      />
+      <button type="submit" disabled={busy}>
+        Move
+      </button>
+      <span className="hint">Scan a location code. It must match one location type.</span>
+    </form>
+  );
+}
+
 export function BinView({ reference }: { reference: string }) {
   const [detail, setDetail] = useState<BinDetail | null>(null);
   const [basic, setBasic] = useState<BinRecord | null>(null);
   const [missing, setMissing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [locationCode, setLocationCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [templates, setTemplates] = useState<BinLabelTemplates>(emptyBinLabelTemplates);
   const [itemTemplate, setItemTemplate] = useState<LabelTemplateId>("barcode");
@@ -109,16 +210,21 @@ export function BinView({ reference }: { reference: string }) {
   const [printedOn, setPrintedOn] = useState("");
   const [printJob, setPrintJob] = useState<{ kind: "bin" } | { kind: "item"; row: BinContentRow } | null>(null);
   const [printStamp, setPrintStamp] = useState(0);
-  const [receiptsOpen, setReceiptsOpen] = useState(true);
+  const [itemsOpen, setItemsOpen] = useState(true);
+  const [receiptsOpen, setReceiptsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useLayoutEffect(() => {
-    setReceiptsOpen(readBinReceiptsOpen(window.localStorage));
+    const storage = window.localStorage;
+    setItemsOpen(readBinSectionOpen(storage, "items"));
+    setReceiptsOpen(readBinSectionOpen(storage, "receipts"));
+    setHistoryOpen(readBinSectionOpen(storage, "history"));
   }, []);
 
-  function toggleReceipts() {
-    setReceiptsOpen((current) => {
+  function toggleSection(section: BinSection, setOpen: (value: boolean | ((current: boolean) => boolean)) => void) {
+    setOpen((current) => {
       const next = !current;
-      writeBinReceiptsOpen(window.localStorage, next);
+      writeBinSectionOpen(window.localStorage, section, next);
       return next;
     });
   }
@@ -178,16 +284,15 @@ export function BinView({ reference }: { reference: string }) {
     window.print();
   }, [printStamp]);
 
-  async function onMove(event: FormEvent) {
-    event.preventDefault();
+  async function onMove(code: string) {
     setBusy(true);
     setMessage(null);
     try {
-      await moveBinToLocation(reference, locationCode);
-      setLocationCode("");
+      await moveBinToLocation(reference, code);
       await load();
     } catch (error) {
       setMessage(errorText(error));
+      throw error;
     } finally {
       setBusy(false);
     }
@@ -257,7 +362,14 @@ export function BinView({ reference }: { reference: string }) {
               <dl className="bin-stats">
                 <div>
                   <dt>Current location</dt>
-                  <dd>{detail.locationCode ?? "No location yet"}</dd>
+                  <dd>
+                    <LocationValue
+                      key={reference}
+                      location={detail.locationCode}
+                      busy={busy}
+                      onMove={onMove}
+                    />
+                  </dd>
                 </div>
                 <div>
                   <dt>Printed</dt>
@@ -289,123 +401,100 @@ export function BinView({ reference }: { reference: string }) {
         </div>
         {detail ? (
           <>
-            <section className="bin-receipts" aria-labelledby="bin-receipts">
-              <h2 id="bin-receipts">
-                <button
-                  type="button"
-                  className="bin-section-toggle"
-                  aria-expanded={receiptsOpen}
-                  aria-controls="bin-receipts-panel"
-                  onClick={toggleReceipts}
-                >
-                  <ChevronRight
-                    size={18}
-                    strokeWidth={2}
-                    aria-hidden
-                    className={receiptsOpen ? "bin-section-chevron is-open" : "bin-section-chevron"}
-                  />
-                  <span>Receipts</span>
-                </button>
-              </h2>
-              <div id="bin-receipts-panel" className="bin-receipts-panel" hidden={!receiptsOpen}>
-                {receipts.length === 0 ? (
-                  <p className="hint">No receipts yet.</p>
-                ) : (
-                  <div className="cycle-list">
-                    {receipts.map((receipt) => (
-                      <ReceiptCard key={receipt.id} receipt={receipt} />
+            <BinSection
+              id="bin-items"
+              title="Items summary"
+              open={itemsOpen}
+              onToggle={() => toggleSection("items", setItemsOpen)}
+            >
+              {detail.contents.length === 0 ? (
+                <p className="hint">Empty. The next receipt opens a new cycle.</p>
+              ) : (
+                <>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>SKU</th>
+                        <th>Name</th>
+                        <th className="num">Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.contents.map((row) => (
+                        <tr key={row.itemId}>
+                          <td>{row.sku}</td>
+                          <td>{row.name}</td>
+                          <td className="num">{row.qty}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="hint">Click a label to print it.</p>
+                  <div className="bin-label-row">
+                    {detail.contents.map((row) => (
+                      <button
+                        key={row.itemId}
+                        type="button"
+                        className="bin-label-hit"
+                        aria-label={`Print item label for ${row.sku || row.name}`}
+                        onClick={() => printItemLabel(row)}
+                      >
+                        <span className="label-frame">
+                          <PrintedLabel
+                            template={itemTemplate}
+                            name={row.name}
+                            description={row.description.trim() || row.name}
+                            code={
+                              itemTemplate === "qr" && pageOrigin
+                                ? qrLabelPayload(pageOrigin, row.itemId, row.sku)
+                                : barcodeValue(row.sku, row.itemId)
+                            }
+                            sku={row.sku}
+                            itemId={row.itemId}
+                            origin={pageOrigin}
+                            quantity={String(row.qty)}
+                            shortCode={row.shortCode}
+                            printedOn={printedOn}
+                          />
+                        </span>
+                      </button>
                     ))}
                   </div>
-                )}
-              </div>
-            </section>
-            {moves.length > 0 ? (
-              <>
-                <h2>Moves</h2>
+                </>
+              )}
+            </BinSection>
+            <BinSection
+              id="bin-receipts"
+              title="Receipts"
+              open={receiptsOpen}
+              onToggle={() => toggleSection("receipts", setReceiptsOpen)}
+            >
+              {receipts.length === 0 ? (
+                <p className="hint">No receipts yet.</p>
+              ) : (
+                <div className="cycle-list">
+                  {receipts.map((receipt) => (
+                    <ReceiptCard key={receipt.id} receipt={receipt} />
+                  ))}
+                </div>
+              )}
+            </BinSection>
+            <BinSection
+              id="bin-history"
+              title="History of movements"
+              open={historyOpen}
+              onToggle={() => toggleSection("history", setHistoryOpen)}
+            >
+              {moves.length === 0 ? (
+                <p className="hint">No movements yet.</p>
+              ) : (
                 <ol className="cycle-events">
                   {moves.map((event) => (
                     <CycleEvent key={event.id} event={event} />
                   ))}
                 </ol>
-              </>
-            ) : null}
-            <h2>Contents</h2>
-            {detail.contents.length === 0 ? (
-              <p className="hint">Empty. The next receipt opens a new cycle.</p>
-            ) : (
-              <>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>SKU</th>
-                      <th>Name</th>
-                      <th className="num">Qty</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.contents.map((row) => (
-                      <tr key={row.itemId}>
-                        <td>{row.sku}</td>
-                        <td>{row.name}</td>
-                        <td className="num">{row.qty}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="hint">Click a label to print it.</p>
-                <div className="bin-label-row">
-                  {detail.contents.map((row) => (
-                    <button
-                      key={row.itemId}
-                      type="button"
-                      className="bin-label-hit"
-                      aria-label={`Print item label for ${row.sku || row.name}`}
-                      onClick={() => printItemLabel(row)}
-                    >
-                      <span className="label-frame">
-                        <PrintedLabel
-                          template={itemTemplate}
-                          name={row.name}
-                          description={row.description.trim() || row.name}
-                          code={
-                            itemTemplate === "qr" && pageOrigin
-                              ? qrLabelPayload(pageOrigin, row.itemId, row.sku)
-                              : barcodeValue(row.sku, row.itemId)
-                          }
-                          sku={row.sku}
-                          itemId={row.itemId}
-                          origin={pageOrigin}
-                          quantity={String(row.qty)}
-                          shortCode={row.shortCode}
-                          printedOn={printedOn}
-                        />
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-            <form onSubmit={onMove}>
-              <div className="field-with-action">
-                <label htmlFor="bin-move-location">
-                  <span>Move to location</span>
-                  <input
-                    id="bin-move-location"
-                    value={locationCode}
-                    autoComplete="off"
-                    autoCapitalize="characters"
-                    spellCheck={false}
-                    disabled={busy}
-                    placeholder="HWS.00.00.00"
-                    onChange={(event) => setLocationCode(event.target.value)}
-                  />
-                </label>
-                <button type="submit" disabled={busy}>
-                  Move
-                </button>
-              </div>
-              <span className="hint">Scan a location code. It must match one location type.</span>
-            </form>
+              )}
+            </BinSection>
             <div className="receive-actions">
               <Link href="/warehouse/receiving">Receive into a bin</Link>
             </div>
