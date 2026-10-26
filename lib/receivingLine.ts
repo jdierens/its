@@ -40,14 +40,93 @@ export function receivePrepKind(input: {
   return null;
 }
 
+export type AlreadyInBinRow = {
+  reference: string;
+  qty: number;
+  locationCode?: string | null;
+};
+
+export type AlreadyInBinOther = {
+  reference: string;
+  qty: number;
+};
+
+/** One under-bin note: the total in the bin on the line, then any other bins that still hold the SKU. */
+export type AlreadyInBinNote = {
+  current: string | null;
+  othersLead: string | null;
+  others: AlreadyInBinOther[];
+};
+
+type OnHandBin = {
+  reference: string;
+  qty: number;
+  location: string | null;
+};
+
+/** One total per bin. Several receipts of the same SKU add together. A total of 0 is left out. */
+function onHandByBin(rows: readonly AlreadyInBinRow[]): OnHandBin[] {
+  const order: string[] = [];
+  const byRef = new Map<string, OnHandBin>();
+  for (const row of rows) {
+    const parsed = parseReceivingBinCode(row.reference);
+    if (!parsed) continue;
+    const qty = Number(row.qty);
+    if (!Number.isFinite(qty)) continue;
+    const location = String(row.locationCode ?? "").trim();
+    const existing = byRef.get(parsed.reference);
+    if (!existing) {
+      order.push(parsed.reference);
+      byRef.set(parsed.reference, {
+        reference: parsed.reference,
+        qty,
+        location: location || null,
+      });
+      continue;
+    }
+    existing.qty += qty;
+    if (!existing.location && location) existing.location = location;
+  }
+  return order.map((reference) => byRef.get(reference)!).filter((bin) => bin.qty > 0);
+}
+
+function pcs(qty: number): string {
+  return `${qty} PCS`;
+}
+
 /**
- * Note under the bin field when this SKU is already in an open bin.
- * Location and quantity are glued: `HWS.00.00.00.00.96PCS`.
+ * The note under Bin.
+ * The bin in the field is one total. Other open bins on this project follow on the same line.
+ * Nothing is shown when that bin has no quantity and no other bin does either.
  */
-export function skuAlreadyInBinNote(locationCode: string | null | undefined, qty: number): string | null {
-  const location = (locationCode ?? "").trim();
-  if (!location || !Number.isFinite(qty) || qty <= 0) return null;
-  return `This SKU is already in this bin st ${location}.${qty}PCS`;
+export function alreadyInBinNote(input: {
+  currentBin: string;
+  rows: readonly AlreadyInBinRow[];
+}): AlreadyInBinNote | null {
+  const bins = onHandByBin(input.rows);
+  const currentRef = parseReceivingBinCode(input.currentBin)?.reference ?? null;
+  const current = currentRef ? (bins.find((bin) => bin.reference === currentRef) ?? null) : null;
+  const others = bins.filter((bin) => bin.reference !== currentRef);
+  if (!current && others.length === 0) return null;
+  const currentText = current
+    ? current.location
+      ? `${pcs(current.qty)} of this SKU are already in this bin at ${current.location}.`
+      : `${pcs(current.qty)} of this SKU are already in this bin.`
+    : null;
+  return {
+    current: currentText,
+    othersLead: others.length === 0 ? null : currentText ? "More in other bins:" : "This SKU is in other bins:",
+    others: others.map((bin) => ({ reference: bin.reference, qty: bin.qty })),
+  };
+}
+
+/** The same words the receiving line shows, as one sentence. */
+export function alreadyInBinNoteText(note: AlreadyInBinNote): string {
+  const otherText =
+    note.others.length === 0 || !note.othersLead
+      ? ""
+      : `${note.othersLead} ${note.others.map((bin) => `${bin.reference} (x${bin.qty})`).join(", ")}.`;
+  return [note.current, otherText].filter(Boolean).join(" ");
 }
 
 /** Store only the flag that taxonomy asked for. The other stays null. */
