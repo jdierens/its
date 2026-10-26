@@ -5,8 +5,10 @@ import { errorText } from "@/lib/errors";
 import { commitMove, fetchMovePlace, listRecentMoves, previewMove, undoMove } from "@/lib/moveActions";
 import {
   formatMoveWhen,
-  parseMoveQty,
+  moveItemLines,
+  setMoveItemQty,
   targetFields,
+  toggleMoveItem,
   type MovePlace,
   type MovePreview,
   type RecentMove,
@@ -17,7 +19,7 @@ import { isBinType } from "@/lib/bins";
 type Choice =
   | { kind: "bin" }
   | { kind: "bins"; refs: string[] }
-  | { kind: "item"; itemId: string; qty: string }
+  | { kind: "items"; lines: { itemId: string; qty: string }[] }
   | { kind: "empty" }
   | null;
 
@@ -102,27 +104,29 @@ export function MoveInventoryPage() {
       return;
     }
     const fromBin = sourceBin(place);
-    let kind: "bin" | "bins" | "item" | "empty" = "bin";
+    let kind: "bin" | "bins" | "item" | "items" | "empty" = "bin";
     let binRefs: string[] = [];
     let itemId: string | null = null;
     let qty: number | null = null;
+    let items: { itemId: string; qty: number }[] | undefined;
     if (choice.kind === "bin" && fromBin) binRefs = [fromBin];
     if (choice.kind === "bins") {
       kind = "bins";
       binRefs = choice.refs;
     }
-    if (choice.kind === "item") {
-      kind = "item";
-      itemId = choice.itemId;
-      const held = place.items.find((row) => row.itemId === choice.itemId);
-      qty = parseMoveQty(choice.qty, held?.qty ?? 0);
-      if (qty == null) {
-        setPreview({
-          ok: false,
-          message: held && Number(choice.qty) > held.qty ? `Only ${held.qty} are in that bin.` : "Enter a whole number of at least 1.",
-          summary: null,
-        });
+    if (choice.kind === "items") {
+      const parsed = moveItemLines(choice.lines, (id) => place.items.find((row) => row.itemId === id)?.qty);
+      if (!parsed.ok) {
+        setPreview({ ok: false, message: parsed.message, summary: null });
         return;
+      }
+      items = [...parsed.items].sort((a, b) => (a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0));
+      if (items.length === 1) {
+        kind = "item";
+        itemId = items[0].itemId;
+        qty = items[0].qty;
+      } else {
+        kind = "items";
       }
     }
     if (choice.kind === "empty") kind = "empty";
@@ -139,6 +143,7 @@ export function MoveInventoryPage() {
         fromBin,
         itemId,
         qty,
+        items,
         targetBin: target.targetBin,
         targetLocation: target.targetLocation,
       })
@@ -187,16 +192,22 @@ export function MoveInventoryPage() {
     const target = targetFields(targetText);
     const fromBin = sourceBin(place);
     const requestId = crypto.randomUUID();
-    let kind: "bin" | "bins" | "item" | "empty" = choice.kind === "empty" ? "empty" : choice.kind === "item" ? "item" : choice.kind;
+    let kind: "bin" | "bins" | "item" | "items" | "empty" = choice.kind === "empty" ? "empty" : choice.kind === "items" ? "items" : choice.kind;
     let binRefs: string[] = [];
     let itemId: string | null = null;
     let qty: number | null = null;
+    let items: { itemId: string; qty: number }[] | undefined;
     if (choice.kind === "bin" && fromBin) binRefs = [fromBin];
     if (choice.kind === "bins") binRefs = choice.refs;
-    if (choice.kind === "item") {
-      itemId = choice.itemId;
-      const held = place.items.find((row) => row.itemId === choice.itemId);
-      qty = parseMoveQty(choice.qty, held?.qty ?? 0);
+    if (choice.kind === "items") {
+      const parsed = moveItemLines(choice.lines, (id) => place.items.find((row) => row.itemId === id)?.qty);
+      if (!parsed.ok) return;
+      items = [...parsed.items].sort((a, b) => (a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0));
+      if (items.length === 1) {
+        kind = "item";
+        itemId = items[0].itemId;
+        qty = items[0].qty;
+      }
     }
     setBusy(true);
     setError(null);
@@ -207,6 +218,7 @@ export function MoveInventoryPage() {
         fromBin,
         itemId,
         qty,
+        items,
         targetBin: target.targetBin,
         targetLocation: target.targetLocation,
         comment: "",
@@ -341,16 +353,22 @@ export function MoveInventoryPage() {
             {known.items.length > 0 ? (
               <ul className="move-items">
                 {known.items.map((row) => {
-                  const selected = choice?.kind === "item" && choice.itemId === row.itemId;
+                  const line = choice?.kind === "items" ? choice.lines.find((entry) => entry.itemId === row.itemId) : undefined;
+                  const selected = line != null;
                   return (
                     <li key={row.itemId}>
                       <label className="move-choice">
                         <input
-                          type="radio"
-                          name="move-item"
+                          type="checkbox"
                           checked={selected}
                           disabled={busy}
-                          onChange={() => setChoice({ kind: "item", itemId: row.itemId, qty: String(row.qty) })}
+                          onChange={() => {
+                            setChoice((current) => {
+                              const lines = current?.kind === "items" ? current.lines : [];
+                              const next = toggleMoveItem(lines, row.itemId, row.qty);
+                              return next.length > 0 ? { kind: "items", lines: next } : null;
+                            });
+                          }}
                         />
                         <span>{[row.sku, row.name].filter(Boolean).join(" ")}</span>
                       </label>
@@ -360,12 +378,14 @@ export function MoveInventoryPage() {
                           id={`move-qty-${row.itemId}`}
                           className="num-input"
                           inputMode="numeric"
-                          value={selected && choice.kind === "item" ? choice.qty : String(row.qty)}
+                          value={selected ? line.qty : String(row.qty)}
                           disabled={busy || !selected}
                           onChange={(event) => {
-                            if (choice?.kind === "item" && choice.itemId === row.itemId) {
-                              setChoice({ kind: "item", itemId: row.itemId, qty: event.target.value });
-                            }
+                            const qty = event.target.value;
+                            setChoice((current) => {
+                              if (current?.kind !== "items") return current;
+                              return { kind: "items", lines: setMoveItemQty(current.lines, row.itemId, qty) };
+                            });
                           }}
                         />
                       </label>

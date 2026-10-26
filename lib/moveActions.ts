@@ -17,6 +17,7 @@ import { operatorInitials } from "@/lib/stockAccess";
 import { getSupabase } from "@/lib/supabase";
 
 const MOVE_BIN_ITEMS_MIGRATION = "supabase/migrations/20261026220253_move_bin_items.sql";
+const MOVE_BIN_ITEM_LINES_MIGRATION = "supabase/migrations/20261026233415_move_bin_item_lines.sql";
 
 function raiseRpc(error: { code?: string; message?: string } | null): never {
   if (moveMigrationMissing(error)) {
@@ -32,14 +33,26 @@ export async function fetchMovePlace(code: string): Promise<MovePlace> {
 }
 
 export async function previewMove(payload: {
-  kind: "bin" | "bins" | "item" | "empty";
+  kind: "bin" | "bins" | "item" | "items" | "empty";
   binRefs: string[];
   fromBin: string | null;
   itemId: string | null;
   qty: number | null;
+  items?: { itemId: string; qty: number }[];
   targetBin: string | null;
   targetLocation: string | null;
 }): Promise<MovePreview> {
+  if (payload.kind === "items") {
+    const items = payload.items ?? [];
+    if (items.length < 1) return { ok: false, message: "Choose an item.", summary: null };
+    const summaries: string[] = [];
+    for (const line of items) {
+      const next = await previewMove({ ...payload, kind: "item", itemId: line.itemId, qty: line.qty, items: undefined });
+      if (!next.ok) return next;
+      if (next.summary) summaries.push(next.summary);
+    }
+    return { ok: true, message: null, summary: summaries.join(" ") };
+  }
   const { data, error } = await (await getSupabase()).rpc("preview_move", {
     p_payload: {
       kind: payload.kind,
@@ -56,11 +69,12 @@ export async function previewMove(payload: {
 }
 
 export async function commitMove(input: {
-  kind: "bin" | "bins" | "item" | "empty";
+  kind: "bin" | "bins" | "item" | "items" | "empty";
   binRefs: string[];
   fromBin: string | null;
   itemId: string | null;
   qty: number | null;
+  items?: { itemId: string; qty: number }[];
   targetBin: string | null;
   targetLocation: string | null;
   comment: string;
@@ -70,16 +84,30 @@ export async function commitMove(input: {
   const supabase = await getSupabase();
   let data: unknown;
   let error: { code?: string; message?: string } | null;
-  if (input.kind === "item") {
+  if (input.kind === "item" || (input.kind === "items" && (input.items?.length ?? 0) === 1)) {
+    const line = input.kind === "items" ? input.items?.[0] : null;
     ({ data, error } = await supabase.rpc("move_item_qty", {
       p_from_bin_ref: input.fromBin,
       p_to_bin_ref: input.targetBin,
-      p_item_id: input.itemId,
-      p_qty: input.qty,
+      p_item_id: line?.itemId ?? input.itemId,
+      p_qty: line?.qty ?? input.qty,
       p_initials: initials,
       p_comment: input.comment,
       p_client_request_id: input.requestId,
     }));
+  } else if (input.kind === "items") {
+    const lines = input.items ?? [];
+    if (lines.length < 1) throw new Error("Choose an item.");
+    ({ data, error } = await supabase.rpc("move_bin_items", {
+      p_from_bin_ref: input.fromBin,
+      p_to_bin_ref: input.targetBin,
+      p_lines: lines.map((line) => ({ item_id: line.itemId, qty: line.qty })),
+      p_initials: initials,
+      p_client_request_id: input.requestId,
+    }));
+    if (error && moveMigrationMissing(error)) {
+      throw new Error(`Apply ${MOVE_BIN_ITEM_LINES_MIGRATION} before several items can be moved together.`);
+    }
   } else if (input.kind === "empty") {
     ({ data, error } = await supabase.rpc("empty_bin_into", {
       p_from_bin: input.fromBin,
