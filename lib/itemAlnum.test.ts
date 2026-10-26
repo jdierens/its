@@ -6,8 +6,10 @@ import {
   ALNUM_CONTAINED_MIN,
   ITEM_ALNUM_COLUMNS,
   alnumContains,
+  alnumDigitsOnly,
   alnumFieldContains,
   alnumQueryContains,
+  attributeAlnumQueryContains,
   normalizeAlnum,
 } from "./itemAlnum.ts";
 import { alnumSearchUnavailable } from "./itemAlnumSearch.ts";
@@ -39,6 +41,21 @@ test("a longer query contains a shorter stored part, and a tiny fragment does no
   assert.equal(ALNUM_CONTAINED_MIN, 3);
 });
 
+const DRIVE = "STO\\SSD\\M0960N4\\MZ1L2960HCJR-00A07";
+const DRIVE_QUERY = "MZ1L2960HCJR-00A07";
+
+test("MZ1L2960HCJR-00A07 finds the drive name and not a digits-only attribute", () => {
+  assert.equal(alnumFieldContains(DRIVE, DRIVE_QUERY), true);
+  assert.equal(alnumDigitsOnly("96.0"), true);
+  assert.equal(alnumDigitsOnly("0.96"), true);
+  assert.equal(attributeAlnumQueryContains("96.0", DRIVE_QUERY), false);
+  assert.equal(attributeAlnumQueryContains("0.96", DRIVE_QUERY), false);
+  assert.equal(alnumFieldContains("96.0", "960"), true);
+  assert.equal(alnumFieldContains("CPU\\6740E\\Q4VV", DRIVE_QUERY), false);
+  assert.equal(attributeAlnumQueryContains("MCX516A-CDAT", `prefix-${CARD}`), true);
+  assert.equal(attributeAlnumQueryContains("LGA4710", "board-LGA-4710-kit"), true);
+});
+
 test("item find columns are the punctuation-insensitive columns", () => {
   assert.deepEqual([...ITEM_LIST_TEXT_COLUMNS], [...ITEM_ALNUM_COLUMNS]);
 });
@@ -65,4 +82,12 @@ test("the migration normalizes the same columns the app searches", () => {
   }
   assert.match(sql, /value_alnum/);
   assert.match(sql, /grant execute on function public\.item_ids_matching_alnum/);
+  const tightened = readFileSync(
+    new URL("../supabase/migrations/20261026004000_item_alnum_attribute_reverse.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(tightened, /NOT APPLIED/);
+  assert.match(tightened, /saved\.value_alnum ~ '\[a-z\]'/);
+  assert.match(tightened, /saved\.value_alnum like '%' \|\| n\.value \|\| '%'/);
+  assert.equal(tightened.includes("i.name_alnum ~ '[a-z]'"), false);
 });
