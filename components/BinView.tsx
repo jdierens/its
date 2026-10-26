@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { fetchBin, reprintBin } from "@/lib/binActions";
+import { readBinReceiptsOpen, writeBinReceiptsOpen } from "@/lib/binReceiptsOpen";
 import { binTypeLabel, type BinRecord } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
@@ -107,6 +109,19 @@ export function BinView({ reference }: { reference: string }) {
   const [printedOn, setPrintedOn] = useState("");
   const [printJob, setPrintJob] = useState<{ kind: "bin" } | { kind: "item"; row: BinContentRow } | null>(null);
   const [printStamp, setPrintStamp] = useState(0);
+  const [receiptsOpen, setReceiptsOpen] = useState(true);
+
+  useLayoutEffect(() => {
+    setReceiptsOpen(readBinReceiptsOpen(window.localStorage));
+  }, []);
+
+  function toggleReceipts() {
+    setReceiptsOpen((current) => {
+      const next = !current;
+      writeBinReceiptsOpen(window.localStorage, next);
+      return next;
+    });
+  }
 
   async function load() {
     const loaded = await fetchBinDetail(reference);
@@ -212,56 +227,98 @@ export function BinView({ reference }: { reference: string }) {
     <main className="page bin-view desk-fields">
       <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
       <div className="no-print">
-        <p className="bin-reference">{reference}</p>
-        <p className="hint">{typeName ? `${typeName} bin` : "Bin"}</p>
-        {message ? (
-          <p className="banner error" role="alert">
-            {message}
-          </p>
-        ) : null}
-        {missing ? <p className="banner error">No bin is numbered {reference}.</p> : null}
-        {basic && !detail ? (
-          <dl className="bin-stats">
-            <div>
-              <dt>Number</dt>
-              <dd>{basic.number}</dd>
+        <div className="bin-head">
+          <div className="bin-head-copy">
+            <p className="bin-reference">{reference}</p>
+            <p className="hint">{typeName ? `${typeName} bin` : "Bin"}</p>
+            {message ? (
+              <p className="banner error" role="alert">
+                {message}
+              </p>
+            ) : null}
+            {missing ? <p className="banner error">No bin is numbered {reference}.</p> : null}
+            {basic && !detail ? (
+              <dl className="bin-stats">
+                <div>
+                  <dt>Number</dt>
+                  <dd>{basic.number}</dd>
+                </div>
+                <div>
+                  <dt>Printed</dt>
+                  <dd>{basic.printedCount}</dd>
+                </div>
+                <div>
+                  <dt>Created</dt>
+                  <dd>{when(basic.createdAt)}</dd>
+                </div>
+              </dl>
+            ) : null}
+            {detail ? (
+              <dl className="bin-stats">
+                <div>
+                  <dt>Current location</dt>
+                  <dd>{detail.locationCode ?? "No location yet"}</dd>
+                </div>
+                <div>
+                  <dt>Printed</dt>
+                  <dd>{detail.printedCount}</dd>
+                </div>
+                <div>
+                  <dt>Created by</dt>
+                  <dd>{detail.createdByInitials ?? "—"}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </div>
+          {detail ? (
+            <div className="bin-head-label">
+              <button
+                type="button"
+                className="bin-label-hit"
+                aria-label={`Print bin label ${detail.reference}`}
+                disabled={busy}
+                onClick={() => void printBinLabel()}
+              >
+                <span className="label-frame">
+                  <BinLabel reference={detail.reference} type={detail.type} layout={templates[detail.type]} />
+                </span>
+              </button>
+              <p className="hint">Click the label to print it.</p>
             </div>
-            <div>
-              <dt>Printed</dt>
-              <dd>{basic.printedCount}</dd>
-            </div>
-            <div>
-              <dt>Created</dt>
-              <dd>{when(basic.createdAt)}</dd>
-            </div>
-          </dl>
-        ) : null}
+          ) : null}
+        </div>
         {detail ? (
           <>
-            <dl className="bin-stats">
-              <div>
-                <dt>Current location</dt>
-                <dd>{detail.locationCode ?? "No location yet"}</dd>
+            <section className="bin-receipts" aria-labelledby="bin-receipts">
+              <h2 id="bin-receipts">
+                <button
+                  type="button"
+                  className="bin-section-toggle"
+                  aria-expanded={receiptsOpen}
+                  aria-controls="bin-receipts-panel"
+                  onClick={toggleReceipts}
+                >
+                  <ChevronRight
+                    size={18}
+                    strokeWidth={2}
+                    aria-hidden
+                    className={receiptsOpen ? "bin-section-chevron is-open" : "bin-section-chevron"}
+                  />
+                  <span>Receipts</span>
+                </button>
+              </h2>
+              <div id="bin-receipts-panel" className="bin-receipts-panel" hidden={!receiptsOpen}>
+                {receipts.length === 0 ? (
+                  <p className="hint">No receipts yet.</p>
+                ) : (
+                  <div className="cycle-list">
+                    {receipts.map((receipt) => (
+                      <ReceiptCard key={receipt.id} receipt={receipt} />
+                    ))}
+                  </div>
+                )}
               </div>
-              <div>
-                <dt>Printed</dt>
-                <dd>{detail.printedCount}</dd>
-              </div>
-              <div>
-                <dt>Created by</dt>
-                <dd>{detail.createdByInitials ?? "—"}</dd>
-              </div>
-            </dl>
-            <h2 id="bin-receipts">Receipts</h2>
-            {receipts.length === 0 ? (
-              <p className="hint">No receipts yet.</p>
-            ) : (
-              <div className="cycle-list">
-                {receipts.map((receipt) => (
-                  <ReceiptCard key={receipt.id} receipt={receipt} />
-                ))}
-              </div>
-            )}
+            </section>
             {moves.length > 0 ? (
               <>
                 <h2>Moves</h2>
@@ -349,19 +406,6 @@ export function BinView({ reference }: { reference: string }) {
               </div>
               <span className="hint">Scan a location code. It must match one location type.</span>
             </form>
-            <h2>Bin label</h2>
-            <p className="hint">Click the label to print it.</p>
-            <button
-              type="button"
-              className="bin-label-hit"
-              aria-label={`Print bin label ${detail.reference}`}
-              disabled={busy}
-              onClick={() => void printBinLabel()}
-            >
-              <span className="label-frame">
-                <BinLabel reference={detail.reference} type={detail.type} layout={templates[detail.type]} />
-              </span>
-            </button>
             <div className="receive-actions">
               <Link href="/warehouse/receiving">Receive into a bin</Link>
             </div>
