@@ -1,17 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { fetchBin, reprintBin } from "@/lib/binActions";
+import {
+  itemMoveSummary,
+  itemMoveTargetBin,
+  itemMoveTargetError,
+  linesForSelection,
+  type BinMoveLine,
+} from "@/lib/binItemMove";
 import { readBinSectionOpen, writeBinSectionOpen, type BinSection } from "@/lib/binSectionOpen";
 import { binTypeLabel, type BinRecord } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
 import { emptyBinLabelTemplates, qrLabelPayload, type BinLabelTemplates, type LabelTemplateId } from "@/lib/labelTemplates";
+import { moveBinItems } from "@/lib/moveActions";
 import { fetchBinDetail, moveBinToLocation } from "@/lib/receivingActions";
 import { formatReceivedOn, receiptInitials } from "@/lib/receivingSettings";
 import { binReceipts, cycleEventParts, type BinContentRow, type BinDetail, type BinReceipt, type StockEventRow } from "@/lib/stockReceive";
@@ -138,25 +146,33 @@ function BinSection({
 function LocationValue({
   location,
   busy,
+  fromLabel,
+  lines,
   onMove,
 }: {
   location: string | null;
   busy: boolean;
-  onMove: (code: string) => Promise<void>;
+  fromLabel: string;
+  lines: BinMoveLine[];
+  onMove: (code: string) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const movingItems = lines.length > 0;
+  const targetError = movingItems && draft.trim() ? itemMoveTargetError(draft) : null;
+  const summary =
+    movingItems && draft.trim() && !targetError ? itemMoveSummary(fromLabel, itemMoveTargetBin(draft), lines) : null;
 
   function start() {
-    setDraft(location ?? "");
+    setDraft(movingItems ? "" : (location ?? ""));
     setEditing(true);
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     try {
-      await onMove(draft);
-      setEditing(false);
+      const done = await onMove(draft);
+      if (done) setEditing(false);
     } catch {
       // The page banner shows the move error. Leave the location open to edit.
     }
@@ -173,14 +189,14 @@ function LocationValue({
   return (
     <form className="bin-location-edit" onSubmit={(event) => void submit(event)}>
       <input
-        aria-label="Move to location"
+        aria-label={movingItems ? "Move selected items to bin" : "Move to location"}
         value={draft}
         autoFocus
         autoComplete="off"
         autoCapitalize="characters"
         spellCheck={false}
         disabled={busy}
-        placeholder="HWS.00.00.00"
+        placeholder={movingItems ? "10001-B" : "HWS.00.00.00"}
         onFocus={(event) => event.currentTarget.select()}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
@@ -190,10 +206,16 @@ function LocationValue({
           }
         }}
       />
-      <button type="submit" disabled={busy}>
-        Move
+      <button type="submit" disabled={busy || (movingItems && !summary)}>
+        {movingItems ? `Move ${lines.length}` : "Move"}
       </button>
-      <span className="hint">Scan a location code. It must match one location type.</span>
+      <span className="hint">
+        {movingItems
+          ? "Scan the bin that receives the selected items. Each line moves its full quantity."
+          : "Scan a location code. It must match one location type."}
+      </span>
+      {targetError ? <p className="banner error">{targetError}</p> : null}
+      {summary ? <p className="move-summary">{summary}</p> : null}
     </form>
   );
 }
@@ -213,6 +235,9 @@ export function BinView({ reference }: { reference: string }) {
   const [itemsOpen, setItemsOpen] = useState(true);
   const [receiptsOpen, setReceiptsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState<string | null>(null);
+  const moving = useRef(false);
 
   useLayoutEffect(() => {
     const storage = window.localStorage;
@@ -241,6 +266,8 @@ export function BinView({ reference }: { reference: string }) {
   }
 
   useEffect(() => {
+    setSelected(new Set());
+    setNotice(null);
     let cancelled = false;
     void (async () => {
       try {
@@ -284,16 +311,40 @@ export function BinView({ reference }: { reference: string }) {
     window.print();
   }, [printStamp]);
 
-  async function onMove(code: string) {
+  async function onMove(code: string): Promise<boolean> {
+    if (moving.current) return false;
+    const lines = detail ? linesForSelection(detail.contents, selected) : [];
+    moving.current = true;
     setBusy(true);
     setMessage(null);
+    setNotice(null);
     try {
+      if (lines.length > 0) {
+        const problem = itemMoveTargetError(code);
+        if (problem) throw new Error(problem);
+        const result = await moveBinItems({
+          fromBin: reference,
+          toBin: itemMoveTargetBin(code),
+          itemIds: lines.map((line) => line.itemId),
+          requestId: crypto.randomUUID(),
+        });
+        setSelected(new Set());
+        setNotice(result.summary);
+        try {
+          await load();
+        } catch (error) {
+          setMessage(errorText(error));
+        }
+        return true;
+      }
       await moveBinToLocation(reference, code);
       await load();
+      return true;
     } catch (error) {
       setMessage(errorText(error));
       throw error;
     } finally {
+      moving.current = false;
       setBusy(false);
     }
   }
@@ -320,6 +371,8 @@ export function BinView({ reference }: { reference: string }) {
   }
 
   const typeName = detail ? binTypeLabel(detail.type) : basic ? binTypeLabel(basic.type) : "";
+  const selectedLines = detail ? linesForSelection(detail.contents, selected) : [];
+  const allSelected = selectedLines.length > 0 && detail != null && selectedLines.length === detail.contents.length;
   const receipts = detail ? binReceipts(detail.cycles) : [];
   const moves = detail
     ? [
@@ -336,6 +389,11 @@ export function BinView({ reference }: { reference: string }) {
           <div className="bin-head-copy">
             <p className="bin-reference">{reference}</p>
             <p className="hint">{typeName ? `${typeName} bin` : "Bin"}</p>
+            {notice ? (
+              <p className="banner ok" role="status">
+                {notice}
+              </p>
+            ) : null}
             {message ? (
               <p className="banner error" role="alert">
                 {message}
@@ -367,6 +425,8 @@ export function BinView({ reference }: { reference: string }) {
                       key={reference}
                       location={detail.locationCode}
                       busy={busy}
+                      fromLabel={typeName ? `${typeName} ${detail.reference}` : detail.reference}
+                      lines={selectedLines}
                       onMove={onMove}
                     />
                   </dd>
@@ -414,21 +474,65 @@ export function BinView({ reference }: { reference: string }) {
                   <table>
                     <thead>
                       <tr>
+                        <th className="select">
+                          <label className="bin-row-select">
+                            <input
+                              type="checkbox"
+                              aria-label="Select all items"
+                              checked={allSelected}
+                              disabled={busy}
+                              ref={(node) => {
+                                if (node) node.indeterminate = selectedLines.length > 0 && !allSelected;
+                              }}
+                              onChange={() => {
+                                setSelected(
+                                  allSelected ? new Set() : new Set(detail.contents.map((row) => row.itemId)),
+                                );
+                              }}
+                            />
+                          </label>
+                        </th>
                         <th>SKU</th>
                         <th>Name</th>
                         <th className="num">Qty</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {detail.contents.map((row) => (
-                        <tr key={row.itemId}>
-                          <td>{row.sku}</td>
-                          <td>{row.name}</td>
-                          <td className="num">{row.qty}</td>
-                        </tr>
-                      ))}
+                      {detail.contents.map((row) => {
+                        const label = row.sku || row.name || "item";
+                        return (
+                          <tr key={row.itemId}>
+                            <td className="select">
+                              <label className="bin-row-select">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Select ${label}`}
+                                  checked={selected.has(row.itemId)}
+                                  disabled={busy}
+                                  onChange={() => {
+                                    setSelected((current) => {
+                                      const next = new Set(current);
+                                      if (next.has(row.itemId)) next.delete(row.itemId);
+                                      else next.add(row.itemId);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </label>
+                            </td>
+                            <td>{row.sku}</td>
+                            <td>{row.name}</td>
+                            <td className="num">{row.qty}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+                  <p className="hint">
+                    {selectedLines.length > 0
+                      ? `${selectedLines.length} selected. Click the location and scan the bin that should receive them.`
+                      : "Select items, then click the location to move them into a bin. Leave them unselected to move this bin."}
+                  </p>
                   <p className="hint">Click a label to print it.</p>
                   <div className="bin-label-row">
                     {detail.contents.map((row) => (

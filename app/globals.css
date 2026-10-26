@@ -3586,9 +3586,37 @@ tr.quote-latest td {
   font-size: 0.85rem;
 }
 
-.bin-view form.bin-location-edit .hint {
+.bin-view form.bin-location-edit .hint,
+.bin-view form.bin-location-edit .banner,
+.bin-view form.bin-location-edit .move-summary {
   flex-basis: 100%;
   margin: 0;
+}
+
+.bin-view th.select,
+.bin-view td.select {
+  width: 1%;
+  padding: 0 0 0 0.35rem;
+  vertical-align: middle;
+}
+
+.bin-view label.bin-row-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.bin-view label.bin-row-select input {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
 }
 
 @media (max-width: 420px) {
