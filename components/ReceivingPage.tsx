@@ -8,6 +8,7 @@ import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { ReceiptCard, ReceiptTableRow } from "@/components/ReceiptInline";
+import { ReceiptReports } from "@/components/ReceiptReports";
 import { ReceivingOriginField, ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, binTypeLabel, formatBinReference, type BinType } from "@/lib/bins";
@@ -1359,7 +1360,7 @@ export function ReceivingPage() {
         </section>
 
         <section className="card receive-card" id="receive-recent">
-          <h2>Recent entries</h2>
+          <ReceiptReports project={project} ready={projectReady} stamp={listStamp} />
           <p className="hint">
             {project.trim()
               ? `Receipts for ${project.trim()}, newest first.`

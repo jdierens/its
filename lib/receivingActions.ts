@@ -15,10 +15,18 @@ import {
   type RecentProjectRow,
 } from "@/lib/receivingProjects";
 import {
+  receiptReportFileName,
+  receiptsDetailCsv,
+  summarizeReceipts,
+  summaryCsv,
+  type ReceiptSummaryRow,
+} from "@/lib/receivingReport";
+import {
   RECEIVING_PAGE_SIZE,
   parseReceiptDate,
   receivingDateToStore,
   receivingEntryForViewer,
+  warehouseToday,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
 import { sessionUser } from "@/lib/sessionUser";
@@ -489,12 +497,16 @@ export async function editReceipt(input: {
   if (error) rpcError(error);
 }
 
-export async function listReceivingEntries(
+const RECEIPT_REPORT_PAGE = 1000;
+
+async function listReceiptSlice(
   project: string,
   offset: number,
+  limit: number,
 ): Promise<{ rows: ReceivingEntry[]; total: number }> {
   const from = Math.max(0, Math.floor(offset));
-  const to = from + RECEIVING_PAGE_SIZE - 1;
+  const size = Math.max(1, Math.floor(limit));
+  const to = from + size - 1;
   const supabase = await getSupabase();
   const money = await viewerCanSeeMoney();
   const trimmed = project.trim();
@@ -533,6 +545,48 @@ export async function listReceivingEntries(
   const raw = Array.isArray(data) ? data : [];
   const page = raw.map((row) => receivingEntryForViewer(row as Record<string, unknown>, money));
   return { rows: page, total: count ?? page.length };
+}
+
+export async function listReceivingEntries(
+  project: string,
+  offset: number,
+): Promise<{ rows: ReceivingEntry[]; total: number }> {
+  return listReceiptSlice(project, offset, RECEIVING_PAGE_SIZE);
+}
+
+/** Every receipt for the project in the header, newest first. Not only the page on screen. */
+export async function listProjectReceipts(project: string): Promise<ReceivingEntry[]> {
+  const rows: ReceivingEntry[] = [];
+  let offset = 0;
+  for (let page = 0; page < 200; page += 1) {
+    const slice = await listReceiptSlice(project, offset, RECEIPT_REPORT_PAGE);
+    rows.push(...slice.rows);
+    if (slice.rows.length < RECEIPT_REPORT_PAGE) return rows;
+    offset += slice.rows.length;
+  }
+  throw new Error("This project has too many receipts to export at once.");
+}
+
+export async function projectReceiptSummary(project: string): Promise<ReceiptSummaryRow[]> {
+  return summarizeReceipts(await listProjectReceipts(project));
+}
+
+export async function projectReceiptFile(
+  project: string,
+  kind: "summary" | "detail",
+): Promise<{ filename: string; csv: string }> {
+  const rows = await listProjectReceipts(project);
+  const day = warehouseToday();
+  if (kind === "summary") {
+    return {
+      filename: receiptReportFileName("summary", project, day),
+      csv: summaryCsv(summarizeReceipts(rows)),
+    };
+  }
+  return {
+    filename: receiptReportFileName("receipts", project, day),
+    csv: receiptsDetailCsv(rows),
+  };
 }
 
 export async function moveBinToLocation(reference: string, locationCode: string): Promise<MoveResult> {
