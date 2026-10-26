@@ -3517,12 +3517,78 @@ tr.quote-latest td {
   transform: rotate(90deg);
 }
 
-.bin-receipts-panel {
+.bin-section-panel {
   margin-top: 0.35rem;
 }
 
-.bin-receipts-panel[hidden] {
+.bin-section-panel[hidden] {
   display: none;
+}
+
+.bin-view button.bin-location {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.bin-view button.bin-location:hover {
+  background: transparent;
+  background-image: none;
+  color: inherit;
+  text-decoration-color: currentColor;
+}
+
+.bin-view button.bin-location:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.bin-view form.bin-location-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.bin-view form.bin-location-edit input {
+  width: 9rem;
+  height: 1.9rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0.4rem;
+}
+
+.bin-view form.bin-location-edit button {
+  height: 1.9rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0.55rem;
+  font-size: 0.85rem;
+}
+
+.bin-view form.bin-location-edit .hint {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 @media (max-width: 420px) {
