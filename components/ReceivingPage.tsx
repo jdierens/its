@@ -1384,7 +1384,7 @@ export function ReceivingPage() {
                       <th className="origin">System</th>
                       <th className="num fit">System Qty</th>
                       <th className="search">Search</th>
-                      <th className="fit">SKU</th>
+                      <th className="fit sku">SKU</th>
                       <th className="item">Item name</th>
                       <th className="num fit">Item Qty</th>
                       <th className="putaway">Putaway</th>

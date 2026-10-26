@@ -1,5 +1,6 @@
 import { guardSpreadsheetFormula } from "@/lib/export/table";
 import type { ReceivingEntry } from "@/lib/receivingSettings";
+import { parseReceivingBinCode } from "@/lib/stockReceive";
 
 export type ReceiptSummaryRow = {
   sku: string;
@@ -7,10 +8,12 @@ export type ReceiptSummaryRow = {
   search: string;
   qty: number;
   lines: number;
+  /** Quantity in each putaway bin, `(x14)10002-C | (x8)10037`. */
+  locations: string;
   pending: boolean;
 };
 
-export const RECEIPT_SUMMARY_HEADERS = ["SKU", "Item name", "Search", "Qty", "Lines", "Status"] as const;
+export const RECEIPT_SUMMARY_HEADERS = ["SKU", "Item name", "Search", "Qty", "Putaway", "Lines", "Status"] as const;
 
 export const RECEIPT_DETAIL_HEADERS = [
   "Date",
@@ -41,19 +44,66 @@ function bySearch(a: ReceiptSummaryRow, b: ReceiptSummaryRow): number {
   return a.sku.localeCompare(b.sku, undefined, { sensitivity: "base", numeric: true });
 }
 
+/** Bin code for a summary cell. A putaway label keeps the code before the location dot. */
+export function summaryBinReference(entry: { binReference?: string | null; putaway?: string | null }): string {
+  const direct = (entry.binReference ?? "").trim();
+  const head = ((entry.putaway ?? "").split("·")[0] ?? "").trim();
+  const raw = direct || head;
+  return parseReceivingBinCode(raw)?.reference ?? raw;
+}
+
+/** `(x14)10002-C | (x8)10037`, bins in reference order. Blank bins are left out. */
+export function formatPutawayQty(counts: ReadonlyMap<string, number>): string {
+  return [...counts.entries()]
+    .filter(([bin, qty]) => bin.trim() && Number.isFinite(qty) && qty !== 0)
+    .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: "base" }))
+    .map(([bin, qty]) => `(x${qty})${bin.trim()}`)
+    .join(" | ");
+}
+
+type SummaryBucket = {
+  sku: string;
+  name: string;
+  search: string;
+  qty: number;
+  lines: number;
+  pending: boolean;
+  bins: Map<string, number>;
+};
+
+function addPutaway(bucket: SummaryBucket, entry: ReceivingEntry) {
+  const bin = summaryBinReference(entry);
+  if (!bin) return;
+  bucket.bins.set(bin, (bucket.bins.get(bin) ?? 0) + entry.qty);
+}
+
+function finishBucket(bucket: SummaryBucket): ReceiptSummaryRow {
+  return {
+    sku: bucket.sku,
+    name: bucket.name,
+    search: bucket.search,
+    qty: bucket.qty,
+    lines: bucket.lines,
+    locations: formatPutawayQty(bucket.bins),
+    pending: bucket.pending,
+  };
+}
+
 /**
  * One row per item, quantity summed, sorted by item name.
  * Lines with no item are grouped by the exact trimmed search and listed after the SKUs.
+ * Locations are the quantity in each putaway bin.
  */
 export function summarizeReceipts(entries: readonly ReceivingEntry[]): ReceiptSummaryRow[] {
-  const matched = new Map<string, ReceiptSummaryRow>();
-  const pending = new Map<string, ReceiptSummaryRow>();
+  const matched = new Map<string, SummaryBucket>();
+  const pending = new Map<string, SummaryBucket>();
   for (const entry of entries) {
     if (entry.itemId.trim() === "") {
       const search = (entry.searchQuery ?? "").trim();
-      const row = pending.get(search) ?? { sku: "", name: "", search, qty: 0, lines: 0, pending: true };
+      const row = pending.get(search) ?? { sku: "", name: "", search, qty: 0, lines: 0, pending: true, bins: new Map() };
       row.qty += entry.qty;
       row.lines += 1;
+      addPutaway(row, entry);
       pending.set(search, row);
       continue;
     }
@@ -64,14 +114,16 @@ export function summarizeReceipts(entries: readonly ReceivingEntry[]): ReceiptSu
       qty: 0,
       lines: 0,
       pending: false,
+      bins: new Map(),
     };
     if (!row.sku && entry.sku.trim()) row.sku = entry.sku.trim();
     if (!row.name && entry.itemName.trim()) row.name = entry.itemName.trim();
     row.qty += entry.qty;
     row.lines += 1;
+    addPutaway(row, entry);
     matched.set(entry.itemId, row);
   }
-  return [...matched.values()].sort(byItemName).concat([...pending.values()].sort(bySearch));
+  return [...matched.values()].map(finishBucket).sort(byItemName).concat([...pending.values()].map(finishBucket).sort(bySearch));
 }
 
 function csvCell(value: string): string {
@@ -107,6 +159,7 @@ export function summaryCsv(rows: readonly ReceiptSummaryRow[]): string {
       textCell(row.name),
       textCell(row.search),
       numberCell(row.qty),
+      textCell(row.locations),
       numberCell(row.lines),
       row.pending ? "Pending item" : "",
     ]),
