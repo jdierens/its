@@ -8,7 +8,7 @@ import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { ReceiptCard, ReceiptTableRow } from "@/components/ReceiptInline";
-import { ReceiptReports } from "@/components/ReceiptReports";
+import { ReceiptReports, type ReceiptListView } from "@/components/ReceiptReports";
 import { ReceivingOriginField, ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, binTypeLabel, formatBinReference, type BinType } from "@/lib/bins";
@@ -187,6 +187,7 @@ export function ReceivingPage() {
   const listedProject = useRef<string | null>(null);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [listStamp, setListStamp] = useState(0);
+  const [recentView, setRecentView] = useState<ReceiptListView>("detail");
   const [editorInitials, setEditorInitials] = useState("");
   const [scanRaw, setScanRaw] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
@@ -1360,7 +1361,15 @@ export function ReceivingPage() {
         </section>
 
         <section className="card receive-card" id="receive-recent">
-          <ReceiptReports project={project} ready={projectReady} stamp={listStamp} />
+          <ReceiptReports
+            project={project}
+            ready={projectReady}
+            stamp={listStamp}
+            view={recentView}
+            onView={setRecentView}
+          />
+          {recentView === "detail" ? (
+          <>
           <p className="hint">
             {project.trim()
               ? `Receipts for ${project.trim()}, newest first.`
@@ -1422,6 +1431,8 @@ export function ReceivingPage() {
               />
             </>
           )}
+          </>
+          ) : null}
         </section>
       </div>
       <div className="print-sheet">

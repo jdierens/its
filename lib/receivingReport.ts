@@ -13,7 +13,12 @@ export type ReceiptSummaryRow = {
   pending: boolean;
 };
 
-export const RECEIPT_SUMMARY_HEADERS = ["SKU", "Item name", "Search", "Qty", "Putaway", "Lines", "Status"] as const;
+export const RECEIPT_SUMMARY_HEADERS = ["SKU", "Item", "Qty", "Putaway", "Lines", "Status"] as const;
+
+/** Item name when a SKU is linked. The stored search when the line is still pending. */
+export function summaryItemLabel(row: { pending: boolean; name: string; search: string }): string {
+  return row.pending ? row.search.trim() : row.name.trim();
+}
 
 export const RECEIPT_DETAIL_HEADERS = [
   "Date",
@@ -156,8 +161,7 @@ export function summaryCsv(rows: readonly ReceiptSummaryRow[]): string {
     RECEIPT_SUMMARY_HEADERS,
     rows.map((row) => [
       textCell(row.sku),
-      textCell(row.name),
-      textCell(row.search),
+      textCell(summaryItemLabel(row)),
       numberCell(row.qty),
       textCell(row.locations),
       numberCell(row.lines),

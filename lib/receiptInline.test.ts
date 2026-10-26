@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { planReceiptEdit, receiptLineAfterPick } from "@/lib/receiptInline";
+import { planReceiptEdit, receiptLineAfterPick, skuFinderSeed } from "@/lib/receiptInline";
 import type { ReceivingEntry } from "@/lib/receivingSettings";
 
 function entry(overrides: Partial<ReceivingEntry> = {}): ReceivingEntry {
@@ -32,6 +32,13 @@ function entry(overrides: Partial<ReceivingEntry> = {}): ReceivingEntry {
 }
 
 describe("inline receipt edit", () => {
+  it("opens a pending SKU finder on the stored search", () => {
+    assert.equal(skuFinderSeed(entry()), "94415");
+    assert.equal(skuFinderSeed(entry({ itemId: "", sku: "", searchQuery: " SRM7H " })), "SRM7H");
+    assert.equal(skuFinderSeed(entry({ itemId: "", sku: "PARTIAL", searchQuery: "SRM7H" })), "PARTIAL");
+    assert.equal(skuFinderSeed(entry({ itemId: "  ", sku: "  ", searchQuery: null })), "");
+  });
+
   it("saves a comment without asking, and ignores a value that did not change", () => {
     const changed = planReceiptEdit(entry(), { comment: " relocated " }, false);
     assert.equal(changed.action, "save");
