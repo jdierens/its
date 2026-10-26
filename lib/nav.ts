@@ -67,6 +67,11 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Warehouse",
     items: [
       {
+        label: "Inventory search",
+        href: "/warehouse/inventory",
+        description: "Find a SKU and see on-hand quantity by bin.",
+      },
+      {
         label: "Pick/pack/ship",
         href: "/warehouse/pick",
         description: "Pick, pack, and ship sales orders.",

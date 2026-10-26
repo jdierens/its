@@ -29,3 +29,7 @@ The target is checked as it is typed. A nesting problem is shown before Confirm.
 An unknown bin code uses the same prompt as receiving: "No bin with that code. Use New bin." Register this bin creates it.
 
 Recent moves list Date/time, Initials, What, From, To, and Qty in the same packed table as receiving. Qty is right-aligned. Below 800px the same fields are cards. Labels sit above the fields, inputs are 16px on a phone, and the choices are at least 44px tall.
+
+## Inventory search
+
+Warehouse > Inventory search (`/warehouse/inventory`) is the floor lookup for on-hand quantity and bin locations. It uses the same search as receiving Find. The write-up is in [Inventory search](inventory-search.md).

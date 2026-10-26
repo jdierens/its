@@ -8038,3 +8038,51 @@ input.num-input {
     display: grid;
   }
 }
+
+.inventory-search-field {
+  max-width: 36rem;
+}
+
+.inventory-search-field label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.inventory-search-field input {
+  width: 100%;
+}
+
+.inventory-results tr[aria-selected="true"],
+.inventory-cards li[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, white);
+}
+
+.inventory-results th.item,
+.inventory-results td.item {
+  width: auto;
+  min-width: 16rem;
+  max-width: 40rem;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: unset;
+}
+
+.inventory-results .inventory-item-desc,
+.inventory-cards .inventory-item-desc {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 400;
+  white-space: normal;
+}
+
+.inventory-empty .num,
+.inventory-empty .locations {
+  color: var(--muted);
+}
+
+@media (max-width: 800px) {
+  .inventory-search-field input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
