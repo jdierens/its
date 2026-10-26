@@ -1,5 +1,5 @@
-import type { BinType } from "@/lib/bins";
-import { formatBinReference } from "@/lib/bins";
+import { binTypeLabel, formatBinReference, isBinType, type BinType } from "@/lib/bins";
+import { errorText } from "@/lib/errors";
 import { nextFreeBinError, parseReceivingBinCode } from "@/lib/stockReceive";
 
 /** CPU receipts record cleaned. SSD and HDD receipts record wiped. Anything else records neither. */
@@ -101,25 +101,105 @@ export type ReceivingBinLookup = {
   canReceive: boolean;
 };
 
+/** The row that already uses this bin number, looked up when the typed reference is missing. */
+export type ReceivingBinNumberOwner = {
+  reference: string;
+  type: BinType;
+};
+
 export type ReceivingBinDecision =
   | { action: "empty" }
   | { action: "invalid"; message: string }
   | { action: "accept"; reference: string }
   | { action: "unusable"; message: string }
-  | { action: "create"; reference: string; type: BinType };
+  | { action: "create"; reference: string; type: BinType }
+  | {
+      action: "mismatch";
+      number: number;
+      selected: BinType;
+      selectedReference: string;
+      existing: BinType;
+      existingReference: string;
+      message: string;
+    };
 
 const BIN_CODE_MESSAGE = "A bin code is five digits, a hyphen, and B, C, or P.";
 const BIN_UNUSABLE_MESSAGE = "This bin has quantity and no open cycle.";
 
-/** A typed code that already exists and can take stock is accepted. An unknown code is offered for create. */
-export function receivingBinDecision(raw: string, found: ReceivingBinLookup | null): ReceivingBinDecision {
+/** BIN 10042 is a Crate and you selected a Box, please adjust your bin selection. */
+export function binTypeMismatchMessage(number: number, existing: BinType, selected: BinType): string {
+  return `BIN ${number} is a ${binTypeLabel(existing)} and you selected a ${binTypeLabel(selected)}, please adjust your bin selection`;
+}
+
+/**
+ * A typed code that already exists and can take stock is accepted.
+ * An unknown number is offered for create.
+ * The same number under another suffix is a mismatch, not a new bin.
+ */
+export function receivingBinDecision(
+  raw: string,
+  found: ReceivingBinLookup | null,
+  owner: ReceivingBinNumberOwner | null = null,
+): ReceivingBinDecision {
   const trimmed = raw.trim();
   if (!trimmed) return { action: "empty" };
   const parsed = parseReceivingBinCode(trimmed);
   if (!parsed) return { action: "invalid", message: BIN_CODE_MESSAGE };
-  if (!found) return { action: "create", reference: parsed.reference, type: parsed.type };
+  if (!found) {
+    if (owner && owner.type !== parsed.type) {
+      const existingReference = parseReceivingBinCode(owner.reference)?.reference ?? owner.reference;
+      return {
+        action: "mismatch",
+        number: parsed.number,
+        selected: parsed.type,
+        selectedReference: parsed.reference,
+        existing: owner.type,
+        existingReference,
+        message: binTypeMismatchMessage(parsed.number, owner.type, parsed.type),
+      };
+    }
+    if (owner) {
+      const existingReference = parseReceivingBinCode(owner.reference)?.reference ?? owner.reference;
+      return {
+        action: "invalid",
+        message: `${existingReference} already exists. Scan it instead of creating a new one.`,
+      };
+    }
+    return { action: "create", reference: parsed.reference, type: parsed.type };
+  }
   if (!found.canReceive) return { action: "unusable", message: BIN_UNUSABLE_MESSAGE };
   return { action: "accept", reference: found.reference || parsed.reference };
+}
+
+const BIN_CREATE_SENTENCE =
+  /Code \d{5}-[BCP] is a (?:box|crate|pallet), but (?:Box|Crate|Pallet) is selected\.|A bin code is five digits, a hyphen, and B, C, or P\.|The next bin number must be five digits\. Set it in Settings\.|Choose box, crate, or pallet\.|Operator initials are required\.|Bin counter is missing\.|The bin was not created\.|Unexpected bin type\./;
+
+/**
+ * The sentence to show when creating a bin fails.
+ * Call this inside the server action. A thrown error is replaced in production
+ * by the generic Server Components digest, so the caller must return this text.
+ */
+export function receivingBinCreateMessage(error: unknown, requestedCode: string | null): string {
+  const text = errorText(error);
+  const already = text.match(/(\d{5})-([BCP]) already exists/);
+  const requested = requestedCode ? parseReceivingBinCode(requestedCode) : null;
+  if (already && isBinType(already[2])) {
+    const existing = already[2];
+    const number = Number(already[1]);
+    if (requested && requested.number === number && requested.type !== existing) {
+      return binTypeMismatchMessage(number, existing, requested.type);
+    }
+    return `${already[1]}-${existing} already exists. Scan it instead of creating a new one.`;
+  }
+  const known = text.match(BIN_CREATE_SENTENCE);
+  if (known) return known[0];
+  if (/bins_number_unique|duplicate key value violates unique constraint/i.test(text)) {
+    return requested
+      ? `BIN ${requested.number} is already on file. Adjust your bin selection.`
+      : "That bin number is already used. Adjust your bin selection.";
+  }
+  if (/Server Components render/i.test(text)) return "The bin was not created.";
+  return text || "The bin was not created.";
 }
 
 /** On-hand stock with no open cycle cannot be received into. An empty bin can. */

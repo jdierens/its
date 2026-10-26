@@ -37,8 +37,8 @@ import {
   type MoveResult,
   type ReceiptResult,
 } from "@/lib/stockReceive";
-import type { BinType } from "@/lib/bins";
-import { lastPutawayBinReference } from "@/lib/receivingLine";
+import { isBinType, type BinType } from "@/lib/bins";
+import { lastPutawayBinReference, receivingBinCreateMessage } from "@/lib/receivingLine";
 import { RECENT_ORIGIN_SCAN, distinctRecentOrigins } from "@/lib/receivingOrigins";
 import { getSupabase } from "@/lib/supabase";
 
@@ -217,15 +217,52 @@ export async function suggestBins(itemId: string, project: string): Promise<BinS
   return suggestionsFromJson(data);
 }
 
-export async function createReceivingBin(type: BinType, code: string | null): Promise<CreatedBin> {
-  const initials = await operatorInitials();
-  const { data, error } = await (await getSupabase()).rpc("create_receiving_bin", {
-    p_type: type,
-    p_code: code,
-    p_initials: initials,
-  });
-  if (error) rpcError(error);
-  return createdBinFromJson(data);
+export type ReceivingBinNumberLookup =
+  | { ok: true; owner: { reference: string; type: BinType } | null }
+  | { ok: false; message: string };
+
+/** The bin that already uses this number. A free number is `owner: null`. Errors are returned, not thrown. */
+export async function fetchReceivingBinNumber(number: number): Promise<ReceivingBinNumberLookup> {
+  if (!Number.isInteger(number) || number < 1) return { ok: true, owner: null };
+  try {
+    const { data, error } = await (await getSupabase())
+      .from("bins")
+      .select("reference, type")
+      .eq("number", number)
+      .maybeSingle();
+    if (error) return { ok: false, message: errorText(error) };
+    if (!data) return { ok: true, owner: null };
+    const row = data as { reference?: unknown; type?: unknown };
+    const type = String(row.type ?? "");
+    const reference = String(row.reference ?? "").trim();
+    if (!isBinType(type) || !reference) return { ok: true, owner: null };
+    return { ok: true, owner: { reference, type } };
+  } catch (cause) {
+    return { ok: false, message: errorText(cause) };
+  }
+}
+
+export type ReceivingBinCreate =
+  | { ok: true; bin: CreatedBin }
+  | { ok: false; message: string };
+
+/**
+ * Create one bin. Failures are returned so production does not replace them
+ * with the generic Server Components digest.
+ */
+export async function createReceivingBin(type: BinType, code: string | null): Promise<ReceivingBinCreate> {
+  try {
+    const initials = await operatorInitials();
+    const { data, error } = await (await getSupabase()).rpc("create_receiving_bin", {
+      p_type: type,
+      p_code: code,
+      p_initials: initials,
+    });
+    if (error) return { ok: false, message: receivingBinCreateMessage(error, code) };
+    return { ok: true, bin: createdBinFromJson(data) };
+  } catch (cause) {
+    return { ok: false, message: receivingBinCreateMessage(cause, code) };
+  }
 }
 
 async function viewerCanSeeMoney(): Promise<boolean> {
