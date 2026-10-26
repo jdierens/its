@@ -18,7 +18,7 @@ A bin cannot go into itself or into one of its descendants. Size is a rank on `b
 
 `empty_bin_into` moves every child bin and every quantity in the source into the target. The source bin stays where it is. `move_bins` moves several selected bins in one transaction.
 
-`move_bin_items` moves the full on-hand quantity of each selected item from one bin into another in one transaction. The source bin stays where it is. Apply `supabase/migrations/20261026220253_move_bin_items.sql` by hand before using it. It is not applied automatically.
+`move_bin_items` moves the full on-hand quantity of each selected item from one bin into another in one transaction. The source bin stays where it is. Apply `supabase/migrations/20261026220253_move_bin_items.sql` by hand before using it. It is not applied automatically. A second signature, `move_bin_items(text, text, jsonb, text, text)`, moves several edited quantities in one request. Apply `supabase/migrations/20261026233415_move_bin_item_lines.sql` by hand before that. It is not applied automatically.
 
 ## The bin page
 
@@ -28,7 +28,7 @@ A repeat of the same `p_client_request_id` returns the first result and does not
 
 ## The screen
 
-The source can be a bin code or a location code. The page shows the path, such as `HWR.01.03.02 > Pallet 30012-P > Crate 10099-C > Box 2345-B`, then the child bins and the items with their quantities. The operator moves the whole bin, selected child bins, one item quantity (it starts as the full amount), or empties the bin into another bin.
+The source can be a bin code or a location code. The page shows the path, such as `HWR.01.03.02 > Pallet 30012-P > Crate 10099-C > Box 2345-B`, then the child bins and the items with their quantities. The operator moves the whole bin, selected child bins, one or more item quantities, or empties the bin into another bin. Each checked item starts at the full amount in the bin and its quantity can be edited. Confirm moves every checked item together. A location can take a bin. A quantity goes into a bin.
 
 The target is checked as it is typed. A nesting problem is shown before Confirm. The summary is one line, for example `Move Crate 10099-C (3 boxes, 41 items) from Pallet 30012-P to HWR.01.01.01`. After the move, Move another from the same source keeps the source, and Undo writes the reverse move as well.
 

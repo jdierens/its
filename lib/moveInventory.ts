@@ -76,6 +76,44 @@ export function parseMoveQty(value: string, onHand: number): number | null {
   return qty;
 }
 
+export type MoveItemLine = {
+  itemId: string;
+  qty: string;
+};
+
+/** Checking another item keeps the ones already checked. Qty starts at the amount on hand. */
+export function toggleMoveItem(lines: readonly MoveItemLine[], itemId: string, onHand: number): MoveItemLine[] {
+  if (lines.some((line) => line.itemId === itemId)) {
+    return lines.filter((line) => line.itemId !== itemId);
+  }
+  return [...lines, { itemId, qty: String(onHand) }];
+}
+
+export function setMoveItemQty(lines: readonly MoveItemLine[], itemId: string, qty: string): MoveItemLine[] {
+  return lines.map((line) => (line.itemId === itemId ? { ...line, qty } : line));
+}
+
+export function moveItemLines(
+  lines: readonly MoveItemLine[],
+  onHand: (itemId: string) => number | undefined,
+): { ok: true; items: { itemId: string; qty: number }[] } | { ok: false; message: string } {
+  if (lines.length < 1) return { ok: false, message: "Choose an item." };
+  const items: { itemId: string; qty: number }[] = [];
+  for (const line of lines) {
+    const held = onHand(line.itemId);
+    const qty = parseMoveQty(line.qty, held ?? 0);
+    if (qty == null) {
+      const typed = Number(line.qty);
+      return {
+        ok: false,
+        message: held != null && typed > held ? `Only ${held} are in that bin.` : "Enter a whole number of at least 1.",
+      };
+    }
+    items.push({ itemId: line.itemId, qty });
+  }
+  return { ok: true, items };
+}
+
 export function formatMoveWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
