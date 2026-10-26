@@ -12,6 +12,7 @@ import {
   receivingSkuOverride,
   alreadyInBinNote,
   alreadyInBinNoteText,
+  binBlurStartsLookup,
   binTypeMismatchMessage,
   receivingBinCreateMessage,
   receivingBinDecision,
@@ -147,6 +148,15 @@ describe("sku override", () => {
     assert.equal(receivingSkuOverride({ typedSku: "50077", currentSku: "50077", exactSku: null }), "same");
     assert.equal(receivingSkuOverride({ typedSku: "50077", currentSku: "50077", exactSku: "50077" }), "same");
     assert.equal(receivingSkuOverride({ typedSku: "", currentSku: "50077", exactSku: null }), "same");
+  });
+});
+
+describe("bin blur before save", () => {
+  it("lets the Save click post the receipt instead of spending it on a lookup", () => {
+    const save = { closest: (selector: string) => (selector === "#receive-save" ? save : null) };
+    assert.equal(binBlurStartsLookup(save), false);
+    assert.equal(binBlurStartsLookup({ closest: () => null }), true);
+    assert.equal(binBlurStartsLookup(null), true);
   });
 });
 

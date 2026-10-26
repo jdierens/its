@@ -52,7 +52,7 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
-import { alreadyInBinNote, binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, receivingSkuOverride } from "@/lib/receivingLine";
+import { alreadyInBinNote, binBlurStartsLookup, binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, receivingSkuOverride } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
   type BinDetail,
@@ -1150,7 +1150,8 @@ export function ReceivingPage() {
                   onDraft={(value) => {
                     binTyped.current = value;
                   }}
-                  onBlur={() => {
+                  onBlur={(event) => {
+                    if (!binBlurStartsLookup(event.relatedTarget)) return;
                     const raw = binTyped.current.trim();
                     if (!raw) return;
                     void lookupBin(raw, false);
@@ -1226,6 +1227,7 @@ export function ReceivingPage() {
                   disabled={busy || saving}
                   aria-label={saving ? "Saving" : "Save receipt"}
                   title={saving ? "Saving" : "Save receipt"}
+                  onMouseDown={(event) => event.preventDefault()}
                 >
                   <Save size={18} strokeWidth={1.75} aria-hidden />
                 </button>

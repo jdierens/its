@@ -211,6 +211,24 @@ export function binTypeMismatchMessage(number: number, existing: BinType, select
 }
 
 /**
+ * Blurring the bin field looks the code up. That lookup disables Save.
+ * When the clerk is moving to Save, the click itself must post the receipt,
+ * so the blur lookup stays out of the way.
+ */
+export function binBlurStartsLookup(relatedTarget: unknown): boolean {
+  if (
+    relatedTarget !== null &&
+    typeof relatedTarget === "object" &&
+    "closest" in relatedTarget &&
+    typeof relatedTarget.closest === "function" &&
+    relatedTarget.closest("#receive-save")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * A typed code that already exists and can take stock is accepted.
  * An unknown number is offered for create.
  * The same number under another suffix is a mismatch, not a new bin.
