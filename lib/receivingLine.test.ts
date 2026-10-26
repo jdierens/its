@@ -10,7 +10,9 @@ import {
   receivePrepKind,
   receivingAutoFillFocus,
   receivingSkuOverride,
-  skuAlreadyInBinNote,
+  alreadyInBinNote,
+  alreadyInBinNoteText,
+  binBlurStartsLookup,
   binTypeMismatchMessage,
   receivingBinCreateMessage,
   receivingBinDecision,
@@ -53,17 +55,76 @@ describe("receive prep", () => {
 });
 
 describe("already in this bin", () => {
-  it("glues the location and quantity after st", () => {
+  it("sums every receipt in the current bin into one total", () => {
+    const note = alreadyInBinNote({
+      currentBin: "10069-c",
+      rows: [
+        { reference: "10069-C", qty: 32, locationCode: " HWS.00.00.00 " },
+        { reference: "10069-C", qty: 16, locationCode: "HWS.00.00.00" },
+        { reference: "10069-C", qty: 0, locationCode: "HWS.00.00.00" },
+      ],
+    });
+    assert.ok(note);
+    assert.equal(note.others.length, 0);
     assert.equal(
-      skuAlreadyInBinNote("HWS.00.00.00.00", 96),
-      "This SKU is already in this bin st HWS.00.00.00.00.96PCS",
+      alreadyInBinNoteText(note),
+      "48 PCS of this SKU are already in this bin at HWS.00.00.00.",
+    );
+  });
+
+  it("continues with other bins and does not repeat the current one", () => {
+    const note = alreadyInBinNote({
+      currentBin: "10009-C",
+      rows: [
+        { reference: "10009-C", qty: 10, locationCode: "HWS.00.00.00" },
+        { reference: "10009-C", qty: 6, locationCode: null },
+        { reference: "10010-C", qty: 4, locationCode: "HWS.00.00.00" },
+        { reference: "10010-C", qty: 6, locationCode: "HWS.00.00.00" },
+        { reference: "10069-C", qty: 3, locationCode: "HWR.01.04.06.n" },
+      ],
+    });
+    assert.ok(note);
+    assert.equal(
+      alreadyInBinNoteText(note),
+      "16 PCS of this SKU are already in this bin at HWS.00.00.00. More in other bins: 10010-C (x10), 10069-C (x3).",
+    );
+  });
+
+  it("names other bins when the current bin has none, and hides the note when every total is 0", () => {
+    const elsewhere = alreadyInBinNote({
+      currentBin: "20002-B",
+      rows: [
+        { reference: "10010-C", qty: 10, locationCode: "HWS.00.00.00" },
+        { reference: "10069-C", qty: 3, locationCode: "HWS.00.00.00" },
+        { reference: "20002-B", qty: 0, locationCode: "HWS.00.00.00" },
+      ],
+    });
+    assert.ok(elsewhere);
+    assert.equal(elsewhere.current, null);
+    assert.equal(
+      alreadyInBinNoteText(elsewhere),
+      "This SKU is in other bins: 10010-C (x10), 10069-C (x3).",
     );
     assert.equal(
-      skuAlreadyInBinNote("  HWR.01.04.06.n ", 4),
-      "This SKU is already in this bin st HWR.01.04.06.n.4PCS",
+      alreadyInBinNote({
+        currentBin: "",
+        rows: [
+          { reference: "10069-C", qty: 0, locationCode: "HWS.00.00.00" },
+          { reference: "not-a-bin", qty: 8, locationCode: "HWS.00.00.00" },
+        ],
+      }),
+      null,
     );
-    assert.equal(skuAlreadyInBinNote(null, 4), null);
-    assert.equal(skuAlreadyInBinNote("HWS.00.00.00", 0), null);
+    assert.equal(alreadyInBinNote({ currentBin: "10069-C", rows: [] }), null);
+  });
+
+  it("still states the current total when that bin has no location", () => {
+    const note = alreadyInBinNote({
+      currentBin: "10069-C",
+      rows: [{ reference: "10069-C", qty: 4, locationCode: "  " }],
+    });
+    assert.ok(note);
+    assert.equal(alreadyInBinNoteText(note), "4 PCS of this SKU are already in this bin.");
   });
 });
 
@@ -87,6 +148,15 @@ describe("sku override", () => {
     assert.equal(receivingSkuOverride({ typedSku: "50077", currentSku: "50077", exactSku: null }), "same");
     assert.equal(receivingSkuOverride({ typedSku: "50077", currentSku: "50077", exactSku: "50077" }), "same");
     assert.equal(receivingSkuOverride({ typedSku: "", currentSku: "50077", exactSku: null }), "same");
+  });
+});
+
+describe("bin blur before save", () => {
+  it("lets the Save click post the receipt instead of spending it on a lookup", () => {
+    const save = { closest: (selector: string) => (selector === "#receive-save" ? save : null) };
+    assert.equal(binBlurStartsLookup(save), false);
+    assert.equal(binBlurStartsLookup({ closest: () => null }), true);
+    assert.equal(binBlurStartsLookup(null), true);
   });
 });
 

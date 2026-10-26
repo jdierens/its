@@ -52,7 +52,7 @@ import {
   type ReceiptSaveGate,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
-import { binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, receivingSkuOverride, skuAlreadyInBinNote } from "@/lib/receivingLine";
+import { alreadyInBinNote, binBlurStartsLookup, binCanReceive, nextReceivingBinCode, receiptFlagsForPrep, receivePrepKind, receivingBinDecision, receivingBinDefault, receivingSkuOverride } from "@/lib/receivingLine";
 import {
   parseReceivingBinCode,
   type BinDetail,
@@ -910,7 +910,6 @@ export function ReceivingPage() {
     setPrintStamp((current) => current + 1);
   }
 
-  const openCycle = confirmed?.cycles.find((cycle) => cycle.status === "open") ?? null;
   const lineQty = receiveLineQty(qty);
   const lineOriginQty = originQtyInput(originQty);
   const qtyMultipleWarning =
@@ -923,6 +922,7 @@ export function ReceivingPage() {
   });
   const suggestedCode =
     binPrompt?.kind === "required" ? formatBinReference(binPrompt.nextNumber, binPrompt.type) : null;
+  const binNote = alreadyInBinNote({ currentBin: binCode, rows: suggestions });
 
   return (
     <main className="page receiving-page desk-fields ds">
@@ -1150,7 +1150,8 @@ export function ReceivingPage() {
                   onDraft={(value) => {
                     binTyped.current = value;
                   }}
-                  onBlur={() => {
+                  onBlur={(event) => {
+                    if (!binBlurStartsLookup(event.relatedTarget)) return;
                     const raw = binTyped.current.trim();
                     if (!raw) return;
                     void lookupBin(raw, false);
@@ -1226,6 +1227,7 @@ export function ReceivingPage() {
                   disabled={busy || saving}
                   aria-label={saving ? "Saving" : "Save receipt"}
                   title={saving ? "Saving" : "Save receipt"}
+                  onMouseDown={(event) => event.preventDefault()}
                 >
                   <Save size={18} strokeWidth={1.75} aria-hidden />
                 </button>
@@ -1237,29 +1239,35 @@ export function ReceivingPage() {
                 <span>{qtyMultipleWarning}</span>
               </p>
             ) : null}
-            {suggestions.some((suggestion) => skuAlreadyInBinNote(suggestion.locationCode, suggestion.qty)) ? (
-              <div className="receive-bin-notes">
-                {suggestions.map((suggestion) => {
-                  const note = skuAlreadyInBinNote(suggestion.locationCode, suggestion.qty);
-                  if (!note) return null;
-                  return (
-                    <button
-                      key={suggestion.cycleId}
-                      type="button"
-                      className="receive-bin-note"
-                      disabled={busy}
-                      onClick={() => {
-                        binSource.current = "user";
-                        prefilledBin.current = "";
-                        binEdit.current += 1;
-                        void lookupBin(suggestion.reference, false);
-                      }}
-                    >
-                      {note}
-                    </button>
-                  );
-                })}
-              </div>
+            {binNote ? (
+              <p className="receive-bin-notes" id="receive-bin-note">
+                {binNote.current ? <span>{binNote.current}</span> : null}
+                {binNote.othersLead ? (
+                  <>
+                    {binNote.current ? " " : null}
+                    <span>{binNote.othersLead} </span>
+                    {binNote.others.map((bin, index) => (
+                      <span key={bin.reference}>
+                        {index > 0 ? ", " : null}
+                        <button
+                          type="button"
+                          className="receive-bin-note"
+                          disabled={busy}
+                          onClick={() => {
+                            binSource.current = "user";
+                            prefilledBin.current = "";
+                            binEdit.current += 1;
+                            void lookupBin(bin.reference, false);
+                          }}
+                        >
+                          {bin.reference} (x{bin.qty})
+                        </button>
+                      </span>
+                    ))}
+                    .
+                  </>
+                ) : null}
+              </p>
             ) : null}
             {scanNote ? (
               <p className="hint" id="receive-scan-note">
@@ -1317,16 +1325,6 @@ export function ReceivingPage() {
                   </button>
                 </div>
               </div>
-            ) : null}
-            {confirmed ? (
-              <p className="hint">
-                {confirmed.reference}
-                {confirmed.locationCode ? ` is at ${confirmed.locationCode}` : " has no location yet"}
-                {created ? ", and its label is printed" : ""}.{" "}
-                {openCycle
-                  ? `Open cycle${openCycle.project ? ` for ${openCycle.project}` : ""}${openCycle.originDescription ? `. ${openCycle.originDescription}` : ""}.`
-                  : "Empty. The next save opens a cycle."}
-              </p>
             ) : null}
             {created && !receipt ? (
               <div className="label-preview">

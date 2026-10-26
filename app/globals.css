@@ -4943,13 +4943,14 @@ button.bin-label-hit:focus-visible {
 }
 
 .receive-bin-notes {
-  display: grid;
-  gap: 0.2rem;
-  margin-top: -0.2rem;
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
 }
 
 button.receive-bin-note {
-  justify-self: start;
+  display: inline;
   margin: 0;
   padding: 0;
   min-height: 0;
@@ -4957,11 +4958,12 @@ button.receive-bin-note {
   border-radius: 0;
   background: none;
   background-image: none;
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 500;
-  line-height: 1.35;
-  text-align: left;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
   white-space: normal;
 }
 
@@ -7066,6 +7068,7 @@ input.num-input {
 .ds.receiving-page .receive-name > span,
 .ds.receiving-page .hint,
 .ds.receiving-page .page-note,
+.ds.receiving-page .receive-bin-notes,
 .ds.receiving-page .receive-bin-note,
 .ds.receiving-page .receive-card-row dt {
   color: var(--ds-muted);
