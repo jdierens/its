@@ -1,5 +1,6 @@
 "use server";
 
+import { itemMoveIds, itemMoveTargetBin, itemMoveTargetError } from "@/lib/binItemMove";
 import { errorText } from "@/lib/errors";
 import {
   moveMigrationMissing,
@@ -14,6 +15,8 @@ import {
 } from "@/lib/moveInventory";
 import { operatorInitials } from "@/lib/stockAccess";
 import { getSupabase } from "@/lib/supabase";
+
+const MOVE_BIN_ITEMS_MIGRATION = "supabase/migrations/20261026220253_move_bin_items.sql";
 
 function raiseRpc(error: { code?: string; message?: string } | null): never {
   if (moveMigrationMissing(error)) {
@@ -109,6 +112,34 @@ export async function commitMove(input: {
     }));
   }
   if (error) raiseRpc(error);
+  return { summary: moveSummaryFromJson(data), requestId: input.requestId };
+}
+
+export async function moveBinItems(input: {
+  fromBin: string;
+  toBin: string;
+  itemIds: string[];
+  requestId: string;
+}): Promise<MoveResult> {
+  const itemIds = itemMoveIds(input.itemIds);
+  if (itemIds.length < 1) throw new Error("Choose an item.");
+  if (itemIds.length > 200) throw new Error("Move at most 200 items at once.");
+  const targetError = itemMoveTargetError(input.toBin);
+  if (targetError) throw new Error(targetError);
+  const initials = await operatorInitials();
+  const { data, error } = await (await getSupabase()).rpc("move_bin_items", {
+    p_from_bin_ref: input.fromBin,
+    p_to_bin_ref: itemMoveTargetBin(input.toBin),
+    p_item_ids: itemIds,
+    p_initials: initials,
+    p_client_request_id: input.requestId,
+  });
+  if (error) {
+    if (moveMigrationMissing(error)) {
+      throw new Error(`Apply ${MOVE_BIN_ITEMS_MIGRATION} before selected items can be moved.`);
+    }
+    throw new Error(errorText(error));
+  }
   return { summary: moveSummaryFromJson(data), requestId: input.requestId };
 }
 

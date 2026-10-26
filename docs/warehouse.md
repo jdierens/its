@@ -18,6 +18,12 @@ A bin cannot go into itself or into one of its descendants. Size is a rank on `b
 
 `empty_bin_into` moves every child bin and every quantity in the source into the target. The source bin stays where it is. `move_bins` moves several selected bins in one transaction.
 
+`move_bin_items` moves the full on-hand quantity of each selected item from one bin into another in one transaction. The source bin stays where it is. Apply `supabase/migrations/20261026220253_move_bin_items.sql` by hand before using it. It is not applied automatically.
+
+## The bin page
+
+Clicking the current location still moves the whole bin to a location code when no item is selected. Check one or more rows in Items summary, then use that same location control and scan a bin code. Move sends every selected line, at its full on-hand quantity, into that bin. A location code cannot take a loose quantity.
+
 A repeat of the same `p_client_request_id` returns the first result and does not move again. The functions are security definer, with a fixed empty search path. Execute is granted to `service_role` only.
 
 ## The screen
