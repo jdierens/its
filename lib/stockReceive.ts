@@ -218,6 +218,8 @@ export type ReceiptResult = {
   cycleOpened: boolean;
   locationCode: string | null;
   qty: number;
+  /** True when the line was stored without an item and stock was not moved. */
+  pending: boolean;
 };
 
 export type MoveResult = {
@@ -359,13 +361,14 @@ export function createdBinFromJson(value: unknown): CreatedBin {
 export function receiptFromJson(value: unknown): ReceiptResult {
   if (!isRecord(value)) throw new Error("The receipt was not saved.");
   return {
-    binId: String(value.bin_id),
-    reference: String(value.reference),
+    binId: String(value.bin_id ?? ""),
+    reference: String(value.reference ?? ""),
     type: requireBinType(value.type),
-    cycleId: String(value.cycle_id),
+    cycleId: textOrNull(value.cycle_id) ?? "",
     cycleOpened: value.cycle_opened === true,
     locationCode: textOrNull(value.location_code),
     qty: Number(value.qty),
+    pending: value.pending === true,
   };
 }
 

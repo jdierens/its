@@ -367,7 +367,7 @@ export async function searchReceivingScan(raw: string): Promise<ReceivingScanRes
 
 export async function receiveIntoBin(input: {
   reference: string;
-  itemId: string;
+  itemId: string | null;
   qty: number;
   comment: string;
   project: string;
@@ -386,7 +386,7 @@ export async function receiveIntoBin(input: {
   const supabase = await getSupabase();
   const payload = {
     p_reference: input.reference,
-    p_item_id: input.itemId,
+    p_item_id: input.itemId || null,
     p_qty: input.qty,
     p_initials: initials,
     p_comment: input.comment,
@@ -398,10 +398,16 @@ export async function receiveIntoBin(input: {
     p_client_request_id: input.clientRequestId,
     p_scan_raw: input.scanRaw?.trim() || null,
     p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
-    p_cleaned: input.cleaned ?? null,
-    p_wiped: input.wiped ?? null,
+    p_cleaned: input.itemId ? (input.cleaned ?? null) : null,
+    p_wiped: input.itemId ? (input.wiped ?? null) : null,
   };
   let { data, error } = await supabase.rpc("receive_into_bin", payload);
+  if (!payload.p_item_id && error) {
+    if (missingSchema(error) || missingColumn(error) || /choose an item/i.test(error.message ?? "")) {
+      throw new Error("Apply the unmatched receipt migration before saving a line without an item.");
+    }
+    rpcError(error);
+  }
   if (error && (missingSchema(error) || missingColumn(error))) {
     const { p_search_query: _search, ...withoutSearch } = payload;
     ({ data, error } = await supabase.rpc("receive_into_bin", withoutSearch));
@@ -440,11 +446,12 @@ export async function editReceipt(input: {
   originQty: number | null;
   comment: string;
   qty: number;
-  itemId: string;
+  itemId: string | null;
   confirmed: boolean;
   cleaned?: boolean | null;
   wiped?: boolean | null;
   searchQuery?: string | null;
+  binReference?: string | null;
 }): Promise<void> {
   const initials = await operatorInitials();
   if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
@@ -460,19 +467,23 @@ export async function editReceipt(input: {
     p_origin_qty: input.originQty,
     p_comment: input.comment,
     p_qty: input.qty,
-    p_item_id: input.itemId,
+    p_item_id: input.itemId || null,
     p_confirmed: input.confirmed,
-    p_cleaned: input.cleaned ?? null,
-    p_wiped: input.wiped ?? null,
+    p_cleaned: input.itemId ? (input.cleaned ?? null) : null,
+    p_wiped: input.itemId ? (input.wiped ?? null) : null,
     p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
+    p_bin_reference: input.binReference?.trim() || null,
   };
   let { error } = await supabase.rpc("edit_receipt", payload);
+  if (!payload.p_item_id && error && (missingSchema(error) || missingColumn(error) || /choose an item/i.test(error.message ?? ""))) {
+    throw new Error("Apply the unmatched receipt migration before saving a line without an item.");
+  }
   if (error && (missingSchema(error) || missingColumn(error))) {
-    const { p_search_query: _search, ...withoutSearch } = payload;
+    const { p_search_query: _search, p_bin_reference: _bin, ...withoutSearch } = payload;
     ({ error } = await supabase.rpc("edit_receipt", withoutSearch));
   }
   if (error && (missingSchema(error) || missingColumn(error))) {
-    const { p_cleaned: _cleaned, p_wiped: _wiped, p_search_query: _search, ...legacy } = payload;
+    const { p_cleaned: _cleaned, p_wiped: _wiped, p_search_query: _search, p_bin_reference: _bin, ...legacy } = payload;
     ({ error } = await supabase.rpc("edit_receipt", legacy));
   }
   if (error) rpcError(error);

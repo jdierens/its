@@ -124,6 +124,7 @@ export type ReceivingEntry = {
   longCode: string | null;
   taxonomyName: string | null;
   putaway: string;
+  binReference: string;
   searchQuery: string | null;
 };
 
@@ -201,6 +202,7 @@ export function receivingEntryForViewer(row: Record<string, unknown>, canViewMon
     longCode: textOrNull(source.long_code) ?? textOrNull(taxonomy?.long_code),
     taxonomyName: textOrNull(source.taxonomy_name) ?? textOrNull(taxonomy?.name),
     putaway: putawayLabel(binReference, locationCode),
+    binReference: binReference ?? "",
     searchQuery: textOrNull(source.search_query),
   };
 }
@@ -220,14 +222,21 @@ function omitMoney(row: Record<string, unknown>): Record<string, unknown> {
   return copy;
 }
 
-/** Success note after a receipt. EMPTY means this save opened the bin's fill period. */
+/** Success note after a receipt. EMPTY means this save opened the bin's fill period. A pending line has no SKU yet. */
 export function receiptSavedNote(input: {
   qty: number;
   sku: string;
   name?: string;
   reference: string;
   cycleOpened: boolean;
+  pending?: boolean;
+  search?: string | null;
 }): string {
+  if (input.pending) {
+    const term = (input.search ?? "").trim();
+    const quoted = term ? `"${term}"` : "the search";
+    return `Saved ${input.qty} pcs of ${quoted} into bin ${input.reference} (pending item)`;
+  }
   const sku = input.sku.trim();
   const item = sku ? `SKU${sku}` : (input.name ?? "").trim();
   if (input.cycleOpened) return `Put Away ${input.qty}Pcs ${item} into EMPTY bin ${input.reference}`;

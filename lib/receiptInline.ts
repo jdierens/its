@@ -1,6 +1,9 @@
 import { receiptFlagsForPrep, receivePrepKind } from "@/lib/receivingLine";
 import { receiptChangeSummary, receiptSearchQuery } from "@/lib/receivingScan";
 import { originQtyInput, parseReceiptDate, type ReceivingEntry } from "@/lib/receivingSettings";
+import { parseReceivingBinCode } from "@/lib/stockReceive";
+
+const BIN_CODE_MESSAGE = "A bin code is five digits, a hyphen, and B, C, or P.";
 
 /** Fields a clerk can change on a recent receipt. Putaway is not one of them. */
 export type ReceiptPatch = {
@@ -22,6 +25,7 @@ export type ReceiptPatch = {
   };
   cleaned?: boolean;
   wiped?: boolean;
+  bin?: string;
 };
 
 export type ReceiptEditBody = {
@@ -37,6 +41,7 @@ export type ReceiptEditBody = {
   cleaned: boolean | null;
   wiped: boolean | null;
   searchQuery: string | null;
+  binReference: string;
 };
 
 export type ReceiptEditPlan =
@@ -70,10 +75,19 @@ function limit(value: string, max: number, label: string): string | null {
   return null;
 }
 
+/** Bin code stored on the row. The putaway cell also shows the location after a dot. */
+export function receiptBinReference(entry: { binReference?: string | null; putaway?: string | null }): string {
+  const direct = parseReceivingBinCode(entry.binReference ?? "");
+  if (direct) return direct.reference;
+  const head = (entry.putaway ?? "").split("·")[0] ?? "";
+  return parseReceivingBinCode(head)?.reference ?? "";
+}
+
 /**
  * One cell change, checked against the receipt already on screen.
- * Qty or a different item asks for confirmation. Anything else can save immediately.
- * The destination bin is not part of the patch.
+ * On a posted line, qty or a different item asks for confirmation.
+ * A pending line can change search, qty, comment, and bin without an item.
+ * Choosing the item posts stock and asks first. The bin stays fixed after that link.
  */
 export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, confirmed: boolean): ReceiptEditPlan {
   let receivedOn = "";
@@ -104,16 +118,28 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
   const item = patch.item;
   const itemId = item?.id ?? entry.itemId;
   const sku = text(item ? item.sku || item.name : entry.sku);
-  if (!itemId) return { action: "invalid", message: "Choose an item." };
+  const pending = !entry.itemId;
+  if (!itemId && !searchQuery) return { action: "invalid", message: "Enter a search." };
 
-  const itemChanged = itemId !== entry.itemId;
+  const currentBin = receiptBinReference(entry);
+  const binReference = patch.bin === undefined ? currentBin : (parseReceivingBinCode(patch.bin)?.reference ?? "");
+  if (patch.bin !== undefined && !binReference) return { action: "invalid", message: BIN_CODE_MESSAGE };
+  if (pending && !binReference) return { action: "invalid", message: "Enter a bin." };
+  if (!pending && patch.bin !== undefined && binReference !== currentBin) {
+    return { action: "invalid", message: "The putaway bin stays as stored once an item is linked." };
+  }
+  if (pending && qty < 1) return { action: "invalid", message: "Enter a whole number of at least 1." };
+
+  const linking = pending && Boolean(itemId);
+  const itemChanged = Boolean(itemId) && itemId !== entry.itemId;
   const prep = receivePrepKind({
     shortCode: item ? item.shortCode : entry.shortCode,
     longCode: item ? item.longCode : entry.longCode,
     taxonomyName: item ? item.taxonomyName : entry.taxonomyName,
   });
-  const flags =
-    itemChanged || patch.cleaned !== undefined || patch.wiped !== undefined
+  const flags = !itemId
+    ? { cleaned: null, wiped: null }
+    : itemChanged || patch.cleaned !== undefined || patch.wiped !== undefined
       ? receiptFlagsForPrep(
           prep,
           itemChanged ? (patch.cleaned ?? false) : (patch.cleaned ?? entry.cleaned === true),
@@ -134,6 +160,7 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
     cleaned: flags.cleaned,
     wiped: flags.wiped,
     searchQuery,
+    binReference,
   };
 
   const same =
@@ -147,11 +174,20 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
     itemId === entry.itemId &&
     flags.cleaned === entry.cleaned &&
     flags.wiped === entry.wiped &&
-    searchQuery === receiptSearchQuery(entry.searchQuery);
+    searchQuery === receiptSearchQuery(entry.searchQuery) &&
+    binReference === currentBin;
   if (same) return { action: "unchanged" };
 
-  let summary = receiptChangeSummary({ sku: entry.sku, nextSku: sku, qty: entry.qty, nextQty: qty });
-  if (!summary && itemChanged) {
+  if (linking && !confirmed) {
+    return {
+      action: "confirm",
+      summary: `Link ${sku} and put ${qty} pcs into bin ${binReference}? This posts the receipt into that bin.`,
+      body,
+    };
+  }
+
+  let summary = pending ? null : receiptChangeSummary({ sku: entry.sku, nextSku: sku, qty: entry.qty, nextQty: qty });
+  if (!pending && !summary && itemChanged) {
     summary = `Change SKU from ${text(entry.sku) || "blank"} to ${sku || "blank"}? This posts an adjustment. The bin can't go below 0.`;
   }
   if (summary && !confirmed) return { action: "confirm", summary, body };

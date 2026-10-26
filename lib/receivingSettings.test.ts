@@ -33,6 +33,21 @@ describe("saved receipt note", () => {
       receiptSavedNote({ qty: 1, sku: "", name: "Loose drive", reference: "20042-B", cycleOpened: false }),
       "Added 1Pcs Loose drive into bin 20042-B",
     );
+    assert.equal(
+      receiptSavedNote({
+        qty: 4,
+        sku: "",
+        reference: "10059-C",
+        cycleOpened: false,
+        pending: true,
+        search: "samsung 860",
+      }),
+      'Saved 4 pcs of "samsung 860" into bin 10059-C (pending item)',
+    );
+    assert.doesNotMatch(
+      receiptSavedNote({ qty: 4, sku: "94415", reference: "10059-C", cycleOpened: true, pending: true, search: "860" }),
+      /Put Away|SKU/,
+    );
   });
 });
 
@@ -140,6 +155,7 @@ describe("recent receiving rows", () => {
       longCode: null,
       taxonomyName: null,
       putaway: "",
+      binReference: "",
       searchQuery: null,
     });
     const shown = receivingEntryForViewer(row, true);
@@ -166,6 +182,16 @@ describe("recent receiving rows", () => {
     assert.equal(located.wiped, null);
     assert.equal(located.shortCode, "CPU");
     assert.equal(located.putaway, "20042-B · HWS.00.00.00");
+    assert.equal(located.binReference, "20042-B");
+    const pending = receivingEntryForViewer(
+      { ...row, item_id: null, sku: null, item_name: "", items: null, search_query: "samsung 860", bin_reference: "10059-C", location_code: "HWS.00.00.00" },
+      true,
+    );
+    assert.equal(pending.itemId, "");
+    assert.equal(pending.sku, "");
+    assert.equal(pending.itemName, "");
+    assert.equal(pending.searchQuery, "samsung 860");
+    assert.equal(pending.putaway, "10059-C · HWS.00.00.00");
     assert.equal(
       receivingEntryForViewer({ ...row, search_query: "  samsung 860  " }, true).searchQuery,
       "samsung 860",

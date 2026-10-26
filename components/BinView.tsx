@@ -204,7 +204,7 @@ export function BinView({ reference }: { reference: string }) {
   const moves = detail
     ? [
         ...detail.cycles.flatMap((cycle) => cycle.events.filter((event) => event.eventType !== "receive_into_bin" && event.eventType !== "receipt_adjustment")),
-        ...detail.looseEvents,
+        ...detail.looseEvents.filter((event) => event.eventType !== "receive_into_bin"),
       ]
     : [];
 

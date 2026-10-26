@@ -5395,6 +5395,15 @@ tr.receipt-line:focus-visible td {
   background: rgba(15, 23, 42, 0.04);
 }
 
+tr.receipt-line.receipt-unmatched > td,
+.receive-card-row.receipt-unmatched {
+  background: rgba(245, 158, 11, 0.14);
+}
+
+tr.receipt-line.receipt-unmatched:hover > td {
+  background: rgba(245, 158, 11, 0.22);
+}
+
 .receive-edit {
   display: grid;
   gap: 0.75rem;
