@@ -4,6 +4,7 @@
  * must stay the same rule: keep A–Z, a–z, and 0–9, then compare case-insensitively.
  * A stored value contained in the query has to keep at least 3 letters or digits,
  * the same floor as a Find SKU longest word.
+ * A digits-only attribute does not match that way. `96.0` is not a hit inside a part number.
  */
 
 export const ITEM_ALNUM_COLUMNS = [
@@ -42,6 +43,22 @@ export function alnumQueryContains(field: string, query: string): boolean {
   const hay = normalizeAlnum(field);
   const needle = normalizeAlnum(query);
   return hay.length >= ALNUM_CONTAINED_MIN && hay.length < needle.length && needle.includes(hay);
+}
+
+/** True when the normalized value is digits and nothing else. `96.0` and `0.96` are. */
+export function alnumDigitsOnly(value: string): boolean {
+  const normalized = normalizeAlnum(value);
+  return normalized.length > 0 && /^[0-9]+$/.test(normalized);
+}
+
+/**
+ * Reverse match for an attribute value.
+ * A digits-only value is a capacity or a count, so it does not sit inside a longer query.
+ * A value with a letter still can. Forward search uses `alnumFieldContains`.
+ */
+export function attributeAlnumQueryContains(field: string, query: string): boolean {
+  if (alnumDigitsOnly(field)) return false;
+  return alnumQueryContains(field, query);
 }
 
 /** Either normalized string contains the other. */
