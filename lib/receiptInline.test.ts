@@ -25,6 +25,7 @@ function entry(overrides: Partial<ReceivingEntry> = {}): ReceivingEntry {
     longCode: "DIM/MEM",
     taxonomyName: "memory",
     putaway: "20042-B · HWS.00.00.00",
+    binReference: "20042-B",
     searchQuery: null,
     ...overrides,
   };
@@ -90,14 +91,18 @@ describe("inline receipt edit", () => {
     assert.equal(wiped.body.wiped, true);
   });
 
-  it("rejects a bad date or qty and leaves the destination bin alone", () => {
+  it("rejects a bad date or qty and leaves the destination bin alone once an item is linked", () => {
     assert.equal(planReceiptEdit(entry(), { receivedOn: "yesterday" }, false).action, "invalid");
     assert.equal(planReceiptEdit(entry(), { qty: "-1" }, false).action, "invalid");
     assert.equal(planReceiptEdit(entry(), { originQty: "" }, false).action, "save");
     const cleared = planReceiptEdit(entry(), { originQty: "" }, false);
     if (cleared.action !== "save") return;
     assert.equal(cleared.body.originQty, null);
-    assert.equal("putaway" in cleared.body, false);
+    assert.equal(cleared.body.binReference, "20042-B");
+    const moved = planReceiptEdit(entry(), { bin: "10059-C" }, false);
+    assert.equal(moved.action, "invalid");
+    if (moved.action !== "invalid") return;
+    assert.match(moved.message, /once an item is linked/);
   });
 
   it("keeps the stored search when another cell or the SKU changes, and saves a search correction without a stock confirm", () => {
@@ -125,5 +130,68 @@ describe("inline receipt edit", () => {
     assert.equal(picked.body.searchQuery, "samsung 860");
     assert.equal(picked.body.sku, "1001");
     assert.equal(picked.body.itemId, "item-2");
+  });
+
+  it("saves a pending line without an item, and posts stock only when that item is linked", () => {
+    const pending = entry({
+      sku: "",
+      itemName: "",
+      itemId: "",
+      searchQuery: "samsung 860",
+      cleaned: null,
+      wiped: null,
+      shortCode: null,
+      longCode: null,
+      taxonomyName: null,
+    });
+    const qty = planReceiptEdit(pending, { qty: "6" }, false);
+    assert.equal(qty.action, "save");
+    if (qty.action !== "save") return;
+    assert.equal(qty.body.itemId, "");
+    assert.equal(qty.body.qty, 6);
+    assert.equal(qty.body.cleaned, null);
+    assert.equal(qty.body.wiped, null);
+
+    const search = planReceiptEdit(pending, { searchQuery: "M393A8G40BB4-CWE" }, false);
+    assert.equal(search.action, "save");
+    if (search.action !== "save") return;
+    assert.equal(search.body.searchQuery, "M393A8G40BB4-CWE");
+
+    const bin = planReceiptEdit(pending, { bin: "10059-c" }, false);
+    assert.equal(bin.action, "save");
+    if (bin.action !== "save") return;
+    assert.equal(bin.body.binReference, "10059-C");
+
+    assert.equal(planReceiptEdit(pending, { searchQuery: " " }, false).action, "invalid");
+    assert.equal(planReceiptEdit(pending, { qty: "0" }, false).action, "invalid");
+    const flagged = planReceiptEdit(pending, { cleaned: true, wiped: true }, false);
+    assert.equal(flagged.action, "unchanged");
+
+    const link = planReceiptEdit(
+      pending,
+      { item: { id: "item-9", sku: "94415", name: "Drive", shortCode: "CPU", longCode: "CPU/PRC", taxonomyName: "CPU" } },
+      false,
+    );
+    assert.equal(link.action, "confirm");
+    if (link.action !== "confirm") return;
+    assert.match(link.summary, /Link 94415 and put 4 pcs into bin 20042-B/);
+    assert.doesNotMatch(link.summary, /adjustment/);
+    assert.equal(link.body.cleaned, false);
+    assert.equal(link.body.wiped, null);
+    const posted = planReceiptEdit(
+      pending,
+      { item: { id: "item-9", sku: "94415", name: "Drive", shortCode: "CPU", longCode: "CPU/PRC", taxonomyName: "CPU" } },
+      true,
+    );
+    assert.equal(posted.action, "save");
+
+    const again = planReceiptEdit(
+      entry({ searchQuery: "samsung 860" }),
+      { item: { id: "item-2", sku: "1001", name: "Widget" } },
+      false,
+    );
+    assert.equal(again.action, "confirm");
+    if (again.action !== "confirm") return;
+    assert.match(again.summary, /adjustment/);
   });
 });

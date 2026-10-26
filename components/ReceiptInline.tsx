@@ -5,14 +5,14 @@ import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import { labelHighlightedChoice, labelSearchOutcome } from "@/lib/labelDeskSelection";
 import { editReceipt, searchReceivingScan } from "@/lib/receivingActions";
-import { planReceiptEdit, receiptLineAfterPick, type ReceiptEditBody, type ReceiptPatch } from "@/lib/receiptInline";
+import { planReceiptEdit, receiptBinReference, receiptLineAfterPick, type ReceiptEditBody, type ReceiptPatch } from "@/lib/receiptInline";
 import { commentWithPrepStatus, receivePrepKind } from "@/lib/receivingLine";
 import { scanSearchNote } from "@/lib/receivingScan";
 import { RECEIVING_DATE_EDITABLE, formatReceivedOn, type ReceivingEntry } from "@/lib/receivingSettings";
 import type { LabelItem } from "@/lib/types";
 
 type Confirm = { summary: string; body: ReceiptEditBody };
-type Field = "date" | "project" | "incoming" | "origin" | "originQty" | "search" | "sku" | "qty" | "comment";
+type Field = "date" | "project" | "incoming" | "origin" | "originQty" | "search" | "sku" | "qty" | "putaway" | "comment";
 
 function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
   const [field, setField] = useState<Field | null>(null);
@@ -66,6 +66,7 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
         cleaned: body.cleaned,
         wiped: body.wiped,
         searchQuery: body.searchQuery,
+        binReference: body.binReference,
       });
       setField(null);
       setConfirm(null);
@@ -421,7 +422,7 @@ export function ReceiptTableRow({
   }
   return (
     <>
-      <tr className="receipt-line">
+      <tr className={entry.itemId ? "receipt-line" : "receipt-line receipt-unmatched"}>
         <td className="fit">
           {edit.field === "date" && RECEIVING_DATE_EDITABLE ? (
             <TextEdit
@@ -497,7 +498,7 @@ export function ReceiptTableRow({
           {edit.field === "sku" ? (
             <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
           ) : (
-            <CellButton value={shown.sku} title="Find another item" onClick={() => open("sku")} />
+            <CellButton value={shown.sku} title={entry.itemId ? "Find another item" : "Pending item"} onClick={() => open("sku")} />
           )}
         </td>
         <td className="item" title={shown.itemName}>
@@ -516,8 +517,19 @@ export function ReceiptTableRow({
             <CellButton align="right" value={String(entry.qty)} onClick={() => open("qty")} />
           )}
         </td>
-        <td className="putaway" title="Putaway is the destination bin stored on the receipt. It is not changed from this table.">
-          {entry.putaway}
+        <td className="putaway" title={entry.itemId ? "Putaway is the destination bin stored on the receipt. It is not changed from this table." : "Putaway bin. It can change until an item is linked."}>
+          {entry.itemId ? (
+            entry.putaway
+          ) : edit.field === "putaway" ? (
+            <TextEdit
+              value={receiptBinReference(entry)}
+              onCommit={(value) => edit.apply({ bin: value })}
+              onCancel={() => edit.setField(null)}
+              kind="text"
+            />
+          ) : (
+            <CellButton value={entry.putaway} title="Change the putaway bin" onClick={() => open("putaway")} />
+          )}
         </td>
         <td className="note" title={note || undefined}>
           {edit.field === "comment" ? (
@@ -657,7 +669,7 @@ export function ReceiptCard({
           {edit.field === "sku" ? (
             <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
           ) : (
-            <CellButton value={shown.sku} onClick={() => open("sku")} />
+            <CellButton value={shown.sku} title={entry.itemId ? "Find another item" : "Pending item"} onClick={() => open("sku")} />
           )}
         </CardLine>
         <CardLine label="Item name">
@@ -677,7 +689,18 @@ export function ReceiptCard({
           )}
         </CardLine>
         <CardLine label="Putaway location">
-          <span title="Putaway is the destination bin stored on the receipt. It is not changed from this list.">{entry.putaway}</span>
+          {entry.itemId ? (
+            <span title="Putaway is the destination bin stored on the receipt. It is not changed from this list.">{entry.putaway}</span>
+          ) : edit.field === "putaway" ? (
+            <TextEdit
+              value={receiptBinReference(entry)}
+              onCommit={(value) => edit.apply({ bin: value })}
+              onCancel={() => edit.setField(null)}
+              kind="text"
+            />
+          ) : (
+            <CellButton value={entry.putaway} title="Change the putaway bin" onClick={() => open("putaway")} />
+          )}
         </CardLine>
         <CardLine label="Comment">
           {edit.field === "comment" ? (

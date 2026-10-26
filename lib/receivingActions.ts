@@ -15,10 +15,18 @@ import {
   type RecentProjectRow,
 } from "@/lib/receivingProjects";
 import {
+  receiptReportFileName,
+  receiptsDetailCsv,
+  summarizeReceipts,
+  summaryCsv,
+  type ReceiptSummaryRow,
+} from "@/lib/receivingReport";
+import {
   RECEIVING_PAGE_SIZE,
   parseReceiptDate,
   receivingDateToStore,
   receivingEntryForViewer,
+  warehouseToday,
   type ReceivingEntry,
 } from "@/lib/receivingSettings";
 import { sessionUser } from "@/lib/sessionUser";
@@ -367,7 +375,7 @@ export async function searchReceivingScan(raw: string): Promise<ReceivingScanRes
 
 export async function receiveIntoBin(input: {
   reference: string;
-  itemId: string;
+  itemId: string | null;
   qty: number;
   comment: string;
   project: string;
@@ -386,7 +394,7 @@ export async function receiveIntoBin(input: {
   const supabase = await getSupabase();
   const payload = {
     p_reference: input.reference,
-    p_item_id: input.itemId,
+    p_item_id: input.itemId || null,
     p_qty: input.qty,
     p_initials: initials,
     p_comment: input.comment,
@@ -398,10 +406,16 @@ export async function receiveIntoBin(input: {
     p_client_request_id: input.clientRequestId,
     p_scan_raw: input.scanRaw?.trim() || null,
     p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
-    p_cleaned: input.cleaned ?? null,
-    p_wiped: input.wiped ?? null,
+    p_cleaned: input.itemId ? (input.cleaned ?? null) : null,
+    p_wiped: input.itemId ? (input.wiped ?? null) : null,
   };
   let { data, error } = await supabase.rpc("receive_into_bin", payload);
+  if (!payload.p_item_id && error) {
+    if (missingSchema(error) || missingColumn(error) || /choose an item/i.test(error.message ?? "")) {
+      throw new Error("Apply the unmatched receipt migration before saving a line without an item.");
+    }
+    rpcError(error);
+  }
   if (error && (missingSchema(error) || missingColumn(error))) {
     const { p_search_query: _search, ...withoutSearch } = payload;
     ({ data, error } = await supabase.rpc("receive_into_bin", withoutSearch));
@@ -440,11 +454,12 @@ export async function editReceipt(input: {
   originQty: number | null;
   comment: string;
   qty: number;
-  itemId: string;
+  itemId: string | null;
   confirmed: boolean;
   cleaned?: boolean | null;
   wiped?: boolean | null;
   searchQuery?: string | null;
+  binReference?: string | null;
 }): Promise<void> {
   const initials = await operatorInitials();
   if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
@@ -460,30 +475,38 @@ export async function editReceipt(input: {
     p_origin_qty: input.originQty,
     p_comment: input.comment,
     p_qty: input.qty,
-    p_item_id: input.itemId,
+    p_item_id: input.itemId || null,
     p_confirmed: input.confirmed,
-    p_cleaned: input.cleaned ?? null,
-    p_wiped: input.wiped ?? null,
+    p_cleaned: input.itemId ? (input.cleaned ?? null) : null,
+    p_wiped: input.itemId ? (input.wiped ?? null) : null,
     p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
+    p_bin_reference: input.binReference?.trim() || null,
   };
   let { error } = await supabase.rpc("edit_receipt", payload);
+  if (!payload.p_item_id && error && (missingSchema(error) || missingColumn(error) || /choose an item/i.test(error.message ?? ""))) {
+    throw new Error("Apply the unmatched receipt migration before saving a line without an item.");
+  }
   if (error && (missingSchema(error) || missingColumn(error))) {
-    const { p_search_query: _search, ...withoutSearch } = payload;
+    const { p_search_query: _search, p_bin_reference: _bin, ...withoutSearch } = payload;
     ({ error } = await supabase.rpc("edit_receipt", withoutSearch));
   }
   if (error && (missingSchema(error) || missingColumn(error))) {
-    const { p_cleaned: _cleaned, p_wiped: _wiped, p_search_query: _search, ...legacy } = payload;
+    const { p_cleaned: _cleaned, p_wiped: _wiped, p_search_query: _search, p_bin_reference: _bin, ...legacy } = payload;
     ({ error } = await supabase.rpc("edit_receipt", legacy));
   }
   if (error) rpcError(error);
 }
 
-export async function listReceivingEntries(
+const RECEIPT_REPORT_PAGE = 1000;
+
+async function listReceiptSlice(
   project: string,
   offset: number,
+  limit: number,
 ): Promise<{ rows: ReceivingEntry[]; total: number }> {
   const from = Math.max(0, Math.floor(offset));
-  const to = from + RECEIVING_PAGE_SIZE - 1;
+  const size = Math.max(1, Math.floor(limit));
+  const to = from + size - 1;
   const supabase = await getSupabase();
   const money = await viewerCanSeeMoney();
   const trimmed = project.trim();
@@ -522,6 +545,48 @@ export async function listReceivingEntries(
   const raw = Array.isArray(data) ? data : [];
   const page = raw.map((row) => receivingEntryForViewer(row as Record<string, unknown>, money));
   return { rows: page, total: count ?? page.length };
+}
+
+export async function listReceivingEntries(
+  project: string,
+  offset: number,
+): Promise<{ rows: ReceivingEntry[]; total: number }> {
+  return listReceiptSlice(project, offset, RECEIVING_PAGE_SIZE);
+}
+
+/** Every receipt for the project in the header, newest first. Not only the page on screen. */
+export async function listProjectReceipts(project: string): Promise<ReceivingEntry[]> {
+  const rows: ReceivingEntry[] = [];
+  let offset = 0;
+  for (let page = 0; page < 200; page += 1) {
+    const slice = await listReceiptSlice(project, offset, RECEIPT_REPORT_PAGE);
+    rows.push(...slice.rows);
+    if (slice.rows.length < RECEIPT_REPORT_PAGE) return rows;
+    offset += slice.rows.length;
+  }
+  throw new Error("This project has too many receipts to export at once.");
+}
+
+export async function projectReceiptSummary(project: string): Promise<ReceiptSummaryRow[]> {
+  return summarizeReceipts(await listProjectReceipts(project));
+}
+
+export async function projectReceiptFile(
+  project: string,
+  kind: "summary" | "detail",
+): Promise<{ filename: string; csv: string }> {
+  const rows = await listProjectReceipts(project);
+  const day = warehouseToday();
+  if (kind === "summary") {
+    return {
+      filename: receiptReportFileName("summary", project, day),
+      csv: summaryCsv(summarizeReceipts(rows)),
+    };
+  }
+  return {
+    filename: receiptReportFileName("receipts", project, day),
+    csv: receiptsDetailCsv(rows),
+  };
 }
 
 export async function moveBinToLocation(reference: string, locationCode: string): Promise<MoveResult> {

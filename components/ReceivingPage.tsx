@@ -8,6 +8,7 @@ import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { ReceiptCard, ReceiptTableRow } from "@/components/ReceiptInline";
+import { ReceiptReports } from "@/components/ReceiptReports";
 import { ReceivingOriginField, ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, binTypeLabel, formatBinReference, type BinType } from "@/lib/bins";
@@ -202,7 +203,8 @@ export function ReceivingPage() {
   const [suggestions, setSuggestions] = useState<BinSuggestion[]>([]);
   const [receipt, setReceipt] = useState<{
     result: ReceiptResult;
-    item: LabelItem;
+    item: LabelItem | null;
+    search: string | null;
     qty: number;
     printedOn: string;
     qtyWarning: string | null;
@@ -663,11 +665,11 @@ export function ReceivingPage() {
     if (!claim.ok) return;
     saveGate.current = claim.gate;
     const chosen = await resolveLineItem();
-    if (!chosen) {
+    if (!chosen.ok) {
       releaseSave(false);
       return;
     }
-    await commitReceipt(reference, claim.requestId, chosen);
+    await commitReceipt(reference, claim.requestId, chosen.item, chosen.search);
   }
 
   function releaseSave(saved: boolean) {
@@ -675,39 +677,44 @@ export function ReceivingPage() {
     setSaving(false);
   }
 
-  async function resolveLineItem(): Promise<LabelItem | null> {
+  async function resolveLineItem(): Promise<{ ok: true; item: LabelItem | null; search: string | null } | { ok: false }> {
     const current = item;
     const draft = skuDraft;
-    const typed = (draft ?? "").trim();
+    const typedSku = (draft ?? "").trim();
+    const search = receiptSearchQuery(searchQuery ?? (typed.current || identifier));
     const decision = receivingSkuOverride({
-      typedSku: draft == null ? (current?.sku ?? "") : typed,
+      typedSku: draft == null ? (current?.sku ?? "") : typedSku,
       currentSku: current?.sku ?? "",
       exactSku: null,
     });
     if (draft == null || decision === "same") {
       if (!current) {
-        setError("Choose an item.");
-        return null;
+        if (!search) {
+          setError("Enter a search.");
+          return { ok: false };
+        }
+        setSkuDraft(null);
+        return { ok: true, item: null, search };
       }
       setSkuDraft(null);
-      return current;
+      return { ok: true, item: current, search };
     }
     const id = ++skuLookup.current;
     try {
-      const result = await searchReceivingScan(typed);
-      if (id !== skuLookup.current) return null;
+      const result = await searchReceivingScan(typedSku);
+      if (id !== skuLookup.current) return { ok: false };
       if (
         result.exact &&
-        receivingSkuOverride({ typedSku: typed, currentSku: current?.sku ?? "", exactSku: result.exact.sku }) === "apply"
+        receivingSkuOverride({ typedSku, currentSku: current?.sku ?? "", exactSku: result.exact.sku }) === "apply"
       ) {
         adoptSku(result.exact, false);
-        return result.exact;
+        return { ok: true, item: result.exact, search };
       }
-      setError(`No item with SKU ${typed}.`);
-      return null;
+      setError(`No item with SKU ${typedSku}.`);
+      return { ok: false };
     } catch (cause) {
       if (id === skuLookup.current) setError(errorText(cause));
-      return null;
+      return { ok: false };
     }
   }
 
@@ -738,7 +745,7 @@ export function ReceivingPage() {
     }
   }
 
-  async function commitReceipt(reference: string, requestId: string, lineItem: LabelItem) {
+  async function commitReceipt(reference: string, requestId: string, lineItem: LabelItem | null, search: string | null) {
     const parsed = receiveLineQty(qty);
     if (!parsed.ok) {
       releaseSave(false);
@@ -756,18 +763,25 @@ export function ReceivingPage() {
       setError("Enter a receiving date.");
       return;
     }
+    if (!lineItem && !search) {
+      releaseSave(false);
+      setError("Enter a search.");
+      return;
+    }
     const qtyWarning = systemQtyMultipleWarning(parsed.qty, originParsed.qty);
-    const flags = receiptFlagsForPrep(
-      receivePrepKind({ shortCode: lineItem.shortCode, longCode: lineItem.longCode, taxonomyName: lineItem.taxonomyName }),
-      cleaned,
-      wiped,
-    );
+    const flags = lineItem
+      ? receiptFlagsForPrep(
+          receivePrepKind({ shortCode: lineItem.shortCode, longCode: lineItem.longCode, taxonomyName: lineItem.taxonomyName }),
+          cleaned,
+          wiped,
+        )
+      : { cleaned: null, wiped: null };
     setSaving(true);
     setError(null);
     try {
       const result = await receiveIntoBin({
         reference,
-        itemId: lineItem.id,
+        itemId: lineItem?.id ?? null,
         qty: parsed.qty,
         comment,
         project,
@@ -777,12 +791,12 @@ export function ReceivingPage() {
         originQty: originParsed.qty,
         clientRequestId: requestId,
         scanRaw,
-        searchQuery,
+        searchQuery: search,
         cleaned: flags.cleaned,
         wiped: flags.wiped,
       });
       const printedOn = todayLabel(new Date());
-      setReceipt({ result, item: lineItem, qty: parsed.qty, printedOn, qtyWarning });
+      setReceipt({ result, item: lineItem, search, qty: parsed.qty, printedOn, qtyWarning });
       typed.current = "";
       holdQuery.current = null;
       binTyped.current = "";
@@ -859,7 +873,7 @@ export function ReceivingPage() {
     if (!claim.ok) return;
     saveGate.current = claim.gate;
     const chosen = await resolveLineItem();
-    if (!chosen) {
+    if (!chosen.ok) {
       releaseSave(false);
       return;
     }
@@ -884,7 +898,7 @@ export function ReceivingPage() {
       releaseSave(false);
       return;
     }
-    await commitReceipt(reference, claim.requestId, chosen);
+    await commitReceipt(reference, claim.requestId, chosen.item, chosen.search);
   }
 
   async function printBinLabel(reference: string, type: BinType) {
@@ -900,7 +914,7 @@ export function ReceivingPage() {
   }
 
   function printItemLabel() {
-    if (!receipt) return;
+    if (!receipt?.item) return;
     setPrintJob({
       kind: "item",
       item: receipt.item,
@@ -922,13 +936,13 @@ export function ReceivingPage() {
   });
   const suggestedCode =
     binPrompt?.kind === "required" ? formatBinReference(binPrompt.nextNumber, binPrompt.type) : null;
-  const binNote = alreadyInBinNote({ currentBin: binCode, rows: suggestions });
+  const binNote = item ? alreadyInBinNote({ currentBin: binCode, rows: suggestions }) : null;
 
   return (
     <main className="page receiving-page desk-fields ds">
       <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
       <div className="no-print">
-        <p className="page-note">The header is the receipt. The line is one SKU into one bin.</p>
+        <p className="page-note">The header is the receipt. The line is one quantity into one bin. Leave the SKU empty to save the search and link an item later.</p>
         <section className="card receive-card" id="receive-header">
           <h2>Receipt</h2>
           <div className="receive-header-grid">
@@ -984,10 +998,12 @@ export function ReceivingPage() {
             <p className="banner ok" role="status">
               {receiptSavedNote({
                 qty: receipt.qty,
-                sku: receipt.item.sku,
-                name: receipt.item.name,
+                sku: receipt.item?.sku ?? "",
+                name: receipt.item?.name,
                 reference: receipt.result.reference,
                 cycleOpened: receipt.result.cycleOpened,
+                pending: !receipt.item || receipt.result.pending,
+                search: receipt.search,
               })}{" "}
               <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
             </p>
@@ -1004,9 +1020,11 @@ export function ReceivingPage() {
               >
                 Print bin label
               </button>
-              <button type="button" onClick={printItemLabel}>
-                Print item label
-              </button>
+              {receipt.item ? (
+                <button type="button" onClick={printItemLabel}>
+                  Print item label
+                </button>
+              ) : null}
             </div>
           </section>
         ) : null}
@@ -1181,7 +1199,7 @@ export function ReceivingPage() {
                   }}
                 />
               </label>
-              {prep === "cleaned" ? (
+              {item && prep === "cleaned" ? (
                 <label className="receive-prep" htmlFor="receive-cleaned">
                   <span>Cleaned</span>
                   <div className="receive-prep-control">
@@ -1195,7 +1213,7 @@ export function ReceivingPage() {
                   </div>
                 </label>
               ) : null}
-              {prep === "wiped" ? (
+              {item && prep === "wiped" ? (
                 <label className="receive-prep" htmlFor="receive-wiped">
                   <span>Wiped</span>
                   <div className="receive-prep-control">
@@ -1342,7 +1360,7 @@ export function ReceivingPage() {
         </section>
 
         <section className="card receive-card" id="receive-recent">
-          <h2>Recent entries</h2>
+          <ReceiptReports project={project} ready={projectReady} stamp={listStamp} />
           <p className="hint">
             {project.trim()
               ? `Receipts for ${project.trim()}, newest first.`
@@ -1387,7 +1405,7 @@ export function ReceivingPage() {
               </div>
               <ul className="receive-cards">
                 {entries.map((entry) => (
-                  <li key={`card-${entry.id}`} className="receive-card-row">
+                  <li key={`card-${entry.id}`} className={entry.itemId ? "receive-card-row" : "receive-card-row receipt-unmatched"}>
                     <ReceiptCard
                       entry={entry}
                       initials={editorInitials}

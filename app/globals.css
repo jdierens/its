@@ -4825,6 +4825,33 @@ button.bin-label-hit:focus-visible {
   font-size: 1.05rem;
 }
 
+.receive-recent-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.receiving-page .receive-recent-head h2 {
+  margin: 0;
+}
+
+.receive-summary {
+  display: grid;
+  gap: 0.55rem;
+  justify-items: stretch;
+  width: 100%;
+  margin: 0.15rem 0 0.85rem;
+  text-align: left;
+}
+
+.receive-summary-scroll {
+  overflow: auto;
+  max-height: 24rem;
+}
+
 .receive-header-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 9.5rem) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 7.5rem);
@@ -5393,6 +5420,15 @@ tr.receipt-line > td {
 tr.receipt-line:hover td,
 tr.receipt-line:focus-visible td {
   background: rgba(15, 23, 42, 0.04);
+}
+
+tr.receipt-line.receipt-unmatched > td,
+.receive-card-row.receipt-unmatched {
+  background: rgba(245, 158, 11, 0.14);
+}
+
+tr.receipt-line.receipt-unmatched:hover > td {
+  background: rgba(245, 158, 11, 0.22);
 }
 
 .receive-edit {
