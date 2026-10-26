@@ -6,6 +6,7 @@ import {
   formatPutawayQty,
   summarizeReceipts,
   summaryCsv,
+  summaryItemLabel,
   type ReceiptSummaryRow,
 } from "@/lib/receivingReport";
 import type { ReceivingEntry } from "@/lib/receivingSettings";
@@ -100,9 +101,12 @@ describe("receipt csv", () => {
       { sku: "", name: "", search: "=cmd|", qty: 4, lines: 1, locations: "", pending: true },
     ];
     const csv = summaryCsv(rows);
-    assert.ok(csv.startsWith("\uFEFFSKU,Item name,Search,Qty,Putaway,Lines,Status\r\n"));
-    assert.match(csv, /100,apple,,5,\(x14\)10002-C \| \(x8\)10037,2,\r\n/);
-    assert.match(csv, /,,'=cmd\|,4,,1,Pending item\r\n/);
+    assert.ok(csv.startsWith("\uFEFFSKU,Item,Qty,Putaway,Lines,Status\r\n"));
+    assert.match(csv, /100,apple,5,\(x14\)10002-C \| \(x8\)10037,2,\r\n/);
+    assert.match(csv, /,'=cmd\|,4,,1,Pending item\r\n/);
+    assert.equal(summaryItemLabel(rows[0]!), "apple");
+    assert.equal(summaryItemLabel({ pending: true, name: "Drive", search: " SRM7H " }), "SRM7H");
+    assert.equal(summaryItemLabel({ pending: false, name: "  ", search: "SRM7H" }), "");
   });
 
   it("exports unmatched lines with cleaned and wiped columns", () => {

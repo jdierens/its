@@ -38,15 +38,15 @@ describe("receive prep", () => {
     assert.deepEqual(receiptFlagsForPrep(null, true, true), { cleaned: null, wiped: null });
   });
 
-  it("shows cleaned or dirty on a CPU and Wiped or Pending Wipe on a drive", () => {
+  it("shows cleaned or Dirty on a CPU and Wiped or Pending Wipe on a drive", () => {
     assert.equal(prepStatusText("cleaned", true, null), "cleaned");
-    assert.equal(prepStatusText("cleaned", false, true), "dirty");
+    assert.equal(prepStatusText("cleaned", false, true), "Dirty");
     assert.equal(prepStatusText("cleaned", null, false), null);
     assert.equal(prepStatusText("wiped", null, true), "Wiped");
     assert.equal(prepStatusText("wiped", true, false), "Pending Wipe");
     assert.equal(prepStatusText("wiped", false, null), null);
     assert.equal(prepStatusText(null, true, true), null);
-    assert.equal(commentWithPrepStatus("pin bent", "cleaned", false, null), "dirty pin bent");
+    assert.equal(commentWithPrepStatus("pin bent", "cleaned", false, null), "Dirty pin bent");
     assert.equal(commentWithPrepStatus("", "cleaned", true, null), "cleaned");
     assert.equal(commentWithPrepStatus("  date code  ", "wiped", null, true), "Wiped date code");
     assert.equal(commentWithPrepStatus("dirty already", "cleaned", null, null), "dirty already");

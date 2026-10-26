@@ -54,6 +54,17 @@ function text(value: string | null | undefined): string {
   return (value ?? "").trim();
 }
 
+/**
+ * Text the SKU finder opens with.
+ * A posted line starts on its SKU. A pending line starts on the stored search so the list can open immediately.
+ */
+export function skuFinderSeed(entry: { itemId: string; sku: string; searchQuery?: string | null }): string {
+  if (entry.itemId.trim()) return entry.sku;
+  const sku = entry.sku.trim();
+  if (sku) return sku;
+  return (entry.searchQuery ?? "").trim();
+}
+
 /** The row shows the picked item's name as soon as the SKU changes. Cancel restores the saved line. */
 export function receiptLineAfterPick(
   entry: { itemId: string; sku: string; itemName: string },

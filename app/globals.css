@@ -4838,6 +4838,32 @@ button.bin-label-hit:focus-visible {
   margin: 0;
 }
 
+.receive-view-switch {
+  height: 36px;
+  flex: 0 0 auto;
+}
+
+.receive-view-switch button {
+  min-height: 0;
+  font-size: 0.86rem;
+}
+
+.ds.receiving-page .receive-view-switch button {
+  color: var(--ds-ink);
+  background: transparent;
+  background-image: none;
+}
+
+.ds.receiving-page .receive-view-switch button[aria-pressed="true"] {
+  background: var(--ds-ink);
+  color: var(--ds-canvas);
+}
+
+.ds.receiving-page .receive-view-switch button:hover:not([aria-pressed="true"]) {
+  background: color-mix(in srgb, var(--ds-ink) 8%, transparent);
+  background-image: none;
+}
+
 .receive-summary {
   display: grid;
   gap: 0.55rem;
@@ -5304,8 +5330,26 @@ button.receive-bin-note {
   min-width: 16ch;
 }
 
+.receiving-page .receive-table td.sku > button.receive-cell {
+  width: calc(100% + 12px);
+  max-width: none;
+  margin: -3px -6px;
+  padding: 3px 6px;
+  box-sizing: border-box;
+}
+
 .receive-table th.locations,
 .receive-table td.locations {
+  white-space: nowrap;
+  text-align: left;
+}
+
+.receive-table th.summary-item,
+.receive-table td.summary-item {
+  min-width: 24ch;
+  max-width: 60ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
 }
@@ -5383,9 +5427,6 @@ button.receive-cell.num {
 }
 
 button.receive-cell.is-placeholder {
-  width: max-content;
-  max-width: none;
-  min-width: 9ch;
   color: var(--ds-ink, var(--ink));
   text-decoration: underline;
   text-decoration-style: dotted;

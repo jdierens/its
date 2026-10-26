@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { prefersFileShare } from "@/lib/export/download";
 import { errorText } from "@/lib/errors";
 import { projectReceiptSummary } from "@/lib/receivingActions";
-import type { ReceiptSummaryRow } from "@/lib/receivingReport";
+import { summaryItemLabel, type ReceiptSummaryRow } from "@/lib/receivingReport";
+
+export type ReceiptListView = "detail" | "summary";
 
 type ReportKind = "summary" | "detail";
 
@@ -64,12 +66,15 @@ export function ReceiptReports({
   project,
   ready,
   stamp,
+  view,
+  onView,
 }: {
   project: string;
   ready: boolean;
   stamp: number;
+  view: ReceiptListView;
+  onView: (view: ReceiptListView) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<"summary" | ReportKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<ReceiptSummaryRow[] | null>(null);
@@ -80,7 +85,7 @@ export function ReceiptReports({
   }
 
   useEffect(() => {
-    if (!open || !ready) return;
+    if (view !== "summary" || !ready) return;
     let cancel = false;
     setBusy("summary");
     setError(null);
@@ -100,7 +105,7 @@ export function ReceiptReports({
     return () => {
       cancel = true;
     };
-  }, [open, project, ready, stamp]);
+  }, [view, project, ready, stamp]);
 
   async function exportCsv(kind: ReportKind) {
     setBusy(kind);
@@ -123,15 +128,14 @@ export function ReceiptReports({
       <div className="receive-recent-head">
         <h2>Recent entries</h2>
         <div className="receive-actions">
-          <button
-            type="button"
-            className="secondary"
-            disabled={disabled}
-            aria-expanded={open}
-            onClick={() => setOpen((current) => !current)}
-          >
-            Summary
-          </button>
+          <div className="label-segments receive-view-switch" role="group" aria-label="Recent entries view">
+            <button type="button" aria-pressed={view === "detail"} onClick={() => onView("detail")}>
+              Detail
+            </button>
+            <button type="button" aria-pressed={view === "summary"} onClick={() => onView("summary")}>
+              Summary
+            </button>
+          </div>
           <button type="button" className="secondary" disabled={disabled} onClick={() => void exportCsv("detail")}>
             Export CSV
           </button>
@@ -142,18 +146,19 @@ export function ReceiptReports({
           {error}
         </p>
       ) : null}
-      {open ? (
+      {view === "summary" ? (
         <div className="receive-summary">
           <p className="hint">
-            One row per SKU for this project, sorted by item name. Putaway is the quantity in each bin, for example
-            (x14)10002-C | (x8)10037. Lines with no item are grouped by the exact search and listed after the SKUs.
+            One row per SKU for this project, sorted by item name. Item is the item name, or the search when no SKU is
+            linked. Putaway is the quantity in each bin, for example (x14)10002-C | (x8)10037. Lines with no item are
+            grouped by the exact search and listed after the SKUs.
           </p>
           <div className="receive-actions">
             <button type="button" className="secondary" disabled={disabled || !rows} onClick={() => void exportCsv("summary")}>
               Download summary CSV
             </button>
           </div>
-          {!rows && busy === "summary" ? (
+          {!ready || (!rows && busy === "summary") ? (
             <p className="hint">Loading summary…</p>
           ) : rows && rows.length === 0 ? (
             <p className="hint">No receipts for this project yet.</p>
@@ -168,8 +173,7 @@ export function ReceiptReports({
                   <thead>
                     <tr>
                       <th className="fit">SKU</th>
-                      <th className="item">Item name</th>
-                      <th className="search">Search</th>
+                      <th className="summary-item">Item</th>
                       <th className="num fit">Qty</th>
                       <th className="locations">Putaway</th>
                       <th className="num fit">Lines</th>
@@ -177,24 +181,26 @@ export function ReceiptReports({
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row, index) => (
-                      <tr
-                        key={row.pending ? `pending:${index}` : `item:${index}`}
-                        className={row.pending ? "receipt-line receipt-unmatched" : "receipt-line"}
-                      >
-                        <td className="fit">{row.sku}</td>
-                        <td className="item">{row.name}</td>
-                        <td className="search" title={row.search}>
-                          {row.search}
-                        </td>
-                        <td className="num fit">{row.qty}</td>
-                        <td className="locations" title={row.locations || undefined}>
-                          {row.locations}
-                        </td>
-                        <td className="num fit">{row.lines}</td>
-                        <td className="fit">{row.pending ? "Pending item" : ""}</td>
-                      </tr>
-                    ))}
+                    {rows.map((row, index) => {
+                      const item = summaryItemLabel(row);
+                      return (
+                        <tr
+                          key={row.pending ? `pending:${index}` : `item:${index}`}
+                          className={row.pending ? "receipt-line receipt-unmatched" : "receipt-line"}
+                        >
+                          <td className="fit">{row.sku}</td>
+                          <td className="summary-item" title={item || undefined}>
+                            {item}
+                          </td>
+                          <td className="num fit">{row.qty}</td>
+                          <td className="locations" title={row.locations || undefined}>
+                            {row.locations}
+                          </td>
+                          <td className="num fit">{row.lines}</td>
+                          <td className="fit">{row.pending ? "Pending item" : ""}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

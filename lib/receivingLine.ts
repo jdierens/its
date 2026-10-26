@@ -148,7 +148,7 @@ export function prepStatusText(
 ): string | null {
   if (prep === "cleaned") {
     if (cleaned === true) return "cleaned";
-    if (cleaned === false) return "dirty";
+    if (cleaned === false) return "Dirty";
     return null;
   }
   if (prep === "wiped") {

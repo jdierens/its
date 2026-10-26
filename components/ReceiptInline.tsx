@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import { labelHighlightedChoice, labelSearchOutcome } from "@/lib/labelDeskSelection";
 import { editReceipt, searchReceivingScan } from "@/lib/receivingActions";
-import { planReceiptEdit, receiptBinReference, receiptLineAfterPick, type ReceiptEditBody, type ReceiptPatch } from "@/lib/receiptInline";
+import {
+  planReceiptEdit,
+  receiptBinReference,
+  receiptLineAfterPick,
+  skuFinderSeed,
+  type ReceiptEditBody,
+  type ReceiptPatch,
+} from "@/lib/receiptInline";
 import { commentWithPrepStatus, receivePrepKind } from "@/lib/receivingLine";
 import { scanSearchNote } from "@/lib/receivingScan";
 import { RECEIVING_DATE_EDITABLE, formatReceivedOn, type ReceivingEntry } from "@/lib/receivingSettings";
@@ -177,12 +184,14 @@ function CellButton({
   title,
   align,
   onClick,
+  onMouseDown,
 }: {
   value: string;
   placeholder?: string;
   title?: string;
   align?: "right";
   onClick: () => void;
+  onMouseDown?: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const empty = value.trim() === "";
   return (
@@ -190,6 +199,7 @@ function CellButton({
       type="button"
       className={`receive-cell${align === "right" ? " num" : ""}${empty && placeholder ? " is-placeholder" : ""}`}
       title={title}
+      onMouseDown={onMouseDown}
       onClick={onClick}
     >
       {empty ? placeholder || "\u00a0" : value}
@@ -206,7 +216,7 @@ function SkuEdit({
   onPick: (item: LabelItem) => void;
   onCancel: () => void;
 }) {
-  const [query, setQuery] = useState(entry.sku);
+  const [query, setQuery] = useState(() => skuFinderSeed(entry));
   const [matches, setMatches] = useState<LabelItem[]>([]);
   const [active, setActive] = useState(-1);
   const [settled, setSettled] = useState("");
@@ -214,12 +224,16 @@ function SkuEdit({
   const [box, setBox] = useState<{ top: number; left: number; width: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const request = useRef(0);
+  const openedAt = useRef(0);
+  const refocuses = useRef(0);
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
 
   useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    openedAt.current = performance.now();
+    const node = inputRef.current;
+    node?.focus();
+    node?.select();
   }, []);
 
   useEffect(() => {
@@ -296,7 +310,7 @@ function SkuEdit({
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={matches.length > 0}
-        aria-label={`Find item, currently ${entry.sku}`}
+        aria-label={`Find item, currently ${skuFinderSeed(entry) || "none"}`}
         value={query}
         autoComplete="off"
         spellCheck={false}
@@ -323,7 +337,15 @@ function SkuEdit({
         }}
         onBlur={() => {
           window.setTimeout(() => {
-            if (document.activeElement?.closest?.(".receive-sku-menu")) return;
+            const active = document.activeElement;
+            if (active === inputRef.current) return;
+            if (active?.closest?.(".receive-sku-menu")) return;
+            const lostToPage = !active || active === document.body || active === document.documentElement;
+            if (lostToPage && performance.now() - openedAt.current < 500 && refocuses.current < 2) {
+              refocuses.current += 1;
+              inputRef.current?.focus();
+              return;
+            }
             onCancel();
           }, 0);
         }}
@@ -350,6 +372,36 @@ function SkuEdit({
       ) : null}
       {note ? <span className="sr-only">{note}</span> : null}
     </>
+  );
+}
+
+function SkuCell({
+  editing,
+  entry,
+  sku,
+  onOpen,
+  onPick,
+  onCancel,
+}: {
+  editing: boolean;
+  entry: ReceivingEntry;
+  sku: string;
+  onOpen: () => void;
+  onPick: (item: LabelItem) => void;
+  onCancel: () => void;
+}) {
+  if (editing) return <SkuEdit entry={entry} onPick={onPick} onCancel={onCancel} />;
+  return (
+    <CellButton
+      value={sku}
+      placeholder={entry.itemId ? undefined : "Link item"}
+      title={entry.itemId ? "Find another item" : "Link an item"}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        onOpen();
+      }}
+      onClick={onOpen}
+    />
   );
 }
 
@@ -503,16 +555,14 @@ export function ReceiptTableRow({
           )}
         </td>
         <td className="fit sku">
-          {edit.field === "sku" ? (
-            <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
-          ) : (
-            <CellButton
-              value={shown.sku}
-              placeholder={entry.itemId ? undefined : "Link item"}
-              title={entry.itemId ? "Find another item" : "Link an item"}
-              onClick={() => open("sku")}
-            />
-          )}
+          <SkuCell
+            editing={edit.field === "sku"}
+            entry={entry}
+            sku={shown.sku}
+            onOpen={() => open("sku")}
+            onPick={(item) => edit.apply(itemPatch(item))}
+            onCancel={() => edit.setField(null)}
+          />
         </td>
         <td className="item" title={shown.itemName}>
           {shown.itemName}
@@ -679,16 +729,14 @@ export function ReceiptCard({
           )}
         </CardLine>
         <CardLine label="SKU">
-          {edit.field === "sku" ? (
-            <SkuEdit entry={entry} onPick={(item) => edit.apply(itemPatch(item))} onCancel={() => edit.setField(null)} />
-          ) : (
-            <CellButton
-              value={shown.sku}
-              placeholder={entry.itemId ? undefined : "Link item"}
-              title={entry.itemId ? "Find another item" : "Link an item"}
-              onClick={() => open("sku")}
-            />
-          )}
+          <SkuCell
+            editing={edit.field === "sku"}
+            entry={entry}
+            sku={shown.sku}
+            onOpen={() => open("sku")}
+            onPick={(item) => edit.apply(itemPatch(item))}
+            onCancel={() => edit.setField(null)}
+          />
         </CardLine>
         <CardLine label="Item name">
           <span title={shown.itemName}>{shown.itemName}</span>
