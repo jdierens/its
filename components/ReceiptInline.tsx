@@ -580,10 +580,8 @@ export function ReceiptTableRow({
             <CellButton align="right" value={String(entry.qty)} onClick={() => open("qty")} />
           )}
         </td>
-        <td className="putaway" title={entry.itemId ? "Putaway is the destination bin stored on the receipt. It is not changed from this table." : "Putaway bin. It can change until an item is linked."}>
-          {entry.itemId ? (
-            entry.putaway
-          ) : edit.field === "putaway" ? (
+        <td className="putaway" title={entry.putaway || undefined}>
+          {edit.field === "putaway" ? (
             <TextEdit
               value={receiptBinReference(entry)}
               onCommit={(value) => edit.apply({ bin: value })}
@@ -755,9 +753,7 @@ export function ReceiptCard({
           )}
         </CardLine>
         <CardLine label="Putaway location">
-          {entry.itemId ? (
-            <span title="Putaway is the destination bin stored on the receipt. It is not changed from this list.">{entry.putaway}</span>
-          ) : edit.field === "putaway" ? (
+          {edit.field === "putaway" ? (
             <TextEdit
               value={receiptBinReference(entry)}
               onCommit={(value) => edit.apply({ bin: value })}
