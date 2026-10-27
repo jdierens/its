@@ -34,7 +34,7 @@ import { getSupabase } from "@/lib/supabase";
 
 export type SalesCustomerHit = { id: string; name: string };
 
-export type SalesSkuHit = { id: string; sku: string; name: string; partNumber: string };
+export type SalesSkuHit = { id: string; sku: string; name: string; partNumber: string; usHts: string; eccn: string };
 
 export type SalesLookups = {
   terms: { code: string; label: string }[];
@@ -80,6 +80,8 @@ export type SalesAllocationView = {
   name: string;
   /** items.description. Printed documents use this, not the item name. */
   description: string;
+  usHts: string;
+  eccn: string;
   qty: string;
   unitPrice: string;
   extPrice: string;
@@ -90,6 +92,9 @@ export type SalesLineView = {
   lineKind: string;
   customerPartNumber: string;
   customerDescription: string;
+  htsCode: string;
+  eccn: string;
+  lineNote: string;
   qty: string;
   unitPrice: string;
   extPrice: string;
@@ -241,7 +246,7 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
   const supabase = await getSupabase();
   const { data, error } = await supabase
     .from("items")
-    .select("id, sku, name, part_number, oem_part_number")
+    .select("id, sku, name, part_number, oem_part_number, us_hts, eccn")
     .or(
       [
         `part_number.ilike.${pattern}`,
@@ -266,7 +271,7 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
   const missing = alnumIds.filter((id) => !seen.has(id));
   const extraRows: typeof ilikeRows = [];
   if (missing.length > 0) {
-    const extra = await supabase.from("items").select("id, sku, name, part_number, oem_part_number").in("id", missing);
+    const extra = await supabase.from("items").select("id, sku, name, part_number, oem_part_number, us_hts, eccn").in("id", missing);
     if (extra.error) throw new Error(salesError(extra.error));
     extraRows.push(...(extra.data ?? []));
   }
@@ -279,6 +284,8 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
       sku: String(row.sku ?? ""),
       name: String(row.name ?? ""),
       partNumber: String(row.part_number ?? row.oem_part_number ?? ""),
+      usHts: text(row.us_hts),
+      eccn: text(row.eccn),
     }));
 }
 
@@ -301,7 +308,7 @@ export async function searchSalesItems(query: string): Promise<SalesItemSearch> 
     const idLists = await Promise.all(tokens.map((token) => itemIdsMatchingListQuery(supabase, token, { perSourceLimit: 40 })));
     const ids = [...new Set(idLists.flatMap((list) => list ?? []))].slice(0, 120);
     if (ids.length === 0) return { ok: true, hits: [] };
-    const { data, error } = await supabase.from("items").select("id, sku, name, part_number, oem_part_number").in("id", ids);
+    const { data, error } = await supabase.from("items").select("id, sku, name, part_number, oem_part_number, us_hts, eccn").in("id", ids);
     if (error) throw new Error(salesError(error));
     const hits = (data ?? []).map((row) => {
       const part = String(row.part_number ?? "");
@@ -315,6 +322,8 @@ export async function searchSalesItems(query: string): Promise<SalesItemSearch> 
         sku: String(row.sku ?? ""),
         name: String(row.name ?? ""),
         partNumber: oemHit && !partHit ? oem : part || oem,
+        usHts: text(row.us_hts),
+        eccn: text(row.eccn),
       };
     });
     return { ok: true, hits: rankSalesItemHits(tokens, hits) };
@@ -370,12 +379,14 @@ export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promi
 const ORDER_HEAD =
   "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref";
 
-function salesOrderSelect(withPayment: boolean, withAllocPrice: boolean): string {
+function salesOrderSelect(withPayment: boolean, withAllocPrice: boolean, withLineNote: boolean): string {
   const payment = withPayment ? ", payment_amount" : "";
+  const note = withLineNote ? ", line_note" : "";
+  const item = "sku, name, description, us_hts, eccn";
   const allocations = withAllocPrice
-    ? "so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no, items(sku, name, description))"
-    : "so_line_allocations(item_id, qty, items(sku, name, description))";
-  return `${ORDER_HEAD}${payment}, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, ${allocations}), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)`;
+    ? `so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no, items(${item}))`
+    : `so_line_allocations(item_id, qty, items(${item}))`;
+  return `${ORDER_HEAD}${payment}, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, hts_code, eccn${note}, ${allocations}), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)`;
 }
 
 function missingColumn(error: { message?: string } | null, column: string): boolean {
@@ -388,22 +399,24 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
   const access = await salesPageAccess();
   const supabase = await getSupabase();
   let withPayment = true;
-  let loaded: { data: any; error: { message?: string } | null } = await supabase
-    .from("sales_orders")
-    .select(salesOrderSelect(true, true))
-    .eq("id", id)
-    .maybeSingle();
-  if (missingColumn(loaded.error, "payment_amount")) {
-    withPayment = false;
-    loaded = await supabase.from("sales_orders").select(salesOrderSelect(false, true)).eq("id", id).maybeSingle();
-  }
-  if (
-    loaded.error &&
-    /so_line_allocations/i.test(loaded.error.message ?? "") &&
-    /unit_price|ext_price|alloc_no/i.test(loaded.error.message ?? "") &&
-    /schema cache|could not find|does not exist/i.test(loaded.error.message ?? "")
-  ) {
-    loaded = await supabase.from("sales_orders").select(salesOrderSelect(withPayment, false)).eq("id", id).maybeSingle();
+  let withAllocPrice = true;
+  let withLineNote = true;
+  const loadOrder = () =>
+    supabase.from("sales_orders").select(salesOrderSelect(withPayment, withAllocPrice, withLineNote)).eq("id", id).maybeSingle();
+  let loaded: { data: any; error: { message?: string } | null } = await loadOrder();
+  for (let attempt = 0; attempt < 4 && loaded.error; attempt += 1) {
+    const message = loaded.error.message ?? "";
+    if (withPayment && missingColumn(loaded.error, "payment_amount")) withPayment = false;
+    else if (withLineNote && missingColumn(loaded.error, "line_note")) withLineNote = false;
+    else if (
+      withAllocPrice &&
+      /so_line_allocations/i.test(message) &&
+      /unit_price|ext_price|alloc_no/i.test(message) &&
+      /schema cache|could not find|does not exist/i.test(message)
+    ) {
+      withAllocPrice = false;
+    } else break;
+    loaded = await loadOrder();
   }
   if (loaded.error) throw new Error(salesError(loaded.error));
   const data = loaded.data ? { ...loaded.data, payment_amount: loaded.data.payment_amount ?? null } : null;
@@ -447,6 +460,8 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
             sku: String(item?.sku ?? ""),
             name: String(item?.name ?? ""),
             description: String(item?.description ?? ""),
+            usHts: text(item?.us_hts),
+            eccn: text(item?.eccn),
             qty,
             unitPrice,
             extPrice,
@@ -457,6 +472,9 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
         lineKind: text(line.line_kind) || "product",
         customerPartNumber: text(line.customer_part_number),
         customerDescription: text(line.customer_description),
+        htsCode: text(line.hts_code),
+        eccn: text(line.eccn),
+        lineNote: text(line.line_note),
         qty: formatQty(line.qty),
         unitPrice: visible.unitPrice,
         extPrice: visible.extPrice,

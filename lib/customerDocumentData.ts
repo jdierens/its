@@ -61,8 +61,9 @@ export async function loadCustomerDocument(
       qty: line.qty,
       unitPrice: line.unitPrice,
       extPrice: line.extPrice,
-      htsCode: extra?.hts ?? "",
-      eccn: extra?.eccn ?? "",
+      htsCode: line.htsCode,
+      eccn: line.eccn,
+      lineNote: line.lineNote,
       allocations: line.allocations.map((allocation, index) => ({
         sku: allocation.sku,
         name: allocation.name,
@@ -70,6 +71,8 @@ export async function loadCustomerDocument(
         qty: allocation.qty,
         unitPrice: allocation.unitPrice,
         extPrice: allocation.extPrice,
+        htsCode: allocation.usHts,
+        eccn: allocation.eccn,
         serials: extra?.serials[index] ?? [],
       })),
     };

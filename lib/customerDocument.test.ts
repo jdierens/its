@@ -30,7 +30,7 @@ describe("customer document", () => {
     assert.equal(confirmation.barcode, "SO27773");
     assert.equal(customerDocumentBarcode("confirmation", 27773), "SO27773");
     assert.equal(customerDocumentBarcode("invoice", 27773), "INV27773");
-    assert.equal(invoice.salesOrderRef, "SO#27773");
+    assert.equal(invoice.salesOrderRef, "SO27773");
     assert.equal(confirmation.kind, "confirmation");
     assert.equal(invoice.kind, "invoice");
     assert.equal(confirmation.salesOrderRef, invoice.salesOrderRef);
@@ -108,7 +108,97 @@ describe("customer document", () => {
     assert.equal(lines[0].qty, "8.00");
     assert.equal(lines[0].extPrice, "$9,200.00");
     assert.equal(lines[0].compliance, "HTS: 8523.51.0000   ECCN: 5A992.c");
+    assert.equal(lines[0].lineNote, "");
     assert.deepEqual(serialLines(["A", "B", "C", "D", "E"]), ["A, B, C, D", "E"]);
+  });
+
+  it("prints item HTS and ECCN when the line is blank, then the line note", () => {
+    const lines = customerDocumentLines(
+      [
+        {
+          customerPartNumber: "",
+          customerDescription: "Drive",
+          qty: "1",
+          unitPrice: "10",
+          extPrice: "10",
+          htsCode: "",
+          eccn: "",
+          lineNote: "Ship in original tray",
+          allocations: [
+            {
+              sku: "106699",
+              name: "Samsung",
+              description: "7.68TB NVMe",
+              qty: "1",
+              unitPrice: "10",
+              extPrice: "10",
+              htsCode: "8523.51.0000",
+              eccn: "5A992.c",
+            },
+          ],
+        },
+      ],
+      "USD",
+    );
+    assert.equal(lines[0].description, "7.68TB NVMe");
+    assert.equal(lines[0].compliance, "HTS: 8523.51.0000   ECCN: 5A992.c");
+    assert.equal(lines[0].lineNote, "Ship in original tray");
+
+    const overridden = customerDocumentLines(
+      [
+        {
+          customerPartNumber: "",
+          customerDescription: "Drive",
+          qty: "1",
+          unitPrice: "10",
+          extPrice: "10",
+          htsCode: "8471.70.0000",
+          eccn: "",
+          lineNote: "   ",
+          allocations: [
+            {
+              sku: "106699",
+              name: "Samsung",
+              description: "7.68TB NVMe",
+              qty: "1",
+              unitPrice: "10",
+              extPrice: "10",
+              htsCode: "8523.51.0000",
+              eccn: "5A992.c",
+            },
+          ],
+        },
+      ],
+      "USD",
+    );
+    assert.equal(overridden[0].compliance, "HTS: 8471.70.0000   ECCN: 5A992.c");
+    assert.equal(overridden[0].lineNote, "");
+
+    const htsOnly = customerDocumentLines(
+      [
+        {
+          customerPartNumber: "MZQL",
+          customerDescription: "",
+          qty: "1",
+          unitPrice: "10",
+          extPrice: "10",
+          htsCode: "8471.70.0000",
+          eccn: "",
+          allocations: [],
+        },
+      ],
+      "USD",
+    );
+    assert.equal(htsOnly[0].compliance, "HTS: 8471.70.0000");
+  });
+
+  it("drops a trailing QuickBooks mark from the printed company name", () => {
+    const document = buildCustomerDocument({ ...sample("invoice"), customerName: "Decker IT Lösungen (C)" });
+    assert.ok(document);
+    assert.equal(document.billTo[0], "Decker IT Lösungen");
+    assert.equal(document.shipTo[0], "Decker IT Lösungen");
+    const vendor = buildCustomerDocument({ ...sample("confirmation"), customerName: "King Server (V)" });
+    assert.equal(vendor?.billTo[0], "King Server");
   });
 
   it("formats the address block and the box note the way the invoice does", () => {

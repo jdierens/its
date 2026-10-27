@@ -124,6 +124,7 @@ export function CustomerOrderDocument({ document, orderId }: { document: Custome
                     <div key={extra}>{extra}</div>
                   ))}
                   {line.compliance ? <div className="cust-doc-meta">{line.compliance}</div> : null}
+                  {line.lineNote ? <div className="cust-doc-note">{line.lineNote}</div> : null}
                   {line.serials.length > 0 ? (
                     <div className="cust-doc-serials">
                       <div>SERIAL NUMBERS</div>

@@ -1,3 +1,4 @@
+import { documentPartyName } from "@/lib/documentPartyName";
 import { formatSalesOrderNumber, invoiceNumber, lineExtension, salesOrderTotal } from "@/lib/salesOrderDraft";
 import type { SoAddress } from "@/lib/salesOrderDraft";
 
@@ -57,7 +58,7 @@ export function formatDocumentLocality(address: SoAddress): string {
 }
 
 export function documentPartyLines(name: string, address: SoAddress, tail: string[] = []): string[] {
-  return [name, address.line1, address.line2, formatDocumentLocality(address), address.country, ...tail]
+  return [documentPartyName(name), address.line1, address.line2, formatDocumentLocality(address), address.country, ...tail]
     .map((line) => line.trim())
     .filter(Boolean);
 }
@@ -110,6 +111,7 @@ export type CustomerDocumentLineInput = {
   extPrice: string;
   htsCode: string;
   eccn: string;
+  lineNote?: string;
   allocations: {
     sku: string;
     name: string;
@@ -117,6 +119,8 @@ export type CustomerDocumentLineInput = {
     qty: string;
     unitPrice: string;
     extPrice: string;
+    htsCode?: string;
+    eccn?: string;
     serials?: string[];
   }[];
 };
@@ -126,6 +130,7 @@ export type CustomerDocumentLine = {
   description: string;
   extra: string[];
   compliance: string;
+  lineNote: string;
   serials: string[];
   qty: string;
   unitPrice: string;
@@ -142,6 +147,8 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
         ? mapped.map((row) => ({
             sku: row.sku,
             description: row.description ?? "",
+            htsCode: row.htsCode ?? "",
+            eccn: row.eccn ?? "",
             qty: row.qty,
             unitPrice: row.unitPrice || line.unitPrice,
             extPrice: row.extPrice,
@@ -151,6 +158,8 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
             {
               sku: line.customerPartNumber,
               description: "",
+              htsCode: "",
+              eccn: "",
               qty: line.qty,
               unitPrice: line.unitPrice,
               extPrice: line.extPrice,
@@ -171,7 +180,8 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
         sku: source.sku.trim(),
         description,
         extra,
-        compliance: complianceText(line.htsCode, line.eccn),
+        compliance: resolvedCompliance(line, source),
+        lineNote: (line.lineNote ?? "").trim(),
         serials: serialLines(source.serials),
         qty: documentQty(source.qty),
         unitPrice: money(source.unitPrice, currency),
@@ -182,9 +192,36 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
   return printed;
 }
 
-function complianceText(hts: string, eccn: string): string {
+export function complianceText(hts: string, eccn: string): string {
   const parts = [hts.trim() ? `HTS: ${hts.trim()}` : "", eccn.trim() ? `ECCN: ${eccn.trim()}` : ""].filter(Boolean);
   return parts.join("   ");
+}
+
+/** Line codes win when set. A blank side falls back to the mapped item. */
+export function resolvedCompliance(
+  line: { htsCode: string; eccn: string },
+  item: { htsCode: string; eccn: string },
+): string {
+  return complianceText(line.htsCode.trim() || item.htsCode, line.eccn.trim() || item.eccn);
+}
+
+/** One shared line under the description when every mapped SKU resolves to the same codes. */
+export function lineComplianceDisplay(line: {
+  htsCode: string;
+  eccn: string;
+  allocations: { usHts: string; eccn: string }[];
+}): { underDescription: string; perAllocation: string[] } {
+  if (line.allocations.length === 0) {
+    return { underDescription: complianceText(line.htsCode, line.eccn), perAllocation: [] };
+  }
+  const perAllocation = line.allocations.map((row) =>
+    resolvedCompliance(line, { htsCode: row.usHts, eccn: row.eccn }),
+  );
+  const present = [...new Set(perAllocation.filter(Boolean))];
+  if (present.length <= 1) {
+    return { underDescription: present[0] ?? "", perAllocation: perAllocation.map(() => "") };
+  }
+  return { underDescription: "", perAllocation };
 }
 
 function money(value: string, currency: string): string {
@@ -253,7 +290,7 @@ export function buildCustomerDocument(input: CustomerDocumentInput): CustomerDoc
     kind: input.kind,
     title: customerDocumentTitle(input.kind),
     barcode,
-    salesOrderRef: `SO#${input.soNumber}`,
+    salesOrderRef: `SO${input.soNumber}`,
     documentDate: documentDate(input.documentDate),
     orderDate: documentDate(input.orderDate),
     salesRep: input.salesRep.trim(),
