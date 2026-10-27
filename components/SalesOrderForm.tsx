@@ -13,12 +13,17 @@ import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
 import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import {
+  compareMappedLine,
+  compareMappedOrder,
   emptyAddress,
+  formatMappedQty,
   formatSalesMoney,
   formatSalesOrderNumber,
   INCOTERMS,
   lineExtension,
   lineRequiresItem,
+  qtyForAddedMapping,
+  syncAllocationMoney,
   syncSalesLineMoney,
   parseSalesOrderNumber,
   salesOrderStatusLabel,
@@ -26,6 +31,7 @@ import {
   sellerNet,
   SO_CURRENCIES,
   SO_NOTE_KINDS,
+  type MappedLineCompare,
   type SoAddress,
   type SoDraftInput,
 } from "@/lib/salesOrderDraft";
@@ -40,14 +46,14 @@ import {
   suggestSalesSkus,
   type SalesCustomerHit,
   type SalesSkuHit,
+  type SalesAllocationView,
   type SalesLineView,
   type SalesLookups,
   type SalesNoteView,
   type SalesOrderView,
 } from "@/lib/salesOrders";
 
-type FormAllocation = { itemId: string; sku: string; name: string; qty: string };
-type FormLine = Omit<SalesLineView, "allocations"> & { allocations: FormAllocation[] };
+type FormLine = SalesLineView;
 
 function plainMoney(value: string): string {
   return value.replace(/[$,]/g, "");
@@ -247,7 +253,11 @@ export function SalesOrderForm({
         qty: line.qty,
         unitPrice: showMoney ? line.unitPrice : "",
         condition: line.condition,
-        allocations: line.allocations.map((row) => ({ itemId: row.itemId, qty: row.qty })),
+        allocations: line.allocations.map((row) => ({
+          itemId: row.itemId,
+          qty: row.qty,
+          unitPrice: showMoney ? row.unitPrice : "",
+        })),
       })),
       notes,
       saveAddressToCustomer: saveAddress,
@@ -315,41 +325,101 @@ export function SalesOrderForm({
     return line.allocations.some((row) => row.itemId && Number(row.qty) > 0);
   }
 
-  function putAllocation(index: number, allocation: FormAllocation, onlyIfEmpty: boolean): FormLine | null {
+  function pricedAllocation(line: FormLine, allocation: { itemId: string; sku: string; name: string; qty: string }): SalesAllocationView {
+    const priced = syncAllocationMoney({
+      qty: allocation.qty,
+      unitPrice: line.unitPrice,
+      extPrice: "",
+      edited: "unit",
+      commit: true,
+    });
+    return { ...allocation, unitPrice: priced.unitPrice, extPrice: priced.extPrice };
+  }
+
+  function putAllocation(index: number, allocation: SalesAllocationView, onlyIfEmpty: boolean): FormLine | null {
     const current = linesRef.current;
     const line = current[index];
     if (!line) return null;
     if (onlyIfEmpty && hasAllocation(line)) return null;
-    const next = current.map((row, lineIndex) =>
-      lineIndex === index ? { ...row, allocations: [allocation] } : row,
-    );
+    if (!onlyIfEmpty && line.allocations.some((row) => row.itemId === allocation.itemId)) {
+      setMessage("That SKU is already mapped on this line.");
+      return null;
+    }
+    const allocations = onlyIfEmpty ? [allocation] : [...line.allocations, allocation];
+    const next = current.map((row, lineIndex) => (lineIndex === index ? { ...row, allocations } : row));
     linesRef.current = next;
     setLines(next);
     return line;
   }
 
-  async function persistEmpty(line: FormLine, allocation: FormAllocation) {
+  async function persistEmpty(line: FormLine, allocation: SalesAllocationView) {
     if (locked || !line.id) return;
     try {
-      await saveEmptyLineAllocation({ lineId: line.id, itemId: allocation.itemId, qty: allocation.qty });
+      await saveEmptyLineAllocation({
+        lineId: line.id,
+        itemId: allocation.itemId,
+        qty: allocation.qty,
+        unitPrice: allocation.unitPrice,
+      });
     } catch (error) {
       setMessage(errorText(error));
     }
   }
 
+  function changeAllocationMoney(
+    lineIndex: number,
+    allocationIndex: number,
+    field: "qty" | "unit" | "ext",
+    value: string,
+    commit = false,
+  ) {
+    const cleaned = field === "qty" ? value : plainMoney(value);
+    setLines((current) => {
+      const next = current.map((line, index) => {
+        if (index !== lineIndex) return line;
+        const allocations = line.allocations.map((row, rowIndex) => {
+          if (rowIndex !== allocationIndex) return row;
+          const qty = field === "qty" ? cleaned : row.qty;
+          if (!showMoney) return { ...row, qty };
+          const synced = syncAllocationMoney({
+            qty,
+            unitPrice: field === "unit" ? cleaned : row.unitPrice,
+            extPrice: field === "ext" ? cleaned : row.extPrice,
+            edited: field,
+            commit,
+          });
+          return { ...row, qty, unitPrice: synced.unitPrice, extPrice: synced.extPrice };
+        });
+        return { ...line, allocations };
+      });
+      linesRef.current = next;
+      return next;
+    });
+  }
+
   function pickSku(index: number, hit: SalesSkuHit) {
     const line = linesRef.current[index];
     if (!line || locked) return;
+    if (line.allocations.some((row) => row.itemId === hit.id)) {
+      setMessage("That SKU is already mapped on this line.");
+      return;
+    }
     const label = line.customerPartNumber.trim().toLowerCase();
     const partIsItem =
       hit.sku.trim().toLowerCase() === label ||
       (skuHits[index] ?? []).some((row) => row.sku.trim().toLowerCase() === label);
-    const qty = qtyForSkuPick({ part: line.customerPartNumber, lineQty: line.qty, sku: hit.sku, partIsItem });
-    if (!qty) {
+    const firstQty = qtyForSkuPick({ part: line.customerPartNumber, lineQty: line.qty, sku: hit.sku, partIsItem });
+    if (!hasAllocation(line) && !firstQty) {
       setMessage("Enter a quantity above 0.");
       return;
     }
-    putAllocation(index, { itemId: hit.id, sku: hit.sku, name: hit.name, qty }, false);
+    const qty = qtyForAddedMapping({
+      orderedQty: line.qty,
+      allocations: line.allocations,
+      firstQty: firstQty ?? "",
+    });
+    putAllocation(index, pricedAllocation(line, { itemId: hit.id, sku: hit.sku, name: hit.name, qty }), false);
+    setAllocateQuery((current) => ({ ...current, [index]: "" }));
     setMessage(null);
     setSkuOpen(null);
   }
@@ -372,8 +442,9 @@ export function SalesOrderForm({
         if (!onlyIfEmpty) setMessage("No ITS item has that SKU.");
         return;
       }
-      const previous = putAllocation(index, allocation, onlyIfEmpty);
-      if (previous && onlyIfEmpty) await persistEmpty(previous, allocation);
+      const priced = pricedAllocation(latest, allocation);
+      const previous = putAllocation(index, priced, onlyIfEmpty);
+      if (previous && onlyIfEmpty) await persistEmpty(previous, priced);
       if (!onlyIfEmpty) setMessage(null);
     } catch (error) {
       setMessage(errorText(error));
@@ -437,8 +508,9 @@ export function SalesOrderForm({
             if (freight) setMessage("eBay shipping could not be allocated to item 4343.");
             return;
           }
-          const previous = putAllocation(index, allocation, true);
-          if (previous) void persistEmpty(previous, allocation);
+          const priced = pricedAllocation(latest, allocation);
+          const previous = putAllocation(index, priced, true);
+          if (previous) void persistEmpty(previous, priced);
         })
         .catch((error) => {
           if (!cancelled) setMessage(errorText(error));
@@ -521,6 +593,9 @@ export function SalesOrderForm({
   const buyerTotal = showMoney
     ? salesOrderTotal(lines.map((line) => ({ extPrice: line.extPrice || lineExtension(line.qty, line.unitPrice) || "" })))
     : null;
+  const lineCompares = lines.map((line) => compareMappedLine(line));
+  const orderCompare = showMoney ? compareMappedOrder(lines) : null;
+  const anyQtyMismatch = lineCompares.some((row) => row.qtyMismatch);
   const net = showMoney ? sellerNet(ebayOrderEarnings, ebayLabelFee) : null;
 
   return (
@@ -759,6 +834,25 @@ export function SalesOrderForm({
           <div className="so-main">
         <fieldset>
           <legend>Lines</legend>
+          {orderCompare ? (
+            <div className={orderCompare.mismatch ? "so-order-total so-order-total-mismatch" : "so-order-total"} role="status">
+              <span>
+                PO total <strong>{orderCompare.poTotal == null ? "—" : formatSalesMoney(orderCompare.poTotal, currency)}</strong>
+              </span>
+              <span>
+                Mapped total{" "}
+                <strong>{orderCompare.mappedTotal == null ? "—" : formatSalesMoney(orderCompare.mappedTotal, currency)}</strong>
+              </span>
+              {orderCompare.mismatch ? (
+                <span className="so-diff-flag">Totals differ. You can still approve.</span>
+              ) : orderCompare.poTotal != null && orderCompare.mappedTotal != null ? (
+                <span className="hint">Totals match.</span>
+              ) : null}
+            </div>
+          ) : null}
+          {!showMoney && anyQtyMismatch ? (
+            <p className="so-diff-flag">Mapped quantity differs from the customer PO. You can still approve.</p>
+          ) : null}
           <div className={skuOpen != null ? "so-lines-scroll so-lines-menu" : "so-lines-scroll"}>
             <table className="so-lines">
               <thead>
@@ -780,9 +874,13 @@ export function SalesOrderForm({
                   const showNoItemHint = !showAllocations;
                   const showExtra = showFinder || showNoItemHint;
                   const allocationCount = showAllocations ? line.allocations.length : 0;
+                  const compared = lineCompares[index];
+                  const lineMismatch = Boolean(compared && (compared.qtyMismatch || (showMoney && compared.moneyMismatch)));
+                  const rowClass = (end: boolean) =>
+                    [end ? "so-line-end" : "", lineMismatch ? "so-line-mismatch" : ""].filter(Boolean).join(" ") || undefined;
                   return (
                     <Fragment key={index}>
-                      <tr className={showExtra || allocationCount > 0 ? undefined : "so-line-end"}>
+                      <tr className={rowClass(!(showExtra || allocationCount > 0))}>
                         <td>
                           <input
                             id={`so-line-part-${index}`}
@@ -794,6 +892,7 @@ export function SalesOrderForm({
                               if (!locked && lineRequiresItem(line.lineKind)) void matchCleanSku(index, event.target.value, true);
                             }}
                           />
+                          {lineMismatch && compared ? <p className="so-diff-flag">{mappedDiffText(compared, currency, showMoney)}</p> : null}
                         </td>
                         <td>
                           <input
@@ -857,7 +956,7 @@ export function SalesOrderForm({
                       {showAllocations
                         ? line.allocations.map((allocation, allocationIndex) => (
                             <tr
-                              className={showExtra || allocationIndex < allocationCount - 1 ? "so-allocation-row" : "so-allocation-row so-line-end"}
+                              className={`so-allocation-row${showExtra || allocationIndex < allocationCount - 1 ? "" : " so-line-end"}${lineMismatch ? " so-line-mismatch" : ""}`}
                               key={`${allocation.itemId}-${allocationIndex}`}
                             >
                               <td colSpan={2}>
@@ -865,35 +964,31 @@ export function SalesOrderForm({
                                   <span className="so-alloc-sku">
                                     {allocation.sku || "SKU"} {allocation.name}
                                   </span>
-                                  <span className="so-allocation-label">Allocated qty</span>
+                                  <span className="so-allocation-label">Mapped SKU</span>
                                 </div>
                               </td>
                               <td className="num">
                                 <input
                                   className="num-input"
                                   inputMode="decimal"
-                                  aria-label={`Allocated qty ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                  aria-label={`Mapped qty ${index + 1} ${allocation.sku || allocationIndex + 1}`}
                                   value={allocation.qty}
                                   disabled={locked}
-                                  onChange={(event) =>
-                                    updateLine(index, {
-                                      allocations: line.allocations.map((row, rowIndex) =>
-                                        rowIndex === allocationIndex ? { ...row, qty: event.target.value } : row,
-                                      ),
-                                    })
-                                  }
+                                  onChange={(event) => changeAllocationMoney(index, allocationIndex, "qty", event.target.value)}
+                                  onBlur={(event) => changeAllocationMoney(index, allocationIndex, "qty", event.target.value, true)}
                                 />
                               </td>
                               {showMoney ? (
                                 <td className="num">
                                   <MoneyField
                                     className="num-input"
-                                    aria-label={`Allocated unit ${index + 1} ${allocation.sku || allocationIndex + 1}`}
-                                    value={line.unitPrice}
+                                    aria-label={`Mapped unit ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                    inputMode="decimal"
+                                    value={allocation.unitPrice}
                                     currency={currency}
-                                    readOnly
                                     disabled={locked}
-                                    tabIndex={-1}
+                                    onChange={(event) => changeAllocationMoney(index, allocationIndex, "unit", event.target.value)}
+                                    onBlur={(event) => changeAllocationMoney(index, allocationIndex, "unit", event.target.value, true)}
                                   />
                                 </td>
                               ) : null}
@@ -901,12 +996,13 @@ export function SalesOrderForm({
                                 <td className="num">
                                   <MoneyField
                                     className="num-input"
-                                    aria-label={`Allocated ext ${index + 1} ${allocation.sku || allocationIndex + 1}`}
-                                    value={line.extPrice}
+                                    aria-label={`Mapped ext ${index + 1} ${allocation.sku || allocationIndex + 1}`}
+                                    inputMode="decimal"
+                                    value={allocation.extPrice}
                                     currency={currency}
-                                    readOnly
                                     disabled={locked}
-                                    tabIndex={-1}
+                                    onChange={(event) => changeAllocationMoney(index, allocationIndex, "ext", event.target.value)}
+                                    onBlur={(event) => changeAllocationMoney(index, allocationIndex, "ext", event.target.value, true)}
                                   />
                                 </td>
                               ) : null}
@@ -916,8 +1012,14 @@ export function SalesOrderForm({
                                     type="button"
                                     className="secondary"
                                     onClick={() =>
-                                      updateLine(index, {
-                                        allocations: line.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex),
+                                      setLines((current) => {
+                                        const next = current.map((row, lineIndex) =>
+                                          lineIndex === index
+                                            ? { ...row, allocations: row.allocations.filter((_, rowIndex) => rowIndex !== allocationIndex) }
+                                            : row,
+                                        );
+                                        linesRef.current = next;
+                                        return next;
                                       })
                                     }
                                   >
@@ -929,13 +1031,13 @@ export function SalesOrderForm({
                           ))
                         : null}
                       {showExtra ? (
-                        <tr className="so-line-extra so-line-end">
+                        <tr className={`so-line-extra so-line-end${lineMismatch ? " so-line-mismatch" : ""}`}>
                           <td colSpan={showMoney ? 6 : 4}>
                             {showFinder ? (
                               <div className="so-allocate">
                                 <div className="so-alloc-row">
                                   <label className="so-find-sku combo">
-                                    <span>Find SKU</span>
+                                    <span>{allocationCount > 0 ? "Add another SKU" : "Find SKU"}</span>
                                     <input
                                       id={`so-allocate-${index}`}
                                       role="combobox"
@@ -1307,6 +1409,15 @@ function AddressFields({
       </div>
     </fieldset>
   );
+}
+
+function mappedDiffText(compared: MappedLineCompare, currency: string, showMoney: boolean): string {
+  const ordered = compared.orderedQty == null ? "—" : formatMappedQty(compared.orderedQty);
+  const qty = `Mapped ${formatMappedQty(compared.mappedQty)} of ${ordered} ordered`;
+  if (!showMoney || !compared.moneyMismatch) return qty;
+  const mapped = compared.mappedExt == null ? "—" : formatSalesMoney(compared.mappedExt, currency);
+  const po = compared.orderedExt == null ? "—" : formatSalesMoney(compared.orderedExt, currency);
+  return `${qty}. Mapped ${mapped} vs PO ${po}.`;
 }
 
 function blankLine(): FormLine {

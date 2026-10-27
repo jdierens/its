@@ -17,6 +17,10 @@ import {
   readSalesOrderListView,
   writeSalesOrderListView,
   syncSalesLineMoney,
+  syncAllocationMoney,
+  qtyForAddedMapping,
+  compareMappedLine,
+  compareMappedOrder,
   parseSalesOrderNumber,
   partMatches,
   partPrefix,
@@ -55,6 +59,90 @@ describe("sales order draft", () => {
     assert.equal(lineExtension("2", fromQty.unitPrice), "6338.00");
   });
 
+  it("balances each mapped SKU from the field that was edited", () => {
+    const fromQty = syncAllocationMoney({ qty: "217", unitPrice: "10", extPrice: "2770.00", edited: "qty" });
+    assert.equal(fromQty.unitPrice, "10");
+    assert.equal(fromQty.extPrice, "2170.00");
+
+    const fromUnit = syncAllocationMoney({ qty: "80", unitPrice: "12.5", extPrice: "800.00", edited: "unit" });
+    assert.equal(fromUnit.unitPrice, "12.5");
+    assert.equal(fromUnit.extPrice, "1000.00");
+
+    const fromExt = syncAllocationMoney({ qty: "20", unitPrice: "10", extPrice: "250.00", edited: "ext" });
+    assert.equal(fromExt.unitPrice, "12.50");
+    assert.equal(fromExt.extPrice, "250.00");
+    assert.equal(lineExtension("20", fromExt.unitPrice), "250.00");
+
+    const guarded = syncAllocationMoney({ qty: "0", unitPrice: "10", extPrice: "50.00", edited: "ext" });
+    assert.equal(guarded.unitPrice, "10");
+    assert.equal(guarded.extPrice, "50.00");
+
+    const blankQty = syncAllocationMoney({ qty: "", unitPrice: "10", extPrice: "50.00", edited: "qty" });
+    assert.equal(blankQty.unitPrice, "10");
+    assert.equal(blankQty.extPrice, "50.00");
+  });
+
+  it("defaults another mapped SKU to the quantity still unordered", () => {
+    assert.equal(qtyForAddedMapping({ orderedQty: "100", allocations: [], firstQty: "100" }), "100");
+    assert.equal(
+      qtyForAddedMapping({ orderedQty: "100", allocations: [{ qty: "80" }], firstQty: "100" }),
+      "20",
+    );
+    assert.equal(
+      qtyForAddedMapping({ orderedQty: "277", allocations: [{ qty: "217" }], firstQty: "277" }),
+      "60",
+    );
+    assert.equal(qtyForAddedMapping({ orderedQty: "10", allocations: [{ qty: "10" }], firstQty: "10" }), "");
+  });
+
+  it("flags a short ship and a money gap without dropping the mapped SKUs", () => {
+    const line = compareMappedLine({
+      qty: "277",
+      extPrice: "2770.00",
+      allocations: [{ qty: "217", extPrice: "2170.00" }],
+    });
+    assert.equal(line.qtyMismatch, true);
+    assert.equal(line.moneyMismatch, true);
+    assert.equal(line.mappedQty, 217);
+    assert.equal(line.mappedExt, 2170);
+
+    const split = compareMappedLine({
+      qty: "100",
+      extPrice: "1000.00",
+      allocations: [
+        { qty: "80", extPrice: "800.00" },
+        { qty: "20", extPrice: "250.00" },
+      ],
+    });
+    assert.equal(split.qtyMismatch, false);
+    assert.equal(split.moneyMismatch, true);
+    assert.equal(split.mappedExt, 1050);
+
+    const order = compareMappedOrder([
+      {
+        lineKind: "product",
+        extPrice: "2770.00",
+        allocations: [{ extPrice: "2170.00" }],
+      },
+      { lineKind: "freight", extPrice: "12.00", allocations: [] },
+    ]);
+    assert.equal(order.poTotal, 2782);
+    assert.equal(order.mappedTotal, 2182);
+    assert.equal(order.mismatch, true);
+
+    const matched = compareMappedOrder([
+      {
+        lineKind: "product",
+        extPrice: "1000.00",
+        allocations: [
+          { extPrice: "800.00" },
+          { extPrice: "200.00" },
+        ],
+      },
+    ]);
+    assert.equal(matched.mismatch, false);
+  });
+
   it("lists an eBay order id or a customer PO and skips the internal reference", () => {
     assert.equal(salesOrderListReference({ ebayOrderId: "12-03456-78901", customerPo: "PO-1" }), "12-03456-78901");
     assert.equal(salesOrderListReference({ customerPo: "PO-1" }), "PO-1");
@@ -91,13 +179,13 @@ describe("sales order draft", () => {
         qty: "2",
         unitPrice: "4",
         condition: "",
-        allocations: [{ itemId: "kept", qty: "2" }],
+        allocations: [{ itemId: "kept", qty: "2", unitPrice: "4" }],
       },
     ];
     const filled = withEbayShippingItem(lines, "item-4343", true);
     assert.equal(filled[0].allocations.length, 0);
-    assert.deepEqual(filled[1].allocations, [{ itemId: "item-4343", qty: "1" }]);
-    assert.deepEqual(filled[2].allocations, [{ itemId: "kept", qty: "2" }]);
+    assert.deepEqual(filled[1].allocations, [{ itemId: "item-4343", qty: "1", unitPrice: "12.79" }]);
+    assert.deepEqual(filled[2].allocations, [{ itemId: "kept", qty: "2", unitPrice: "4" }]);
     assert.equal(withEbayShippingItem(lines, "item-4343", false)[1].allocations.length, 0);
   });
 
@@ -169,6 +257,23 @@ describe("sales order draft", () => {
     assert.equal(lines[0].line_kind, "product");
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
+  });
+
+  it("sends every mapped SKU with its unit price, including a short quantity", () => {
+    const draft = sampleDraft();
+    draft.lines[0].qty = "277";
+    draft.lines[0].unitPrice = "10";
+    draft.lines[0].allocations = [
+      { itemId: "sku-a", qty: "217", unitPrice: "10" },
+      { itemId: "sku-b", qty: "60", unitPrice: "12.5000" },
+      { itemId: "", qty: "1", unitPrice: "10" },
+    ];
+    const payload = toSalesOrderPayload(draft);
+    const lines = payload.lines as { allocations: { item_id: string; qty: string; unit_price: string; alloc_no: number }[] }[];
+    assert.deepEqual(lines[0].allocations, [
+      { item_id: "sku-a", qty: "217", unit_price: "10", alloc_no: 1 },
+      { item_id: "sku-b", qty: "60", unit_price: "12.5000", alloc_no: 2 },
+    ]);
   });
 
   it("leaves an eBay bill-to blank and keeps ship-to", () => {
@@ -264,8 +369,8 @@ function sampleDraft(): SoDraftInput {
         unitPrice: "10",
         condition: "New",
         allocations: [
-          { itemId: "item-1", qty: "2" },
-          { itemId: "", qty: "1" },
+          { itemId: "item-1", qty: "2", unitPrice: "10" },
+          { itemId: "", qty: "1", unitPrice: "" },
         ],
       },
     ],

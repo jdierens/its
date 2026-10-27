@@ -11,6 +11,7 @@ describe("sales order error messages", () => {
       salesOrderErrorMessage({ message: "Line 2 must be allocated to SKUs that add up to the quantity." }),
       "Line 2 must be allocated to SKUs that add up to the quantity.",
     );
+    assert.equal(salesOrderErrorMessage({ message: "Line 1 needs a mapped SKU." }), "Line 1 needs a mapped SKU.");
     assert.equal(
       salesOrderErrorMessage({ message: "Sales order number SO27766 is already used." }),
       "Sales order number SO27766 is already used.",

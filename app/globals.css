@@ -6711,6 +6711,41 @@ input.num-input {
   cursor: default;
 }
 
+.so-lines tr.so-line-mismatch > td:first-child {
+  box-shadow: inset 3px 0 0 var(--warn-ink);
+}
+
+.so-diff-flag {
+  display: inline-block;
+  margin: 0.35rem 0 0;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.so-order-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 0.75rem;
+}
+
+.so-order-total-mismatch {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+}
+
+.so-order-total-mismatch .so-diff-flag {
+  margin-top: 0;
+}
+
 .so-list-switch {
   display: flex;
   flex-wrap: wrap;

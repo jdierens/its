@@ -37,7 +37,7 @@ export function withEbayShippingItem(lines: SoLineInput[], itemId: string, ebay:
   return lines.map((line) => {
     if ((line.lineKind || "product") !== "freight") return line;
     if (line.allocations.some((row) => row.itemId && Number(row.qty) > 0)) return line;
-    return { ...line, allocations: [{ itemId, qty: line.qty || "1" }] };
+    return { ...line, allocations: [{ itemId, qty: line.qty || "1", unitPrice: line.unitPrice }] };
   });
 }
 
@@ -66,6 +66,8 @@ export type SoAddress = {
 export type SoAllocationInput = {
   itemId: string;
   qty: string;
+  /** Unit price of this mapped SKU. Blank until a default or the user fills it. */
+  unitPrice: string;
 };
 
 export type SoLineInput = {
@@ -215,6 +217,141 @@ export function syncSalesLineMoney(input: {
   }
 
   return { unitPrice, extPrice };
+}
+
+/**
+ * Keep one mapped SKU in balance: qty × unit price = extended price.
+ * Editing quantity or unit price recalculates the extension and keeps the unit price.
+ * Editing the extension recalculates the unit price and keeps the extension.
+ * Quantity of 0 or blank does not divide and leaves both amounts as they are.
+ * Unit price is four decimals. Extension is cents.
+ */
+export function syncAllocationMoney(input: {
+  qty: string;
+  unitPrice: string;
+  extPrice: string;
+  edited: SalesPriceEdit;
+  commit?: boolean;
+}): { unitPrice: string; extPrice: string } {
+  const unitPrice = input.commit && input.edited === "unit" ? canonicalUnit(input.unitPrice) : input.unitPrice;
+  const extPrice = input.commit && input.edited === "ext" ? canonicalExt(input.extPrice) : input.extPrice;
+  const qty = parseQty(input.qty);
+  if (qty == null || qty <= 0) return { unitPrice, extPrice };
+
+  if (input.edited === "ext") {
+    const ext = parseExtension(extPrice);
+    if (ext == null) return { unitPrice, extPrice };
+    const nextUnit = unitForExtension(qty, ext);
+    const achieved = extensionFromUnit(qty, nextUnit);
+    return {
+      unitPrice: formatUnitPrice(nextUnit),
+      extPrice: achieved === roundPlaces(ext, 2) ? (input.commit ? formatExtension(ext) : extPrice) : formatExtension(achieved),
+    };
+  }
+
+  const unit = parseUnitCost(unitPrice);
+  if (unit == null) return { unitPrice, extPrice };
+  return { unitPrice, extPrice: formatExtension(extensionFromUnit(qty, unit)) };
+}
+
+/** Display quantity for a mapped SKU. Whole numbers stay whole. */
+export function formatMappedQty(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  const rounded = Math.round(value * 100) / 100;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/**
+ * Quantity for a SKU just added to a customer line.
+ * The first mapped SKU uses `firstQty`: the customer quantity, or the piece count when the customer part is a pack label.
+ * Another SKU uses the customer quantity still unmapped. Nothing left leaves the quantity blank so the user can type it.
+ * Mapped quantities are not required to add up to the ordered quantity.
+ */
+export function qtyForAddedMapping(input: {
+  orderedQty: string;
+  allocations: { qty: string }[];
+  firstQty: string;
+}): string {
+  const hasMapped = input.allocations.some((row) => Number(row.qty) > 0);
+  if (!hasMapped) return input.firstQty;
+  const ordered = Number(input.orderedQty);
+  if (!Number.isFinite(ordered)) return "";
+  const mapped = input.allocations.reduce((total, row) => total + (Number(row.qty) > 0 ? Number(row.qty) : 0), 0);
+  const remaining = Math.round((ordered - mapped) * 100) / 100;
+  if (!(remaining > 0)) return "";
+  return formatMappedQty(remaining);
+}
+
+export type MappedLineCompare = {
+  orderedQty: number | null;
+  mappedQty: number;
+  orderedExt: number | null;
+  mappedExt: number | null;
+  qtyMismatch: boolean;
+  moneyMismatch: boolean;
+};
+
+function optionalAmount(value: string): number | null {
+  if (!value.trim()) return null;
+  const numeric = numericMoney(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.round(numeric * 100) / 100;
+}
+
+function sameCents(left: number | null, right: number | null): boolean {
+  if (left == null && right == null) return true;
+  if (left == null || right == null) return false;
+  return Math.round(left * 100) === Math.round(right * 100);
+}
+
+/** Customer PO line against the sum of its mapped SKUs. A false mismatch still allows save and approval. */
+export function compareMappedLine(input: {
+  qty: string;
+  extPrice: string;
+  allocations: { qty: string; extPrice: string }[];
+}): MappedLineCompare {
+  const orderedQty = optionalAmount(input.qty);
+  const mappedQtyRaw = input.allocations.reduce((total, row) => total + (optionalAmount(row.qty) ?? 0), 0);
+  const mappedQty = Math.round(mappedQtyRaw * 100) / 100;
+  const orderedExt = optionalAmount(input.extPrice);
+  const mappedExt = salesOrderTotal(input.allocations);
+  const hasMapping = input.allocations.length > 0;
+  return {
+    orderedQty,
+    mappedQty,
+    orderedExt,
+    mappedExt,
+    qtyMismatch: hasMapping && !sameCents(orderedQty, mappedQty),
+    moneyMismatch: hasMapping && !sameCents(orderedExt, mappedExt),
+  };
+}
+
+export type MappedOrderCompare = {
+  poTotal: number | null;
+  mappedTotal: number | null;
+  mismatch: boolean;
+};
+
+/**
+ * Customer PO total against the extended prices that approval will keep.
+ * Mapped SKU extensions replace the customer line. A line with no mapping counts only when it is not a product.
+ * Mismatch is a warning. It does not block approval.
+ */
+export function compareMappedOrder(
+  lines: { lineKind?: string; extPrice: string; allocations: { extPrice: string }[] }[],
+): MappedOrderCompare {
+  const poTotal = salesOrderTotal(lines);
+  const mappedRows: { extPrice: string }[] = [];
+  for (const line of lines) {
+    if (line.allocations.length > 0) {
+      mappedRows.push(...line.allocations);
+      continue;
+    }
+    if ((line.lineKind || "product") !== "product") mappedRows.push({ extPrice: line.extPrice });
+  }
+  const mappedTotal = salesOrderTotal(mappedRows);
+  return { poTotal, mappedTotal, mismatch: !sameCents(poTotal, mappedTotal) };
 }
 
 export function allocationsCover(qty: string, allocations: SoAllocationInput[]): boolean {
@@ -451,7 +588,12 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
       condition: line.condition,
       allocations: line.allocations
         .filter((row) => row.itemId && Number(row.qty) > 0)
-        .map((row) => ({ item_id: row.itemId, qty: row.qty })),
+        .map((row, index) => ({
+          item_id: row.itemId,
+          qty: row.qty,
+          unit_price: row.unitPrice,
+          alloc_no: index + 1,
+        })),
     })),
     notes: input.notes
       .filter((note) => note.customerText.trim())

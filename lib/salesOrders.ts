@@ -9,6 +9,7 @@ import {
   compareSalesOrderList,
   emptyAddress,
   formatSalesOrderNumber,
+  lineExtension,
   hideSalesMoney,
   salesOrderListReference,
   partMatches,
@@ -77,6 +78,8 @@ export type SalesAllocationView = {
   sku: string;
   name: string;
   qty: string;
+  unitPrice: string;
+  extPrice: string;
 };
 
 export type SalesLineView = {
@@ -361,36 +364,50 @@ export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promi
   });
 }
 
+const ORDER_HEAD =
+  "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref";
+
+function salesOrderSelect(withPayment: boolean, withAllocPrice: boolean): string {
+  const payment = withPayment ? ", payment_amount" : "";
+  const allocations = withAllocPrice
+    ? "so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no, items(sku, name))"
+    : "so_line_allocations(item_id, qty, items(sku, name))";
+  return `${ORDER_HEAD}${payment}, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, ${allocations}), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)`;
+}
+
+function missingColumn(error: { message?: string } | null, column: string): boolean {
+  if (!error?.message) return false;
+  return new RegExp(column, "i").test(error.message) && /schema cache|could not find|does not exist/i.test(error.message);
+}
+
 export async function loadSalesOrder(id: string): Promise<SalesOrderView | null> {
   if (!UUID.test(id)) return null;
   const access = await salesPageAccess();
   const supabase = await getSupabase();
-  const withAmount = await supabase
+  let withPayment = true;
+  let loaded: { data: any; error: { message?: string } | null } = await supabase
     .from("sales_orders")
-    .select(
-      "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, payment_amount, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
-    )
+    .select(salesOrderSelect(true, true))
     .eq("id", id)
     .maybeSingle();
-  const missingAmount =
-    withAmount.error != null &&
-    /payment_amount/i.test(withAmount.error.message ?? "") &&
-    /schema cache|could not find|does not exist/i.test(withAmount.error.message ?? "");
-  const loaded = missingAmount
-    ? await supabase
-        .from("sales_orders")
-        .select(
-          "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, so_line_allocations(item_id, qty, items(sku, name))), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)",
-        )
-        .eq("id", id)
-        .maybeSingle()
-    : withAmount;
+  if (missingColumn(loaded.error, "payment_amount")) {
+    withPayment = false;
+    loaded = await supabase.from("sales_orders").select(salesOrderSelect(false, true)).eq("id", id).maybeSingle();
+  }
+  if (
+    loaded.error &&
+    /so_line_allocations/i.test(loaded.error.message ?? "") &&
+    /unit_price|ext_price|alloc_no/i.test(loaded.error.message ?? "") &&
+    /schema cache|could not find|does not exist/i.test(loaded.error.message ?? "")
+  ) {
+    loaded = await supabase.from("sales_orders").select(salesOrderSelect(withPayment, false)).eq("id", id).maybeSingle();
+  }
   if (loaded.error) throw new Error(salesError(loaded.error));
-  const data = loaded.data ? { ...loaded.data, payment_amount: "payment_amount" in loaded.data ? loaded.data.payment_amount : null } : null;
+  const data = loaded.data ? { ...loaded.data, payment_amount: loaded.data.payment_amount ?? null } : null;
   if (!data) return null;
 
   const customer = firstRelation(data.customers);
-  const lines = (Array.isArray(data.so_lines) ? data.so_lines : [])
+  const lines = ((Array.isArray(data.so_lines) ? data.so_lines : []) as any[])
     .slice()
     .sort((a, b) => Number(a.line_no) - Number(b.line_no))
     .map((line) => {
@@ -401,15 +418,36 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
         },
         access.canViewMoney,
       );
-      const allocations = (Array.isArray(line.so_line_allocations) ? line.so_line_allocations : []).map((row) => {
-        const item = firstRelation(row.items);
-        return {
-          itemId: String(row.item_id),
-          sku: String(item?.sku ?? ""),
-          name: String(item?.name ?? ""),
-          qty: formatQty(row.qty),
-        };
-      });
+      const allocations = ((Array.isArray(line.so_line_allocations) ? line.so_line_allocations : []) as any[])
+        .slice()
+        .sort(
+          (left, right) =>
+            Number(left.alloc_no ?? 0) - Number(right.alloc_no ?? 0) || String(left.item_id).localeCompare(String(right.item_id)),
+        )
+        .map((row) => {
+          const item = firstRelation(row.items);
+          const qty = formatQty(row.qty);
+          let unitPrice = row.unit_price == null ? "" : formatPrice(row.unit_price);
+          let extPrice = row.ext_price == null ? "" : Number(row.ext_price).toFixed(2);
+          if (!unitPrice && visible.unitPrice) {
+            unitPrice = visible.unitPrice;
+            extPrice = lineExtension(qty, unitPrice) ?? "";
+          } else if (unitPrice && !extPrice) {
+            extPrice = lineExtension(qty, unitPrice) ?? "";
+          }
+          if (!access.canViewMoney) {
+            unitPrice = "";
+            extPrice = "";
+          }
+          return {
+            itemId: String(row.item_id),
+            sku: String(item?.sku ?? ""),
+            name: String(item?.name ?? ""),
+            qty,
+            unitPrice,
+            extPrice,
+          };
+        });
       return {
         id: text(line.id),
         lineKind: text(line.line_kind) || "product",
@@ -423,7 +461,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
       };
     });
 
-  const notes = (Array.isArray(data.so_customer_notes) ? data.so_customer_notes : [])
+  const notes = ((Array.isArray(data.so_customer_notes) ? data.so_customer_notes : []) as any[])
     .slice()
     .sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
     .map((note) => ({
@@ -433,7 +471,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
       counterText: text(note.counter_text),
     }));
 
-  const events = (Array.isArray(data.so_events) ? data.so_events : [])
+  const events = ((Array.isArray(data.so_events) ? data.so_events : []) as any[])
     .slice()
     .sort((a, b) => String(b.occurred_at ?? "").localeCompare(String(a.occurred_at ?? "")))
     .map((event) => ({
@@ -523,7 +561,12 @@ async function salesOrderIsEbay(input: SoDraftInput): Promise<boolean> {
  * Does not rewrite the order and does not write an so_events row, so an eBay pull can still refresh the draft.
  * operator_id stays null.
  */
-export async function saveEmptyLineAllocation(input: { lineId: string; itemId: string; qty: string }): Promise<void> {
+export async function saveEmptyLineAllocation(input: {
+  lineId: string;
+  itemId: string;
+  qty: string;
+  unitPrice?: string;
+}): Promise<void> {
   const access = await salesPageAccess();
   if (!access.canEdit) throw new Error(EDIT_DENIED);
   if (!UUID.test(input.lineId) || !UUID.test(input.itemId)) return;
@@ -539,13 +582,32 @@ export async function saveEmptyLineAllocation(input: { lineId: string; itemId: s
   const existing = await supabase.from("so_line_allocations").select("id").eq("so_line_id", input.lineId).limit(1);
   if (existing.error) throw new Error(salesError(existing.error));
   if ((existing.data ?? []).length > 0) return;
-  const inserted = await supabase.from("so_line_allocations").insert({
+  const row: Record<string, unknown> = {
     so_line_id: input.lineId,
     item_id: input.itemId,
     qty,
+    alloc_no: 1,
     operator_id: null,
-  });
-  if (inserted.error) throw new Error(salesError(inserted.error));
+  };
+  const unit = Number(input.unitPrice);
+  if (input.unitPrice && input.unitPrice.trim() && Number.isFinite(unit) && unit >= 0) {
+    row.unit_price = unit;
+    row.ext_price = Math.round(qty * unit * 100) / 100;
+  }
+  const inserted = await supabase.from("so_line_allocations").insert(row);
+  if (!inserted.error) return;
+  const message = inserted.error.message ?? "";
+  if (/unit_price|ext_price|alloc_no/i.test(message) && /schema cache|could not find|does not exist/i.test(message)) {
+    const retry = await supabase.from("so_line_allocations").insert({
+      so_line_id: input.lineId,
+      item_id: input.itemId,
+      qty,
+      operator_id: null,
+    });
+    if (retry.error) throw new Error(salesError(retry.error));
+    return;
+  }
+  throw new Error(salesError(inserted.error));
 }
 
 /** Freight lines on an eBay order keep an allocation to item 4343 when the form did not send one. */
