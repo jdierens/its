@@ -8411,6 +8411,60 @@ input.num-input {
   border-top: 1px solid #111;
 }
 
+.cust-doc-terms-page {
+  margin-top: 16px;
+}
+
+.cust-doc-terms-head {
+  margin-bottom: 8px;
+}
+
+.cust-doc-terms-draft {
+  margin: 0 0 4px;
+  color: #444;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cust-doc-terms-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+.cust-doc-terms-seller,
+.cust-doc-terms-ref {
+  margin: 2px 0 0;
+  font-size: 9px;
+}
+
+.cust-doc-terms-columns {
+  columns: 2;
+  column-gap: 16px;
+}
+
+.cust-doc-terms-columns section {
+  break-inside: avoid;
+  margin: 0 0 6px;
+}
+
+.cust-doc-terms-columns h2 {
+  margin: 0 0 1px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.cust-doc-terms-columns p {
+  margin: 0;
+  font-size: 8px;
+  line-height: 1.28;
+}
+
 @media print {
   .cust-doc-page {
     background: #fff;
@@ -8422,5 +8476,11 @@ input.num-input {
     max-width: none;
     box-shadow: none;
     padding: 0;
+  }
+
+  .cust-doc-terms-page {
+    break-before: page;
+    page-break-before: always;
+    margin-top: 0;
   }
 }

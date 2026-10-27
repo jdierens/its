@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { DocumentBarcode } from "@/components/DocumentBarcode";
 import { PrintDocumentButton } from "@/components/PrintDocumentButton";
+import { OrderConfirmationTerms } from "@/components/OrderConfirmationTerms";
 import { CUSTOMER_DOCUMENT_COMPANY, CUSTOMER_DOCUMENT_LOGO, type CustomerDocument } from "@/lib/customerDocument";
+import { orderConfirmationShowsTerms } from "@/lib/orderConfirmationTerms";
 
 export function CustomerOrderDocument({ document, orderId }: { document: CustomerDocument; orderId: string }) {
   const company = CUSTOMER_DOCUMENT_COMPANY;
@@ -161,6 +163,7 @@ export function CustomerOrderDocument({ document, orderId }: { document: Custome
           </dl>
         </footer>
       </article>
+      {orderConfirmationShowsTerms(document.kind) ? <OrderConfirmationTerms orderRef={document.salesOrderRef} /> : null}
     </main>
   );
 }

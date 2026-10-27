@@ -221,6 +221,7 @@ export type CustomerDocumentInput = {
 };
 
 export type CustomerDocument = {
+  kind: CustomerDocumentKind;
   title: string;
   barcode: string;
   salesOrderRef: string;
@@ -249,6 +250,7 @@ export function buildCustomerDocument(input: CustomerDocumentInput): CustomerDoc
   const subtotal = salesOrderTotal(lines.map((line) => ({ extPrice: line.extPrice })));
   const notes = [input.exportNotes.trim(), ...packageNotes(input.packages)].filter(Boolean);
   return {
+    kind: input.kind,
     title: customerDocumentTitle(input.kind),
     barcode,
     salesOrderRef: `SO#${input.soNumber}`,

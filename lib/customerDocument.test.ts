@@ -31,6 +31,8 @@ describe("customer document", () => {
     assert.equal(customerDocumentBarcode("confirmation", 27773), "SO27773");
     assert.equal(customerDocumentBarcode("invoice", 27773), "INV27773");
     assert.equal(invoice.salesOrderRef, "SO#27773");
+    assert.equal(confirmation.kind, "confirmation");
+    assert.equal(invoice.kind, "invoice");
     assert.equal(confirmation.salesOrderRef, invoice.salesOrderRef);
     assert.equal(confirmation.subtotal, invoice.subtotal);
     assert.deepEqual(
