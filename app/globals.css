@@ -7384,7 +7384,8 @@ input.num-input {
   align-items: center;
 }
 
-.ds.so-page button.so-icon-action {
+.ds.so-page button.so-icon-action,
+.ds.so-page a.so-icon-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7392,9 +7393,19 @@ input.num-input {
   height: 44px;
   min-height: 44px;
   padding: 0;
+  color: inherit;
+  text-decoration: none;
 }
 
-.so-page a.so-new-order {
+.so-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.so-page a.so-new-order,
+.so-page button.so-new-order {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8159,5 +8170,256 @@ input.num-input {
   .inventory-search-field input {
     min-height: 44px;
     font-size: 16px;
+  }
+}
+
+.cust-doc-page {
+  background: #e7e5e4;
+  color: #111;
+  min-height: 100%;
+  padding: 16px;
+}
+
+.cust-doc-tools {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  max-width: 8.5in;
+  margin: 0 auto 12px;
+}
+
+.cust-doc {
+  width: 8.5in;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0.28in 0.32in 0.4in;
+  background: #fff;
+  color: #111;
+  font-size: 11px;
+  line-height: 1.25;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+}
+
+.cust-doc-top {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: start;
+}
+
+.cust-doc-logo {
+  width: 48px;
+  height: 36px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.cust-doc-company-name,
+.cust-doc p {
+  margin: 0;
+}
+
+.cust-doc-title {
+  margin: 0;
+  max-width: 3.4in;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
+  text-align: right;
+}
+
+.cust-doc-bank-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+
+.cust-doc-bank-title {
+  font-size: 9px;
+}
+
+.cust-doc-bank {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 0 28px;
+  font-size: 9px;
+}
+
+.cust-doc-barcode {
+  max-width: 2.4in;
+  height: auto;
+}
+
+.cust-doc-ref {
+  display: grid;
+  grid-template-columns: 70px 90px 80px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  padding: 3px 6px;
+  border: 1px solid #111;
+  font-size: 10px;
+}
+
+.cust-doc-ref-date {
+  text-align: right;
+}
+
+.cust-doc-parties {
+  margin-top: 6px;
+  border: 1.5px solid #b45f06;
+}
+
+.cust-doc-party-labels,
+.cust-doc-party-grid,
+.cust-doc-terms {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 74px minmax(0, 1.2fr);
+}
+
+.cust-doc-party-labels {
+  padding: 3px 6px;
+  border-bottom: 1px solid #b45f06;
+  font-size: 10px;
+}
+
+.cust-doc-party-labels span:nth-child(2) {
+  grid-column: 3;
+}
+
+.cust-doc-party-grid {
+  min-height: 72px;
+}
+
+.cust-doc-label {
+  padding: 4px 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.cust-doc address {
+  margin: 0;
+  padding: 4px 6px 8px;
+  font-style: normal;
+}
+
+.cust-doc address span {
+  display: block;
+}
+
+.cust-doc-refs {
+  border-top: 1px solid #b45f06;
+  min-height: 0;
+  align-items: center;
+}
+
+.cust-doc-terms {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border-top: 1px solid #b45f06;
+}
+
+.cust-doc-terms div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 6px 4px;
+}
+
+.cust-doc-terms span {
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.cust-doc-colkeys {
+  display: grid;
+  grid-template-columns: 70px 1fr 70px 70px 70px;
+  margin-top: 8px;
+  font-size: 10px;
+}
+
+.cust-doc-lines {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 2px;
+}
+
+.cust-doc-lines th,
+.cust-doc-lines td {
+  border: 1px solid #111;
+  padding: 3px 6px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.cust-doc-lines th {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.cust-doc-lines td.num,
+.cust-doc-lines th.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cust-doc-sku {
+  white-space: nowrap;
+}
+
+.cust-doc-meta,
+.cust-doc-serials {
+  margin-top: 4px;
+}
+
+.cust-doc-foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  border: 1px solid #111;
+  border-top: 0;
+}
+
+.cust-doc-notes {
+  padding: 6px;
+  min-height: 72px;
+}
+
+.cust-doc-foot dl {
+  margin: 0;
+  border-left: 1px solid #111;
+}
+
+.cust-doc-foot dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px;
+}
+
+.cust-doc-foot dt {
+  font-weight: 600;
+}
+
+.cust-doc-foot dd {
+  margin: 0;
+}
+
+.cust-doc-total {
+  border-top: 1px solid #111;
+}
+
+@media print {
+  .cust-doc-page {
+    background: #fff;
+    padding: 0;
+  }
+
+  .cust-doc {
+    width: auto;
+    max-width: none;
+    box-shadow: none;
+    padding: 0;
   }
 }
