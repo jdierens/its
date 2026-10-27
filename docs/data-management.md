@@ -30,7 +30,7 @@ Nothing imported has an open cycle, stock, or a printed label. `created_by_initi
 
 If any imported number is greater than or equal to `bin_counter.next_number`, the counter becomes one past the highest imported number. The result says when that happened. A dry run and any file that still has an error write nothing, and the counter stays put.
 
-An optional checkbox prints 29×90 mm labels for the bins that were just imported, through the existing reprint path, one copy each.
+An optional checkbox prints labels for the bins that were just imported, through the existing reprint path, one copy each. Crate and box labels are 29×90 mm. Pallet labels are 62×100 mm. A mix uses each size; if the print dialog offers only one paper size, print one type at a time.
 
 Export columns are code, type, current location, open-cycle project, origin, quantity on that cycle, created time, initials, print count, and last printed time. At most 5,000 rows are exported.
 

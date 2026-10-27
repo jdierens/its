@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
+import { BinLabel, binLabelPrintCss } from "@/components/BinLabel";
 import {
   commitBinImport,
   exportDataTable,
@@ -34,6 +34,7 @@ import { errorText } from "@/lib/errors";
 import { fetchBinLabelTemplates } from "@/lib/labelActions";
 import { emptyBinLabelTemplates, type BinLabelTemplates } from "@/lib/labelTemplates";
 import { isBinType, type BinType } from "@/lib/bins";
+import { binLabelSheet } from "@/lib/binLabelLayout";
 
 type MappedInput = { code: string; location: string; note: string; type: string };
 
@@ -289,9 +290,15 @@ export function DataBinsPage() {
     saveBlob(exported.filename, new Blob([exported.csv], { type: "text/csv;charset=utf-8" }));
   }
 
+  const printTypes = printRefs.map((reference) => {
+    const suffix = reference.slice(-1);
+    return isBinType(suffix) ? suffix : "B";
+  });
+  const labelSheet = binLabelSheet(printTypes);
+
   return (
     <main className="page data-page">
-      <style>{BIN_LABEL_PRINT_CSS}</style>
+      <style>{binLabelPrintCss(labelSheet)}</style>
       {error ? (
         <p className="banner error" role="alert">
           {error}
@@ -518,6 +525,10 @@ export function DataBinsPage() {
                 />
                 <span>Print labels for imported bins</span>
               </label>
+              <p className="hint">
+                Crate and box labels are 29 × 90 mm. Pallet labels are 62 × 100 mm. If this import
+                mixes those, print one type at a time when the dialog only has one paper size.
+              </p>
               <div className="actions">
                 <button type="button" className="secondary" onClick={() => setShowMap(true)}>
                   Change mapping
@@ -594,7 +605,9 @@ export function DataBinsPage() {
         {printRefs.map((reference) => {
           const suffix = reference.slice(-1);
           const type: BinType = isBinType(suffix) ? suffix : "B";
-          return <BinLabel key={reference} reference={reference} type={type} layout={templates[type]} />;
+          return (
+            <BinLabel key={reference} reference={reference} type={type} layout={templates[type]} sheet={labelSheet} />
+          );
         })}
       </div>
     </main>

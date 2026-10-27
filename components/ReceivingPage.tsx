@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Save, TriangleAlert } from "lucide-react";
-import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
+import { BinLabel, binLabelPrintCss } from "@/components/BinLabel";
 import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
@@ -12,6 +12,7 @@ import { ReceiptReports, type ReceiptListView } from "@/components/ReceiptReport
 import { ReceivingOriginField, ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, binTypeLabel, formatBinReference, type BinType } from "@/lib/bins";
+import { binLabelSheet } from "@/lib/binLabelLayout";
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import {
@@ -941,7 +942,7 @@ export function ReceivingPage() {
 
   return (
     <main className="page receiving-page desk-fields ds">
-      <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
+      <style>{`${LABEL_PRINT_CSS}\n${binLabelPrintCss(binLabelSheet(printJob?.kind === "bin" ? [printJob.type] : ["B"]))}`}</style>
       <div className="no-print">
         <p className="page-note">The header is the receipt. The line is one quantity into one bin. Leave the SKU empty to save the search and link an item later.</p>
         <section className="card receive-card" id="receive-header">
@@ -1439,7 +1440,12 @@ export function ReceivingPage() {
       </div>
       <div className="print-sheet">
         {printJob?.kind === "bin" ? (
-          <BinLabel reference={printJob.reference} type={printJob.type} layout={templates[printJob.type]} />
+          <BinLabel
+            reference={printJob.reference}
+            type={printJob.type}
+            layout={templates[printJob.type]}
+            sheet={binLabelSheet([printJob.type])}
+          />
         ) : null}
         {printJob?.kind === "item" ? (
           <PrintedLabel

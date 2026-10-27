@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
+import { BinLabel, binLabelPrintCss } from "@/components/BinLabel";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { fetchBin, reprintBin } from "@/lib/binActions";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/binItemMove";
 import { readBinSectionOpen, writeBinSectionOpen, type BinSection } from "@/lib/binSectionOpen";
 import { binTypeLabel, type BinRecord } from "@/lib/bins";
+import { binLabelSheet } from "@/lib/binLabelLayout";
 import { errorText } from "@/lib/errors";
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
 import { emptyBinLabelTemplates, qrLabelPayload, type BinLabelTemplates, type LabelTemplateId } from "@/lib/labelTemplates";
@@ -384,7 +385,7 @@ export function BinView({ reference }: { reference: string }) {
 
   return (
     <main className="page bin-view desk-fields">
-      <style>{`${LABEL_PRINT_CSS}\n${BIN_LABEL_PRINT_CSS}`}</style>
+      <style>{`${LABEL_PRINT_CSS}\n${binLabelPrintCss(binLabelSheet(printJob?.kind === "bin" && detail ? [detail.type] : ["B"]))}`}</style>
       <div className="no-print">
         <div className="bin-head">
           <div className="bin-head-copy">
