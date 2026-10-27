@@ -5110,12 +5110,60 @@ button.bin-label-hit:focus-visible {
   white-space: nowrap;
 }
 
-.receive-header-grid input {
+.receive-header-grid input,
+.receive-header-grid select,
+.receive-owner-grid input,
+.receive-owner-grid select {
   display: block;
   width: 100%;
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
+}
+
+.receive-owner-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(12rem, auto);
+  gap: 0.55rem 0.7rem;
+  align-items: end;
+  margin-top: 0.7rem;
+}
+
+.receive-owner-grid > label,
+.receive-po {
+  min-width: 0;
+  position: relative;
+}
+
+.receive-owner-note {
+  margin: 0;
+  padding-bottom: 0.4rem;
+}
+
+.receive-po-clear {
+  margin-top: 0.35rem;
+}
+
+.receive-po-hits {
+  position: absolute;
+  z-index: 4;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0.2rem 0 0;
+  padding: 0.2rem;
+  list-style: none;
+  background: var(--card-solid);
+  border: 1px solid var(--line, #d7d7d7);
+  border-radius: 0.4rem;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.receive-po-hits button {
+  display: block;
+  width: 100%;
+  text-align: left;
 }
 
 .receiving-page #receive-header {
@@ -5285,6 +5333,55 @@ button.receive-bin-note {
 .receive-line-qty {
   width: 5.5rem;
   flex: none;
+}
+
+.receive-units {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.15rem 0 0.85rem;
+}
+
+.receive-units .hint {
+  margin: 0;
+}
+
+.receive-unit-list,
+.receive-unit-paste {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.receive-unit-paste {
+  grid-template-columns: minmax(12rem, 28rem) 7rem;
+  align-items: end;
+}
+
+.receive-unit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: end;
+}
+
+.receive-unit-row label,
+.receive-unit-paste label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.receive-unit-row label:first-child {
+  flex: 1 1 14rem;
+}
+
+.receive-unit-row input[id^="receive-coo"],
+.receive-unit-paste input,
+.pick-coo {
+  width: 7rem;
+}
+
+.receive-unit-paste textarea {
+  min-height: 5.5rem;
+  resize: vertical;
 }
 
 .receive-line-qty input,
@@ -5832,7 +5929,8 @@ button.receive-card-open {
 }
 
 @media (max-width: 800px) {
-  .receive-header-grid {
+  .receive-header-grid,
+  .receive-owner-grid {
     grid-template-columns: 1fr;
   }
 

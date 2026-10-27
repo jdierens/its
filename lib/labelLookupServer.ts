@@ -15,13 +15,14 @@ import type { LabelItem } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const COLUMNS = "id, sku, name, description, taxonomies(short_code, long_code, name)";
+const COLUMNS = "id, sku, name, description, coo, taxonomies(short_code, long_code, name)";
 
 type Row = {
   id: string;
   sku: string | null;
   name: string | null;
   description: string | null;
+  coo: string | null;
   taxonomies: unknown;
 };
 
@@ -35,6 +36,7 @@ function toHit(row: Row): LabelItem {
     shortCode: taxonomy.shortCode,
     longCode: taxonomy.longCode,
     taxonomyName: taxonomy.taxonomyName,
+    coo: row.coo?.trim() || null,
   };
 }
 

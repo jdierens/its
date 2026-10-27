@@ -33,6 +33,10 @@ function entry(patch: Partial<ReceivingEntry> & Pick<ReceivingEntry, "id" | "qty
     putaway: "",
     binReference: "",
     searchQuery: null,
+    vendorName: null,
+    ownership: null,
+    poNumber: null,
+    basis: "",
     ...patch,
   };
 }
@@ -133,10 +137,10 @@ describe("receipt csv", () => {
     ]);
     assert.match(
       csv,
-      /Date,Initials,Project,Incoming bin,System,System Qty,Search,SKU,Item name,Item Qty,Putaway,Comment,Cleaned,Wiped/,
+      /Date,Initials,Project,Incoming bin,System,System Qty,Search,SKU,Item name,Item Qty,Putaway,Comment,Cleaned,Wiped,Vendor,Basis,PO/,
     );
-    assert.match(csv, /"2\.5"" drive",,,3,10010-C · HWS\.00\.00\.00,left bay,,\r\n/);
-    assert.match(csv, /,94415,Processor,1,,ok,yes,\r\n/);
+    assert.match(csv, /"2\.5"" drive",,,3,10010-C · HWS\.00\.00\.00,left bay,,,,,\r\n/);
+    assert.match(csv, /,94415,Processor,1,,ok,yes,,,,\r\n/);
   });
 
   it("names the file from the project", () => {

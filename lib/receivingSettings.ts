@@ -126,7 +126,19 @@ export type ReceivingEntry = {
   putaway: string;
   binReference: string;
   searchQuery: string | null;
+  vendorName: string | null;
+  ownership: string | null;
+  poNumber: string | null;
+  basis: string;
 };
+
+/** How a receipt is held. A purchase order is not marked consigned. */
+export function receiptBasis(ownership: string | null, poNumber: string | null): string {
+  if (ownership === "consigned") return "Consigned";
+  if (ownership === "owned") return "Owned";
+  if (poNumber) return `PO ${poNumber}`;
+  return "";
+}
 
 /** Destination bin and the location it was put away to, in one cell. */
 export function putawayLabel(binReference: string | null, locationCode: string | null): string {
@@ -204,6 +216,10 @@ export function receivingEntryForViewer(row: Record<string, unknown>, canViewMon
     putaway: putawayLabel(binReference, locationCode),
     binReference: binReference ?? "",
     searchQuery: textOrNull(source.search_query),
+    vendorName: textOrNull(source.vendor_name),
+    ownership: textOrNull(source.ownership),
+    poNumber: textOrNull(source.po_number),
+    basis: receiptBasis(textOrNull(source.ownership), textOrNull(source.po_number)),
   };
 }
 

@@ -721,7 +721,7 @@ export async function findItemForLabel(identifier: string): Promise<LabelItem | 
   if (!query) return null;
 
   const supabase = await getSupabase();
-  const columns = "id, sku, name, description, taxonomies(short_code, long_code, name)";
+  const columns = "id, sku, name, description, coo, taxonomies(short_code, long_code, name)";
 
   if (UUID_PATTERN.test(query)) {
     const byId = await supabase.from("items").select(columns).eq("id", query).maybeSingle();
@@ -740,6 +740,7 @@ type LabelRow = {
   sku: string | null;
   name: string | null;
   description: string | null;
+  coo?: string | null;
   taxonomies: unknown;
 };
 
@@ -753,6 +754,7 @@ function toLabelItem(row: LabelRow): LabelItem {
     shortCode: taxonomy.shortCode,
     longCode: taxonomy.longCode,
     taxonomyName: taxonomy.taxonomyName,
+    coo: row.coo?.trim() || null,
   };
 }
 

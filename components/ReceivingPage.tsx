@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Save, TriangleAlert } from "lucide-react";
 import { BinLabel, binLabelPrintCss } from "@/components/BinLabel";
 import { FastInput } from "@/components/FastField";
@@ -13,6 +13,12 @@ import { ReceivingOriginField, ReceivingProjectField } from "@/components/Receiv
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, binTypeLabel, formatBinReference, type BinType } from "@/lib/bins";
 import { binLabelAtPageMm, binLabelFrameClass, binLabelSheet, previewBinLabelSheet } from "@/lib/binLabelLayout";
+import {
+  readStoredVendor,
+  receiveConsignment,
+  receivingVendorStorageKey,
+  writeStoredVendor,
+} from "@/lib/consignedReceive";
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import {
@@ -29,8 +35,12 @@ import {
   fetchReceivingBinNumber,
   lastPutawayBin,
   listReceivingEntries,
+  listReceivingVendors,
   receiveIntoBin,
   receivingClerkInitials,
+  searchReceivingPurchaseOrders,
+  type ReceivingPurchaseOrder,
+  type ReceivingVendor,
   recentReceivingOrigins,
   recentReceivingProjects,
   searchReceivingScan,
@@ -63,6 +73,14 @@ import {
   type ReceiptResult,
 } from "@/lib/stockReceive";
 import type { LabelItem } from "@/lib/types";
+import {
+  RECEIVE_UNIT_ROW_CAP,
+  collectReceiveUnits,
+  receiveUnitRows,
+  resizeUnitRows,
+  rowsToPaste,
+  type UnitDraft,
+} from "@/lib/stockUnits";
 
 function todayLabel(date: Date): string {
   return date.toLocaleDateString("en-GB", {
@@ -182,6 +200,13 @@ export function ReceivingPage() {
   const [incomingTag, setIncomingTag] = useState("");
   const [origin, setOrigin] = useState("");
   const [originQty, setOriginQty] = useState("");
+  const [vendors, setVendors] = useState<ReceivingVendor[]>([]);
+  const [vendorId, setVendorId] = useState("");
+  const [poQuery, setPoQuery] = useState("");
+  const [poHits, setPoHits] = useState<ReceivingPurchaseOrder[]>([]);
+  const [purchaseOrderId, setPurchaseOrderId] = useState<string | null>(null);
+  const [purchaseOrderNumber, setPurchaseOrderNumber] = useState("");
+  const [poVendorName, setPoVendorName] = useState("");
   const [entries, setEntries] = useState<ReceivingEntry[]>([]);
   const [entryPage, setEntryPage] = useState(1);
   const [entryTotal, setEntryTotal] = useState(0);
@@ -201,6 +226,11 @@ export function ReceivingPage() {
   const [cleaned, setCleaned] = useState(false);
   const [wiped, setWiped] = useState(false);
   const [qty, setQty] = useState("");
+  const [unitRows, setUnitRows] = useState<UnitDraft[]>([]);
+  const [unitPaste, setUnitPaste] = useState("");
+  const [pasteCoo, setPasteCoo] = useState("");
+  const unitCooDefault = useRef("");
+  const unitItemId = useRef("");
   const [comment, setComment] = useState("");
   const [suggestions, setSuggestions] = useState<BinSuggestion[]>([]);
   const [receipt, setReceipt] = useState<{
@@ -271,6 +301,42 @@ export function ReceivingPage() {
     if (!projectReady || !projectStorageKey) return;
     writeStoredProject(window.localStorage, projectStorageKey, project);
   }, [project, projectReady, projectStorageKey]);
+
+  useEffect(() => {
+    if (!projectStorageKey) return;
+    let cancelled = false;
+    void listReceivingVendors()
+      .then((rows) => {
+        if (cancelled) return;
+        setVendors(rows);
+        const stored = readStoredVendor(window.localStorage, receivingVendorStorageKey(projectStorageKey));
+        if (stored && rows.some((row) => row.id === stored)) setVendorId(stored);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [projectStorageKey]);
+
+  useEffect(() => {
+    if (!projectReady || !projectStorageKey || purchaseOrderId) return;
+    writeStoredVendor(window.localStorage, receivingVendorStorageKey(projectStorageKey), vendorId);
+  }, [vendorId, purchaseOrderId, projectReady, projectStorageKey]);
+
+  useEffect(() => {
+    if (purchaseOrderId) return;
+    const handle = window.setTimeout(() => {
+      void searchReceivingPurchaseOrders(poQuery)
+        .then(setPoHits)
+        .catch(() => setPoHits([]));
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [poQuery, purchaseOrderId]);
+
+  const vendorOptions = useMemo(() => {
+    if (!vendorId || vendors.some((row) => row.id === vendorId)) return vendors;
+    return [...vendors, { id: vendorId, name: poVendorName || "Vendor on this purchase order" }];
+  }, [vendors, vendorId, poVendorName]);
 
   useEffect(() => {
     if (!item) {
@@ -375,6 +441,20 @@ export function ReceivingPage() {
       window.clearTimeout(handle);
     };
   }, [project, listStamp, projectReady, entryPage]);
+
+  useEffect(() => {
+    const nextId = item?.id ?? "";
+    const nextCoo = item?.coo ?? "";
+    const parsed = receiveLineQty(qty);
+    const rowCount = parsed.ok ? receiveUnitRows(parsed.qty) : 0;
+    const previousCoo = unitCooDefault.current;
+    if (unitItemId.current !== nextId) {
+      setPasteCoo((current) => (current === previousCoo ? nextCoo : current));
+      unitItemId.current = nextId;
+      unitCooDefault.current = nextCoo;
+    }
+    setUnitRows((current) => resizeUnitRows(current, rowCount, nextCoo, previousCoo));
+  }, [item, qty]);
 
   function adoptSku(next: LabelItem, focusQty: boolean) {
     skuLookup.current += 1;
@@ -770,6 +850,25 @@ export function ReceivingPage() {
       setError("Enter a search.");
       return;
     }
+    const owner = receiveConsignment({ purchaseOrderId, vendorId });
+    if (!owner.ok) {
+      releaseSave(false);
+      setError(owner.message);
+      return;
+    }
+    const units = collectReceiveUnits({
+      qty: parsed.qty,
+      sku: lineItem?.sku ?? "",
+      hasItem: Boolean(lineItem),
+      rows: unitRows,
+      paste: unitPaste,
+      pasteCoo,
+    });
+    if (!units.ok) {
+      releaseSave(false);
+      setError(units.message);
+      return;
+    }
     const qtyWarning = systemQtyMultipleWarning(parsed.qty, originParsed.qty);
     const flags = lineItem
       ? receiptFlagsForPrep(
@@ -796,6 +895,9 @@ export function ReceivingPage() {
         searchQuery: search,
         cleaned: flags.cleaned,
         wiped: flags.wiped,
+        units: units.units,
+        vendorId: owner.vendorId,
+        purchaseOrderId: owner.purchaseOrderId,
       });
       const printedOn = todayLabel(new Date());
       setReceipt({ result, item: lineItem, search, qty: parsed.qty, printedOn, qtyWarning });
@@ -823,6 +925,11 @@ export function ReceivingPage() {
       setCleaned(false);
       setWiped(false);
       setQty("");
+      setUnitRows([]);
+      setUnitPaste("");
+      setPasteCoo("");
+      unitCooDefault.current = "";
+      unitItemId.current = "";
       setComment("");
       setScanRaw(null);
       setSearchQuery(null);
@@ -951,6 +1058,22 @@ export function ReceivingPage() {
   const labelSheet = previewBinLabelSheet(shownBinType, printingItem);
   const labelPage = binLabelAtPageMm(labelSheet);
 
+  function choosePurchaseOrder(hit: ReceivingPurchaseOrder) {
+    setPurchaseOrderId(hit.id);
+    setPurchaseOrderNumber(hit.number);
+    setPoQuery(hit.number);
+    setPoVendorName(hit.vendorName);
+    setVendorId(hit.vendorId);
+    setPoHits([]);
+  }
+
+  function clearPurchaseOrder() {
+    setPurchaseOrderId(null);
+    setPurchaseOrderNumber("");
+    setPoQuery("");
+    setPoVendorName("");
+  }
+
   return (
     <main className="page receiving-page desk-fields ds">
       <style key={`${labelPage.widthMm}x${labelPage.heightMm}`}>{`${LABEL_PRINT_CSS}\n${binLabelPrintCss(labelSheet)}`}</style>
@@ -1001,8 +1124,70 @@ export function ReceivingPage() {
               />
             </label>
           </div>
+          <div className="receive-owner-grid">
+            <div className="receive-po">
+              <label htmlFor="receive-po">
+                <span>Purchase order</span>
+                <input
+                  id="receive-po"
+                  value={poQuery}
+                  autoComplete="off"
+                  placeholder="Optional"
+                  disabled={busy}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setPoQuery(value);
+                    if (value.trim() !== purchaseOrderNumber) {
+                      setPurchaseOrderId(null);
+                      setPurchaseOrderNumber("");
+                      setPoVendorName("");
+                    }
+                  }}
+                />
+              </label>
+              {purchaseOrderId ? (
+                <button type="button" className="receive-po-clear" onClick={clearPurchaseOrder} disabled={busy}>
+                  Clear PO
+                </button>
+              ) : poQuery.trim() && poHits.length > 0 ? (
+                <ul className="receive-po-hits">
+                  {poHits.map((hit) => (
+                    <li key={hit.id}>
+                      <button type="button" onClick={() => choosePurchaseOrder(hit)} disabled={busy}>
+                        {hit.number}
+                        {hit.vendorName ? ` · ${hit.vendorName}` : ""}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+            <label htmlFor="receive-vendor">
+              <span>Vendor</span>
+              <select
+                id="receive-vendor"
+                value={vendorId}
+                required={!purchaseOrderId}
+                disabled={busy || Boolean(purchaseOrderId)}
+                onChange={(event) => setVendorId(event.target.value)}
+              >
+                <option value="">Choose a vendor</option>
+                {vendorOptions.map((vendor) => (
+                  <option key={vendor.id} value={vendor.id}>
+                    {vendor.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="receive-owner-note">
+              {purchaseOrderId
+                ? `Vendor comes from PO ${purchaseOrderNumber}.`
+                : "Consigned. This receipt stays with that vendor."}
+            </p>
+          </div>
           <p className="hint">
             A bin that already has stock keeps the cycle it opened with. Each saved line stores this header, including the receiving date.
+            A receipt with no purchase order is consigned and requires a vendor.
           </p>
         </section>
 
@@ -1165,7 +1350,22 @@ export function ReceivingPage() {
                   autoComplete="off"
                   disabled={busy}
                   aria-describedby={qtyMultipleWarning ? "receive-qty-warn" : undefined}
-                  onChange={(event) => setQty(event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    const parsed = receiveLineQty(value);
+                    const previous = receiveLineQty(qty);
+                    if (
+                      previous.ok &&
+                      receiveUnitRows(previous.qty) > 0 &&
+                      parsed.ok &&
+                      parsed.qty > RECEIVE_UNIT_ROW_CAP &&
+                      !unitPaste.trim()
+                    ) {
+                      const pasted = rowsToPaste(unitRows);
+                      if (pasted) setUnitPaste(pasted);
+                    }
+                    setQty(value);
+                  }}
                 />
               </label>
               <label className="receive-bin-field" htmlFor="receive-bin">
@@ -1266,6 +1466,87 @@ export function ReceivingPage() {
                 </button>
               </div>
             </div>
+            {lineQty.ok ? (
+              <div className="receive-units">
+                <p className="hint">
+                  Serials and country of origin are optional. Leave them blank to receive quantity only.
+                  {item?.coo ? ` COO prefills from the item (${item.coo}).` : " COO is a 2- or 3-letter country code."}
+                </p>
+                {lineQty.qty > RECEIVE_UNIT_ROW_CAP ? (
+                  <div className="receive-unit-paste">
+                    <label htmlFor="receive-serials">
+                      <span>Serials, one per line</span>
+                      <textarea
+                        id="receive-serials"
+                        rows={4}
+                        value={unitPaste}
+                        disabled={busy}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={"SN-1\nSN-2, CHN"}
+                        onChange={(event) => setUnitPaste(event.target.value)}
+                      />
+                    </label>
+                    <label htmlFor="receive-paste-coo">
+                      <span>COO</span>
+                      <input
+                        id="receive-paste-coo"
+                        value={pasteCoo}
+                        disabled={busy}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder="USA"
+                        onChange={(event) => setPasteCoo(event.target.value.toUpperCase())}
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div className="receive-unit-list">
+                    {unitRows.map((row, index) => (
+                      <div className="receive-unit-row" key={index}>
+                        <label htmlFor={`receive-serial-${index}`}>
+                          <span>Serial {index + 1}</span>
+                          <input
+                            id={`receive-serial-${index}`}
+                            value={row.serial}
+                            disabled={busy}
+                            autoComplete="off"
+                            spellCheck={false}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setUnitRows((current) =>
+                                current.map((entry, entryIndex) =>
+                                  entryIndex === index ? { ...entry, serial: value } : entry,
+                                ),
+                              );
+                            }}
+                          />
+                        </label>
+                        <label htmlFor={`receive-coo-${index}`}>
+                          <span>COO</span>
+                          <input
+                            id={`receive-coo-${index}`}
+                            value={row.coo}
+                            disabled={busy}
+                            autoComplete="off"
+                            spellCheck={false}
+                            placeholder="USA"
+                            onChange={(event) => {
+                              const value = event.target.value.toUpperCase();
+                              setUnitRows((current) =>
+                                current.map((entry, entryIndex) =>
+                                  entryIndex === index ? { ...entry, coo: value } : entry,
+                                ),
+                              );
+                            }}
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
             {qtyMultipleWarning ? (
               <p className="banner warn" id="receive-qty-warn" role="status" title={qtyMultipleWarning}>
                 <TriangleAlert size={18} strokeWidth={1.75} aria-hidden />
@@ -1403,6 +1684,8 @@ export function ReceivingPage() {
                       <th className="fit">Date</th>
                       <th className="fit">Init.</th>
                       <th className="fit">Project</th>
+                      <th className="fit">Vendor</th>
+                      <th className="fit">Basis</th>
                       <th className="fit">Incoming bin</th>
                       <th className="origin">System</th>
                       <th className="num fit">System Qty</th>

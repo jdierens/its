@@ -46,6 +46,8 @@ import {
   type ReceiptResult,
 } from "@/lib/stockReceive";
 import { isBinType, type BinType } from "@/lib/bins";
+import { CONSIGNED_RECEIVE_MIGRATION, receiveConsignment } from "@/lib/consignedReceive";
+import type { StockUnitInput } from "@/lib/stockUnits";
 import { lastPutawayBinReference, receivingBinCreateMessage } from "@/lib/receivingLine";
 import { RECENT_ORIGIN_SCAN, distinctRecentOrigins } from "@/lib/receivingOrigins";
 import { getSupabase } from "@/lib/supabase";
@@ -64,6 +66,51 @@ function missingColumn(error: { code?: string; message?: string } | null): boole
   return error.code === "PGRST204" || error.code === "42703";
 }
 
+const STOCK_UNITS_MIGRATION = "supabase/migrations/20261027230000_stock_units.sql";
+
+export type ReceivingVendor = { id: string; name: string };
+
+export type ReceivingPurchaseOrder = {
+  id: string;
+  number: string;
+  vendorId: string;
+  vendorName: string;
+};
+
+export async function listReceivingVendors(): Promise<ReceivingVendor[]> {
+  const { data, error } = await (await getSupabase())
+    .from("vendors")
+    .select("id, display_name")
+    .eq("active", true)
+    .order("display_name");
+  if (error) throw new Error(errorText(error));
+  return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.display_name ?? "") }));
+}
+
+export async function searchReceivingPurchaseOrders(query: string): Promise<ReceivingPurchaseOrder[]> {
+  const needle = query.trim().replace(/[%_,]/g, "");
+  const supabase = await getSupabase();
+  let request = supabase
+    .from("purchase_orders")
+    .select("id, number, vendor_id, vendors(display_name)")
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (needle) request = request.ilike("number", `%${needle}%`);
+  const { data, error } = await request;
+  if (error) throw new Error(errorText(error));
+  return (data ?? []).map((row) => {
+    const vendor = Array.isArray(row.vendors) ? row.vendors[0] : row.vendors;
+    const named = vendor && typeof vendor === "object" ? String((vendor as { display_name?: string }).display_name ?? "") : "";
+    return {
+      id: String(row.id),
+      number: String(row.number ?? ""),
+      vendorId: String(row.vendor_id ?? ""),
+      vendorName: named,
+    };
+  });
+}
+
 const RECEIPT_COLUMNS =
   "id, received_on, occurred_at, project, incoming_tag, origin_description, origin_qty, sku, item_name, item_id, qty, comment, operator_initials, edited, editor_initials";
 
@@ -71,6 +118,8 @@ const RECEIPT_LINE_COLUMNS =
   `${RECEIPT_COLUMNS}, cleaned, wiped, short_code, long_code, taxonomy_name, bin_reference, location_code`;
 
 const RECEIPT_SEARCH_COLUMNS = `${RECEIPT_LINE_COLUMNS}, search_query`;
+
+const RECEIPT_OWNER_COLUMNS = `${RECEIPT_SEARCH_COLUMNS}, vendor_name, ownership, po_number`;
 
 async function attachItemNames(detail: BinDetail): Promise<BinDetail> {
   const skus = [
@@ -388,10 +437,19 @@ export async function receiveIntoBin(input: {
   searchQuery?: string | null;
   cleaned?: boolean | null;
   wiped?: boolean | null;
+  units?: StockUnitInput[] | null;
+  vendorId?: string | null;
+  purchaseOrderId?: string | null;
 }): Promise<ReceiptResult> {
+  const owner = receiveConsignment({
+    purchaseOrderId: input.purchaseOrderId,
+    vendorId: input.vendorId,
+  });
+  if (!owner.ok) throw new Error(owner.message);
   const initials = await operatorInitials();
   const receivedOn = receivingDateToStore(input.receivedOn);
   const supabase = await getSupabase();
+  const units = (input.units ?? []).filter((unit) => unit.serial || unit.coo);
   const payload = {
     p_reference: input.reference,
     p_item_id: input.itemId || null,
@@ -408,38 +466,15 @@ export async function receiveIntoBin(input: {
     p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
     p_cleaned: input.itemId ? (input.cleaned ?? null) : null,
     p_wiped: input.itemId ? (input.wiped ?? null) : null,
+    p_vendor_id: owner.vendorId,
+    p_purchase_order_id: owner.purchaseOrderId,
+    ...(units.length > 0 ? { p_units: units } : {}),
   };
-  let { data, error } = await supabase.rpc("receive_into_bin", payload);
-  if (!payload.p_item_id && error) {
-    if (missingSchema(error) || missingColumn(error) || /choose an item/i.test(error.message ?? "")) {
-      throw new Error("Apply the unmatched receipt migration before saving a line without an item.");
-    }
-    rpcError(error);
-  }
+  const { data, error } = await supabase.rpc("receive_into_bin", payload);
   if (error && (missingSchema(error) || missingColumn(error))) {
-    const { p_search_query: _search, ...withoutSearch } = payload;
-    ({ data, error } = await supabase.rpc("receive_into_bin", withoutSearch));
-  }
-  if (error && (missingSchema(error) || missingColumn(error))) {
-    const { p_cleaned: _cleaned, p_wiped: _wiped, p_search_query: _search, ...withoutFlags } = payload;
-    ({ data, error } = await supabase.rpc("receive_into_bin", withoutFlags));
-  }
-  if (error && missingSchema(error)) {
-    const { p_scan_raw: _scan, ...legacy } = {
-      p_reference: payload.p_reference,
-      p_item_id: payload.p_item_id,
-      p_qty: payload.p_qty,
-      p_initials: payload.p_initials,
-      p_comment: payload.p_comment,
-      p_project: payload.p_project,
-      p_origin: payload.p_origin,
-      p_incoming_tag: payload.p_incoming_tag,
-      p_received_on: payload.p_received_on,
-      p_origin_qty: payload.p_origin_qty,
-      p_client_request_id: payload.p_client_request_id,
-      p_scan_raw: payload.p_scan_raw,
-    };
-    ({ data, error } = await supabase.rpc("receive_into_bin", legacy));
+    throw new Error(
+      `Apply ${STOCK_UNITS_MIGRATION} and ${CONSIGNED_RECEIVE_MIGRATION} before receiving. A receipt without a purchase order has to name a vendor and is stored as consigned.`,
+    );
   }
   if (error) rpcError(error);
   return receiptFromJson(data);
@@ -522,7 +557,8 @@ async function listReceiptSlice(
       .order("id", { ascending: false })
       .range(from, to);
   };
-  let corrected = await receiptPage(RECEIPT_SEARCH_COLUMNS);
+  let corrected = await receiptPage(RECEIPT_OWNER_COLUMNS);
+  if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_SEARCH_COLUMNS);
   if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_LINE_COLUMNS);
   if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_COLUMNS);
   if (!corrected.error) {

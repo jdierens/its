@@ -35,6 +35,9 @@ export const RECEIPT_DETAIL_HEADERS = [
   "Comment",
   "Cleaned",
   "Wiped",
+  "Vendor",
+  "Basis",
+  "PO",
 ] as const;
 
 function byItemName(a: ReceiptSummaryRow, b: ReceiptSummaryRow): number {
@@ -188,6 +191,9 @@ export function receiptsDetailCsv(entries: readonly ReceivingEntry[]): string {
       textCell(entry.comment),
       flagCell(entry.cleaned),
       flagCell(entry.wiped),
+      textCell(entry.vendorName),
+      textCell(entry.basis),
+      textCell(entry.poNumber),
     ]),
   );
 }

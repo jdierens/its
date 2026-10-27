@@ -10,6 +10,7 @@ import {
   receiveLineQty,
   systemQtyMultipleWarning,
   putawayLabel,
+  receiptBasis,
   receiptInitials,
   receiptSavedNote,
   receivingDateToStore,
@@ -157,6 +158,10 @@ describe("recent receiving rows", () => {
       putaway: "",
       binReference: "",
       searchQuery: null,
+      vendorName: null,
+      ownership: null,
+      poNumber: null,
+      basis: "",
     });
     const shown = receivingEntryForViewer(row, true);
     assert.equal(shown.sku, "1001");
@@ -195,6 +200,13 @@ describe("recent receiving rows", () => {
     assert.equal(
       receivingEntryForViewer({ ...row, search_query: "  samsung 860  " }, true).searchQuery,
       "samsung 860",
+    );
+    assert.equal(receiptBasis("consigned", null), "Consigned");
+    assert.equal(receiptBasis(null, "1042"), "PO 1042");
+    assert.equal(receiptBasis("consigned", "1042"), "Consigned");
+    assert.equal(
+      receivingEntryForViewer({ ...row, vendor_name: "Acme", ownership: "consigned", po_number: null }, true).basis,
+      "Consigned",
     );
     assert.equal(putawayLabel("20042-B", null), "20042-B");
     assert.equal(putawayLabel(null, "HWS.03.01.02"), "HWS.03.01.02");

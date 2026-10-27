@@ -12,6 +12,7 @@ import {
   undoPick,
 } from "@/lib/pickActions";
 import { errorText } from "@/lib/errors";
+import { cooProblem } from "@/lib/stockUnits";
 import {
   formatPickQty,
   lineRemaining,
@@ -46,6 +47,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [sheet, setSheet] = useState(initial);
   const [qtyText, setQtyText] = useState<Record<string, string>>({});
   const [serialText, setSerialText] = useState<Record<string, string>>({});
+  const [cooText, setCooText] = useState<Record<string, string>>({});
   const [scan, setScan] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,10 +128,17 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       setError(message);
       return;
     }
+    const country = cooProblem(cooText[pickId] ?? "");
+    if (country) {
+      setError(country);
+      return;
+    }
     const serial = (serialText[pickId] ?? "").trim();
+    const coo = (cooText[pickId] ?? "").trim();
     void run(async () => {
-      const next = await recordPickSerial(pickId, serial);
+      const next = await recordPickSerial(pickId, serial, coo);
       setSerialText((current) => ({ ...current, [pickId]: "" }));
+      setCooText((current) => ({ ...current, [pickId]: "" }));
       return next;
     });
   }
@@ -273,6 +282,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                         {pick.serials.map((serial) => (
                           <li key={serial.id}>
                             {serial.serial}
+                            {serial.coo ? ` · ${serial.coo}` : ""}
                             {open ? (
                               <button
                                 type="button"
@@ -297,6 +307,26 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                             autoComplete="off"
                             onChange={(event) =>
                               setSerialText((current) => ({ ...current, [pick.id]: event.target.value }))
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                onSerial(pick.id, line.sku, pick.qty, pick.serials.length);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label>
+                          COO, optional
+                          <input
+                            className="pick-coo"
+                            aria-label={`Country of origin for ${line.sku} from ${pick.fromBin || "bin"}`}
+                            value={cooText[pick.id] ?? ""}
+                            placeholder={line.itemCoo || "USA"}
+                            autoComplete="off"
+                            spellCheck={false}
+                            onChange={(event) =>
+                              setCooText((current) => ({ ...current, [pick.id]: event.target.value.toUpperCase() }))
                             }
                             onKeyDown={(event) => {
                               if (event.key === "Enter") {
