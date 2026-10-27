@@ -291,6 +291,7 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
                 type="button"
                 className="thumb-delete"
                 aria-label="Delete photo"
+                title="Delete photo"
                 disabled={busy}
                 draggable={false}
                 onMouseDown={(event) => event.stopPropagation()}

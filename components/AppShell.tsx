@@ -294,6 +294,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               type="button"
               className="icon-button nav-toggle"
               aria-label="Open menu"
+              title="Open menu"
               aria-expanded={drawerOpen}
               onClick={() => setDrawerOpen(true)}
             >

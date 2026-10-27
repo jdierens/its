@@ -1009,7 +1009,7 @@ export function ReceivingPage() {
               <Link href={`/warehouse/bins/${receipt.result.reference}`}>Open this bin</Link>
             </p>
             {receipt.qtyWarning ? (
-              <p className="banner warn" id="receive-saved-qty-warn" role="status">
+              <p className="banner warn" id="receive-saved-qty-warn" role="status" title={receipt.qtyWarning}>
                 <TriangleAlert size={18} strokeWidth={1.75} aria-hidden />
                 <span>{receipt.qtyWarning}</span>
               </p>
@@ -1138,7 +1138,9 @@ export function ReceivingPage() {
               <label className="receive-line-qty" htmlFor="receive-qty">
                 <span>
                   {qtyMultipleWarning ? (
-                    <TriangleAlert className="receive-qty-warn-icon" size={15} strokeWidth={1.75} aria-hidden />
+                    <span title={qtyMultipleWarning}>
+                      <TriangleAlert className="receive-qty-warn-icon" size={15} strokeWidth={1.75} aria-hidden />
+                    </span>
                   ) : null}
                   Qty
                 </span>
@@ -1253,7 +1255,7 @@ export function ReceivingPage() {
               </div>
             </div>
             {qtyMultipleWarning ? (
-              <p className="banner warn" id="receive-qty-warn" role="status">
+              <p className="banner warn" id="receive-qty-warn" role="status" title={qtyMultipleWarning}>
                 <TriangleAlert size={18} strokeWidth={1.75} aria-hidden />
                 <span>{qtyMultipleWarning}</span>
               </p>

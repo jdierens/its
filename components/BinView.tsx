@@ -125,6 +125,7 @@ function BinSection({
           className="bin-section-toggle"
           aria-expanded={open}
           aria-controls={`${id}-panel`}
+          title={open ? `Collapse ${title}` : `Expand ${title}`}
           onClick={onToggle}
         >
           <ChevronRight
@@ -448,6 +449,7 @@ export function BinView({ reference }: { reference: string }) {
                 type="button"
                 className="bin-label-hit"
                 aria-label={`Print bin label ${detail.reference}`}
+                title={`Print bin label ${detail.reference}`}
                 disabled={busy}
                 onClick={() => void printBinLabel()}
               >
@@ -541,6 +543,7 @@ export function BinView({ reference }: { reference: string }) {
                         type="button"
                         className="bin-label-hit"
                         aria-label={`Print item label for ${row.sku || row.name}`}
+                        title={`Print item label for ${row.sku || row.name}`}
                         onClick={() => printItemLabel(row)}
                       >
                         <span className="label-frame">
