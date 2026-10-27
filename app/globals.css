@@ -8555,3 +8555,128 @@ input.num-input {
     margin-top: 0;
   }
 }
+
+.pick-page {
+  display: grid;
+  gap: 0.85rem;
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.pick-page .page-note,
+.pick-page h1,
+.pick-page h2,
+.pick-page p {
+  margin: 0;
+}
+
+.pick-page h1 {
+  font-size: 1.35rem;
+}
+
+.pick-page h2 {
+  font-size: 1.05rem;
+}
+
+.pick-head,
+.pick-scan,
+.pick-serial-row,
+.pick-qty-cell,
+.pick-finish,
+.pick-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: end;
+}
+
+.pick-head {
+  justify-content: space-between;
+  align-items: start;
+}
+
+.pick-progress {
+  font-weight: 650;
+}
+
+.pick-line {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 1rem;
+}
+
+.pick-line header {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.pick-bins,
+.pick-queue {
+  width: 100%;
+}
+
+.pick-qty-cell input {
+  width: 5rem;
+}
+
+.pick-done {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pick-done ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.pick-skipped {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.pick-skipped ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.pick-scan,
+.pick-serial-row {
+  align-items: end;
+}
+
+.pick-scan label,
+.pick-serial-row label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+@media (max-width: 800px) {
+  .pick-page input {
+    font-size: 16px;
+  }
+
+  .pick-bins,
+  .pick-queue {
+    display: block;
+  }
+
+  .pick-bins thead,
+  .pick-queue thead {
+    display: none;
+  }
+
+  .pick-bins tr,
+  .pick-queue tr {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.65rem 0;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+  }
+
+  .pick-bins td,
+  .pick-queue td {
+    display: block;
+  }
+}

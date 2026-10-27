@@ -170,12 +170,12 @@ export function copyShipToBillTo(shipTo: SoAddress, billTo: SoAddress): SoAddres
 }
 
 /**
- * New orders, drafts, and approved orders stay editable for someone who can edit.
+ * Drafts, approved orders, and orders being picked stay editable.
  * Cancelled, closed, and later fulfillment statuses stay locked.
  */
 export function salesOrderFormLocked(canEdit: boolean, status: string | null): boolean {
   if (!canEdit) return true;
-  if (status == null || status === "draft" || status === "approved") return false;
+  if (status == null || status === "draft" || status === "approved" || status === "picking") return false;
   return true;
 }
 

@@ -72,9 +72,9 @@ export const NAV_GROUPS: NavGroup[] = [
         description: "Find a SKU and see on-hand quantity by bin.",
       },
       {
-        label: "Pick/pack/ship",
+        label: "Picking",
         href: "/warehouse/pick",
-        description: "Pick, pack, and ship sales orders.",
+        description: "Pick approved sales orders into a staging bin.",
       },
       {
         label: "Receiving",
@@ -206,6 +206,18 @@ export function pageMetaFor(pathname: string): PageMeta {
         { label: "Items", href: "/items" },
         { label: "Item", href: `/items/${photo[1]}` },
         { label: "Edit photo" },
+      ],
+    };
+  }
+
+  const pickSheet = pathname.match(/^\/warehouse\/pick\/([^/]+)$/);
+  if (pickSheet) {
+    return {
+      title: "Pick sheet",
+      crumbs: [
+        { label: "Warehouse" },
+        { label: "Picking", href: "/warehouse/pick" },
+        { label: "Pick sheet" },
       ],
     };
   }

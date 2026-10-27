@@ -339,12 +339,14 @@ describe("sales order draft", () => {
     ]);
   });
 
-  it("keeps drafts and approved orders editable and locks cancelled and closed", () => {
+  it("keeps drafts, approved orders, and picking editable and locks cancelled and closed", () => {
     assert.equal(salesOrderFormLocked(true, null), false);
     assert.equal(salesOrderFormLocked(true, "draft"), false);
     assert.equal(salesOrderFormLocked(true, "approved"), false);
+    assert.equal(salesOrderFormLocked(true, "picking"), false);
     assert.equal(salesOrderFormLocked(true, "cancelled"), true);
     assert.equal(salesOrderFormLocked(true, "closed"), true);
+    assert.equal(salesOrderFormLocked(true, "packed"), true);
     assert.equal(salesOrderFormLocked(true, "shipped"), true);
     assert.equal(salesOrderFormLocked(false, "draft"), true);
     assert.equal(salesOrderFormLocked(false, "approved"), true);
