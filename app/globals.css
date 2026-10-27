@@ -7394,6 +7394,18 @@ input.num-input {
   padding: 0;
 }
 
+.so-page a.so-new-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--accent-ink);
+  text-decoration: none;
+}
+
 .ds .card {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;

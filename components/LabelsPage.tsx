@@ -495,7 +495,7 @@ export function LabelsPage() {
             {serials.map((serial) => (
               <li key={serial}>
                 <span>{serial}</span>
-                <button type="button" aria-label={`Remove ${serial}`} onClick={() => removeSerial(serial)}>
+                <button type="button" aria-label={`Remove ${serial}`} title={`Remove ${serial}`} onClick={() => removeSerial(serial)}>
                   <X size={14} strokeWidth={1.75} aria-hidden />
                 </button>
               </li>

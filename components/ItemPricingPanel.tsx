@@ -913,7 +913,7 @@ function SortHeader({
   const active = sort.key === column;
   return (
     <th className={numeric ? "num" : undefined} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
-      <button type="button" className="th-sort" aria-pressed={active} onClick={() => onSort(column)}>
+      <button type="button" className="th-sort" aria-pressed={active} title={`Sort by ${label}`} onClick={() => onSort(column)}>
         {label}
         {active ? (sort.dir === "asc" ? " ↑" : " ↓") : ""}
       </button>

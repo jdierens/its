@@ -485,6 +485,7 @@ export function PhotoEditor({ itemId, imageId }: PhotoEditorProps) {
                       type="button"
                       className={`crop-handle ${corner}`}
                       aria-label={`Resize crop ${corner}`}
+                      title={`Resize crop ${corner}`}
                       onPointerDown={(event) => startResize(event, corner)}
                     />
                   ))

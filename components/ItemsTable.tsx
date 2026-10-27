@@ -721,7 +721,7 @@ export function ItemsTable() {
                     />
                     </>
                   ) : sortable ? (
-                    <button type="button" className={styles.header} onClick={() => applySort(column.id)}>
+                    <button type="button" className={styles.header} title={column.id === "coo" ? "Sort by country of origin" : `Sort by ${column.label}`} onClick={() => applySort(column.id)}>
                       {column.label}
                       {activeSort ? <span aria-hidden="true">{sort.ascending ? " ↑" : " ↓"}</span> : null}
                     </button>

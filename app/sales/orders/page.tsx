@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { SalesOrderListMemory, SalesOrderListSwitch } from "@/components/SalesOrderListSwitch";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
@@ -29,8 +30,8 @@ export default async function SalesOrdersPage({
       <p className="page-note">Create a sales order for a customer. A number is assigned when the order is approved.</p>
       {access.canEdit ? (
         <p>
-          <Link className="button" href="/sales/orders/new">
-            New sales order
+          <Link className="button so-new-order" href="/sales/orders/new" aria-label="New sales order" title="New sales order">
+            <Plus size={18} strokeWidth={1.75} aria-hidden />
           </Link>
         </p>
       ) : (
