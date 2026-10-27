@@ -330,7 +330,10 @@ export function SalesOrderForm({
     return line.allocations.some((row) => row.itemId && Number(row.qty) > 0);
   }
 
-  function pricedAllocation(line: FormLine, allocation: { itemId: string; sku: string; name: string; qty: string }): SalesAllocationView {
+  function pricedAllocation(
+    line: FormLine,
+    allocation: { itemId: string; sku: string; name: string; description?: string; qty: string },
+  ): SalesAllocationView {
     const priced = syncAllocationMoney({
       qty: allocation.qty,
       unitPrice: line.unitPrice,
@@ -338,7 +341,7 @@ export function SalesOrderForm({
       edited: "unit",
       commit: true,
     });
-    return { ...allocation, unitPrice: priced.unitPrice, extPrice: priced.extPrice };
+    return { ...allocation, description: allocation.description ?? "", unitPrice: priced.unitPrice, extPrice: priced.extPrice };
   }
 
   function putAllocation(index: number, allocation: SalesAllocationView, onlyIfEmpty: boolean): FormLine | null {

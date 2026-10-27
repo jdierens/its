@@ -8200,8 +8200,9 @@ input.num-input {
   padding: 0.28in 0.32in 0.4in;
   background: #fff;
   color: #111;
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   font-size: 11px;
-  line-height: 1.25;
+  line-height: 1.35;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
 }
 
@@ -8262,7 +8263,7 @@ input.num-input {
 
 .cust-doc-ref {
   display: grid;
-  grid-template-columns: 70px 90px 80px 1fr;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   margin-top: 8px;
@@ -8291,10 +8292,6 @@ input.num-input {
   padding: 3px 6px;
   border-bottom: 1px solid #b45f06;
   font-size: 10px;
-}
-
-.cust-doc-party-labels span:nth-child(2) {
-  grid-column: 3;
 }
 
 .cust-doc-party-grid {
@@ -8340,17 +8337,10 @@ input.num-input {
   font-weight: 600;
 }
 
-.cust-doc-colkeys {
-  display: grid;
-  grid-template-columns: 70px 1fr 70px 70px 70px;
-  margin-top: 8px;
-  font-size: 10px;
-}
-
 .cust-doc-lines {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 2px;
+  margin-top: 8px;
 }
 
 .cust-doc-lines th,
@@ -8359,6 +8349,10 @@ input.num-input {
   padding: 3px 6px;
   vertical-align: top;
   text-align: left;
+}
+
+.cust-doc-lines tbody tr:last-child td {
+  border-bottom: 2px solid #111;
 }
 
 .cust-doc-lines th {
@@ -8384,8 +8378,8 @@ input.num-input {
 .cust-doc-foot {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;
+  margin-top: 14px;
   border: 1px solid #111;
-  border-top: 0;
 }
 
 .cust-doc-notes {

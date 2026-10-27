@@ -3,7 +3,7 @@
 import JsBarcode from "jsbarcode";
 import { useLayoutEffect, useRef } from "react";
 
-/** Code 39 of the invoice number. The sales order number stays in the REF field. */
+/** Code 39 of the document number. Confirmation is SO plus the number. Invoice is INV plus the number. */
 export function DocumentBarcode({ value }: { value: string }) {
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -16,7 +16,7 @@ export function DocumentBarcode({ value }: { value: string }) {
       height: 42,
       margin: 0,
       displayValue: true,
-      font: "ui-monospace, monospace",
+      font: '"Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif',
       fontSize: 12,
       textMargin: 2,
       background: "#ffffff",

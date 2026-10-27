@@ -41,13 +41,11 @@ export function CustomerOrderDocument({ document, orderId }: { document: Custome
         <div className="cust-doc-ref">
           <span>REF</span>
           <strong>{document.salesOrderRef}</strong>
-          <span>Col36</span>
-          <span className="cust-doc-ref-date">{document.documentDate}</span>
+          <span className="cust-doc-ref-date">DATE {document.documentDate}</span>
         </div>
         <section className="cust-doc-parties">
           <div className="cust-doc-party-labels">
             <span>Customer</span>
-            <span>Ship Address</span>
           </div>
           <div className="cust-doc-party-grid">
             <div className="cust-doc-label">BILL TO</div>
@@ -96,13 +94,6 @@ export function CustomerOrderDocument({ document, orderId }: { document: Custome
             </div>
           </div>
         </section>
-        <div className="cust-doc-colkeys" aria-hidden="true">
-          <span>Col26</span>
-          <span>Col48</span>
-          <span>Col27</span>
-          <span>Col44</span>
-          <span>Col29</span>
-        </div>
         <table className="cust-doc-lines">
           <thead>
             <tr>
