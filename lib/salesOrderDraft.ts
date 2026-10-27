@@ -132,6 +132,29 @@ export function emptyAddress(): SoAddress {
   };
 }
 
+/** Street, city, state, postal code, and country. Ship-to attention and phone stay. */
+export function copyBillToShipTo(billTo: SoAddress, shipTo: SoAddress): SoAddress {
+  return {
+    ...shipTo,
+    line1: billTo.line1,
+    line2: billTo.line2,
+    city: billTo.city,
+    countrySubDivisionCode: billTo.countrySubDivisionCode,
+    postalCode: billTo.postalCode,
+    country: billTo.country,
+  };
+}
+
+/**
+ * New orders, drafts, and approved orders stay editable for someone who can edit.
+ * Cancelled, closed, and later fulfillment statuses stay locked.
+ */
+export function salesOrderFormLocked(canEdit: boolean, status: string | null): boolean {
+  if (!canEdit) return true;
+  if (status == null || status === "draft" || status === "approved") return false;
+  return true;
+}
+
 export function partPrefix(value: string): string {
   return value.toUpperCase().replace(/[\s/-]/g, "");
 }

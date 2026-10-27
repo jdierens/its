@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { DocumentBarcode } from "@/components/DocumentBarcode";
 import { PrintDocumentButton } from "@/components/PrintDocumentButton";
-import { CUSTOMER_DOCUMENT_COMPANY, type CustomerDocument } from "@/lib/customerDocument";
+import { CUSTOMER_DOCUMENT_COMPANY, CUSTOMER_DOCUMENT_LOGO, type CustomerDocument } from "@/lib/customerDocument";
 
 export function CustomerOrderDocument({ document, orderId }: { document: CustomerDocument; orderId: string }) {
   const company = CUSTOMER_DOCUMENT_COMPANY;
@@ -13,7 +13,7 @@ export function CustomerOrderDocument({ document, orderId }: { document: Custome
       </div>
       <article className="cust-doc">
         <header className="cust-doc-top">
-          <img className="cust-doc-logo" src="/brand/dds-logo.png" alt="" />
+          <img className="cust-doc-logo" src={CUSTOMER_DOCUMENT_LOGO} alt="" />
           <div className="cust-doc-company">
             <p className="cust-doc-company-name">{company.name}</p>
             <p>{company.address}</p>

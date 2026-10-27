@@ -3,6 +3,9 @@ import type { SoAddress } from "@/lib/salesOrderDraft";
 
 export type CustomerDocumentKind = "invoice" | "confirmation";
 
+/** Official DDS mark. Transparent, so the white print page shows through. */
+export const CUSTOMER_DOCUMENT_LOGO = "/brand/dds-logo.png";
+
 export const CUSTOMER_DOCUMENT_COMPANY = {
   name: "Deep Discount Servers LLC (DDS)",
   address: "3730 E Dale Ave, Henderson, NV89044",

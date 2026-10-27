@@ -7064,6 +7064,11 @@ input.num-input {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.so-page button.so-copy-address {
+  justify-self: start;
+  margin: 0;
+}
+
 .so-grid .wide {
   grid-column: 1 / -1;
 }
@@ -8202,14 +8207,16 @@ input.num-input {
 
 .cust-doc-top {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) auto;
-  gap: 10px 12px;
-  align-items: start;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
 }
 
 .cust-doc-logo {
-  width: 48px;
-  height: 36px;
+  display: block;
+  width: 64px;
+  height: auto;
+  background: transparent;
   object-fit: contain;
   object-position: left center;
 }

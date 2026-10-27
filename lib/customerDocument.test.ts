@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildCustomerDocument,
+  CUSTOMER_DOCUMENT_LOGO,
   customerDocumentLines,
   customerDocumentTitle,
   documentDate,
@@ -19,6 +20,7 @@ describe("customer document", () => {
     const invoice = buildCustomerDocument(sample("invoice"));
     const confirmation = buildCustomerDocument(sample("confirmation"));
     assert.ok(invoice && confirmation);
+    assert.equal(CUSTOMER_DOCUMENT_LOGO, "/brand/dds-logo.png");
     assert.equal(invoice.title, "INVOICE");
     assert.equal(confirmation.title, "Sales Order Confirmation");
     assert.equal(customerDocumentTitle("confirmation"), "Sales Order Confirmation");
