@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, Save } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
@@ -67,6 +67,20 @@ function moneyAmount(value: string): number | null {
   if (!value.trim()) return null;
   const numeric = Number(plainMoney(value));
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="secondary so-icon-remove" aria-label={label} title={label} onClick={onClick}>
+      <Trash2 size={16} strokeWidth={1.75} aria-hidden />
+    </button>
+  );
+}
+
+function fitLineNote(node: HTMLTextAreaElement | null) {
+  if (!node) return;
+  node.style.height = "0px";
+  node.style.height = `${Math.min(node.scrollHeight, 72)}px`;
 }
 
 function EbayTip({ label, text }: { label: string; text: string }) {
@@ -968,7 +982,7 @@ export function SalesOrderForm({
                     ["so-line-main", end ? "so-line-end" : "", lineMismatch ? "so-line-mismatch" : ""].filter(Boolean).join(" ");
                   return (
                     <Fragment key={index}>
-                      <tr className={rowClass(!(showExtra || allocationCount > 0))}>
+                      <tr className={rowClass(false)}>
                         <td>
                           <input
                             id={`so-line-part-${index}`}
@@ -990,15 +1004,6 @@ export function SalesOrderForm({
                             onChange={(event) => updateLine(index, { customerDescription: event.target.value })}
                           />
                           {compliance.underDescription ? <p className="so-line-meta">{compliance.underDescription}</p> : null}
-                          <textarea
-                            className="so-line-note"
-                            aria-label={`Line note ${index + 1}`}
-                            placeholder="Note"
-                            rows={2}
-                            value={line.lineNote}
-                            disabled={locked}
-                            onChange={(event) => updateLine(index, { lineNote: event.target.value })}
-                          />
                         </td>
                         <td className="num">
                           <input
@@ -1041,9 +1046,8 @@ export function SalesOrderForm({
                         ) : null}
                         <td className="so-line-remove">
                           {!locked ? (
-                            <button
-                              type="button"
-                              className="secondary"
+                            <RemoveButton
+                              label="Remove line"
                               onClick={() =>
                                 setLines((current) => {
                                   const next = current.filter((_, lineIndex) => lineIndex !== index);
@@ -1051,16 +1055,14 @@ export function SalesOrderForm({
                                   return next;
                                 })
                               }
-                            >
-                              Remove
-                            </button>
+                            />
                           ) : null}
                         </td>
                       </tr>
                       {showAllocations
                         ? line.allocations.map((allocation, allocationIndex) => (
                             <tr
-                              className={`so-allocation-row${showExtra || allocationIndex < allocationCount - 1 ? "" : " so-line-end"}${lineMismatch ? " so-line-mismatch" : ""}`}
+                              className={`so-allocation-row${lineMismatch ? " so-line-mismatch" : ""}`}
                               key={`${allocation.itemId}-${allocationIndex}`}
                             >
                               <td colSpan={2}>
@@ -1115,9 +1117,8 @@ export function SalesOrderForm({
                               ) : null}
                               <td className="so-line-remove">
                                 {!locked ? (
-                                  <button
-                                    type="button"
-                                    className="secondary"
+                                  <RemoveButton
+                                    label="Remove mapped SKU"
                                     onClick={() =>
                                       setLines((current) => {
                                         const next = current.map((row, lineIndex) =>
@@ -1129,16 +1130,14 @@ export function SalesOrderForm({
                                         return next;
                                       })
                                     }
-                                  >
-                                    Remove
-                                  </button>
+                                  />
                                 ) : null}
                               </td>
                             </tr>
                           ))
                         : null}
                       {showExtra ? (
-                        <tr className={`so-line-extra so-line-end${lineMismatch ? " so-line-mismatch" : ""}`}>
+                        <tr className={`so-line-extra${lineMismatch ? " so-line-mismatch" : ""}`}>
                           <td colSpan={showMoney ? 6 : 4}>
                             {showFinder ? (
                               <div className="so-allocate">
@@ -1238,6 +1237,23 @@ export function SalesOrderForm({
                           </td>
                         </tr>
                       ) : null}
+                      <tr className={`so-line-note-row so-line-end${lineMismatch ? " so-line-mismatch" : ""}`}>
+                        <td colSpan={showMoney ? 6 : 4}>
+                          <textarea
+                            className="so-line-note"
+                            aria-label={`Line note ${index + 1}`}
+                            placeholder="Note"
+                            rows={1}
+                            ref={fitLineNote}
+                            value={line.lineNote}
+                            disabled={locked}
+                            onChange={(event) => {
+                              updateLine(index, { lineNote: event.target.value });
+                              fitLineNote(event.currentTarget);
+                            }}
+                          />
+                        </td>
+                      </tr>
                     </Fragment>
                   );
                 })}
@@ -1408,9 +1424,7 @@ export function SalesOrderForm({
                     </label>
                   ) : null}
                   {!locked ? (
-                    <button type="button" className="secondary" onClick={() => setNotes((current) => current.filter((_, rowIndex) => rowIndex !== index))}>
-                      Remove note
-                    </button>
+                    <RemoveButton label="Remove note" onClick={() => setNotes((current) => current.filter((_, rowIndex) => rowIndex !== index))} />
                   ) : null}
                 </div>
               ))}

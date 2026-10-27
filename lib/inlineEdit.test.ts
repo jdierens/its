@@ -58,6 +58,9 @@ test("sku and taxonomy stay read-only while trade and attribute cells edit", () 
   assert.equal(isEditableColumn("product_url"), true);
   assert.equal(isEditableColumn("unit"), true);
   assert.equal(isEditableColumn("coo"), true);
+  assert.equal(isEditableColumn("eccn"), true);
+  assert.equal(isEditableColumn("us_hts"), true);
+  assert.equal(isEditableColumn("ccats"), true);
   assert.equal(isEditableColumn("item_type"), true);
   assert.equal(isEditableColumn("ecommerce_price"), true);
   assert.equal(isEditableColumn("attr:speed"), true);

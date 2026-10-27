@@ -6667,18 +6667,33 @@ input.num-input {
 
 .so-lines th.so-line-remove,
 .so-lines td.so-line-remove {
-  width: 6.5rem;
+  width: 2.75rem;
   text-align: right;
 }
 
-.so-lines tr.so-line-end > td,
-.so-lines .so-line-extra td {
+.so-page button.so-icon-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.so-lines tr.so-line-end > td {
   border-bottom: 1px solid var(--line);
 }
 
 .so-lines .so-line-extra td {
   padding-top: 0.1rem;
-  padding-bottom: 0.85rem;
+  padding-bottom: 0.2rem;
+}
+
+.so-lines tr.so-line-note-row td {
+  padding-top: 0.15rem;
+  padding-bottom: 0.7rem;
 }
 
 .so-lines tr.so-allocation-row td {
@@ -6712,9 +6727,16 @@ input.num-input {
 
 .so-lines textarea.so-line-note,
 .so-page textarea.so-line-note {
-  min-height: 2.5rem;
-  margin-top: 0.35rem;
-  resize: vertical;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 2rem;
+  max-height: 4.5rem;
+  margin: 0;
+  padding: 0.28rem 0.55rem;
+  line-height: 1.35;
+  resize: none;
+  overflow: auto;
 }
 
 .so-line-meta {
@@ -7223,6 +7245,16 @@ input.num-input {
     min-height: 6rem;
   }
 
+  .so-page textarea.so-line-note {
+    min-height: 2rem;
+  }
+
+  .so-page button.so-icon-remove {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
   .so-page button,
   .so-page .button,
   .so-page a.button {
@@ -7697,8 +7729,7 @@ input.num-input {
   border-color: var(--ds-line);
 }
 
-.ds .so-lines tr.so-line-end > td,
-.ds .so-lines .so-line-extra td {
+.ds .so-lines tr.so-line-end > td {
   border-bottom-color: var(--ds-line);
 }
 
