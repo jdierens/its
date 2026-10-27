@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { BIN_LABEL_PRINT_CSS, BinLabel } from "@/components/BinLabel";
+import { BinLabel, binLabelPrintCss } from "@/components/BinLabel";
 import { errorText } from "@/lib/errors";
 import {
   BIN_COPY_MAX,
@@ -30,6 +30,7 @@ import {
   type LabelTemplateId,
 } from "@/lib/labelTemplates";
 import { fetchBinLabelTemplates } from "@/lib/labelActions";
+import { binLabelPage, binLabelSheet } from "@/lib/binLabelLayout";
 
 type Batch = {
   labels: Array<{ reference: string; type: BinType }>;
@@ -226,10 +227,12 @@ export function BinLabelsPage() {
   const previewNumber = nextNumber ?? 20000;
   const previewReference = formatBinReference(previewNumber, previewType);
   const previewTemplate = templates[previewType];
+  const previewPage = binLabelPage(previewType);
+  const sheet = binLabelSheet(batch ? batch.labels.map((label) => label.type) : [previewType]);
 
   return (
     <main className="page bin-desk">
-      <style>{BIN_LABEL_PRINT_CSS}</style>
+      <style>{binLabelPrintCss(sheet)}</style>
       <div className="no-print">
         <p className="page-note">
           Print pallet, crate, and box labels. One shared number, so 20000-P, 20001-B, and 20002-C
@@ -369,21 +372,42 @@ export function BinLabelsPage() {
         ) : null}
 
         <div className="print-help">
-          <p>Brother QL-820NWB, DK-1201 die-cut labels. In the print dialog use:</p>
-          <ul>
-            <li>Paper size: 29 × 90 mm</li>
-            <li>Orientation: Landscape</li>
-            <li>Scale: 100%</li>
-            <li>Margins: None</li>
-            <li>Headers and footers: off</li>
-          </ul>
+          {previewType === "P" ? (
+            <>
+              <p>Brother QL-820NWB, DK-1202 die-cut labels. In the print dialog use:</p>
+              <ul>
+                <li>Paper size: 62 × 100 mm</li>
+                <li>Orientation: Landscape</li>
+                <li>Scale: 100%</li>
+                <li>Margins: None</li>
+                <li>Headers and footers: off</li>
+              </ul>
+              <p>
+                Each page is 62 × 100 mm. The 62 mm side is the tape width across the print head, and the
+                100 mm side is the feed, so the page is landscape. Crate and box labels stay 29 × 90 mm.
+                Print one type at a time. A batch that mixes pallets with crates or boxes uses a different
+                page size per label; if the dialog offers only one paper size, split the batch.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>Brother QL-820NWB, DK-1201 die-cut labels. In the print dialog use:</p>
+              <ul>
+                <li>Paper size: 29 × 90 mm</li>
+                <li>Orientation: Landscape</li>
+                <li>Scale: 100%</li>
+                <li>Margins: None</li>
+                <li>Headers and footers: off</li>
+              </ul>
+            </>
+          )}
         </div>
 
         <div className="label-preview">
           <p className="hint">
-            Preview of the next {binTypeLabel(previewType).toLowerCase()} label, {previewReference}.
-            This number is not reserved. Layout: {binLabelTemplateLabel(previewTemplate)}. The
-            barcode or QR code is the reference itself.
+            Preview of the next {binTypeLabel(previewType).toLowerCase()} label, {previewReference},{" "}
+            {previewPage.paper}. This number is not reserved. Layout: {binLabelTemplateLabel(previewTemplate)}.
+            The barcode or QR code is the reference itself.
           </p>
           <div className="label-frame" data-bin-preview="next">
             <BinLabel reference={previewReference} type={previewType} layout={previewTemplate} />
@@ -448,6 +472,7 @@ export function BinLabelsPage() {
               reference={label.reference}
               type={label.type}
               layout={batch.template}
+              sheet={sheet}
             />
           ))}
         </div>

@@ -264,10 +264,11 @@ export function SettingsPage() {
             </div>
           ))}
           <span className="hint">
-            Pallet, crate, and box labels are 90 × 29 mm. DDS + barcode is the default. The
-            barcode is Code 128 of the reference, such as 10041-C, with DDS on the left and the
-            reference on the right. The type word is not printed. DDS + QR encodes that same
-            reference.
+            Pallet labels are 62 × 100 mm (DK-1202). DDS is centered above a Code 128 of the
+            reference, and the reference is centered under the bars. Crate and box labels stay
+            90 × 29 mm (DK-1201). DDS + barcode is the default: Code 128 of the reference, such as
+            10041-C, with DDS on the left and the reference on the right. The type word is not
+            printed. DDS + QR encodes that same reference.
           </span>
           <div>
             <label htmlFor="label-template-location">
