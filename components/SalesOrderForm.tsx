@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, PackageCheck, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
@@ -161,7 +161,7 @@ export function SalesOrderForm({
   const router = useRouter();
   const locked = salesOrderFormLocked(canEdit, order?.status ?? null);
   const drafting = order == null || order.status === "draft";
-  const saveLabel = order?.status === "approved" ? "Save" : "Save draft";
+  const saveLabel = order?.status === "approved" || order?.status === "picking" ? "Save" : "Save draft";
   const [orderId, setOrderId] = useState(order?.id ?? null);
   const [customerId, setCustomerId] = useState(order?.customerId ?? "");
   const [customerName, setCustomerName] = useState(order?.customerName ?? "");
@@ -662,7 +662,7 @@ export function SalesOrderForm({
           <div className="so-sticky-lead">
             <p className="so-identity">
               <span className="sku">{number}</span>
-              <Badge tone={status}>{salesOrderStatusLabel(status)}</Badge>
+              <Badge tone={status === "picking" ? "open" : status}>{salesOrderStatusLabel(status)}</Badge>
             </p>
             {!locked && drafting ? (
               <label className="so-number-field">
@@ -706,6 +706,16 @@ export function SalesOrderForm({
                 title="Invoice"
               >
                 <FileText size={18} strokeWidth={1.75} aria-hidden />
+              </Link>
+            ) : null}
+            {order?.id && order.number && (status === "approved" || status === "picking") ? (
+              <Link
+                className="button so-icon-action"
+                href={`/warehouse/pick/${order.id}`}
+                aria-label="Picking"
+                title="Picking"
+              >
+                <PackageCheck size={18} strokeWidth={1.75} aria-hidden />
               </Link>
             ) : null}
             {orderId && canEdit && status !== "cancelled" && status !== "closed" ? (
