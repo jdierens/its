@@ -1395,7 +1395,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
               <FastInput
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="8471.30.0100"
                 {...bindText(live.current, "usHts", usHts, (next) => {
                   setUsHts(next);
                   setSaved(false);
