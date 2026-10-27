@@ -16,7 +16,7 @@ import {
 } from "@/lib/binItemMove";
 import { readBinSectionOpen, writeBinSectionOpen, type BinSection } from "@/lib/binSectionOpen";
 import { binTypeLabel, type BinRecord } from "@/lib/bins";
-import { binLabelSheet } from "@/lib/binLabelLayout";
+import { binLabelAtPageMm, binLabelFrameClass, binLabelHitClass, previewBinLabelSheet } from "@/lib/binLabelLayout";
 import { errorText } from "@/lib/errors";
 import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
 import { emptyBinLabelTemplates, qrLabelPayload, type BinLabelTemplates, type LabelTemplateId } from "@/lib/labelTemplates";
@@ -373,6 +373,9 @@ export function BinView({ reference }: { reference: string }) {
   }
 
   const typeName = detail ? binTypeLabel(detail.type) : basic ? binTypeLabel(basic.type) : "";
+  const printingItem = printJob?.kind === "item";
+  const labelSheet = previewBinLabelSheet(detail?.type, printingItem);
+  const labelPage = binLabelAtPageMm(labelSheet);
   const selectedLines = detail ? linesForSelection(detail.contents, selected) : [];
   const allSelected = selectedLines.length > 0 && detail != null && selectedLines.length === detail.contents.length;
   const receipts = detail ? binReceipts(detail.cycles) : [];
@@ -385,7 +388,7 @@ export function BinView({ reference }: { reference: string }) {
 
   return (
     <main className="page bin-view desk-fields">
-      <style>{`${LABEL_PRINT_CSS}\n${binLabelPrintCss(binLabelSheet(printJob?.kind === "bin" && detail ? [detail.type] : ["B"]))}`}</style>
+      <style key={`${labelPage.widthMm}x${labelPage.heightMm}`}>{`${LABEL_PRINT_CSS}\n${binLabelPrintCss(labelSheet)}`}</style>
       <div className="no-print">
         <div className="bin-head">
           <div className="bin-head-copy">
@@ -448,13 +451,13 @@ export function BinView({ reference }: { reference: string }) {
             <div className="bin-head-label">
               <button
                 type="button"
-                className="bin-label-hit"
+                className={binLabelHitClass(detail.type)}
                 aria-label={`Print bin label ${detail.reference}`}
                 title={`Print bin label ${detail.reference}`}
                 disabled={busy}
                 onClick={() => void printBinLabel()}
               >
-                <span className="label-frame">
+                <span className={binLabelFrameClass(detail.type)}>
                   <BinLabel reference={detail.reference} type={detail.type} layout={templates[detail.type]} />
                 </span>
               </button>
@@ -611,7 +614,12 @@ export function BinView({ reference }: { reference: string }) {
       </div>
       {detail && printJob?.kind === "bin" ? (
         <div className="print-sheet">
-          <BinLabel reference={detail.reference} type={detail.type} layout={templates[detail.type]} />
+          <BinLabel
+            reference={detail.reference}
+            type={detail.type}
+            layout={templates[detail.type]}
+            sheet={labelSheet}
+          />
         </div>
       ) : null}
       {printJob?.kind === "item" ? (

@@ -30,7 +30,7 @@ import {
   type LabelTemplateId,
 } from "@/lib/labelTemplates";
 import { fetchBinLabelTemplates } from "@/lib/labelActions";
-import { binLabelPage, binLabelSheet } from "@/lib/binLabelLayout";
+import { binLabelFrameClass, binLabelPage, binLabelSheet } from "@/lib/binLabelLayout";
 
 type Batch = {
   labels: Array<{ reference: string; type: BinType }>;
@@ -409,7 +409,7 @@ export function BinLabelsPage() {
             {previewPage.paper}. This number is not reserved. Layout: {binLabelTemplateLabel(previewTemplate)}.
             The barcode or QR code is the reference itself.
           </p>
-          <div className="label-frame" data-bin-preview="next">
+          <div className={binLabelFrameClass(previewType)} data-bin-preview="next">
             <BinLabel reference={previewReference} type={previewType} layout={previewTemplate} />
           </div>
         </div>
