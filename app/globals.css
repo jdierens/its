@@ -7064,6 +7064,11 @@ input.num-input {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.so-page button.so-copy-address {
+  justify-self: start;
+  margin: 0;
+}
+
 .so-grid .wide {
   grid-column: 1 / -1;
 }
@@ -8195,21 +8200,24 @@ input.num-input {
   padding: 0.28in 0.32in 0.4in;
   background: #fff;
   color: #111;
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   font-size: 11px;
-  line-height: 1.25;
+  line-height: 1.35;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
 }
 
 .cust-doc-top {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) auto;
-  gap: 10px 12px;
-  align-items: start;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
 }
 
 .cust-doc-logo {
-  width: 48px;
-  height: 36px;
+  display: block;
+  width: 64px;
+  height: auto;
+  background: transparent;
   object-fit: contain;
   object-position: left center;
 }
@@ -8255,7 +8263,7 @@ input.num-input {
 
 .cust-doc-ref {
   display: grid;
-  grid-template-columns: 70px 90px 80px 1fr;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   margin-top: 8px;
@@ -8284,10 +8292,6 @@ input.num-input {
   padding: 3px 6px;
   border-bottom: 1px solid #b45f06;
   font-size: 10px;
-}
-
-.cust-doc-party-labels span:nth-child(2) {
-  grid-column: 3;
 }
 
 .cust-doc-party-grid {
@@ -8333,17 +8337,10 @@ input.num-input {
   font-weight: 600;
 }
 
-.cust-doc-colkeys {
-  display: grid;
-  grid-template-columns: 70px 1fr 70px 70px 70px;
-  margin-top: 8px;
-  font-size: 10px;
-}
-
 .cust-doc-lines {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 2px;
+  margin-top: 8px;
 }
 
 .cust-doc-lines th,
@@ -8352,6 +8349,10 @@ input.num-input {
   padding: 3px 6px;
   vertical-align: top;
   text-align: left;
+}
+
+.cust-doc-lines tbody tr:last-child td {
+  border-bottom: 2px solid #111;
 }
 
 .cust-doc-lines th {
@@ -8377,8 +8378,8 @@ input.num-input {
 .cust-doc-foot {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;
+  margin-top: 14px;
   border: 1px solid #111;
-  border-top: 0;
 }
 
 .cust-doc-notes {
@@ -8410,6 +8411,60 @@ input.num-input {
   border-top: 1px solid #111;
 }
 
+.cust-doc-terms-page {
+  margin-top: 16px;
+}
+
+.cust-doc-terms-head {
+  margin-bottom: 8px;
+}
+
+.cust-doc-terms-draft {
+  margin: 0 0 4px;
+  color: #444;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cust-doc-terms-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+.cust-doc-terms-seller,
+.cust-doc-terms-ref {
+  margin: 2px 0 0;
+  font-size: 9px;
+}
+
+.cust-doc-terms-columns {
+  columns: 2;
+  column-gap: 16px;
+}
+
+.cust-doc-terms-columns section {
+  break-inside: avoid;
+  margin: 0 0 6px;
+}
+
+.cust-doc-terms-columns h2 {
+  margin: 0 0 1px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.cust-doc-terms-columns p {
+  margin: 0;
+  font-size: 8px;
+  line-height: 1.28;
+}
+
 @media print {
   .cust-doc-page {
     background: #fff;
@@ -8421,5 +8476,11 @@ input.num-input {
     max-width: none;
     box-shadow: none;
     padding: 0;
+  }
+
+  .cust-doc-terms-page {
+    break-before: page;
+    page-break-before: always;
+    margin-top: 0;
   }
 }

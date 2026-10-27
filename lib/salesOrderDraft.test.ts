@@ -22,7 +22,9 @@ import {
   qtyForAddedMapping,
   compareMappedLine,
   compareMappedOrder,
+  copyBillToShipTo,
   parseSalesOrderNumber,
+  salesOrderFormLocked,
   partMatches,
   partPrefix,
   salesOrderTotal,
@@ -330,6 +332,30 @@ describe("sales order draft", () => {
       { item_id: "sku-a", qty: "217", unit_price: "10", alloc_no: 1 },
       { item_id: "sku-b", qty: "60", unit_price: "12.5000", alloc_no: 2 },
     ]);
+  });
+
+  it("keeps drafts and approved orders editable and locks cancelled and closed", () => {
+    assert.equal(salesOrderFormLocked(true, null), false);
+    assert.equal(salesOrderFormLocked(true, "draft"), false);
+    assert.equal(salesOrderFormLocked(true, "approved"), false);
+    assert.equal(salesOrderFormLocked(true, "cancelled"), true);
+    assert.equal(salesOrderFormLocked(true, "closed"), true);
+    assert.equal(salesOrderFormLocked(true, "shipped"), true);
+    assert.equal(salesOrderFormLocked(false, "draft"), true);
+    assert.equal(salesOrderFormLocked(false, "approved"), true);
+  });
+
+  it("copies bill-to onto ship-to and keeps attention and phone", () => {
+    const draft = sampleDraft();
+    const ship = copyBillToShipTo(
+      { ...draft.billTo, line1: "9 Bill St", city: "Austin", postalCode: "78701" },
+      { ...draft.shipTo, line1: "1 Ship St", attention: "Receiving", phone: "555-0100" },
+    );
+    assert.equal(ship.line1, "9 Bill St");
+    assert.equal(ship.city, "Austin");
+    assert.equal(ship.postalCode, "78701");
+    assert.equal(ship.attention, "Receiving");
+    assert.equal(ship.phone, "555-0100");
   });
 
   it("leaves an eBay bill-to blank and keeps ship-to", () => {

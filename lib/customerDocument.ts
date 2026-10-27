@@ -1,7 +1,10 @@
-import { invoiceNumber, lineExtension, salesOrderTotal } from "@/lib/salesOrderDraft";
+import { formatSalesOrderNumber, invoiceNumber, lineExtension, salesOrderTotal } from "@/lib/salesOrderDraft";
 import type { SoAddress } from "@/lib/salesOrderDraft";
 
 export type CustomerDocumentKind = "invoice" | "confirmation";
+
+/** Official DDS mark. Transparent, so the white print page shows through. */
+export const CUSTOMER_DOCUMENT_LOGO = "/brand/dds-logo.png";
 
 export const CUSTOMER_DOCUMENT_COMPANY = {
   name: "Deep Discount Servers LLC (DDS)",
@@ -22,7 +25,13 @@ export const CUSTOMER_DOCUMENT_COMPANY = {
 };
 
 export function customerDocumentTitle(kind: CustomerDocumentKind): string {
-  return kind === "confirmation" ? "Sales Order Confirmation" : "INVOICE";
+  return kind === "confirmation" ? "ORDER CONFIRMATION" : "INVOICE";
+}
+
+/** Confirmation barcodes are SO plus the number. Invoice barcodes stay INV plus the number. */
+export function customerDocumentBarcode(kind: CustomerDocumentKind, soNumber: number): string | null {
+  if (kind === "confirmation") return formatSalesOrderNumber(soNumber);
+  return invoiceNumber(soNumber, 1);
 }
 
 export function documentDate(iso: string): string {
@@ -101,7 +110,15 @@ export type CustomerDocumentLineInput = {
   extPrice: string;
   htsCode: string;
   eccn: string;
-  allocations: { sku: string; name: string; qty: string; unitPrice: string; extPrice: string; serials?: string[] }[];
+  allocations: {
+    sku: string;
+    name: string;
+    description?: string;
+    qty: string;
+    unitPrice: string;
+    extPrice: string;
+    serials?: string[];
+  }[];
 };
 
 export type CustomerDocumentLine = {
@@ -124,7 +141,7 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
       mapped.length > 0
         ? mapped.map((row) => ({
             sku: row.sku,
-            name: row.name,
+            description: row.description ?? "",
             qty: row.qty,
             unitPrice: row.unitPrice || line.unitPrice,
             extPrice: row.extPrice,
@@ -133,7 +150,7 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
         : [
             {
               sku: line.customerPartNumber,
-              name: "",
+              description: "",
               qty: line.qty,
               unitPrice: line.unitPrice,
               extPrice: line.extPrice,
@@ -146,8 +163,9 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
         .split(/\r?\n/)
         .map((part) => part.trim())
         .filter(Boolean);
-      const description = written[0] || source.name.trim() || source.sku.trim() || "Item";
-      const extra = written.length > 0 ? written.slice(1) : [];
+      const itemDescription = source.description.trim();
+      const description = itemDescription || written[0] || source.sku.trim() || "Item";
+      const extra = itemDescription ? written : written.slice(1);
       const ext = source.extPrice.trim() || lineExtension(source.qty, source.unitPrice) || "";
       printed.push({
         sku: source.sku.trim(),
@@ -203,6 +221,7 @@ export type CustomerDocumentInput = {
 };
 
 export type CustomerDocument = {
+  kind: CustomerDocumentKind;
   title: string;
   barcode: string;
   salesOrderRef: string;
@@ -225,12 +244,13 @@ export type CustomerDocument = {
 };
 
 export function buildCustomerDocument(input: CustomerDocumentInput): CustomerDocument | null {
-  const barcode = invoiceNumber(input.soNumber, 1);
+  const barcode = customerDocumentBarcode(input.kind, input.soNumber);
   if (!barcode) return null;
   const lines = customerDocumentLines(input.lines, input.currency);
   const subtotal = salesOrderTotal(lines.map((line) => ({ extPrice: line.extPrice })));
   const notes = [input.exportNotes.trim(), ...packageNotes(input.packages)].filter(Boolean);
   return {
+    kind: input.kind,
     title: customerDocumentTitle(input.kind),
     barcode,
     salesOrderRef: `SO#${input.soNumber}`,

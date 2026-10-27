@@ -78,6 +78,8 @@ export type SalesAllocationView = {
   itemId: string;
   sku: string;
   name: string;
+  /** items.description. Printed documents use this, not the item name. */
+  description: string;
   qty: string;
   unitPrice: string;
   extPrice: string;
@@ -371,8 +373,8 @@ const ORDER_HEAD =
 function salesOrderSelect(withPayment: boolean, withAllocPrice: boolean): string {
   const payment = withPayment ? ", payment_amount" : "";
   const allocations = withAllocPrice
-    ? "so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no, items(sku, name))"
-    : "so_line_allocations(item_id, qty, items(sku, name))";
+    ? "so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no, items(sku, name, description))"
+    : "so_line_allocations(item_id, qty, items(sku, name, description))";
   return `${ORDER_HEAD}${payment}, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, ${allocations}), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)`;
 }
 
@@ -444,6 +446,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
             itemId: String(row.item_id),
             sku: String(item?.sku ?? ""),
             name: String(item?.name ?? ""),
+            description: String(item?.description ?? ""),
             qty,
             unitPrice,
             extPrice,
@@ -558,7 +561,7 @@ async function salesOrderIsEbay(input: SoDraftInput): Promise<boolean> {
 }
 
 /**
- * Inserts one allocation on a draft line that has none.
+ * Inserts one allocation on a draft or approved line that has none.
  * Does not rewrite the order and does not write an so_events row, so an eBay pull can still refresh the draft.
  * operator_id stays null.
  */
@@ -579,7 +582,7 @@ export async function saveEmptyLineAllocation(input: {
   if (!line.data?.sales_order_id) return;
   const order = await supabase.from("sales_orders").select("status").eq("id", line.data.sales_order_id).maybeSingle();
   if (order.error) throw new Error(salesError(order.error));
-  if (order.data?.status !== "draft") return;
+  if (order.data?.status !== "draft" && order.data?.status !== "approved") return;
   const existing = await supabase.from("so_line_allocations").select("id").eq("so_line_id", input.lineId).limit(1);
   if (existing.error) throw new Error(salesError(existing.error));
   if ((existing.data ?? []).length > 0) return;

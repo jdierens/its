@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildCustomerDocument,
+  CUSTOMER_DOCUMENT_LOGO,
+  customerDocumentBarcode,
   customerDocumentLines,
   customerDocumentTitle,
   documentDate,
@@ -19,12 +21,18 @@ describe("customer document", () => {
     const invoice = buildCustomerDocument(sample("invoice"));
     const confirmation = buildCustomerDocument(sample("confirmation"));
     assert.ok(invoice && confirmation);
+    assert.equal(CUSTOMER_DOCUMENT_LOGO, "/brand/dds-logo.png");
     assert.equal(invoice.title, "INVOICE");
-    assert.equal(confirmation.title, "Sales Order Confirmation");
-    assert.equal(customerDocumentTitle("confirmation"), "Sales Order Confirmation");
+    assert.equal(confirmation.title, "ORDER CONFIRMATION");
+    assert.equal(customerDocumentTitle("confirmation"), "ORDER CONFIRMATION");
+    assert.equal(customerDocumentTitle("invoice"), "INVOICE");
     assert.equal(invoice.barcode, "INV27773");
-    assert.equal(confirmation.barcode, "INV27773");
+    assert.equal(confirmation.barcode, "SO27773");
+    assert.equal(customerDocumentBarcode("confirmation", 27773), "SO27773");
+    assert.equal(customerDocumentBarcode("invoice", 27773), "INV27773");
     assert.equal(invoice.salesOrderRef, "SO#27773");
+    assert.equal(confirmation.kind, "confirmation");
+    assert.equal(invoice.kind, "invoice");
     assert.equal(confirmation.salesOrderRef, invoice.salesOrderRef);
     assert.equal(confirmation.subtotal, invoice.subtotal);
     assert.deepEqual(
@@ -68,7 +76,7 @@ describe("customer document", () => {
     assert.equal(lines[1].description, "Shipping & Handling Charge");
   });
 
-  it("prints a verbal line from the mapped SKU when the customer left no description", () => {
+  it("prints the item description, not the item name, when the customer left no description", () => {
     const lines = customerDocumentLines(
       [
         {
@@ -80,14 +88,23 @@ describe("customer document", () => {
           htsCode: "8523.51.0000",
           eccn: "5A992.c",
           allocations: [
-            { sku: "106699", name: "Samsung PM9A3 7.68TB", qty: "8", unitPrice: "1150", extPrice: "9200.00", serials: ["A", "B"] },
+            {
+              sku: "106699",
+              name: "Samsung PM9A3 7.68TB",
+              description: "7.68TB NVMe U.2 mixed use",
+              qty: "8",
+              unitPrice: "1150",
+              extPrice: "9200.00",
+              serials: ["A", "B"],
+            },
           ],
         },
       ],
       "USD",
     );
     assert.equal(lines[0].sku, "106699");
-    assert.equal(lines[0].description, "Samsung PM9A3 7.68TB");
+    assert.equal(lines[0].description, "7.68TB NVMe U.2 mixed use");
+    assert.notEqual(lines[0].description, "Samsung PM9A3 7.68TB");
     assert.equal(lines[0].qty, "8.00");
     assert.equal(lines[0].extPrice, "$9,200.00");
     assert.equal(lines[0].compliance, "HTS: 8523.51.0000   ECCN: 5A992.c");

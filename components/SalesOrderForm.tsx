@@ -16,6 +16,7 @@ import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import {
   compareMappedLine,
   compareMappedOrder,
+  copyBillToShipTo,
   emptyAddress,
   formatMappedQty,
   formatSalesMoney,
@@ -27,6 +28,7 @@ import {
   syncAllocationMoney,
   syncSalesLineMoney,
   parseSalesOrderNumber,
+  salesOrderFormLocked,
   salesOrderStatusLabel,
   salesOrderTotal,
   sellerNet,
@@ -142,7 +144,9 @@ export function SalesOrderForm({
   defaultEbayIncoterms: string;
 }) {
   const router = useRouter();
-  const locked = !canEdit || (order != null && order.status !== "draft");
+  const locked = salesOrderFormLocked(canEdit, order?.status ?? null);
+  const drafting = order == null || order.status === "draft";
+  const saveLabel = order?.status === "approved" ? "Save" : "Save draft";
   const [orderId, setOrderId] = useState(order?.id ?? null);
   const [customerId, setCustomerId] = useState(order?.customerId ?? "");
   const [customerName, setCustomerName] = useState(order?.customerName ?? "");
@@ -326,7 +330,10 @@ export function SalesOrderForm({
     return line.allocations.some((row) => row.itemId && Number(row.qty) > 0);
   }
 
-  function pricedAllocation(line: FormLine, allocation: { itemId: string; sku: string; name: string; qty: string }): SalesAllocationView {
+  function pricedAllocation(
+    line: FormLine,
+    allocation: { itemId: string; sku: string; name: string; description?: string; qty: string },
+  ): SalesAllocationView {
     const priced = syncAllocationMoney({
       qty: allocation.qty,
       unitPrice: line.unitPrice,
@@ -334,7 +341,7 @@ export function SalesOrderForm({
       edited: "unit",
       commit: true,
     });
-    return { ...allocation, unitPrice: priced.unitPrice, extPrice: priced.extPrice };
+    return { ...allocation, description: allocation.description ?? "", unitPrice: priced.unitPrice, extPrice: priced.extPrice };
   }
 
   function putAllocation(index: number, allocation: SalesAllocationView, onlyIfEmpty: boolean): FormLine | null {
@@ -603,7 +610,7 @@ export function SalesOrderForm({
               <span className="sku">{number}</span>
               <Badge tone={status}>{salesOrderStatusLabel(status)}</Badge>
             </p>
-            {!locked ? (
+            {!locked && drafting ? (
               <label className="so-number-field">
                 Sales order number
                 <input
@@ -618,11 +625,11 @@ export function SalesOrderForm({
           </div>
           <div className="so-sticky-actions">
             {!locked ? (
-              <button id="so-save" className="so-icon-action" type="submit" disabled={busy} aria-label="Save draft" title="Save draft">
+              <button id="so-save" className="so-icon-action" type="submit" disabled={busy} aria-label={saveLabel} title={saveLabel}>
                 <Save size={18} strokeWidth={1.75} aria-hidden />
               </button>
             ) : null}
-            {!locked ? (
+            {!locked && drafting ? (
               <button id="so-approve" className="so-icon-action" type="button" disabled={busy} aria-label="Approve" title="Approve" onClick={() => void onApprove()}>
                 <Check size={18} strokeWidth={1.75} aria-hidden />
               </button>
@@ -661,7 +668,7 @@ export function SalesOrderForm({
               </button>
             ) : null}
           </div>
-          {!locked ? (
+          {!locked && drafting ? (
             <p id="so-number-hint" className="hint">
               Suggested first available number. Type another number if that one should be skipped. It is saved when you approve.
             </p>
@@ -833,6 +840,16 @@ export function SalesOrderForm({
 
         <div className="so-addresses">
           <AddressFields legend="Ship to" address={shipTo} disabled={locked} showAttention onChange={setShipTo} />
+          {ebayOrder || locked ? null : (
+            <button
+              type="button"
+              id="so-copy-bill-to-ship"
+              className="secondary so-copy-address"
+              onClick={() => setShipTo((current) => copyBillToShipTo(billTo, current))}
+            >
+              Copy bill to → ship to
+            </button>
+          )}
           {ebayOrder ? null : <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />}
         </div>
         {!locked ? (
