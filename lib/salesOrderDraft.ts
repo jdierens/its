@@ -263,6 +263,28 @@ export function formatMappedQty(value: number): string {
 }
 
 /**
+ * Drops the empty starter row on a new sales order.
+ * A verbal line can be only a mapped SKU: no customer part and no description.
+ * When that line has no customer quantity, the mapped quantities become the line quantity.
+ */
+export function normalizeSalesDraftLines(lines: SoLineInput[]): SoLineInput[] {
+  const kept: SoLineInput[] = [];
+  for (const line of lines) {
+    const allocations = line.allocations.filter((row) => row.itemId);
+    const hasText = Boolean(line.customerPartNumber.trim() || line.customerDescription.trim());
+    if (!hasText && allocations.length === 0) continue;
+    const qty = Number(line.qty);
+    const mappedQty = allocations.reduce((sum, row) => sum + (Number(row.qty) > 0 ? Number(row.qty) : 0), 0);
+    kept.push({
+      ...line,
+      qty: qty > 0 ? line.qty : mappedQty > 0 ? formatMappedQty(mappedQty) : line.qty,
+      allocations,
+    });
+  }
+  return kept;
+}
+
+/**
  * Quantity for a SKU just added to a customer line.
  * The first mapped SKU uses `firstQty`: the customer quantity, or the piece count when the customer part is a pack label.
  * Another SKU uses the customer quantity still unmapped. Nothing left leaves the quantity blank so the user can type it.

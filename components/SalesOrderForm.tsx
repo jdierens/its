@@ -1,6 +1,7 @@
 "use client";
 
-import { Ban, Check, Save } from "lucide-react";
+import { Ban, Check, FileCheck, FileText, Save } from "lucide-react";
+import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
 import { initialEbayText } from "@/lib/ebayOrderDefaults";
@@ -341,10 +342,6 @@ export function SalesOrderForm({
     const line = current[index];
     if (!line) return null;
     if (onlyIfEmpty && hasAllocation(line)) return null;
-    if (!onlyIfEmpty && line.allocations.some((row) => row.itemId === allocation.itemId)) {
-      setMessage("That SKU is already mapped on this line.");
-      return null;
-    }
     const allocations = onlyIfEmpty ? [allocation] : [...line.allocations, allocation];
     const next = current.map((row, lineIndex) => (lineIndex === index ? { ...row, allocations } : row));
     linesRef.current = next;
@@ -400,24 +397,18 @@ export function SalesOrderForm({
   function pickSku(index: number, hit: SalesSkuHit) {
     const line = linesRef.current[index];
     if (!line || locked) return;
-    if (line.allocations.some((row) => row.itemId === hit.id)) {
-      setMessage("That SKU is already mapped on this line.");
-      return;
-    }
     const label = line.customerPartNumber.trim().toLowerCase();
     const partIsItem =
       hit.sku.trim().toLowerCase() === label ||
       (skuHits[index] ?? []).some((row) => row.sku.trim().toLowerCase() === label);
-    const firstQty = qtyForSkuPick({ part: line.customerPartNumber, lineQty: line.qty, sku: hit.sku, partIsItem });
-    if (!hasAllocation(line) && !firstQty) {
-      setMessage("Enter a quantity above 0.");
-      return;
-    }
-    const qty = qtyForAddedMapping({
-      orderedQty: line.qty,
-      allocations: line.allocations,
-      firstQty: firstQty ?? "",
-    });
+    const picked = qtyForSkuPick({ part: line.customerPartNumber, lineQty: line.qty, sku: hit.sku, partIsItem });
+    const firstQty = picked ?? "1";
+    const qty =
+      qtyForAddedMapping({
+        orderedQty: line.qty,
+        allocations: line.allocations,
+        firstQty,
+      }) || firstQty;
     putAllocation(index, pricedAllocation(line, { itemId: hit.id, sku: hit.sku, name: hit.name, qty }), false);
     setAllocateQuery((current) => ({ ...current, [index]: "" }));
     setMessage(null);
@@ -635,6 +626,26 @@ export function SalesOrderForm({
               <button id="so-approve" className="so-icon-action" type="button" disabled={busy} aria-label="Approve" title="Approve" onClick={() => void onApprove()}>
                 <Check size={18} strokeWidth={1.75} aria-hidden />
               </button>
+            ) : null}
+            {order?.id && order.number && showMoney ? (
+              <Link
+                className="button so-icon-action"
+                href={`/sales/orders/${order.id}/confirmation`}
+                aria-label="Sales order confirmation"
+                title="Sales order confirmation"
+              >
+                <FileCheck size={18} strokeWidth={1.75} aria-hidden />
+              </Link>
+            ) : null}
+            {order?.id && order.number && showMoney ? (
+              <Link
+                className="button so-icon-action"
+                href={`/sales/orders/${order.id}/invoice`}
+                aria-label="Invoice"
+                title="Invoice"
+              >
+                <FileText size={18} strokeWidth={1.75} aria-hidden />
+              </Link>
             ) : null}
             {orderId && canEdit && status !== "cancelled" && status !== "closed" ? (
               <button
@@ -942,11 +953,17 @@ export function SalesOrderForm({
                           </td>
                         ) : null}
                         <td className="so-line-remove">
-                          {!locked && lines.length > 1 ? (
+                          {!locked ? (
                             <button
                               type="button"
                               className="secondary"
-                              onClick={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}
+                              onClick={() =>
+                                setLines((current) => {
+                                  const next = current.filter((_, lineIndex) => lineIndex !== index);
+                                  linesRef.current = next;
+                                  return next;
+                                })
+                              }
                             >
                               Remove
                             </button>

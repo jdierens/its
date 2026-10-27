@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { SalesOrderListActions } from "@/components/SalesOrderListActions";
 import { SalesOrderListMemory, SalesOrderListSwitch } from "@/components/SalesOrderListSwitch";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
 import { formatSalesMoney, salesOrderListScope, salesOrderStatusLabel } from "@/lib/salesOrderDraft";
 import { listSalesOrders } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
+import { stockSettingsWritable } from "@/lib/stockAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export default async function SalesOrdersPage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const access = await salesPageAccess();
+  const canPullEbay = await stockSettingsWritable();
   const scope = salesOrderListScope((await searchParams).view);
   const showAll = scope === "all";
   let orders: Awaited<ReturnType<typeof listSalesOrders>> = [];
@@ -28,13 +30,8 @@ export default async function SalesOrdersPage({
   return (
     <main className="page so-page ds">
       <p className="page-note">Create a sales order for a customer. A number is assigned when the order is approved.</p>
-      {access.canEdit ? (
-        <p>
-          <Link className="button so-new-order" href="/sales/orders/new" aria-label="New sales order" title="New sales order">
-            <Plus size={18} strokeWidth={1.75} aria-hidden />
-          </Link>
-        </p>
-      ) : (
+      {access.canEdit || canPullEbay ? <SalesOrderListActions canEdit={access.canEdit} canPullEbay={canPullEbay} /> : null}
+      {access.canEdit ? null : (
         <p className="muted">You can view sales orders. Creating and approving is limited to admin and staff.</p>
       )}
       <SalesOrderListMemory view={scope}>

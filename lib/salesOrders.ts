@@ -11,6 +11,7 @@ import {
   formatSalesOrderNumber,
   lineExtension,
   hideSalesMoney,
+  normalizeSalesDraftLines,
   salesOrderListReference,
   partMatches,
   partPrefix,
@@ -629,8 +630,11 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   const rep = draft.salesRep.trim().toUpperCase();
   if (rep && !/^[A-Z]{2}$/.test(rep)) throw new Error("Sales rep initials are 2 letters.");
   for (const line of draft.lines) {
-    if (!line.customerPartNumber.trim() && !line.customerDescription.trim()) {
-      throw new Error("Enter a part number or a description.");
+    const hasSku = line.allocations.some((row) => row.itemId);
+    const hasText = Boolean(line.customerPartNumber.trim() || line.customerDescription.trim());
+    if (!hasText && !hasSku) throw new Error("Enter a part number or a description.");
+    if (hasSku && line.allocations.some((row) => row.itemId && !(Number(row.qty) > 0))) {
+      throw new Error("Enter a quantity above 0.");
     }
     if (!(Number(line.qty) > 0)) throw new Error("Enter a quantity above 0.");
   }
@@ -729,12 +733,7 @@ function meaningfulDraft(input: SoDraftInput): SoDraftInput {
   return {
     ...input,
     salesRep: input.salesRep.trim().toUpperCase(),
-    lines: input.lines.filter(
-      (line) =>
-        line.customerPartNumber.trim() ||
-        line.customerDescription.trim() ||
-        line.allocations.some((row) => row.itemId),
-    ),
+    lines: normalizeSalesDraftLines(input.lines),
     notes: input.notes.filter((note) => note.customerText.trim()),
   };
 }

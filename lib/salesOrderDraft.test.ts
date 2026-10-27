@@ -9,6 +9,7 @@ import {
   invoiceNumber,
   lineExtension,
   lineRequiresItem,
+  normalizeSalesDraftLines,
   withEbayShippingItem,
   salesOrderListHref,
   salesOrderListReference,
@@ -257,6 +258,61 @@ describe("sales order draft", () => {
     assert.equal(lines[0].line_kind, "product");
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
+  });
+
+  it("keeps a verbal line that is only a mapped SKU, and the same SKU at two prices", () => {
+    const verbal = normalizeSalesDraftLines([
+      {
+        lineKind: "product",
+        customerPartNumber: "",
+        customerDescription: "",
+        qty: "",
+        unitPrice: "",
+        condition: "",
+        allocations: [{ itemId: "item-4343", qty: "1", unitPrice: "500" }],
+      },
+      {
+        lineKind: "product",
+        customerPartNumber: "",
+        customerDescription: "",
+        qty: "1",
+        unitPrice: "",
+        condition: "",
+        allocations: [],
+      },
+    ]);
+    assert.equal(verbal.length, 1);
+    assert.equal(verbal[0].qty, "1");
+    assert.equal(verbal[0].allocations[0].itemId, "item-4343");
+
+    const draft = sampleDraft();
+    draft.lines = [
+      {
+        lineKind: "product",
+        customerPartNumber: "",
+        customerDescription: "Shipping & Handling Charge",
+        qty: "1",
+        unitPrice: "500",
+        condition: "",
+        allocations: [{ itemId: "item-4343", qty: "1", unitPrice: "500" }],
+      },
+      {
+        lineKind: "product",
+        customerPartNumber: "",
+        customerDescription: "Shipping & Handling Charge",
+        qty: "1",
+        unitPrice: "75",
+        condition: "",
+        allocations: [{ itemId: "item-4343", qty: "1", unitPrice: "75" }],
+      },
+    ];
+    const payload = toSalesOrderPayload(draft);
+    const lines = payload.lines as { allocations: { item_id: string; unit_price: string }[] }[];
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0].allocations[0].item_id, "item-4343");
+    assert.equal(lines[1].allocations[0].item_id, "item-4343");
+    assert.equal(lines[0].allocations[0].unit_price, "500");
+    assert.equal(lines[1].allocations[0].unit_price, "75");
   });
 
   it("sends every mapped SKU with its unit price, including a short quantity", () => {
