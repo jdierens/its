@@ -17,9 +17,12 @@ import {
   approxBoldWidthPx,
   binBarcodeLayout,
   binLabelAtPageMm,
+  binLabelFrameClass,
+  binLabelHitClass,
   binLabelNamedPage,
   binLabelPage,
   binLabelSheet,
+  previewBinLabelSheet,
   fittedFontSize,
   mmToCssPx,
   palletQrSideMm,
@@ -129,4 +132,33 @@ test("print page size follows the bin type, and a mixed job names only the pages
   assert.equal(binLabelNamedPage("P", crateFirst), "bin-pallet");
 
   assert.equal(binLabelSheet([]).mode, "standard");
+});
+
+test("a bin on screen keeps its page while idle, and an item print uses the short page", () => {
+  const pallet = previewBinLabelSheet("P", false);
+  assert.equal(pallet.mode, "pallet");
+  assert.deepEqual(binLabelAtPageMm(pallet), { widthMm: 100, heightMm: 62 });
+
+  const crate = previewBinLabelSheet("C", false);
+  assert.equal(crate.mode, "standard");
+  assert.deepEqual(binLabelAtPageMm(crate), { widthMm: 90, heightMm: 29 });
+  assert.equal(previewBinLabelSheet("B", false).mode, "standard");
+
+  const itemOnPallet = previewBinLabelSheet("P", true);
+  assert.equal(itemOnPallet.mode, "standard");
+  assert.deepEqual(binLabelAtPageMm(itemOnPallet), { widthMm: 90, heightMm: 29 });
+
+  assert.equal(previewBinLabelSheet(null, false).mode, "standard");
+  assert.equal(previewBinLabelSheet(undefined, false).mode, "standard");
+  assert.equal(previewBinLabelSheet("pallet", false).mode, "standard");
+});
+
+test("the preview frame and hit target name a pallet without changing crate or box", () => {
+  assert.equal(binLabelFrameClass("P"), "label-frame label-frame-pallet");
+  assert.equal(binLabelFrameClass("C"), "label-frame");
+  assert.equal(binLabelFrameClass("B"), "label-frame");
+  assert.equal(binLabelFrameClass(null), "label-frame");
+  assert.equal(binLabelHitClass("P"), "bin-label-hit bin-label-hit-pallet");
+  assert.equal(binLabelHitClass("C"), "bin-label-hit");
+  assert.equal(binLabelHitClass("B"), "bin-label-hit");
 });

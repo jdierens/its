@@ -444,7 +444,8 @@ export function binLabelPrintCss(sheet: BinLabelSheet): string {
   background: #fff;
 }
 
-.label-frame:has(.bin-label-pallet) {
+.label-frame:has(.bin-label-pallet),
+.label-frame.label-frame-pallet {
   width: ${PALLET_LABEL_WIDTH_MM}mm;
 }
 
@@ -453,13 +454,15 @@ export function binLabelPrintCss(sheet: BinLabelSheet): string {
 }
 
 @media (max-width: 420px) {
-  .bin-view .bin-head-label .label-frame:has(.bin-label-pallet) {
+  .bin-view .bin-head-label .label-frame:has(.bin-label-pallet),
+  .bin-view .bin-head-label .label-frame.label-frame-pallet {
     width: ${PALLET_LABEL_WIDTH_MM}mm;
     transform-origin: top left;
     scale: min(1, calc(100cqi / ${PALLET_LABEL_WIDTH_MM}mm));
   }
 
-  .bin-view .bin-head-label button.bin-label-hit:has(.bin-label-pallet) {
+  .bin-view .bin-head-label button.bin-label-hit:has(.bin-label-pallet),
+  .bin-view .bin-head-label button.bin-label-hit.bin-label-hit-pallet {
     display: block;
     width: min(${PALLET_LABEL_WIDTH_MM}mm, 100%);
     height: calc((${PALLET_LABEL_HEIGHT_MM}mm + 2px) * min(1, 100cqi / ${PALLET_LABEL_WIDTH_MM}mm));

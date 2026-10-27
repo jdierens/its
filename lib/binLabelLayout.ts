@@ -190,6 +190,27 @@ export function binLabelSheet(types: readonly string[]): BinLabelSheet {
   };
 }
 
+/**
+ * Page for a screen that shows one bin and can also print an item label.
+ * The bin on screen decides the page, including while nobody is printing.
+ * An item print uses the crate/box page so the item label stays 29 × 90 mm.
+ */
+export function previewBinLabelSheet(binType: string | null | undefined, printingItem: boolean): BinLabelSheet {
+  if (printingItem) return binLabelSheet(["B"]);
+  if (binType === "P" || binType === "C" || binType === "B") return binLabelSheet([binType]);
+  return binLabelSheet(["B"]);
+}
+
+/** Dashed preview frame. A pallet frame is 100 mm wide; crate and box stay 90 mm. */
+export function binLabelFrameClass(type: string | null | undefined): string {
+  return type === "P" ? "label-frame label-frame-pallet" : "label-frame";
+}
+
+/** Click target around a bin label. A pallet target reserves the 62 mm tape height. */
+export function binLabelHitClass(type: string | null | undefined): string {
+  return type === "P" ? "bin-label-hit bin-label-hit-pallet" : "bin-label-hit";
+}
+
 export function binLabelAtPageMm(sheet: BinLabelSheet): { widthMm: number; heightMm: number } {
   const pallet = sheet.mode === "pallet" || (sheet.mode === "mixed" && sheet.defaultPallet);
   return pallet

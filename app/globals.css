@@ -3472,6 +3472,15 @@ tr.quote-latest td {
   margin: 0;
 }
 
+.bin-view .bin-head-label .label-frame {
+  display: block;
+  width: max-content;
+}
+
+.label-frame.label-frame-pallet {
+  width: 100mm;
+}
+
 .bin-head .bin-stats {
   margin-bottom: 0;
 }
@@ -3635,6 +3644,19 @@ tr.quote-latest td {
     display: block;
     width: min(90mm, 100%);
     height: calc((29mm + 2px) * min(1, 100cqi / 90mm));
+    overflow: hidden;
+  }
+
+  .bin-view .bin-head-label .label-frame.label-frame-pallet {
+    width: 100mm;
+    transform-origin: top left;
+    scale: min(1, calc(100cqi / 100mm));
+  }
+
+  .bin-view .bin-head-label button.bin-label-hit.bin-label-hit-pallet {
+    display: block;
+    width: min(100mm, 100%);
+    height: calc((62mm + 2px) * min(1, 100cqi / 100mm));
     overflow: hidden;
   }
 }

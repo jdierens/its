@@ -12,7 +12,7 @@ import { ReceiptReports, type ReceiptListView } from "@/components/ReceiptReport
 import { ReceivingOriginField, ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
 import { BIN_TYPES, binTypeLabel, formatBinReference, type BinType } from "@/lib/bins";
-import { binLabelSheet } from "@/lib/binLabelLayout";
+import { binLabelAtPageMm, binLabelFrameClass, binLabelSheet, previewBinLabelSheet } from "@/lib/binLabelLayout";
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import {
@@ -940,9 +940,20 @@ export function ReceivingPage() {
     binPrompt?.kind === "required" ? formatBinReference(binPrompt.nextNumber, binPrompt.type) : null;
   const binNote = item ? alreadyInBinNote({ currentBin: binCode, rows: suggestions }) : null;
 
+  const printingItem = printJob?.kind === "item";
+  const shownBinType = printingItem
+    ? null
+    : printJob?.kind === "bin"
+      ? printJob.type
+      : created && !receipt
+        ? created.type
+        : null;
+  const labelSheet = previewBinLabelSheet(shownBinType, printingItem);
+  const labelPage = binLabelAtPageMm(labelSheet);
+
   return (
     <main className="page receiving-page desk-fields ds">
-      <style>{`${LABEL_PRINT_CSS}\n${binLabelPrintCss(binLabelSheet(printJob?.kind === "bin" ? [printJob.type] : ["B"]))}`}</style>
+      <style key={`${labelPage.widthMm}x${labelPage.heightMm}`}>{`${LABEL_PRINT_CSS}\n${binLabelPrintCss(labelSheet)}`}</style>
       <div className="no-print">
         <p className="page-note">The header is the receipt. The line is one quantity into one bin. Leave the SKU empty to save the search and link an item later.</p>
         <section className="card receive-card" id="receive-header">
@@ -1350,7 +1361,7 @@ export function ReceivingPage() {
             ) : null}
             {created && !receipt ? (
               <div className="label-preview">
-                <div className="label-frame">
+                <div className={binLabelFrameClass(created.type)}>
                   <BinLabel reference={created.reference} type={created.type} layout={templates[created.type]} />
                 </div>
               </div>
