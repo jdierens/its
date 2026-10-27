@@ -12,6 +12,7 @@ export type PickBin = {
 export type PickSerial = {
   id: string;
   serial: string;
+  coo: string | null;
 };
 
 export type PickRecord = {
@@ -31,6 +32,7 @@ export type PickLine = {
   ordered: number;
   picked: number;
   short: boolean;
+  itemCoo: string | null;
   bins: PickBin[];
   picks: PickRecord[];
 };
@@ -266,12 +268,18 @@ function ownership(value: unknown, project: string | null): PickOwnership {
   throw new Error("Unexpected pick sheet.");
 }
 
+function optionalCoo(row: Record<string, unknown>, key: string): string | null {
+  if (!(key in row) || row[key] == null) return null;
+  if (typeof row[key] !== "string") throw new Error("Unexpected pick sheet.");
+  return textOrNull(row[key]);
+}
+
 function serials(value: unknown): PickSerial[] {
   if (!Array.isArray(value)) throw new Error("Unexpected pick sheet.");
   return value.map((entry) => {
     const row = record(entry);
     if (!row || typeof row.id !== "string" || typeof row.serial !== "string") throw new Error("Unexpected pick sheet.");
-    return { id: row.id, serial: row.serial };
+    return { id: row.id, serial: row.serial, coo: optionalCoo(row, "coo") };
   });
 }
 
@@ -357,6 +365,7 @@ export function pickSheetFromJson(value: unknown): PickSheetModel {
         ordered: qty(line.ordered),
         picked: qty(line.picked),
         short: line.short === true,
+        itemCoo: optionalCoo(line, "item_coo"),
         bins: bins(line.bins),
         picks: picks(line.picks),
       };

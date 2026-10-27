@@ -27,6 +27,10 @@ function entry(overrides: Partial<ReceivingEntry> = {}): ReceivingEntry {
     putaway: "20042-B · HWS.00.00.00",
     binReference: "20042-B",
     searchQuery: null,
+    vendorName: null,
+    ownership: null,
+    poNumber: null,
+    basis: "",
     ...overrides,
   };
 }

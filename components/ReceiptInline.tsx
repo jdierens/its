@@ -505,6 +505,10 @@ export function ReceiptTableRow({
             <CellButton value={entry.project ?? ""} onClick={() => open("project")} />
           )}
         </td>
+        <td className="fit" title={entry.poNumber ? `PO ${entry.poNumber}` : undefined}>
+          {entry.vendorName ?? ""}
+        </td>
+        <td className="fit">{entry.basis}</td>
         <td className="fit">
           {edit.field === "incoming" ? (
             <TextEdit
@@ -677,6 +681,10 @@ export function ReceiptCard({
             <CellButton value={entry.project ?? ""} onClick={() => open("project")} />
           )}
         </CardLine>
+        <CardLine label="Vendor">
+          <span title={entry.poNumber ? `PO ${entry.poNumber}` : undefined}>{entry.vendorName ?? ""}</span>
+        </CardLine>
+        <CardLine label="Basis">{entry.basis}</CardLine>
         <CardLine label="Incoming bin">
           {edit.field === "incoming" ? (
             <TextEdit

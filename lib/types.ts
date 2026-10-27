@@ -136,4 +136,6 @@ export type LabelItem = {
   shortCode: string | null;
   longCode?: string | null;
   taxonomyName?: string | null;
+  /** ISO alpha-3 from items.coo, when the lookup selected it. */
+  coo?: string | null;
 };

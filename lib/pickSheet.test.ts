@@ -176,6 +176,8 @@ describe("pick sheet json", () => {
     assert.equal(sheet.lines[0].bins[0].project, "AZSIM6930");
     assert.equal(sheet.lines[0].bins[0].ownership, "consigned");
     assert.equal(sheet.lines[0].picks[0].serials[0].serial, "KIOXIA-1");
+    assert.equal(sheet.lines[0].picks[0].serials[0].coo, null);
+    assert.equal(sheet.lines[0].itemCoo, null);
     assert.equal(sheet.skipped[0].sku, "4343");
     assert.equal("unit_price" in (sheet as object), false);
     const queue = pickQueueFromJson([

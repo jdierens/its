@@ -8,6 +8,7 @@ import { operatorInitials } from "@/lib/stockAccess";
 import { getSupabase } from "@/lib/supabase";
 
 const MIGRATION = "supabase/migrations/20261027170000_sales_order_picking.sql";
+const STOCK_UNITS_MIGRATION = "supabase/migrations/20261027230000_stock_units.sql";
 
 function raisePick(error: { code?: string; message?: string } | null): never {
   if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
@@ -75,15 +76,24 @@ export async function recordPick(input: {
   return sheet(data);
 }
 
-export async function recordPickSerial(pickId: string, serial: string): Promise<PickSheetModel> {
+export async function recordPickSerial(pickId: string, serial: string, coo?: string | null): Promise<PickSheetModel> {
   await assertPicker();
   const who = await actor();
-  const { data, error } = await (await getSupabase()).rpc("record_pick_serial", {
+  const country = coo?.trim() || null;
+  const supabase = await getSupabase();
+  const payload = {
     p_pick: pickId,
     p_serial: serial,
     p_initials: who.initials,
     p_operator: who.operator,
-  });
+    p_coo: country,
+  };
+  let { data, error } = await supabase.rpc("record_pick_serial", payload);
+  if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
+    if (country) throw new Error(`Apply ${STOCK_UNITS_MIGRATION} before a country of origin can be saved.`);
+    const { p_coo: _country, ...withoutCountry } = payload;
+    ({ data, error } = await supabase.rpc("record_pick_serial", withoutCountry));
+  }
   if (error) raisePick(error);
   return sheet(data);
 }
