@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Check, FileCheck, FileText, Save } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, Save } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
@@ -11,12 +11,13 @@ import { qtyForSkuPick } from "@/lib/salesItemSearch";
 import { useRouter } from "next/navigation";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
+import { lineComplianceDisplay } from "@/lib/customerDocument";
 import { errorText } from "@/lib/errors";
 import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import {
   compareMappedLine,
   compareMappedOrder,
-  copyBillToShipTo,
+  copyAddressFields,
   emptyAddress,
   formatMappedQty,
   formatSalesMoney,
@@ -207,6 +208,7 @@ export function SalesOrderForm({
   const linesRef = useRef(lines);
   linesRef.current = lines;
   const [message, setMessage] = useState<string | null>(null);
+  const [addressNote, setAddressNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -255,6 +257,7 @@ export function SalesOrderForm({
         lineKind: line.lineKind || "product",
         customerPartNumber: line.customerPartNumber,
         customerDescription: line.customerDescription,
+        lineNote: line.lineNote,
         qty: line.qty,
         unitPrice: showMoney ? line.unitPrice : "",
         condition: line.condition,
@@ -332,7 +335,15 @@ export function SalesOrderForm({
 
   function pricedAllocation(
     line: FormLine,
-    allocation: { itemId: string; sku: string; name: string; description?: string; qty: string },
+    allocation: {
+      itemId: string;
+      sku: string;
+      name: string;
+      description?: string;
+      qty: string;
+      usHts?: string;
+      eccn?: string;
+    },
   ): SalesAllocationView {
     const priced = syncAllocationMoney({
       qty: allocation.qty,
@@ -341,7 +352,17 @@ export function SalesOrderForm({
       edited: "unit",
       commit: true,
     });
-    return { ...allocation, description: allocation.description ?? "", unitPrice: priced.unitPrice, extPrice: priced.extPrice };
+    return {
+      itemId: allocation.itemId,
+      sku: allocation.sku,
+      name: allocation.name,
+      description: allocation.description ?? "",
+      usHts: allocation.usHts ?? "",
+      eccn: allocation.eccn ?? "",
+      qty: allocation.qty,
+      unitPrice: priced.unitPrice,
+      extPrice: priced.extPrice,
+    };
   }
 
   function putAllocation(index: number, allocation: SalesAllocationView, onlyIfEmpty: boolean): FormLine | null {
@@ -416,7 +437,11 @@ export function SalesOrderForm({
         allocations: line.allocations,
         firstQty,
       }) || firstQty;
-    putAllocation(index, pricedAllocation(line, { itemId: hit.id, sku: hit.sku, name: hit.name, qty }), false);
+    putAllocation(
+      index,
+      pricedAllocation(line, { itemId: hit.id, sku: hit.sku, name: hit.name, qty, usHts: hit.usHts, eccn: hit.eccn }),
+      false,
+    );
     setAllocateQuery((current) => ({ ...current, [index]: "" }));
     setMessage(null);
     setSkuOpen(null);
@@ -440,7 +465,8 @@ export function SalesOrderForm({
         if (!onlyIfEmpty) setMessage("No ITS item has that SKU.");
         return;
       }
-      const priced = pricedAllocation(latest, allocation);
+      const source = hits.find((hit) => hit.id === allocation.itemId);
+      const priced = pricedAllocation(latest, { ...allocation, usHts: source?.usHts, eccn: source?.eccn });
       const previous = putAllocation(index, priced, onlyIfEmpty);
       if (previous && onlyIfEmpty) await persistEmpty(previous, priced);
       if (!onlyIfEmpty) setMessage(null);
@@ -506,7 +532,8 @@ export function SalesOrderForm({
             if (freight) setMessage("eBay shipping could not be allocated to item 4343.");
             return;
           }
-          const priced = pricedAllocation(latest, allocation);
+          const source = hits.find((hit) => hit.id === allocation.itemId);
+          const priced = pricedAllocation(latest, { ...allocation, usHts: source?.usHts, eccn: source?.eccn });
           const previous = putAllocation(index, priced, true);
           if (previous) void persistEmpty(previous, priced);
         })
@@ -579,6 +606,19 @@ export function SalesOrderForm({
     } finally {
       setBusy(false);
     }
+  }
+
+  function copyAddresses(direction: "bill-to-ship" | "ship-to-bill") {
+    const source = direction === "bill-to-ship" ? billTo : shipTo;
+    const target = direction === "bill-to-ship" ? shipTo : billTo;
+    const next = copyAddressFields(source, target);
+    if (!next) {
+      setAddressNote(direction === "bill-to-ship" ? "Bill to is empty." : "Ship to is empty.");
+      return;
+    }
+    setAddressNote(null);
+    if (direction === "bill-to-ship") setShipTo(next);
+    else setBillTo(next);
   }
 
   const status = order?.status ?? "draft";
@@ -841,14 +881,33 @@ export function SalesOrderForm({
         <div className="so-addresses">
           <AddressFields legend="Ship to" address={shipTo} disabled={locked} showAttention onChange={setShipTo} />
           {ebayOrder || locked ? null : (
-            <button
-              type="button"
-              id="so-copy-bill-to-ship"
-              className="secondary so-copy-address"
-              onClick={() => setShipTo((current) => copyBillToShipTo(billTo, current))}
-            >
-              Copy bill to → ship to
-            </button>
+            <div className="so-address-copy">
+              <button
+                type="button"
+                id="so-copy-bill-to-ship"
+                className="so-icon-action"
+                aria-label="Copy bill to ship to"
+                title="Copy bill to ship to"
+                onClick={() => copyAddresses("bill-to-ship")}
+              >
+                <ArrowUp size={18} strokeWidth={1.75} aria-hidden />
+              </button>
+              <button
+                type="button"
+                id="so-copy-ship-to-bill"
+                className="so-icon-action"
+                aria-label="Copy ship to bill to"
+                title="Copy ship to bill to"
+                onClick={() => copyAddresses("ship-to-bill")}
+              >
+                <ArrowDown size={18} strokeWidth={1.75} aria-hidden />
+              </button>
+              {addressNote ? (
+                <p className="banner warn so-address-note" role="status">
+                  {addressNote}
+                </p>
+              ) : null}
+            </div>
           )}
           {ebayOrder ? null : <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />}
         </div>
@@ -902,10 +961,11 @@ export function SalesOrderForm({
                   const showNoItemHint = !showAllocations;
                   const showExtra = showFinder || showNoItemHint;
                   const allocationCount = showAllocations ? line.allocations.length : 0;
+                  const compliance = lineComplianceDisplay(line);
                   const compared = lineCompares[index];
                   const lineMismatch = Boolean(compared && (compared.qtyMismatch || (showMoney && compared.moneyMismatch)));
                   const rowClass = (end: boolean) =>
-                    [end ? "so-line-end" : "", lineMismatch ? "so-line-mismatch" : ""].filter(Boolean).join(" ") || undefined;
+                    ["so-line-main", end ? "so-line-end" : "", lineMismatch ? "so-line-mismatch" : ""].filter(Boolean).join(" ");
                   return (
                     <Fragment key={index}>
                       <tr className={rowClass(!(showExtra || allocationCount > 0))}>
@@ -922,12 +982,22 @@ export function SalesOrderForm({
                           />
                           {lineMismatch && compared ? <p className="so-diff-flag">{mappedDiffText(compared, currency, showMoney)}</p> : null}
                         </td>
-                        <td>
+                        <td className="so-line-text">
                           <input
                             aria-label={`Customer description ${index + 1}`}
                             value={line.customerDescription}
                             disabled={locked}
                             onChange={(event) => updateLine(index, { customerDescription: event.target.value })}
+                          />
+                          {compliance.underDescription ? <p className="so-line-meta">{compliance.underDescription}</p> : null}
+                          <textarea
+                            className="so-line-note"
+                            aria-label={`Line note ${index + 1}`}
+                            placeholder="Note"
+                            rows={2}
+                            value={line.lineNote}
+                            disabled={locked}
+                            onChange={(event) => updateLine(index, { lineNote: event.target.value })}
                           />
                         </td>
                         <td className="num">
@@ -997,6 +1067,9 @@ export function SalesOrderForm({
                                 <div className="so-allocation-sku">
                                   <span className="so-alloc-sku">
                                     {allocation.sku || "SKU"} {allocation.name}
+                                    {compliance.perAllocation[allocationIndex] ? (
+                                      <span className="so-line-meta">{compliance.perAllocation[allocationIndex]}</span>
+                                    ) : null}
                                   </span>
                                   <span className="so-allocation-label">Mapped SKU</span>
                                 </div>
@@ -1460,6 +1533,9 @@ function blankLine(): FormLine {
     lineKind: "product",
     customerPartNumber: "",
     customerDescription: "",
+    htsCode: "",
+    eccn: "",
+    lineNote: "",
     qty: "1",
     unitPrice: "",
     extPrice: "",

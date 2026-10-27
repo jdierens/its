@@ -22,7 +22,11 @@ import {
   qtyForAddedMapping,
   compareMappedLine,
   compareMappedOrder,
+  emptyAddress,
+  addressBlockHasContent,
+  copyAddressFields,
   copyBillToShipTo,
+  copyShipToBillTo,
   parseSalesOrderNumber,
   salesOrderFormLocked,
   partMatches,
@@ -258,6 +262,7 @@ describe("sales order draft", () => {
     assert.equal(payload.ebay_transaction_fee, "1.25");
     assert.equal(payload.payment_amount, "20.00");
     assert.equal(lines[0].line_kind, "product");
+    assert.equal((lines[0] as { line_note: string }).line_note, "");
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
   });
@@ -356,6 +361,22 @@ describe("sales order draft", () => {
     assert.equal(ship.postalCode, "78701");
     assert.equal(ship.attention, "Receiving");
     assert.equal(ship.phone, "555-0100");
+    const back = copyShipToBillTo(ship, { ...draft.billTo, line1: "Old bill", attention: "AP", phone: "555-0199" });
+    assert.equal(back.line1, "9 Bill St");
+    assert.equal(back.attention, "AP");
+    assert.equal(back.phone, "555-0199");
+  });
+
+  it("does not copy a blank address over one that has a street", () => {
+    const draft = sampleDraft();
+    const blank = emptyAddress();
+    const populated = { ...draft.shipTo, line1: "1 Ship St", attention: "Dock", phone: "555-0100" };
+    assert.equal(addressBlockHasContent(blank), false);
+    assert.equal(addressBlockHasContent({ ...blank, attention: "Dock", phone: "555-0100" }), false);
+    assert.equal(copyAddressFields(blank, populated), null);
+    assert.equal(copyBillToShipTo(blank, populated).line1, "1 Ship St");
+    assert.equal(copyBillToShipTo(blank, populated).attention, "Dock");
+    assert.equal(copyShipToBillTo({ ...blank, phone: "555-0100" }, draft.billTo).line1, draft.billTo.line1);
   });
 
   it("leaves an eBay bill-to blank and keeps ship-to", () => {

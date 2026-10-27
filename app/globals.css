@@ -6702,6 +6702,30 @@ input.num-input {
   line-height: 1.2;
 }
 
+.so-lines tr.so-line-main > td {
+  vertical-align: top;
+}
+
+.so-lines td.so-line-text {
+  min-width: 14rem;
+}
+
+.so-lines textarea.so-line-note,
+.so-page textarea.so-line-note {
+  min-height: 2.5rem;
+  margin-top: 0.35rem;
+  resize: vertical;
+}
+
+.so-line-meta {
+  display: block;
+  margin: 0.25rem 0 0;
+  color: var(--ds-muted, var(--muted));
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1.3;
+}
+
 .so-lines tr.so-allocation-row .so-alloc-sku {
   flex: 1 1 auto;
   padding-bottom: 0;
@@ -7064,8 +7088,19 @@ input.num-input {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.so-page button.so-copy-address {
-  justify-self: start;
+.so-address-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.so-address-copy .so-icon-action {
+  flex: none;
+}
+
+.so-address-note {
+  flex: 1 1 12rem;
   margin: 0;
 }
 
@@ -8371,8 +8406,13 @@ input.num-input {
 }
 
 .cust-doc-meta,
+.cust-doc-note,
 .cust-doc-serials {
   margin-top: 4px;
+}
+
+.cust-doc-note {
+  white-space: pre-wrap;
 }
 
 .cust-doc-foot {

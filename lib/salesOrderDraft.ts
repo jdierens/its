@@ -74,6 +74,8 @@ export type SoLineInput = {
   lineKind: string;
   customerPartNumber: string;
   customerDescription: string;
+  /** Optional note printed under the description. Blank until the form sends one. */
+  lineNote?: string;
   qty: string;
   unitPrice: string;
   condition: string;
@@ -132,17 +134,39 @@ export function emptyAddress(): SoAddress {
   };
 }
 
+const ADDRESS_BLOCK = ["line1", "line2", "city", "countrySubDivisionCode", "postalCode", "country"] as const;
+
+/** Street, city, state, postal code, or country has text. Attention and phone do not count. */
+export function addressBlockHasContent(address: SoAddress): boolean {
+  return ADDRESS_BLOCK.some((key) => address[key].trim() !== "");
+}
+
+/**
+ * Copies street, city, state, postal code, and country.
+ * Attention and phone on the target stay.
+ * A blank source does not replace the target.
+ */
+export function copyAddressFields(source: SoAddress, target: SoAddress): SoAddress | null {
+  if (!addressBlockHasContent(source)) return null;
+  return {
+    ...target,
+    line1: source.line1,
+    line2: source.line2,
+    city: source.city,
+    countrySubDivisionCode: source.countrySubDivisionCode,
+    postalCode: source.postalCode,
+    country: source.country,
+  };
+}
+
 /** Street, city, state, postal code, and country. Ship-to attention and phone stay. */
 export function copyBillToShipTo(billTo: SoAddress, shipTo: SoAddress): SoAddress {
-  return {
-    ...shipTo,
-    line1: billTo.line1,
-    line2: billTo.line2,
-    city: billTo.city,
-    countrySubDivisionCode: billTo.countrySubDivisionCode,
-    postalCode: billTo.postalCode,
-    country: billTo.country,
-  };
+  return copyAddressFields(billTo, shipTo) ?? shipTo;
+}
+
+/** Street, city, state, postal code, and country. Bill-to attention and phone stay. */
+export function copyShipToBillTo(shipTo: SoAddress, billTo: SoAddress): SoAddress {
+  return copyAddressFields(shipTo, billTo) ?? billTo;
 }
 
 /**
@@ -628,6 +652,7 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
       line_kind: line.lineKind || "product",
       customer_part_number: line.customerPartNumber,
       customer_description: line.customerDescription,
+      line_note: line.lineNote ?? "",
       qty: line.qty,
       unit_price: line.unitPrice,
       condition: line.condition,
