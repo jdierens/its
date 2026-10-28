@@ -9,6 +9,7 @@ import { initialSalesRep } from "@/lib/ebaySalesRep";
 import { cleanSkuAllocation } from "@/lib/ebay/packs";
 import { qtyForSkuPick } from "@/lib/salesItemSearch";
 import { useRouter } from "next/navigation";
+import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
 import { lineComplianceDisplay } from "@/lib/customerDocument";
@@ -218,6 +219,7 @@ export function SalesOrderForm({
   const [skuHighlight, setSkuHighlight] = useState(0);
   const [skuPending, setSkuPending] = useState(false);
   const [skuNote, setSkuNote] = useState<string | null>(null);
+  const [replaceKey, setReplaceKey] = useState<string | null>(null);
   const skuRequest = useRef(0);
   const linesRef = useRef(lines);
   linesRef.current = lines;
@@ -279,6 +281,10 @@ export function SalesOrderForm({
           itemId: row.itemId,
           qty: row.qty,
           unitPrice: showMoney ? row.unitPrice : "",
+          actualItemId: row.actualItemId,
+          actualSku: row.actualSku,
+          actualName: row.actualName,
+          swapReason: row.swapReason,
         })),
       })),
       notes,
@@ -434,6 +440,25 @@ export function SalesOrderForm({
       linesRef.current = next;
       return next;
     });
+  }
+
+  function replaceAllocation(
+    lineIndex: number,
+    allocationIndex: number,
+    next: { actualItemId: string; actualSku: string; actualName: string; swapReason: string },
+  ) {
+    setLines((current) => {
+      const updated = current.map((line, index) => {
+        if (index !== lineIndex) return line;
+        return {
+          ...line,
+          allocations: line.allocations.map((row, rowIndex) => (rowIndex === allocationIndex ? { ...row, ...next } : row)),
+        };
+      });
+      linesRef.current = updated;
+      return updated;
+    });
+    setReplaceKey(null);
   }
 
   function pickSku(index: number, hit: SalesSkuHit) {
@@ -1078,13 +1103,60 @@ export function SalesOrderForm({
                               <td colSpan={2}>
                                 <div className="so-allocation-sku">
                                   <span className="so-alloc-sku">
-                                    {allocation.sku || "SKU"} {allocation.name}
+                                    {allocation.actualItemId ? allocation.actualSku || "SKU" : allocation.sku || "SKU"}{" "}
+                                    {allocation.actualItemId ? allocation.actualName : allocation.name}
                                     {compliance.perAllocation[allocationIndex] ? (
                                       <span className="so-line-meta">{compliance.perAllocation[allocationIndex]}</span>
                                     ) : null}
+                                    {allocation.actualItemId ? (
+                                      <span className="so-line-meta">
+                                        Planned {allocation.sku} {allocation.name}
+                                        {allocation.swapReason ? ` · ${allocation.swapReason}` : ""}
+                                      </span>
+                                    ) : null}
                                   </span>
-                                  <span className="so-allocation-label">Mapped SKU</span>
+                                  <span className="so-allocation-label">{allocation.actualItemId ? "Fulfillment SKU" : "Mapped SKU"}</span>
+                                  {!locked && (line.lineKind === "product" || line.lineKind === "kit") ? (
+                                    <span className="so-replace-actions">
+                                      <button
+                                        type="button"
+                                        className="secondary so-icon-remove"
+                                        aria-label="Replace SKU"
+                                        title="Replace SKU"
+                                        onClick={() => setReplaceKey(`${index}:${allocationIndex}`)}
+                                      >
+                                        <Plus size={16} strokeWidth={1.75} aria-hidden />
+                                      </button>
+                                      {allocation.actualItemId ? (
+                                        <RemoveButton
+                                          label="Clear replacement"
+                                          onClick={() =>
+                                            replaceAllocation(index, allocationIndex, {
+                                              actualItemId: "",
+                                              actualSku: "",
+                                              actualName: "",
+                                              swapReason: "",
+                                            })
+                                          }
+                                        />
+                                      ) : null}
+                                    </span>
+                                  ) : null}
                                 </div>
+                                {replaceKey === `${index}:${allocationIndex}` ? (
+                                  <ReplaceSkuPicker
+                                    plannedItemId={allocation.itemId}
+                                    onCancel={() => setReplaceKey(null)}
+                                    onChoose={(hit, reason) =>
+                                      replaceAllocation(index, allocationIndex, {
+                                        actualItemId: hit.id,
+                                        actualSku: hit.sku,
+                                        actualName: hit.name,
+                                        swapReason: reason,
+                                      })
+                                    }
+                                  />
+                                ) : null}
                               </td>
                               <td className="num">
                                 <input

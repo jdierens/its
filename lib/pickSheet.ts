@@ -26,9 +26,15 @@ export type PickRecord = {
 
 export type PickLine = {
   allocationId: string;
+  plannedItemId: string;
   lineNo: number;
+  /** SKU that will be picked. A replacement shows here, and the planned SKU stays beside it. */
   sku: string;
   name: string;
+  plannedSku: string;
+  plannedName: string;
+  replaced: boolean;
+  swapReason: string;
   ordered: number;
   picked: number;
   short: boolean;
@@ -69,6 +75,8 @@ export type PickSheetModel = {
   staging: StagingStock[];
   finishBlock: string | null;
   handoff: string | null;
+  /** Admin setting. Off leaves picking on the planned SKU, or on a replacement already saved at approval. */
+  allowReplacement: boolean;
   lines: PickLine[];
   skipped: PickSkip[];
   orphans: PickOrphan[];
@@ -95,9 +103,21 @@ export function isStockPickLine(line: {
   itemType: string | null;
   itemId: string | null;
 }): boolean {
-  if (line.lineKind !== "product" && line.lineKind !== "kit") return false;
   if (!line.itemId) return false;
-  return line.itemType != null && STOCK_TYPES.has(line.itemType);
+  return pickSheetPlace(line) === "pick";
+}
+
+/**
+ * Pick rows are product and kit stock.
+ * Freight stays on the not-picked note, including freight allocated to service item 4343.
+ * A service line, and any non-freight line whose item type is Service, is left off the sheet.
+ */
+export function pickSheetPlace(line: { lineKind: string; itemType: string | null }): "pick" | "note" | "omit" {
+  const kind = line.lineKind || "product";
+  if ((kind === "product" || kind === "kit") && line.itemType != null && STOCK_TYPES.has(line.itemType)) return "pick";
+  if (kind === "service") return "omit";
+  if (line.itemType === "Service" && kind !== "freight") return "omit";
+  return "note";
 }
 
 /**
@@ -352,16 +372,23 @@ export function pickSheetFromJson(value: unknown): PickSheetModel {
     }),
     finishBlock: textOrNull(row.finish_block),
     handoff: textOrNull(row.handoff),
+    allowReplacement: row.allow_replacement === true,
     lines: row.lines.map((entry) => {
       const line = record(entry);
       if (!line || typeof line.allocation_id !== "string" || typeof line.sku !== "string") {
         throw new Error("Unexpected pick sheet.");
       }
+      const plannedSku = typeof line.planned_sku === "string" && line.planned_sku ? line.planned_sku : line.sku;
       return {
         allocationId: line.allocation_id,
+        plannedItemId: typeof line.planned_item_id === "string" ? line.planned_item_id : "",
         lineNo: qty(line.line_no),
         sku: line.sku,
         name: text(line.name),
+        plannedSku,
+        plannedName: typeof line.planned_name === "string" ? line.planned_name : text(line.name),
+        replaced: line.replaced === true,
+        swapReason: typeof line.swap_reason === "string" ? line.swap_reason : "",
         ordered: qty(line.ordered),
         picked: qty(line.picked),
         short: line.short === true,

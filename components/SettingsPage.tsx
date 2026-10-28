@@ -21,6 +21,7 @@ import {
 } from "@/lib/labelTemplates";
 import { parseWindowDays } from "@/lib/pricing/quotes";
 import { PutawaySettings } from "@/components/PutawaySettings";
+import { fetchReplacementPickAllowed, saveReplacementPickAllowed } from "@/lib/replacementSettings";
 
 export function SettingsPage() {
   const [days, setDays] = useState("90");
@@ -30,6 +31,7 @@ export function SettingsPage() {
   const [paymentTerms, setPaymentTerms] = useState<{ code: string; label: string }[]>([]);
   const [template, setTemplate] = useState<LabelTemplateId>(DEFAULT_LABEL_TEMPLATE);
   const [binTemplates, setBinTemplates] = useState<BinLabelTemplates>(emptyBinLabelTemplates);
+  const [allowReplacement, setAllowReplacement] = useState(false);
   const [nextNumber, setNextNumber] = useState("20000");
   const [highestIssued, setHighestIssued] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,13 +43,14 @@ export function SettingsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [value, labelTemplate, binLabelTemplates, counter, ebayDefaults, termChoices] = await Promise.all([
+        const [value, labelTemplate, binLabelTemplates, counter, ebayDefaults, termChoices, replacementPick] = await Promise.all([
           fetchSalesWindowDays(),
           fetchLabelTemplate(),
           fetchBinLabelTemplates(),
           fetchBinCounter(),
           fetchEbayDraftDefaults(),
           fetchSalesPaymentTerms(),
+          fetchReplacementPickAllowed(),
         ]);
         if (!cancelled) {
           setDays(String(value));
@@ -55,6 +58,7 @@ export function SettingsPage() {
           setEbayPaymentTerms(ebayDefaults.paymentTerms);
           setEbayIncoterms(ebayDefaults.incoterms);
           setPaymentTerms(termChoices);
+          setAllowReplacement(replacementPick);
           setTemplate(labelTemplate);
           setBinTemplates(binLabelTemplates);
           setNextNumber(String(counter.nextNumber));
@@ -111,6 +115,7 @@ export function SettingsPage() {
       const savedRep = await saveEbayDefaultSalesRep(ebaySalesRep);
       const savedTerms = await saveEbayDefaultPaymentTerms(ebayPaymentTerms);
       const savedIncoterms = await saveEbayDefaultIncoterms(ebayIncoterms);
+      await saveReplacementPickAllowed(allowReplacement);
       await saveSalesWindowDays(parsed);
       await saveLabelTemplate(template);
       await saveBinLabelTemplates(binTemplates);
@@ -150,6 +155,22 @@ export function SettingsPage() {
         </label>
         <span className="hint">
           Item sales totals count buys and sells in this many days. The default is 90.
+        </span>
+        <label className="kit-check" htmlFor="allow-replacement-sku">
+          <input
+            id="allow-replacement-sku"
+            type="checkbox"
+            checked={allowReplacement}
+            disabled={loading}
+            onChange={(event) => {
+              setAllowReplacement(event.target.checked);
+              setSaved(false);
+            }}
+          />
+          <span>Allow replacement SKU during pick</span>
+        </label>
+        <span className="hint">
+          Off until this is saved on. Approval can still choose the SKU that ships. While this is off, picking stays on that SKU.
         </span>
         <label htmlFor="ebay-sales-rep">
           <span>eBay sales rep</span>

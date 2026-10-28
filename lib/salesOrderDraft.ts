@@ -68,6 +68,11 @@ export type SoAllocationInput = {
   qty: string;
   /** Unit price of this mapped SKU. Blank until a default or the user fills it. */
   unitPrice: string;
+  /** Fulfilled SKU when it differs from itemId. Blank means ship the planned SKU. */
+  actualItemId?: string;
+  actualSku?: string;
+  actualName?: string;
+  swapReason?: string;
 };
 
 export type SoLineInput = {
@@ -663,6 +668,9 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
           qty: row.qty,
           unit_price: row.unitPrice,
           alloc_no: index + 1,
+          ...(row.actualItemId && row.actualItemId !== row.itemId
+            ? { actual_item_id: row.actualItemId, swap_reason: row.swapReason ?? "" }
+            : {}),
         })),
     })),
     notes: input.notes

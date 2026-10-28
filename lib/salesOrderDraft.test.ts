@@ -265,6 +265,25 @@ describe("sales order draft", () => {
     assert.equal((lines[0] as { line_note: string }).line_note, "");
     assert.equal(lines[0].allocations[0].item_id, "item-1");
     assert.equal(lines[0].allocations.length, 1);
+    assert.equal("actual_item_id" in lines[0].allocations[0], false);
+  });
+
+  it("sends the planned SKU and the fulfilled SKU", () => {
+    const draft = sampleDraft();
+    draft.lines[0].allocations = [
+      {
+        itemId: "item-106683",
+        qty: "1",
+        unitPrice: "10",
+        actualItemId: "item-107021",
+        swapReason: "Different grade",
+      },
+    ];
+    const payload = toSalesOrderPayload(draft);
+    const lines = payload.lines as { allocations: { item_id: string; actual_item_id?: string; swap_reason?: string }[] }[];
+    assert.equal(lines[0].allocations[0].item_id, "item-106683");
+    assert.equal(lines[0].allocations[0].actual_item_id, "item-107021");
+    assert.equal(lines[0].allocations[0].swap_reason, "Different grade");
   });
 
   it("keeps a verbal line that is only a mapped SKU, and the same SKU at two prices", () => {

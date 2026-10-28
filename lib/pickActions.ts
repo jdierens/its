@@ -16,6 +16,7 @@ import { getSupabase } from "@/lib/supabase";
 
 const MIGRATION = "supabase/migrations/20261027170000_sales_order_picking.sql";
 const STOCK_UNITS_MIGRATION = "supabase/migrations/20261027230000_stock_units.sql";
+const REPLACEMENT_MIGRATION = "supabase/migrations/20261028073000_so_sku_replacement.sql";
 
 function raisePick(error: { code?: string; message?: string } | null): never {
   if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
@@ -57,6 +58,28 @@ export async function openPickSheet(orderId: string): Promise<PickSheetModel> {
     p_initials: who.initials,
     p_operator: who.operator,
   });
+  if (error) raisePick(error);
+  return sheet(data);
+}
+
+export async function setPickReplacement(input: {
+  allocationId: string;
+  actualItemId: string | null;
+  reason: string;
+}): Promise<PickSheetModel> {
+  await assertPicker();
+  const who = await actor();
+  const { data, error } = await (await getSupabase()).rpc("set_so_allocation_replacement", {
+    p_allocation: input.allocationId,
+    p_actual: input.actualItemId,
+    p_reason: input.reason,
+    p_initials: who.initials,
+    p_operator: who.operator,
+    p_context: "pick",
+  });
+  if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
+    throw new Error(`Apply ${REPLACEMENT_MIGRATION} before a replacement SKU can be saved.`);
+  }
   if (error) raisePick(error);
   return sheet(data);
 }
