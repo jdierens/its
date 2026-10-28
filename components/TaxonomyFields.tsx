@@ -620,11 +620,13 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
         />
       </PageToolbar>
       <p className="hint page-note">
-        Fields are shared definitions. Linking one here does not copy it. A badge lists the other
-        taxonomies that use the same field, and editing the name, unit, label, or value list changes
-        it for all of them. Drag a field to set the order on this taxonomy. That order is what the
-        item form and the items table use. Remove from this taxonomy unlinks it here. The definition
-        can be deleted only when no taxonomy links it and no item still has a value.
+        Add field creates a new field on this taxonomy only, even when another taxonomy already has
+        the same name, type, unit, and label. Add existing field links a field that already exists,
+        including its allowed values. A badge lists the other taxonomies that use the same field, and
+        editing the name, unit, label, or value list changes it for all of them. Drag a field to set
+        the order on this taxonomy. That order is what the item form and the items table use. Remove
+        from this taxonomy unlinks it here. The definition can be deleted only when no taxonomy links
+        it and no item still has a value.
       </p>
       {error ? <p className="banner error">{error}</p> : null}
       {status ? <p className="banner ok">{status}</p> : null}
@@ -668,7 +670,7 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
             Label
             <input
               value={draftLabel}
-              placeholder="Only to tell same-name fields apart"
+              placeholder="Optional"
               autoComplete="off"
               onChange={(event) => setDraftLabel(event.target.value)}
             />

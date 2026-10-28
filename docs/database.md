@@ -120,4 +120,6 @@ select set_config('its.batch_id', 'swi-pilot-1', true);
 
 `search_items_by_attributes` and `search_item_attribute_facets` back advanced search. `20261024055420_item_attribute_search.sql` is not applied. Do not run it until it has been reviewed. The route uses the functions after they exist and reads the tables directly until then. Grants are `service_role` only, with row security left as it is. The index and the filter shape are in `docs/item-search.md`.
 
+Add field on a taxonomy inserts a new `attributes` row even when another taxonomy already has the same name, type, unit, and label. Sharing that row, including its allowed values, is still `link_taxonomy_attributes`. Apply `supabase/migrations/20261028010000_independent_taxonomy_fields.sql` by hand on project `fxsbpreasbdalwthyzvk`. Deploying does not run it. It drops `attributes_identity_uidx` and replaces `prepare_item_attributes` so a new attribute definition does not attach an existing field. Grants stay as they are. Until it is applied, Add field still fails with 409 when that identity already exists.
+
 `npm run typecheck` and `npm run build` both need to pass.
