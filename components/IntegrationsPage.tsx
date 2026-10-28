@@ -9,6 +9,7 @@ import { isDirty } from "@/lib/formDirty";
 import { RECONNECT_MESSAGE as EBAY_RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import { INTEGRATIONS, integrationReturnHref } from "@/lib/integrations";
+import type { PlaidStatus } from "@/lib/plaid/types";
 import { runSyncRequests, type SyncChunk } from "@/lib/qbo/pull";
 import {
   type SyncDirection,
@@ -84,6 +85,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
   const router = useRouter();
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [ebay, setEbay] = useState<EbayStatus | null>(null);
+  const [plaid, setPlaid] = useState<PlaidStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ebayError, setEbayError] = useState<string | null>(null);
@@ -107,14 +109,17 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
   const [choiceSaved, setChoiceSaved] = useState(false);
 
   const load = useCallback(async () => {
-    const [qboResponse, ebayResponse] = await Promise.all([
+    const [qboResponse, ebayResponse, plaidResponse] = await Promise.all([
       fetch("/api/qbo/status", { cache: "no-store" }),
       fetch("/api/ebay/status", { cache: "no-store" }),
+      fetch("/api/plaid/status", { cache: "no-store" }),
     ]);
     if (!qboResponse.ok) throw new Error("Could not load QuickBooks status.");
     if (!ebayResponse.ok) throw new Error("Could not load eBay status.");
     setStatus((await qboResponse.json()) as StatusResponse);
     setEbay((await ebayResponse.json()) as EbayStatus);
+    if (plaidResponse.ok) setPlaid((await plaidResponse.json()) as PlaidStatus);
+    else setPlaid(null);
   }, []);
 
   useEffect(() => {
@@ -384,6 +389,13 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
                 <p className="integration-status">
                   <span className={`sync-pill ${ebayConnected ? "synced" : "local"}`}>
                     {ebayConnected ? "Connected" : "Not connected"}
+                  </span>
+                </p>
+              ) : null}
+              {entry.id === "plaid" && plaid ? (
+                <p className="integration-status">
+                  <span className={`sync-pill ${plaid.items.length > 0 ? "synced" : "local"}`}>
+                    {!plaid.configured ? "Add credentials" : plaid.items.length > 0 ? "Connected" : "Not connected"}
                   </span>
                 </p>
               ) : null}

@@ -122,4 +122,6 @@ select set_config('its.batch_id', 'swi-pilot-1', true);
 
 Add field on a taxonomy inserts a new `attributes` row even when another taxonomy already has the same name, type, unit, and label. Sharing that row, including its allowed values, is still `link_taxonomy_attributes`. Apply `supabase/migrations/20261028010000_independent_taxonomy_fields.sql` by hand on project `fxsbpreasbdalwthyzvk`. Deploying does not run it. It drops `attributes_identity_uidx` and replaces `prepare_item_attributes` so a new attribute definition does not attach an existing field. Grants stay as they are. Until it is applied, Add field still fails with 409 when that identity already exists.
 
+Plaid bank feeds store Items, accounts, and transactions. Apply `supabase/migrations/20261028160000_plaid_bank_feeds.sql` by hand on project `fxsbpreasbdalwthyzvk`. Deploying does not run it. The file is additive. Row level security is on, with no policies, and only `service_role` can read or write `plaid_items`, `plaid_accounts`, `plaid_transactions`, and `plaid_sync_log`. `plaid_items.access_token` stays on the server. Until the file is applied, Admin > Integrations > Bank feeds says the tables are missing and does not call Plaid for a connection. See [plaid](plaid.md).
+
 `npm run typecheck` and `npm run build` both need to pass.
