@@ -14,6 +14,12 @@ export const INTEGRATIONS = [
     description: "Seller connection, active listings, and draft orders.",
   },
   {
+    id: "plaid",
+    label: "Bank feeds",
+    href: "/admin/integrations/plaid",
+    description: "Bank of America and other US accounts via Plaid.",
+  },
+  {
     id: "google",
     label: "Google",
     href: null,

@@ -20,6 +20,7 @@ import {
   Search,
   Landmark,
   List,
+  Wallet,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -71,6 +72,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/admin/integrations/quickbooks": Landmark,
   "/admin/integrations/ebay": Store,
   "/admin/integrations/ebay/listings": List,
+  "/admin/integrations/plaid": Wallet,
 };
 
 type ShellContextValue = {

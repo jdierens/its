@@ -1,6 +1,6 @@
 # QuickBooks customers and vendors
 
-**Contacts** in the sidebar lists customers and vendors. The search box keeps each character. The list and the address (`q`) update after a short pause, and a newer query wins over an older reply. **Admin > Integrations** opens an overview. **QuickBooks** and **eBay** are sidebar pages under it. The app has no Intuit credentials until you add them. Lists and forms work before that. Sync runs after the connection is saved. Google and BrokerBin can be added as further pages. `/admin/integrations` stays in place, including as the eBay auth-declined address.
+**Contacts** in the sidebar lists customers and vendors. The search box keeps each character. The list and the address (`q`) update after a short pause, and a newer query wins over an older reply. **Admin > Integrations** opens an overview. **QuickBooks**, **eBay**, and **Bank feeds** are sidebar pages under it. The app has no Intuit credentials until you add them. Lists and forms work before that. Sync runs after the connection is saved. Google and BrokerBin can be added as further pages. `/admin/integrations` stays in place, including as the eBay auth-declined address.
 
 Copy these into `.env.local`. They are server-only. Do not prefix them with `NEXT_PUBLIC_` and do not commit the file.
 

@@ -38,6 +38,10 @@ test("public callbacks and legal pages do not need a session", () => {
     gateRequest({ pathname: "/api/ebay/account-deletion", email: null, domain: null, status: null, role: null }),
     { type: "allow" },
   );
+  assert.deepEqual(
+    gateRequest({ pathname: "/api/plaid/webhook", email: null, domain: null, status: null, role: null }),
+    { type: "allow" },
+  );
 });
 
 test("a missing session goes to login, and a pending account waits", () => {

@@ -134,7 +134,7 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         label: "Integrations",
         href: "/admin/integrations",
-        description: "QuickBooks, eBay, and other connections.",
+        description: "QuickBooks, eBay, bank feeds, and other connections.",
         children: [
           {
             label: "QuickBooks",
@@ -150,6 +150,11 @@ export const NAV_GROUPS: NavGroup[] = [
             label: "eBay listings",
             href: "/admin/integrations/ebay/listings",
             description: "Browse active listings and match them to items.",
+          },
+          {
+            label: "Bank feeds",
+            href: "/admin/integrations/plaid",
+            description: "Plaid connection for Bank of America and other US banks.",
           },
         ],
       },
