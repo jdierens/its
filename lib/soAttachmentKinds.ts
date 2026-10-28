@@ -1,5 +1,7 @@
+/** Sales-order PDFs. Add a kind here and in so_attachments_kind_check. */
 export const SO_ATTACHMENT_KINDS = [
   { id: "customer_po", label: "Customer PO" },
+  { id: "shipping_label", label: "Shipping label" },
   { id: "proforma", label: "Proforma" },
   { id: "packing_list", label: "Packing list" },
   { id: "commercial_invoice", label: "Commercial invoice" },
