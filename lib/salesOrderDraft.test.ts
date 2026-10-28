@@ -28,6 +28,7 @@ import {
   copyBillToShipTo,
   copyShipToBillTo,
   parseSalesOrderNumber,
+  salesOrderBadgeTone,
   salesOrderFormLocked,
   partMatches,
   partPrefix,
@@ -363,6 +364,9 @@ describe("sales order draft", () => {
     assert.equal(salesOrderFormLocked(true, "draft"), false);
     assert.equal(salesOrderFormLocked(true, "approved"), false);
     assert.equal(salesOrderFormLocked(true, "picking"), false);
+    assert.equal(salesOrderFormLocked(true, "packing"), true);
+    assert.equal(salesOrderBadgeTone("packing"), "open");
+    assert.equal(salesOrderBadgeTone("packed"), "approved");
     assert.equal(salesOrderFormLocked(true, "cancelled"), true);
     assert.equal(salesOrderFormLocked(true, "closed"), true);
     assert.equal(salesOrderFormLocked(true, "packed"), true);

@@ -300,7 +300,12 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
           {pullCue(activePull)}
         </p>
       ) : null}
-      {sheet.handoff ? (
+      {sheet.pickStatus === "picked" || sheet.pickStatus === "short" ? (
+        <p className="banner ok" role="status">
+          {sheet.pickStatus === "short" ? "Short pick is recorded." : "Picked into the staging bin."}{" "}
+          <Link href={`/warehouse/pack/${sheet.orderId}`}>Pack this order</Link>
+        </p>
+      ) : sheet.handoff ? (
         <p className="banner ok" role="status">
           {sheet.handoff}
         </p>

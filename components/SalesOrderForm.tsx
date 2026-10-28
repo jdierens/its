@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, PackageCheck, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, Package, PackageCheck, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
@@ -30,6 +30,7 @@ import {
   syncAllocationMoney,
   syncSalesLineMoney,
   parseSalesOrderNumber,
+  salesOrderBadgeTone,
   salesOrderFormLocked,
   salesOrderStatusLabel,
   salesOrderTotal,
@@ -687,7 +688,7 @@ export function SalesOrderForm({
           <div className="so-sticky-lead">
             <p className="so-identity">
               <span className="sku">{number}</span>
-              <Badge tone={status === "picking" ? "open" : status}>{salesOrderStatusLabel(status)}</Badge>
+              <Badge tone={salesOrderBadgeTone(status)}>{salesOrderStatusLabel(status)}</Badge>
             </p>
             {!locked && drafting ? (
               <label className="so-number-field">
@@ -741,6 +742,16 @@ export function SalesOrderForm({
                 title="Picking"
               >
                 <PackageCheck size={18} strokeWidth={1.75} aria-hidden />
+              </Link>
+            ) : null}
+            {order?.id && order.number && (status === "packing" || status === "packed") ? (
+              <Link
+                className="button so-icon-action"
+                href={`/warehouse/pack/${order.id}`}
+                aria-label="Packing"
+                title="Packing"
+              >
+                <Package size={18} strokeWidth={1.75} aria-hidden />
               </Link>
             ) : null}
             {orderId && canEdit && status !== "cancelled" && status !== "closed" ? (

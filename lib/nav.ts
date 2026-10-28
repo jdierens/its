@@ -77,6 +77,16 @@ export const NAV_GROUPS: NavGroup[] = [
         description: "Pick approved sales orders into a staging bin.",
       },
       {
+        label: "Packing",
+        href: "/warehouse/pack",
+        description: "Pack picked lines into boxes and pallets.",
+      },
+      {
+        label: "Shipping",
+        href: "/warehouse/ship",
+        description: "Packed orders waiting to ship. Labels are not built yet.",
+      },
+      {
         label: "Receiving",
         href: "/warehouse/receiving",
         description: "Receive purchase orders into inventory.",
@@ -223,6 +233,18 @@ export function pageMetaFor(pathname: string): PageMeta {
         { label: "Warehouse" },
         { label: "Picking", href: "/warehouse/pick" },
         { label: "Pick sheet" },
+      ],
+    };
+  }
+
+  const packSheet = pathname.match(/^\/warehouse\/pack\/([^/]+)$/);
+  if (packSheet) {
+    return {
+      title: "Pack",
+      crumbs: [
+        { label: "Warehouse" },
+        { label: "Packing", href: "/warehouse/pack" },
+        { label: "Pack" },
       ],
     };
   }
