@@ -8,6 +8,7 @@ import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import {
   finishPick,
   lookupPickSerial,
+  assignPickStagingBin,
   recordPick,
   recordPickSerial,
   removePickSerial,
@@ -25,6 +26,8 @@ import {
   pickTargetForBin,
   serialProblem,
   sheetProgress,
+  stagingBinCode,
+  stagingLabel,
   type PickLine,
   type PickSheetModel,
 } from "@/lib/pickSheet";
@@ -59,6 +62,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [cooText, setCooText] = useState<Record<string, string>>({});
   const [pull, setPull] = useState<SerialPull | null>(null);
   const [scan, setScan] = useState("");
+  const [stageScan, setStageScan] = useState("");
   const [replaceId, setReplaceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -245,9 +249,40 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
           <p className="pick-progress">
             {formatPickQty(progress.picked)} of {formatPickQty(progress.ordered)} picked
           </p>
-          <p>{sheet.stagingBin ? `Staging bin ${sheet.stagingBin}` : "Staging bin opens with this sheet."}</p>
+          <p>{sheet.stagingBin ? `Staging bin ${sheet.stagingBin}` : stagingLabel(sheet.soNumber)}</p>
         </div>
       </header>
+      {open && !sheet.stagingBin ? (
+        <form
+          className="card pick-scan"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const code = stagingBinCode(stageScan);
+            if (!code) {
+              setError("A bin code is five digits, a hyphen, and B, C, or P.");
+              return;
+            }
+            setStageScan("");
+            void run(() => assignPickStagingBin(sheet.orderId, code));
+          }}
+        >
+          <label>
+            Scan an existing staging bin
+            <input
+              aria-label="Existing staging bin"
+              value={stageScan}
+              autoCapitalize="characters"
+              autoComplete="off"
+              placeholder="20018-B"
+              onChange={(event) => setStageScan(event.target.value.toUpperCase())}
+            />
+          </label>
+          <button type="submit" disabled={busy || !stageScan.trim()}>
+            Use bin
+          </button>
+          <p className="hint">Leave this blank to keep {stagingLabel(sheet.soNumber)}. Scanning does not create a bin.</p>
+        </form>
+      ) : null}
 
       {error ? (
         <p className="banner error" role="alert">

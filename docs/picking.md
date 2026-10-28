@@ -1,6 +1,8 @@
 # Picking
 
-Warehouse → Picking lists approved orders that have a product or kit line. Opening an order starts the pick sheet.
+Warehouse → Picking lists approved orders that have a product or kit line. Opening an order starts the pick sheet. Opening it does not create a warehouse bin and does not take a number from the bin counter.
+
+Until someone scans a bin, staging is the label `staging bin SO27767` for sales order 27767. That label is tied to the sales order number. It is not a bin such as `20018-B`. A pick still leaves the stock bin. Scan an existing bin, for example `20111-B`, and choose Use bin to put the pick in that bin. A code that is not already a bin is refused. Apply `supabase/migrations/20261028183000_pick_staging_choice.sql` by hand. Deploying does not run it.
 
 The sheet is a table. Each stock line is two rows. The first row is the item: SKU, name, ordered, picked, and pending. The second row is where to pull it: bin, location, QOH, pick qty, and Pick. Another bin for that SKU is another row under the same item. Project and ownership are not on this page. The quantity box and Pick sit centered on the bin row.
 

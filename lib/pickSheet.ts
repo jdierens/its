@@ -129,6 +129,32 @@ export function pickOwnership(project: string | null, ownership: string | null):
   return project && project.trim() ? "consigned" : "owned";
 }
 
+/** Label for a pick that has not been put in a warehouse bin. Not a bin code. */
+export function stagingLabel(soNumber: number | null): string {
+  if (soNumber == null || !Number.isFinite(soNumber)) return "staging bin";
+  return `staging bin SO${soNumber}`;
+}
+
+/** What the pick list and the sheet show. A scanned bin wins. Otherwise the order label, once picking has started. */
+export function stagingDisplay(input: {
+  soNumber: number | null;
+  stagingBin: string | null;
+  picking: boolean;
+}): string {
+  if (input.stagingBin) return input.stagingBin;
+  if (!input.picking) return "";
+  return stagingLabel(input.soNumber);
+}
+
+const STAGING_BIN_CODE = /^(\d{5})-([PCB])$/i;
+
+/** Existing warehouse bin code, such as 20018-B. The staging label is not a bin code. */
+export function stagingBinCode(value: string): string | null {
+  const match = value.trim().match(STAGING_BIN_CODE);
+  if (!match) return null;
+  return `${match[1]}-${match[2].toUpperCase()}`;
+}
+
 export function stagingLayer(
   project: string | null,
   ownership: string | null,

@@ -17,6 +17,7 @@ import { getSupabase } from "@/lib/supabase";
 const MIGRATION = "supabase/migrations/20261027170000_sales_order_picking.sql";
 const STOCK_UNITS_MIGRATION = "supabase/migrations/20261027230000_stock_units.sql";
 const REPLACEMENT_MIGRATION = "supabase/migrations/20261028073000_so_sku_replacement.sql";
+const STAGING_MIGRATION = "supabase/migrations/20261028183000_pick_staging_choice.sql";
 
 function raisePick(error: { code?: string; message?: string } | null): never {
   if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
@@ -79,6 +80,22 @@ export async function setPickReplacement(input: {
   });
   if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
     throw new Error(`Apply ${REPLACEMENT_MIGRATION} before a replacement SKU can be saved.`);
+  }
+  if (error) raisePick(error);
+  return sheet(data);
+}
+
+export async function assignPickStagingBin(orderId: string, reference: string): Promise<PickSheetModel> {
+  await assertPicker();
+  const who = await actor();
+  const { data, error } = await (await getSupabase()).rpc("assign_pick_staging_bin", {
+    p_order: orderId,
+    p_reference: reference,
+    p_initials: who.initials,
+    p_operator: who.operator,
+  });
+  if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
+    throw new Error(`Apply ${STAGING_MIGRATION} before a staging bin can be chosen.`);
   }
   if (error) raisePick(error);
   return sheet(data);
