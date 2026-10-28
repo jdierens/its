@@ -5,6 +5,7 @@ import {
   INBOX_PASS_MISSING,
   INBOX_PASS_STARTED,
   inboxPassBody,
+  inboxPassFailure,
   inboxPassResult,
   readInboxWebhookConfig,
 } from "./inboxPass.ts";
@@ -30,5 +31,11 @@ describe("Winston inbox webhook", () => {
     assert.deepEqual(inboxPassResult(401), { ok: false, message: INBOX_PASS_FAILED });
     assert.equal(inboxPassBody().includes("on-demand-inbox-po-pass"), true);
     assert.equal(inboxPassBody().includes("crsr_"), false);
+    assert.equal(inboxPassFailure({ status: 401, cause: "unauthorized", detailed: false }), INBOX_PASS_FAILED);
+    assert.equal(
+      inboxPassFailure({ status: 401, cause: "unauthorized", detailed: true }),
+      `${INBOX_PASS_FAILED} HTTP 401. unauthorized`,
+    );
+    assert.match(inboxPassFailure({ cause: "TimeoutError: The operation was aborted due to timeout", detailed: true }), /TimeoutError/);
   });
 });

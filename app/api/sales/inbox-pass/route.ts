@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { INBOX_PASS_FAILED, inboxPassBody, inboxPassResult, readInboxWebhookConfig } from "@/lib/inboxPass";
+import { errorDetail } from "@/lib/clientActionError";
+import { inboxPassBody, inboxPassFailure, inboxPassResult, readInboxWebhookConfig } from "@/lib/inboxPass";
 import { salesPageAccess } from "@/lib/salesSession";
+import { stockSettingsWritable } from "@/lib/stockAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,6 +16,7 @@ export async function POST() {
   if ("error" in config) {
     return NextResponse.json({ ok: false, message: config.error }, { status: 503 });
   }
+  const detailed = await stockSettingsWritable();
   try {
     const response = await fetch(config.url, {
       method: "POST",
@@ -25,9 +28,16 @@ export async function POST() {
       signal: AbortSignal.timeout(20_000),
       cache: "no-store",
     });
-    const result = inboxPassResult(response.status);
-    return NextResponse.json(result, { status: result.ok ? 200 : 502 });
-  } catch {
-    return NextResponse.json({ ok: false, message: INBOX_PASS_FAILED }, { status: 502 });
+    if (response.ok) return NextResponse.json(inboxPassResult(response.status));
+    let cause: string | null = null;
+    if (detailed) {
+      cause = (await response.text().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 240) || null;
+    }
+    return NextResponse.json({ ok: false, message: inboxPassFailure({ status: response.status, cause, detailed }) }, { status: 502 });
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, message: inboxPassFailure({ cause: errorDetail(error), detailed }) },
+      { status: 502 },
+    );
   }
 }

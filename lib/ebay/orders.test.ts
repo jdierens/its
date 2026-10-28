@@ -11,8 +11,11 @@ import {
   orderPullWindows,
   parseFulfillmentOrders,
   parseLegacyLogCsv,
+  parseStoredPullDraft,
   planLegacySeed,
   planOrderPull,
+  pullDraftUnchanged,
+  type StoredPullDraft,
   type ExistingPullOrder,
   type ExistingSeedOrder,
   type ParsedEbayOrder,
@@ -226,11 +229,136 @@ test("the pull starts on 1 Jan 2026 and a watermark stays inside that window", (
   const next = orderPullWindows(now, "2026-10-20T00:00:00.000Z");
   assert.deepEqual(next, [
     {
-      filter:
-        "creationdate:[2026-01-01T00:00:00.000Z..2026-10-25T00:00:00.000Z],lastmodifieddate:[2026-10-19T00:00:00.000Z..2026-10-25T00:00:00.000Z]",
+      filter: "lastmodifieddate:[2026-10-19T00:00:00.000Z..2026-10-25T00:00:00.000Z]",
       history: false,
     },
   ]);
+  assert.equal(next.some((window) => window.filter.includes("creationdate")), false);
+  const wide = orderPullWindows(now, "2026-01-15T00:00:00.000Z");
+  assert.ok(wide.length > 1);
+  assert.ok(wide.every((window) => window.history === false && window.filter.startsWith("lastmodifieddate:[2026-")));
+  assert.equal(wide[0].filter.startsWith("lastmodifieddate:[2026-01-14T00:00:00.000Z.."), true);
+  assert.equal(wide.at(-1)?.filter.endsWith("..2026-10-25T00:00:00.000Z]"), true);
+});
+
+function storedFor(
+  order: ParsedEbayOrder,
+  items: { id: string; sku: string }[] = [{ id: "item-1", sku: "SKU-1" }],
+): StoredPullDraft {
+  const [action] = planOrderPull([order], [], items);
+  if (action.kind !== "create") throw new Error("expected create");
+  return {
+    orderDate: order.orderDate,
+    shipTo: order.shipTo,
+    billToBlank: true,
+    buyer: order.buyer,
+    paymentStatus: order.paymentStatus,
+    paymentMethod: order.paymentStatus === "paid" ? "ebay" : null,
+    paymentDate: order.paymentDate,
+    transactionFee: order.transactionFee,
+    earnings: order.earnings,
+    currency: order.currency,
+    termsBlank: false,
+    incotermsBlank: false,
+    lines: draftLines(action.order, action.itemIds, action.shippingItemId, action.allocationQtys),
+  };
+}
+
+test("an unchanged unedited draft is left alone, including when only the label fee is new", () => {
+  const order = ebayOrder();
+  const items = [{ id: "item-1", sku: "SKU-1" }];
+  const stored = storedFor(order, items);
+  const existing = {
+    id: "draft-1",
+    status: "draft",
+    ebayOrderId: ORDER,
+    ebaySalesRecordRef: "445566",
+    personEdited: false,
+    stored,
+  };
+  assert.equal(planOrderPull([order], [existing], items)[0].kind, "skip");
+  assert.equal(planOrderPull([ebayOrder({ labelFee: 9.42 })], [existing], items)[0].kind, "skip");
+  const priced = ebayOrder();
+  priced.lines = [{ ...priced.lines[0], unitPrice: 9 }];
+  assert.equal(planOrderPull([priced], [existing], items)[0].kind, "update");
+  assert.equal(planOrderPull([order], [{ ...existing, stored: { ...stored, termsBlank: true } }], items)[0].kind, "update");
+  assert.equal(planOrderPull([order], [{ ...existing, stored: { ...stored, billToBlank: false } }], items)[0].kind, "update");
+  assert.equal(planOrderPull([order], [{ ...existing, ebaySalesRecordRef: null }], items)[0].kind, "update");
+  const numbered = planOrderPull([order], [existing], items, [{ ebayOrderId: ORDER, soNumber: 27001 }]);
+  assert.equal(numbered[0].kind, "update");
+  if (numbered[0].kind === "update") assert.equal(numbered[0].soNumber, 27001);
+});
+
+test("stored money from Postgres matches the draft a pull would write", () => {
+  const order = ebayOrder();
+  const items = [{ id: "item-1", sku: "SKU-1" }];
+  const [created] = planOrderPull([order], [], items);
+  if (created.kind !== "create") return;
+  const line = draftLines(created.order, created.itemIds, created.shippingItemId, created.allocationQtys)[0];
+  const stored = parseStoredPullDraft({
+    orderDate: "2026-10-20",
+    shipTo: order.shipTo,
+    billTo: null,
+    buyer: order.buyer,
+    paymentStatus: "paid",
+    paymentMethod: "ebay",
+    paymentDate: "2026-10-20",
+    transactionFee: "1.25",
+    earnings: "8.7500",
+    currency: "USD",
+    terms: "PIA",
+    incoterms: "FOB",
+    lines: [
+      {
+        line_no: "1",
+        line_kind: "product",
+        customer_part_number: line.customer_part_number,
+        customer_description: line.customer_description,
+        qty: "2.00",
+        unit_price: "5.0000",
+        ext_price: "10.00",
+        item_id: "item-1",
+        allocation_qty: "2",
+        allocation_count: 1,
+      },
+    ],
+  });
+  assert.ok(stored);
+  assert.equal(
+    pullDraftUnchanged(stored, order, created.itemIds, created.allocationQtys, created.shippingItemId, null),
+    true,
+  );
+  assert.equal(
+    parseStoredPullDraft({
+      orderDate: order.orderDate,
+      shipTo: order.shipTo,
+      billTo: null,
+      buyer: order.buyer,
+      paymentStatus: "paid",
+      paymentMethod: "ebay",
+      paymentDate: order.paymentDate,
+      transactionFee: order.transactionFee,
+      earnings: order.earnings,
+      currency: "USD",
+      terms: "PIA",
+      incoterms: "FOB",
+      lines: [
+        {
+          line_no: 1,
+          line_kind: "product",
+          customer_part_number: "SKU-1",
+          customer_description: "Memory",
+          qty: 2,
+          unit_price: 5,
+          ext_price: 10,
+          item_id: "item-1",
+          allocation_qty: 1,
+          allocation_count: 2,
+        },
+      ],
+    }),
+    null,
+  );
 });
 
 test("orders before 2026 are skipped and a seeded 2026 order is not drafted again", () => {
