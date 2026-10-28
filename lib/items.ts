@@ -6,6 +6,7 @@ import { errorText } from "@/lib/errors";
 import { labelTaxonomyFields } from "@/lib/labelLookup";
 import { itemIdsMatchingListQuery } from "@/lib/itemListSearch";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
+import { ITEM_DOCUMENT_BUCKET, itemAttachmentsUnavailable } from "@/lib/itemAttachmentKinds";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { signedImageUrls } from "@/lib/images";
 import {
@@ -838,6 +839,19 @@ export async function deleteItem(id: string): Promise<void> {
   if (paths.length > 0) {
     const removed = await supabase.storage.from(ITEM_IMAGE_BUCKET).remove(paths);
     if (removed.error) throw new Error(errorText(removed.error));
+  }
+
+  const files = await supabase.from("item_attachments").select("storage_path").eq("item_id", id);
+  if (files.error) {
+    if (!itemAttachmentsUnavailable(files.error)) throw new Error(errorText(files.error));
+  } else {
+    const docPaths = (files.data ?? [])
+      .map((row) => row.storage_path)
+      .filter((path): path is string => typeof path === "string" && path.length > 0);
+    if (docPaths.length > 0) {
+      const removedDocs = await supabase.storage.from(ITEM_DOCUMENT_BUCKET).remove(docPaths);
+      if (removedDocs.error) throw new Error(errorText(removedDocs.error));
+    }
   }
 
   const deleted = await supabase.from("items").delete().eq("id", id).select("id");
