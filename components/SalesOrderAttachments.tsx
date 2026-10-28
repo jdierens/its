@@ -4,7 +4,12 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorText } from "@/lib/errors";
-import { soAttachmentKindLabel } from "@/lib/soAttachmentKinds";
+import {
+  SO_ATTACHMENT_KINDS,
+  parseSoAttachmentKind,
+  soAttachmentKindLabel,
+  type SoAttachmentKind,
+} from "@/lib/soAttachmentKinds";
 import { deleteSoAttachment, type SoAttachmentView } from "@/lib/soAttachments";
 import { uploadSoAttachments } from "@/lib/soAttachmentUpload";
 
@@ -18,6 +23,7 @@ export function SalesOrderAttachments({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const [kind, setKind] = useState<SoAttachmentKind>(SO_ATTACHMENT_KINDS[0].id);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -26,7 +32,7 @@ export function SalesOrderAttachments({
     setBusy(true);
     setMessage(null);
     try {
-      await uploadSoAttachments(orderId, "customer_po", [...files]);
+      await uploadSoAttachments(orderId, kind, [...files]);
       router.refresh();
     } catch (error) {
       setMessage(errorText(error));
@@ -83,21 +89,40 @@ export function SalesOrderAttachments({
         </ul>
       ) : null}
       {canEdit && orderId ? (
-        <label className="so-file-add">
-          PDF
-          <input
-            type="file"
-            accept="application/pdf,.pdf"
-            multiple
-            disabled={busy}
-            onChange={(event) => {
-              void upload(event.target.files);
-              event.target.value = "";
-            }}
-          />
-        </label>
+        <div className="so-file-add">
+          <label>
+            Type
+            <select
+              value={kind}
+              disabled={busy}
+              onChange={(event) => {
+                const next = parseSoAttachmentKind(event.target.value);
+                if (next) setKind(next);
+              }}
+            >
+              {SO_ATTACHMENT_KINDS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            PDF
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              multiple
+              disabled={busy}
+              onChange={(event) => {
+                void upload(event.target.files);
+                event.target.value = "";
+              }}
+            />
+          </label>
+        </div>
       ) : null}
-      <p className="hint">Customer PO is the usual file. PDF only, in the private sales-order bucket.</p>
+      <p className="hint">Customer PO, shipping label, or another sales-order PDF. PDF only, in the private sales-order bucket.</p>
       {message ? (
         <p className="banner error" role="alert">
           {message}
