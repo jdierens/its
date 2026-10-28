@@ -393,12 +393,14 @@ function salesOrderSelect(
   const payment = withPayment ? ", payment_amount" : "";
   const note = withLineNote ? ", line_note" : "";
   const item = "sku, name, description, us_hts, eccn";
+  // actual_item_id is a second FK to items. A bare items(...) embed is ambiguous.
+  const plannedItem = `items!so_line_allocations_item_id_fkey(${item})`;
   const replacement = withReplacement
     ? ", actual_item_id, swap_reason, actual:items!so_line_allocations_actual_item_id_fkey(sku, name)"
     : "";
   const allocations = withAllocPrice
-    ? `so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no${replacement}, items(${item}))`
-    : `so_line_allocations(item_id, qty${replacement}, items(${item}))`;
+    ? `so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no${replacement}, ${plannedItem})`
+    : `so_line_allocations(item_id, qty${replacement}, ${plannedItem})`;
   return `${ORDER_HEAD}${payment}, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, hts_code, eccn${note}, ${allocations}), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)`;
 }
 
@@ -428,8 +430,9 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     else if (withLineNote && missingColumn(loaded.error, "line_note")) withLineNote = false;
     else if (
       withReplacement &&
-      /actual_item_id|so_line_allocations_actual_item_id_fkey/i.test(message) &&
-      /schema cache|could not find|does not exist|relationship/i.test(message)
+      (/more than one relationship|ambiguous/i.test(message) ||
+        (/actual_item_id|so_line_allocations_actual_item_id_fkey/i.test(message) &&
+          /schema cache|could not find|does not exist|relationship/i.test(message)))
     ) {
       withReplacement = false;
     } else if (
