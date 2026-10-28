@@ -1355,7 +1355,18 @@ export function SalesOrderForm({
           ) : null}
         </fieldset>
 
-        {showMoney ? (
+        {showMoney && !ebayOrder ? (
+          <section className="so-buyer-total" aria-label="Buyer total">
+            <dl>
+              <dt>Buyer total</dt>
+              <dd className={buyerTotal == null ? "so-buyer-total-empty" : undefined}>
+                {buyerTotal == null ? "—" : formatSalesMoney(buyerTotal, currency)}
+              </dd>
+            </dl>
+          </section>
+        ) : null}
+
+        {showMoney && ebayOrder ? (
           <section className="so-ebay-card" aria-labelledby="so-ebay-heading">
             <div className="so-ebay-head">
               <h2 id="so-ebay-heading">eBay</h2>
