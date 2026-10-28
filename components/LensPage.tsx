@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePageMeta } from "@/components/AppShell";
@@ -259,8 +260,8 @@ export function LensPage() {
               }}
             />
           </label>
-          <label className="button secondary file-button">
-            Add images
+          <label className="button secondary file-button icon-button" title="Add images" aria-label="Add images">
+            <Plus size={16} strokeWidth={1.75} aria-hidden />
             <input
               type="file"
               accept="image/*"
@@ -282,8 +283,15 @@ export function LensPage() {
             {shots.map((shot) => (
               <li key={shot.key}>
                 <img src={shot.url} alt="" />
-                <button type="button" className="secondary" disabled={busy} onClick={() => removeShot(shot.key)}>
-                  Remove
+                <button
+                  type="button"
+                  className="secondary icon-button"
+                  disabled={busy}
+                  aria-label="Remove"
+                  title="Remove"
+                  onClick={() => removeShot(shot.key)}
+                >
+                  <Trash2 size={16} strokeWidth={1.75} aria-hidden />
                 </button>
               </li>
             ))}

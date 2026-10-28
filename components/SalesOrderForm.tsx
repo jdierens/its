@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, PackageCheck, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, PackageCheck, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
@@ -1271,8 +1271,14 @@ export function SalesOrderForm({
             </table>
           </div>
           {!locked ? (
-            <button type="button" className="secondary" onClick={() => setLines((current) => [...current, blankLine()])}>
-              Add line
+            <button
+              type="button"
+              className="secondary so-icon-add"
+              aria-label="Add line"
+              title="Add line"
+              onClick={() => setLines((current) => [...current, blankLine()])}
+            >
+              <Plus size={16} strokeWidth={1.75} aria-hidden />
             </button>
           ) : null}
         </fieldset>
@@ -1441,10 +1447,12 @@ export function SalesOrderForm({
               {!locked ? (
                 <button
                   type="button"
-                  className="secondary"
+                  className="secondary so-icon-add"
+                  aria-label="Add note"
+                  title="Add note"
                   onClick={() => setNotes((current) => [...current, { kind: "other", customerText: "", response: "", counterText: "" }])}
                 >
-                  Add note
+                  <Plus size={16} strokeWidth={1.75} aria-hidden />
                 </button>
               ) : null}
             </div>

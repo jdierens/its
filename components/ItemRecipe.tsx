@@ -1,5 +1,6 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadKitRecipe, saveKitRecipe, searchParts, type KitComponentView, type PartChoice } from "@/lib/kits";
 import { errorText } from "@/lib/errors";
@@ -189,8 +190,14 @@ export function ItemRecipe({
                   />
                 </td>
                 <td>
-                  <button type="button" className="secondary" onClick={() => setRows((current) => current.filter((item) => item.key !== row.key))}>
-                    Remove
+                  <button
+                    type="button"
+                    className="secondary icon-button"
+                    aria-label="Remove"
+                    title="Remove"
+                    onClick={() => setRows((current) => current.filter((item) => item.key !== row.key))}
+                  >
+                    <Trash2 size={16} strokeWidth={1.75} aria-hidden />
                   </button>
                 </td>
               </tr>

@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import Link from "next/link";
 import { memo, useEffect, useState, type DragEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
@@ -201,8 +201,8 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
     <fieldset>
       <legend>Photos</legend>
       <div className="gallery-actions">
-        <label className="button secondary file-button">
-          Add images
+        <label className="button secondary file-button icon-button" title="Add images" aria-label="Add images">
+          <Plus size={16} strokeWidth={1.75} aria-hidden />
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp,image/gif"

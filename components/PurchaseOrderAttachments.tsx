@@ -1,5 +1,6 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorText } from "@/lib/errors";
@@ -67,8 +68,15 @@ export function PurchaseOrderAttachments({
                 <span>{attachment.fileName}</span>
               )}
               {canEdit && orderId ? (
-                <button type="button" className="secondary" disabled={busy} onClick={() => void remove(attachment)}>
-                  Remove
+                <button
+                  type="button"
+                  className="secondary icon-button"
+                  disabled={busy}
+                  aria-label={`Remove ${attachment.fileName}`}
+                  title={`Remove ${attachment.fileName}`}
+                  onClick={() => void remove(attachment)}
+                >
+                  <Trash2 size={16} strokeWidth={1.75} aria-hidden />
                 </button>
               ) : null}
             </li>

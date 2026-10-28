@@ -1501,49 +1501,59 @@ export function ReceivingPage() {
                     </label>
                   </div>
                 ) : (
-                  <div className="receive-unit-list">
-                    {unitRows.map((row, index) => (
-                      <div className="receive-unit-row" key={index}>
-                        <label htmlFor={`receive-serial-${index}`}>
-                          <span>Serial {index + 1}</span>
-                          <input
-                            id={`receive-serial-${index}`}
-                            value={row.serial}
-                            disabled={busy}
-                            autoComplete="off"
-                            spellCheck={false}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setUnitRows((current) =>
-                                current.map((entry, entryIndex) =>
-                                  entryIndex === index ? { ...entry, serial: value } : entry,
-                                ),
-                              );
-                            }}
-                          />
-                        </label>
-                        <label htmlFor={`receive-coo-${index}`}>
-                          <span>COO</span>
-                          <input
-                            id={`receive-coo-${index}`}
-                            value={row.coo}
-                            disabled={busy}
-                            autoComplete="off"
-                            spellCheck={false}
-                            placeholder="USA"
-                            onChange={(event) => {
-                              const value = event.target.value.toUpperCase();
-                              setUnitRows((current) =>
-                                current.map((entry, entryIndex) =>
-                                  entryIndex === index ? { ...entry, coo: value } : entry,
-                                ),
-                              );
-                            }}
-                          />
-                        </label>
-                      </div>
-                    ))}
-                  </div>
+                  <table className="receive-serials">
+                    <thead>
+                      <tr>
+                        <th className="num">#</th>
+                        <th>Serial</th>
+                        <th>COO</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unitRows.map((row, index) => (
+                        <tr key={index}>
+                          <td className="num">{index + 1}</td>
+                          <td>
+                            <input
+                              id={`receive-serial-${index}`}
+                              aria-label={`Serial ${index + 1}`}
+                              value={row.serial}
+                              disabled={busy}
+                              autoComplete="off"
+                              spellCheck={false}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setUnitRows((current) =>
+                                  current.map((entry, entryIndex) =>
+                                    entryIndex === index ? { ...entry, serial: value } : entry,
+                                  ),
+                                );
+                              }}
+                            />
+                          </td>
+                          <td className="receive-coo">
+                            <input
+                              id={`receive-coo-${index}`}
+                              aria-label={`COO ${index + 1}`}
+                              value={row.coo}
+                              disabled={busy}
+                              autoComplete="off"
+                              spellCheck={false}
+                              placeholder="USA"
+                              onChange={(event) => {
+                                const value = event.target.value.toUpperCase();
+                                setUnitRows((current) =>
+                                  current.map((entry, entryIndex) =>
+                                    entryIndex === index ? { ...entry, coo: value } : entry,
+                                  ),
+                                );
+                              }}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
             ) : null}

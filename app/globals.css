@@ -782,54 +782,34 @@ button.label-print:hover:not(:disabled) {
   min-height: 44px;
 }
 
-.serial-picks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  list-style: none;
+.serial-scan {
+  width: 100%;
   margin: 0.15rem 0 0;
-  padding: 0;
+  border-collapse: collapse;
 }
 
-.serial-picks li {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.15rem;
-  max-width: 100%;
-  padding: 0.1rem 0.15rem 0.1rem 0.7rem;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid var(--input-border);
-  border-radius: 999px;
-  color: var(--ink);
-  font-size: 0.92rem;
+.serial-scan th,
+.serial-scan td {
+  padding: 0.2rem 0.45rem;
+  vertical-align: middle;
+  line-height: 1.3;
+  border-bottom: 1px solid var(--line);
 }
 
-.serial-picks li span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.serial-scan th:last-child,
+.serial-scan td:last-child {
+  width: 2.5rem;
+  text-align: right;
 }
 
-.serial-picks button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin: 0;
+.serial-scan button.icon-button {
+  width: 1.75rem;
+  height: 1.75rem;
+  min-height: 0;
   padding: 0;
   background: transparent;
-  background-image: none;
+  border-color: transparent;
   color: var(--muted);
-  border: 0;
-  border-radius: 999px;
-  box-shadow: none;
-}
-
-.serial-picks button:hover {
-  background: rgba(15, 23, 42, 0.06);
-  background-image: none;
-  color: var(--ink);
 }
 
 @media (max-width: 1180px) {
@@ -900,9 +880,10 @@ button.label-print:hover:not(:disabled) {
     height: 44px;
   }
 
-  .serial-picks button {
+  .serial-scan button.icon-button {
     width: 44px;
     height: 44px;
+    min-height: 44px;
   }
 }
 
@@ -1546,12 +1527,31 @@ form.dialog {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 36px;
   height: 36px;
+  min-height: 36px;
   padding: 0;
   background: #fff;
   color: var(--ink);
   border: 1px solid var(--line);
+}
+
+.value-list button.icon-button,
+.kit-table button.icon-button,
+.po-file-list button.icon-button,
+.lens-shots button.icon-button,
+.draft-attribute > button.icon-button,
+.field-with-action > button.icon-button,
+.po-line-actions button.icon-button,
+.po-track-row button.icon-button,
+.gallery-actions label.file-button.icon-button,
+.pick-icon-cell button.icon-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  min-height: 0;
+  padding: 0;
+  flex: none;
 }
 
 .nav-toggle,
@@ -5351,6 +5351,38 @@ button.receive-bin-note {
   gap: 0.45rem;
 }
 
+.receive-serials {
+  width: 100%;
+  max-width: 36rem;
+  border-collapse: collapse;
+}
+
+.receive-serials th,
+.receive-serials td {
+  padding: 0.2rem 0.4rem;
+  vertical-align: middle;
+  line-height: 1.3;
+  border-bottom: 1px solid var(--line);
+}
+
+.receive-serials th.num,
+.receive-serials td.num {
+  width: 2.5rem;
+  text-align: right;
+}
+
+.receive-serials input {
+  margin: 0;
+  height: 2.25rem;
+  min-height: 0;
+  padding: 0 0.55rem;
+  line-height: 1.2;
+}
+
+.receive-serials td.receive-coo {
+  width: 7rem;
+}
+
 .receive-unit-paste {
   grid-template-columns: minmax(12rem, 28rem) 7rem;
   align-items: end;
@@ -6791,7 +6823,8 @@ input.num-input {
   text-align: right;
 }
 
-.so-page button.so-icon-remove {
+.so-page button.so-icon-remove,
+.so-page button.so-icon-add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7369,7 +7402,8 @@ input.num-input {
     min-height: 2rem;
   }
 
-  .so-page button.so-icon-remove {
+  .so-page button.so-icon-remove,
+  .so-page button.so-icon-add {
     width: 44px;
     height: 44px;
     min-height: 44px;
@@ -8699,14 +8733,12 @@ input.num-input {
 
 .pick-head,
 .pick-scan,
-.pick-serial-row,
-.pick-qty-cell,
 .pick-finish,
 .pick-links {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem 1.25rem;
-  align-items: end;
+  align-items: center;
 }
 
 .pick-head {
@@ -8718,58 +8750,104 @@ input.num-input {
   font-weight: 650;
 }
 
-.pick-line {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0.85rem 1rem 1rem;
+.pick-table-wrap {
+  overflow-x: auto;
+  padding: 0.35rem 0.5rem 0.6rem;
 }
 
-.pick-line header {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.pick-bins,
+.pick-sheet,
+.pick-serials,
 .pick-queue {
   width: 100%;
+  border-collapse: collapse;
+}
+
+.pick-sheet {
+  min-width: 64rem;
+}
+
+.pick-recorded {
+  min-width: 36rem;
+}
+
+.pick-serials {
+  min-width: 36rem;
+}
+
+.pick-sheet th,
+.pick-sheet td,
+.pick-serials th,
+.pick-serials td {
+  padding: 0.35rem 0.45rem;
+  vertical-align: middle;
+  line-height: 1.35;
+  border-bottom: 1px solid var(--line);
+}
+
+.pick-sheet th.num,
+.pick-sheet td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.pick-sheet tr.pick-pull td {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.pick-qty-cell,
+.pick-icon-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pick-sheet input,
+.pick-serials input,
+.pick-scan input {
+  margin: 0;
+  height: 2.25rem;
+  min-height: 0;
+  padding: 0 0.55rem;
+  line-height: 1.2;
 }
 
 .pick-qty-cell input {
   width: 5rem;
 }
 
-.pick-done {
-  display: grid;
-  gap: 0.75rem;
+.pick-qty-cell button,
+.pick-scan button,
+.pick-short {
+  height: 2.25rem;
+  min-height: 0;
   margin: 0;
-  padding: 0;
-  list-style: none;
+  padding: 0 0.7rem;
 }
 
-.pick-done ul {
-  margin: 0.25rem 0 0;
-  padding-left: 1.1rem;
+.pick-short {
+  display: block;
+  height: auto;
+  min-height: 2rem;
+  margin-top: 0.35rem;
+  padding: 0.25rem 0.55rem;
 }
 
-.pick-skipped {
-  display: grid;
-  gap: 0.35rem;
+.pick-serials td input {
+  width: 100%;
 }
 
-.pick-skipped ul {
-  margin: 0;
-  padding-left: 1.1rem;
-}
-
-.pick-scan,
-.pick-serial-row {
+.pick-scan {
   align-items: end;
 }
 
-.pick-scan label,
-.pick-serial-row label {
+.pick-scan label {
   display: grid;
   gap: 0.25rem;
+  margin: 0;
+}
+
+.pick-pull-note {
+  margin: 0;
 }
 
 @media (max-width: 800px) {
@@ -8777,17 +8855,14 @@ input.num-input {
     font-size: 16px;
   }
 
-  .pick-bins,
   .pick-queue {
     display: block;
   }
 
-  .pick-bins thead,
   .pick-queue thead {
     display: none;
   }
 
-  .pick-bins tr,
   .pick-queue tr {
     display: grid;
     gap: 0.2rem;
@@ -8795,7 +8870,6 @@ input.num-input {
     border-top: 1px solid rgba(15, 23, 42, 0.08);
   }
 
-  .pick-bins td,
   .pick-queue td {
     display: block;
   }
