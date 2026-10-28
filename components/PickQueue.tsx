@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatPickQty, pickQueueLabel, type PickQueueRow } from "@/lib/pickSheet";
+import { formatPickQty, pickQueueLabel, stagingDisplay, type PickQueueRow } from "@/lib/pickSheet";
 
 export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
   return (
@@ -36,7 +36,13 @@ export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
                   <td className="pick-code">
                     {formatPickQty(row.picked)} of {formatPickQty(row.ordered)}
                   </td>
-                  <td className="pick-code">{row.stagingBin || "—"}</td>
+                  <td className="pick-code">
+                    {stagingDisplay({
+                      soNumber: row.soNumber,
+                      stagingBin: row.stagingBin,
+                      picking: row.pickStatus != null || row.status === "picking",
+                    }) || "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

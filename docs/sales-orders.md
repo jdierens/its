@@ -84,4 +84,4 @@ Apply `supabase/migrations/20261028073000_so_sku_replacement.sql` by hand after 
 
 ## Picking
 
-Warehouse → Picking is written up in [Picking](picking.md). Product and kit stock lines are the pick rows. A service line, and any line that is not freight whose item type is Service, is left off the sheet. Freight stays on the not-picked note. The pick ticket gives each line an item row and a bin row. Pending is what is still to pick.
+Warehouse → Picking is written up in [Picking](picking.md). Product and kit stock lines are the pick rows. Freight, fees, services, and service item 4343 are left off the page entirely. The item row is followed by the bin titles, then the bins. Picked lines up with pick qty. Pending lines up with the Pick button. Print ticket prints that sheet.

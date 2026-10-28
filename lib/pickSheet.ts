@@ -108,16 +108,19 @@ export function isStockPickLine(line: {
 }
 
 /**
- * Pick rows are product and kit stock.
- * Freight stays on the not-picked note, including freight allocated to service item 4343.
- * A service line, and any non-freight line whose item type is Service, is left off the sheet.
+ * Only product and kit stock is on the pick ticket.
+ * Freight, fees, services, non-inventory, and service item 4343 are omitted.
+ * They are not listed as "not picked".
  */
 export function pickSheetPlace(line: { lineKind: string; itemType: string | null }): "pick" | "note" | "omit" {
   const kind = line.lineKind || "product";
   if ((kind === "product" || kind === "kit") && line.itemType != null && STOCK_TYPES.has(line.itemType)) return "pick";
-  if (kind === "service") return "omit";
-  if (line.itemType === "Service" && kind !== "freight") return "omit";
-  return "note";
+  return "omit";
+}
+
+/** Service and freight SKUs that must not appear on the picking page, including 4343. */
+export function omitPickTicketSku(sku: string | null | undefined): boolean {
+  return (sku ?? "").trim() === "4343";
 }
 
 /**
@@ -127,6 +130,32 @@ export function pickSheetPlace(line: { lineKind: string; itemType: string | null
 export function pickOwnership(project: string | null, ownership: string | null): PickOwnership {
   if (ownership === "owned" || ownership === "consigned") return ownership;
   return project && project.trim() ? "consigned" : "owned";
+}
+
+/** Label for a pick that has not been put in a warehouse bin. Not a bin code. */
+export function stagingLabel(soNumber: number | null): string {
+  if (soNumber == null || !Number.isFinite(soNumber)) return "staging bin";
+  return `staging bin SO${soNumber}`;
+}
+
+/** What the pick list and the sheet show. A scanned bin wins. Otherwise the order label, once picking has started. */
+export function stagingDisplay(input: {
+  soNumber: number | null;
+  stagingBin: string | null;
+  picking: boolean;
+}): string {
+  if (input.stagingBin) return input.stagingBin;
+  if (!input.picking) return "";
+  return stagingLabel(input.soNumber);
+}
+
+const STAGING_BIN_CODE = /^(\d{5})-([PCB])$/i;
+
+/** Existing warehouse bin code, such as 20018-B. The staging label is not a bin code. */
+export function stagingBinCode(value: string): string | null {
+  const match = value.trim().match(STAGING_BIN_CODE);
+  if (!match) return null;
+  return `${match[1]}-${match[2].toUpperCase()}`;
 }
 
 export function stagingLayer(

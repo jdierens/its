@@ -150,15 +150,15 @@ describe("replacement at approval and pick", () => {
 });
 
 describe("pick sheet services", () => {
-  it("omits service lines and keeps freight in the not-picked note", () => {
+  it("omits service, freight, and non-stock lines from the pick ticket", () => {
     assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Product" }), "pick");
     assert.equal(pickSheetPlace({ lineKind: "kit", itemType: "Kit/Package" }), "pick");
     assert.equal(pickSheetPlace({ lineKind: "service", itemType: "Service" }), "omit");
     assert.equal(pickSheetPlace({ lineKind: "service", itemType: "Product" }), "omit");
     assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Service" }), "omit");
-    assert.equal(pickSheetPlace({ lineKind: "freight", itemType: "Service" }), "note");
-    assert.equal(pickSheetPlace({ lineKind: "fee", itemType: "Product" }), "note");
-    assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Non-inventory" }), "note");
+    assert.equal(pickSheetPlace({ lineKind: "freight", itemType: "Service" }), "omit");
+    assert.equal(pickSheetPlace({ lineKind: "fee", itemType: "Product" }), "omit");
+    assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Non-inventory" }), "omit");
   });
 });
 
