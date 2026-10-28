@@ -71,3 +71,17 @@ Unit price, extension, order total, internal notes, and the eBay money columns a
 If the move-inventory migration is applied after `supabase/migrations/20261025100000_pack_allocation_qty.sql` and its reference-type list does not include `conversion`, that later migration would drop `conversion`. Apply the pack file after that one, or add `conversion` to that list before applying it second.
 
 Pages: `/sales/orders`, `/sales/orders/new`, and `/sales/orders/[id]`.
+
+## Replacement SKU
+
+`so_line_allocations.item_id` stays the planned SKU. `actual_item_id` is the SKU that ships when it is different, the same planned and actual split `so_line_components` uses for a kit. A kit component swap stays on that component row. This column is for the product line itself: a different grade (`106683` fulfilled with `107021`), a generic planned SKU filled by a physical product, or a functional replacement such as one memory module for another. The fulfilled item has to be a non-generic product. A reason is stored on `swap_reason`, with `swapped_at` and `swapped_by`. Clearing the replacement leaves the planned SKU. Approval copies both onto the sales-order line. Picks, bin quantity, and stock units move the fulfilled SKU.
+
+The sales-order form shows the fulfilled SKU on the mapped row and the planned SKU under it. Plus is Replace SKU. The trash icon whose tooltip is Clear replacement removes it. That choice is saved with the order and does not wait on the pick setting.
+
+`app_settings.allow_replacement_sku_during_pick` is `false` until an admin turns on Allow replacement SKU during pick. While it is off, the pick sheet does not offer a different SKU and `set_so_allocation_replacement` with context `pick` rejects one. A replacement already saved at approval still ships, and the sheet shows planned and fulfilled. A line that already has a pick has to be undone before the SKU changes. The change writes `so_events` `sku_replaced`.
+
+Apply `supabase/migrations/20261028073000_so_sku_replacement.sql` by hand after the stock-unit and kit migrations. Deploying does not run it.
+
+## Picking
+
+Warehouse → Picking is written up in [Picking](picking.md). Product and kit stock lines are the pick rows. A service line, and any line that is not freight whose item type is Service, is left off the sheet. Freight stays on the not-picked note. The pick ticket gives each line an item row and a bin row. Pending is what is still to pick.

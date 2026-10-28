@@ -26,17 +26,17 @@ export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.orderId}>
-                  <td>
+                  <td className="pick-code">
                     <Link href={`/warehouse/pick/${row.orderId}`}>SO{row.soNumber}</Link>
                   </td>
                   <td>{row.customer || "—"}</td>
-                  <td>{row.customerPo || "—"}</td>
-                  <td>{row.orderDate || "—"}</td>
-                  <td>{pickQueueLabel(row.status, row.pickStatus)}</td>
-                  <td>
+                  <td className="pick-code">{row.customerPo || "—"}</td>
+                  <td className="pick-code">{row.orderDate || "—"}</td>
+                  <td className="pick-code">{pickQueueLabel(row.status, row.pickStatus)}</td>
+                  <td className="pick-code">
                     {formatPickQty(row.picked)} of {formatPickQty(row.ordered)}
                   </td>
-                  <td>{row.stagingBin || "—"}</td>
+                  <td className="pick-code">{row.stagingBin || "—"}</td>
                 </tr>
               ))}
             </tbody>

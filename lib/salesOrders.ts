@@ -85,6 +85,11 @@ export type SalesAllocationView = {
   qty: string;
   unitPrice: string;
   extPrice: string;
+  /** Fulfilled SKU. Empty when the planned item is what ships. */
+  actualItemId?: string;
+  actualSku?: string;
+  actualName?: string;
+  swapReason?: string;
 };
 
 export type SalesLineView = {
@@ -379,13 +384,21 @@ export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promi
 const ORDER_HEAD =
   "id, so_number, status, customer_id, customer_po, reference, channel, order_date, ship_date, bill_to, ship_to, terms, incoterms, ship_method, carrier_account, currency, sales_rep, export_notes, internal_notes, payment_requirement, payment_method, payment_date, payment_ref";
 
-function salesOrderSelect(withPayment: boolean, withAllocPrice: boolean, withLineNote: boolean): string {
+function salesOrderSelect(
+  withPayment: boolean,
+  withAllocPrice: boolean,
+  withLineNote: boolean,
+  withReplacement: boolean,
+): string {
   const payment = withPayment ? ", payment_amount" : "";
   const note = withLineNote ? ", line_note" : "";
   const item = "sku, name, description, us_hts, eccn";
+  const replacement = withReplacement
+    ? ", actual_item_id, swap_reason, actual:items!so_line_allocations_actual_item_id_fkey(sku, name)"
+    : "";
   const allocations = withAllocPrice
-    ? `so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no, items(${item}))`
-    : `so_line_allocations(item_id, qty, items(${item}))`;
+    ? `so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no${replacement}, items(${item}))`
+    : `so_line_allocations(item_id, qty${replacement}, items(${item}))`;
   return `${ORDER_HEAD}${payment}, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, hts_code, eccn${note}, ${allocations}), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)`;
 }
 
@@ -401,14 +414,25 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
   let withPayment = true;
   let withAllocPrice = true;
   let withLineNote = true;
+  let withReplacement = true;
   const loadOrder = () =>
-    supabase.from("sales_orders").select(salesOrderSelect(withPayment, withAllocPrice, withLineNote)).eq("id", id).maybeSingle();
+    supabase
+      .from("sales_orders")
+      .select(salesOrderSelect(withPayment, withAllocPrice, withLineNote, withReplacement))
+      .eq("id", id)
+      .maybeSingle();
   let loaded: { data: any; error: { message?: string } | null } = await loadOrder();
-  for (let attempt = 0; attempt < 4 && loaded.error; attempt += 1) {
+  for (let attempt = 0; attempt < 5 && loaded.error; attempt += 1) {
     const message = loaded.error.message ?? "";
     if (withPayment && missingColumn(loaded.error, "payment_amount")) withPayment = false;
     else if (withLineNote && missingColumn(loaded.error, "line_note")) withLineNote = false;
     else if (
+      withReplacement &&
+      /actual_item_id|so_line_allocations_actual_item_id_fkey/i.test(message) &&
+      /schema cache|could not find|does not exist|relationship/i.test(message)
+    ) {
+      withReplacement = false;
+    } else if (
       withAllocPrice &&
       /so_line_allocations/i.test(message) &&
       /unit_price|ext_price|alloc_no/i.test(message) &&
@@ -455,6 +479,8 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
             unitPrice = "";
             extPrice = "";
           }
+          const actual = firstRelation(row.actual);
+          const actualId = row.actual_item_id ? String(row.actual_item_id) : "";
           return {
             itemId: String(row.item_id),
             sku: String(item?.sku ?? ""),
@@ -465,6 +491,10 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
             qty,
             unitPrice,
             extPrice,
+            actualItemId: actualId && actualId !== String(row.item_id) ? actualId : "",
+            actualSku: String(actual?.sku ?? ""),
+            actualName: String(actual?.name ?? ""),
+            swapReason: text(row.swap_reason),
           };
         });
       return {

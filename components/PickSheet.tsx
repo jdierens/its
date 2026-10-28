@@ -4,12 +4,14 @@ import { Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { usePageMeta } from "@/components/AppShell";
+import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import {
   finishPick,
   lookupPickSerial,
   recordPick,
   recordPickSerial,
   removePickSerial,
+  setPickReplacement,
   setPickShort,
   undoPick,
 } from "@/lib/pickActions";
@@ -57,6 +59,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [cooText, setCooText] = useState<Record<string, string>>({});
   const [pull, setPull] = useState<SerialPull | null>(null);
   const [scan, setScan] = useState("");
+  const [replaceId, setReplaceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const open = canPick && sheet.pickStatus === "open";
@@ -217,14 +220,9 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     }
   }
 
-  const stagingProjects = [
-    ...new Set(
-      sheet.staging.map((row) => `${row.project ?? "No project"}${row.ownership ? ` · ${row.ownership}` : ""}`),
-    ),
-  ];
   const recorded = [
-    ...sheet.lines.flatMap((line) => line.picks.map((pick) => ({ line, pick, orphan: false }))),
-    ...sheet.orphans.map((pick) => ({ line: null, pick, orphan: true })),
+    ...sheet.lines.flatMap((line) => line.picks.map((pick) => ({ line, pick }))),
+    ...sheet.orphans.map((pick) => ({ line: null, pick })),
   ];
   const serialRows = recorded.flatMap(({ line, pick }) =>
     pick.serials.map((serial) => ({
@@ -234,7 +232,6 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     })),
   );
   const showSerials = open || serialRows.length > 0;
-  const columnCount = open ? 11 : 10;
 
   return (
     <main className="page pick-page">
@@ -249,11 +246,6 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
             {formatPickQty(progress.picked)} of {formatPickQty(progress.ordered)} picked
           </p>
           <p>{sheet.stagingBin ? `Staging bin ${sheet.stagingBin}` : "Staging bin opens with this sheet."}</p>
-          <p className="muted">
-            {stagingProjects.length > 0
-              ? stagingProjects.join(", ")
-              : "Project and ownership are copied on the first pick."}
-          </p>
         </div>
       </header>
 
@@ -293,73 +285,149 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         </form>
       ) : null}
 
+      {replaceId ? (
+        <ReplaceSkuPicker
+          plannedItemId={sheet.lines.find((line) => line.allocationId === replaceId)?.plannedItemId || replaceId}
+          onCancel={() => setReplaceId(null)}
+          onChoose={(hit, reason) => {
+            const allocationId = replaceId;
+            void run(async () => {
+              const next = await setPickReplacement({
+                allocationId,
+                actualItemId: hit.id,
+                reason,
+              });
+              setReplaceId(null);
+              return next;
+            });
+          }}
+        />
+      ) : null}
+
       <div className="card pick-table-wrap">
-        <table className="pick-sheet">
+        <table className="pick-sheet pick-ticket">
           <thead>
-            <tr>
+            <tr className="pick-head-item">
               <th>SKU</th>
               <th>Name</th>
               <th className="num">Ordered</th>
               <th className="num">Picked</th>
-              <th>Still</th>
-              <th>Bin</th>
-              <th>Location</th>
-              <th>Project</th>
-              <th>Ownership</th>
-              <th className="num">On hand</th>
-              {open ? <th>Qty</th> : null}
+              <th className="num">Pending</th>
+            </tr>
+            <tr className="pick-head-bin" aria-hidden="true">
+              <td>Bin</td>
+              <td>Location</td>
+              <td className="num">QOH</td>
+              <td>Pick qty</td>
+              <td>Pick</td>
             </tr>
           </thead>
-          <tbody>
-            {sheet.lines.map((line) => {
+          {sheet.lines.length === 0 ? (
+            <tbody>
+              <tr>
+                <td colSpan={5}>No stock lines on this order.</td>
+              </tr>
+            </tbody>
+          ) : (
+            sheet.lines.map((line) => {
               const remaining = lineRemaining(line.ordered, line.picked);
               const bins = line.bins.length > 0 ? line.bins : [null];
-              return bins.map((bin, index) => {
-                const pulled = Boolean(bin && activePull?.allocationId === line.allocationId && activePull.binId === bin.binId);
-                return (
-                  <tr key={`${line.allocationId}:${bin?.binId ?? "none"}`} className={pulled ? "pick-pull" : undefined}>
-                    {index === 0 ? (
-                      <>
-                        <td className="sku" rowSpan={bins.length}>
-                          {line.sku}
-                        </td>
-                        <td rowSpan={bins.length}>{line.name}</td>
-                        <td className="num" rowSpan={bins.length}>
-                          {formatPickQty(line.ordered)}
-                        </td>
-                        <td className="num" rowSpan={bins.length}>
-                          {formatPickQty(line.picked)}
-                        </td>
-                        <td rowSpan={bins.length}>
-                          <span>
-                            {formatPickQty(remaining)}
-                            {line.short && remaining > 0 ? " · Short acknowledged" : ""}
+              return (
+                <tbody key={line.allocationId} className="pick-line-group">
+                  <tr className="pick-item">
+                    <td className="sku">
+                      <span className="pick-sku-cell">
+                        <span>{line.sku}</span>
+                        {line.replaced ? (
+                          <span className="pick-planned">
+                            Planned {line.plannedSku}
+                            {line.plannedName ? ` ${line.plannedName}` : ""}
+                            {line.swapReason ? ` · ${line.swapReason}` : ""}
                           </span>
-                          {open && remaining > 0 ? (
+                        ) : null}
+                        {open && sheet.allowReplacement && line.picked < 1 ? (
+                          <span className="pick-icon-cell">
                             <button
                               type="button"
-                              className="secondary pick-short"
+                              className="secondary icon-button"
+                              aria-label={`Replace SKU ${line.plannedSku || line.sku}`}
+                              title="Replace SKU"
                               disabled={busy}
-                              onClick={() => void run(() => setPickShort(sheet.orderId, line.allocationId, !line.short))}
+                              onClick={() => setReplaceId(line.allocationId)}
                             >
-                              {line.short ? "Clear short" : "Acknowledge short"}
+                              <Plus size={16} strokeWidth={1.75} aria-hidden />
                             </button>
-                          ) : null}
-                        </td>
-                      </>
-                    ) : null}
-                    {bin ? (
-                      <>
-                        <td>
+                            {line.replaced ? (
+                              <button
+                                type="button"
+                                className="secondary icon-button"
+                                aria-label={`Clear replacement for ${line.plannedSku || line.sku}`}
+                                title="Clear replacement"
+                                disabled={busy}
+                                onClick={() =>
+                                  void run(async () => {
+                                    const next = await setPickReplacement({
+                                      allocationId: line.allocationId,
+                                      actualItemId: null,
+                                      reason: "",
+                                    });
+                                    setReplaceId(null);
+                                    return next;
+                                  })
+                                }
+                              >
+                                <Trash2 size={16} strokeWidth={1.75} aria-hidden />
+                              </button>
+                            ) : null}
+                          </span>
+                        ) : null}
+                      </span>
+                    </td>
+                    <td className="pick-name">{line.name}</td>
+                    <td className="num">{formatPickQty(line.ordered)}</td>
+                    <td className="num">{formatPickQty(line.picked)}</td>
+                    <td className="num">
+                      <span>
+                        {formatPickQty(remaining)}
+                        {line.short && remaining > 0 ? " · Short acknowledged" : ""}
+                      </span>
+                      {open && remaining > 0 ? (
+                        <button
+                          type="button"
+                          className="secondary pick-short"
+                          disabled={busy}
+                          onClick={() => void run(() => setPickShort(sheet.orderId, line.allocationId, !line.short))}
+                        >
+                          {line.short ? "Clear short" : "Acknowledge short"}
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                  {bins.map((bin) => {
+                    const pulled = Boolean(bin && activePull?.allocationId === line.allocationId && activePull.binId === bin.binId);
+                    if (!bin) {
+                      return (
+                        <tr key={`${line.allocationId}:none`} className="pick-bin">
+                          <td className="pick-code" colSpan={5}>
+                            No open quantity for this SKU.
+                          </td>
+                        </tr>
+                      );
+                    }
+                    return (
+                      <tr key={`${line.allocationId}:${bin.binId}`} className={pulled ? "pick-bin pick-pull" : "pick-bin"}>
+                        <td className="pick-code" aria-label={`Bin ${bin.reference}`}>
                           {bin.reference}
                           {pulled ? <span className="sr-only">Pulling from this bin</span> : null}
                         </td>
-                        <td>{dash(bin.location)}</td>
-                        <td>{dash(bin.project)}</td>
-                        <td>{bin.ownership}</td>
-                        <td className="num">{formatPickQty(bin.qty)}</td>
-                        {open ? (
-                          <td>
+                        <td className="pick-code" aria-label={`Location ${bin.location || "none"}`}>
+                          {dash(bin.location)}
+                        </td>
+                        <td className="num pick-code" aria-label={`On hand ${formatPickQty(bin.qty)}`}>
+                          {formatPickQty(bin.qty)}
+                        </td>
+                        <td>
+                          {open ? (
                             <div className="pick-qty-cell">
                               <input
                                 aria-label={`Quantity from ${bin.reference}`}
@@ -378,26 +446,23 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                                   }
                                 }}
                               />
-                              <button type="button" disabled={busy} onClick={() => onLinePick(line, bin.binId, bin.qty)}>
-                                Pick
-                              </button>
                             </div>
-                          </td>
-                        ) : null}
-                      </>
-                    ) : (
-                      <td colSpan={open ? 6 : 5}>No open quantity for this SKU.</td>
-                    )}
-                  </tr>
-                );
-              });
-            })}
-            {sheet.lines.length === 0 ? (
-              <tr>
-                <td colSpan={columnCount}>No stock lines on this order.</td>
-              </tr>
-            ) : null}
-          </tbody>
+                          ) : null}
+                        </td>
+                        <td>
+                          {open ? (
+                            <button type="button" className="pick-action" disabled={busy} onClick={() => onLinePick(line, bin.binId, bin.qty)}>
+                              Pick
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              );
+            })
+          )}
         </table>
       </div>
 
@@ -409,19 +474,18 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                 <th>SKU</th>
                 <th className="num">Qty</th>
                 <th>From</th>
-                <th>Project</th>
-                <th>Ownership</th>
                 {open ? <th /> : null}
               </tr>
             </thead>
             <tbody>
-              {recorded.map(({ line, pick, orphan }) => (
+              {recorded.map(({ line, pick }) => (
                 <tr key={pick.id}>
-                  <td className="sku">{line?.sku || ("sku" in pick ? pick.sku : null) || "SKU"}</td>
-                  <td className="num">{formatPickQty(pick.qty)}</td>
-                  <td>{dash(pick.fromBin)}</td>
-                  <td>{dash(pick.project)}</td>
-                  <td>{dash(pick.ownership)}</td>
+                  <td className="sku">
+                    {line?.sku || ("sku" in pick ? pick.sku : null) || "SKU"}
+                    {line?.replaced ? <span className="pick-planned">Planned {line.plannedSku}</span> : null}
+                  </td>
+                  <td className="num pick-code">{formatPickQty(pick.qty)}</td>
+                  <td className="pick-code">{dash(pick.fromBin)}</td>
                   {open ? (
                     <td>
                       <button type="button" className="secondary" disabled={busy} onClick={() => void run(() => undoPick(pick.id))}>
@@ -470,8 +534,8 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                     <tr key={serial.id}>
                       <td className="sku">{line.sku}</td>
                       <td>{serial.serial}</td>
-                      <td>{dash(serial.coo)}</td>
-                      <td>{dash(pick.fromBin)}</td>
+                      <td className="pick-code">{dash(serial.coo)}</td>
+                      <td className="pick-code">{dash(pick.fromBin)}</td>
                       {open ? (
                         <td>
                           <div className="pick-icon-cell">
@@ -512,7 +576,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
             <tbody>
               {sheet.skipped.map((row) => (
                 <tr key={`${row.lineNo}-${row.sku ?? "none"}`}>
-                  <td>{row.lineNo}</td>
+                  <td className="pick-code">{row.lineNo}</td>
                   <td className="sku">{dash(row.sku)}</td>
                   <td>{dash(row.name)}</td>
                   <td>{row.reason}</td>
@@ -599,6 +663,7 @@ function SerialEntryRow({
       </td>
       <td>
         <input
+          className="pick-from"
           aria-label={`Pull from location for ${line.sku}`}
           value={from}
           readOnly

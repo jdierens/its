@@ -4,6 +4,7 @@ import {
   finishBlockMessage,
   formatPickQty,
   isStockPickLine,
+  pickSheetPlace,
   lineRemaining,
   parsePickQty,
   pickFinishStatus,
@@ -29,6 +30,10 @@ describe("stock lines", () => {
     assert.equal(isStockPickLine({ lineKind: "service", itemType: "Product", itemId: "a" }), false);
     assert.equal(isStockPickLine({ lineKind: "product", itemType: "Non-inventory", itemId: "a" }), false);
     assert.equal(isStockPickLine({ lineKind: "product", itemType: "Product", itemId: null }), false);
+    assert.equal(pickSheetPlace({ lineKind: "service", itemType: "Service" }), "omit");
+    assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Service" }), "omit");
+    assert.equal(pickSheetPlace({ lineKind: "freight", itemType: "Service" }), "note");
+    assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Product" }), "pick");
   });
 });
 
@@ -179,6 +184,9 @@ describe("pick sheet json", () => {
     assert.equal(sheet.lines[0].picks[0].serials[0].coo, null);
     assert.equal(sheet.lines[0].itemCoo, null);
     assert.equal(sheet.skipped[0].sku, "4343");
+    assert.equal(sheet.allowReplacement, false);
+    assert.equal(sheet.lines[0].plannedSku, "106683");
+    assert.equal(sheet.lines[0].replaced, false);
     assert.equal("unit_price" in (sheet as object), false);
     const queue = pickQueueFromJson([
       {

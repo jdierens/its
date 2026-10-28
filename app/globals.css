@@ -8780,20 +8780,22 @@ input.num-input {
 .pick-sheet,
 .pick-serials,
 .pick-queue {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
 }
 
-.pick-sheet {
-  min-width: 64rem;
+.pick-code {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
-.pick-recorded {
-  min-width: 36rem;
+.pick-ticket tr.pick-bin td.pick-code:first-child {
+  min-width: 8ch;
 }
 
-.pick-serials {
-  min-width: 36rem;
+.pick-ticket tr.pick-bin td.pick-code:nth-child(2) {
+  min-width: 13ch;
 }
 
 .pick-sheet th,
@@ -8810,6 +8812,31 @@ input.num-input {
 .pick-sheet td.num {
   text-align: right;
   font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+.pick-ticket thead tr.pick-head-bin td {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pick-ticket .pick-name {
+  min-width: 12rem;
+  white-space: normal;
+}
+
+.pick-ticket tbody.pick-line-group tr.pick-item td {
+  border-bottom-color: transparent;
+  vertical-align: middle;
+}
+
+.pick-ticket tbody.pick-line-group tr.pick-bin td {
+  vertical-align: middle;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 
 .pick-sheet tr.pick-pull td {
@@ -8823,6 +8850,32 @@ input.num-input {
   gap: 0.4rem;
 }
 
+.pick-sku-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.pick-planned {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1.3;
+}
+
+.sku-replace {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.so-replace-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
 .pick-sheet input,
 .pick-serials input,
 .pick-scan input {
@@ -8834,10 +8887,12 @@ input.num-input {
 }
 
 .pick-qty-cell input {
-  width: 5rem;
+  width: 5.5rem;
+  min-width: 5.5rem;
 }
 
 .pick-qty-cell button,
+.pick-action,
 .pick-scan button,
 .pick-short {
   height: 2.25rem;
@@ -8856,6 +8911,17 @@ input.num-input {
 
 .pick-serials td input {
   width: 100%;
+  min-width: 8ch;
+}
+
+.pick-serials input.pick-coo {
+  min-width: 5.5rem;
+  white-space: nowrap;
+}
+
+.pick-serials input.pick-from {
+  min-width: 13ch;
+  white-space: nowrap;
 }
 
 .pick-scan {
