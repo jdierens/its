@@ -176,12 +176,19 @@ export function copyShipToBillTo(shipTo: SoAddress, billTo: SoAddress): SoAddres
 
 /**
  * Drafts, approved orders, and orders being picked stay editable.
- * Cancelled, closed, and later fulfillment statuses stay locked.
+ * Packing, packed, cancelled, closed, and later fulfillment statuses stay locked.
  */
 export function salesOrderFormLocked(canEdit: boolean, status: string | null): boolean {
   if (!canEdit) return true;
   if (status == null || status === "draft" || status === "approved" || status === "picking") return false;
   return true;
+}
+
+/** Picking and packing use the open chip. Packed uses the approved chip. */
+export function salesOrderBadgeTone(status: string): string {
+  if (status === "picking" || status === "packing") return "open";
+  if (status === "packed") return "approved";
+  return status;
 }
 
 export function partPrefix(value: string): string {

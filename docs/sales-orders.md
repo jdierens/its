@@ -85,3 +85,9 @@ Apply `supabase/migrations/20261028073000_so_sku_replacement.sql` by hand after 
 ## Picking
 
 Warehouse → Picking is written up in [Picking](picking.md). Product and kit stock lines are the pick rows. Freight, fees, services, and service item 4343 are left off the page entirely. The item row is followed by the bin titles, then the bins. Picked lines up with pick qty. Pending lines up with the Pick button. Print ticket prints that sheet.
+
+## Packing
+
+Warehouse → Packing is the step after a finished pick. [Packing](packing.md) covers the packaging list, shipping bins, weights, and the rule that finishes the order. The sales order moves from `picking` to `packing` when packing is opened, and to `packed` when every picked quantity is in a bin and every bin has a weight. Freight, fees, services, and unpicked lines stay off that sheet. `packed_at` is the hook for shipping. Carrier labels and rate shopping are not built. Warehouse → Shipping lists packed orders and stops there.
+
+A draft, an approved order, and an order being picked stay editable. Packing and packed stay locked, the same way cancelled and closed do. Apply `supabase/migrations/20261028233000_sales_order_packing.sql` by hand. Deploying does not run it.

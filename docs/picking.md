@@ -17,3 +17,5 @@ Scan a bin code in the scan box to pick the first open line that holds it. Scan 
 Serials already on the sheet, and serials typed while receiving a small quantity, are rows in a table: one line per serial, with the country of origin and, on a pick, the bin it came from.
 
 Remove and Add actions on the sheet are a trash icon and a plus icon. The name is the button’s tooltip and accessible label.
+
+Finishing the pick leaves the sales order on picking. The sheet links to packing. Opening packing sets the order to packing. Warehouse → Packing is written up in [Packing](packing.md).
