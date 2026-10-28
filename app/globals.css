@@ -1540,6 +1540,8 @@ form.dialog {
 .value-list button.icon-button,
 .kit-table button.icon-button,
 .po-file-list button.icon-button,
+.item-file-list button.icon-button,
+.item-file-add label.file-button.icon-button,
 .lens-shots button.icon-button,
 .draft-attribute > button.icon-button,
 .field-with-action > button.icon-button,
@@ -3446,6 +3448,47 @@ tr.quote-latest td {
   cursor: pointer;
 }
 
+.item-file-list {
+  list-style: none;
+  margin: 0.25rem 0 0.45rem;
+  padding: 0;
+}
+
+.item-file-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+  min-height: 2.1rem;
+  margin: 0;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.item-file-list a,
+.item-file-list li > span:not(.badge) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.item-file-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.45rem 0.55rem;
+  margin-top: 0.35rem;
+}
+
+.item-file-add > label:first-child {
+  flex: 1 1 11rem;
+  max-width: 16rem;
+  margin-bottom: 0;
+}
+
+.item-file-add > label.file-button {
+  margin-bottom: 0;
+}
+
 .scan-video {
   width: 100%;
   max-height: 52vh;
@@ -4659,6 +4702,21 @@ button.sidebar-signout:hover {
 }
 
 .badge-file-order_confirmation {
+  background: #bbf7d0;
+  color: #166534;
+}
+
+.badge-file-product_brief {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+
+.badge-file-data_sheet {
+  background: #ddd6fe;
+  color: #5b21b6;
+}
+
+.badge-file-manual {
   background: #bbf7d0;
   color: #166534;
 }

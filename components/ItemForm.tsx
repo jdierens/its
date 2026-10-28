@@ -14,6 +14,7 @@ import { ChangeTaxonomyDialog } from "@/components/ChangeTaxonomyDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CountrySelect } from "@/components/CountrySelect";
 import { FastArea, FastInput } from "@/components/FastField";
+import { ItemAttachments } from "@/components/ItemAttachments";
 import { ITEM_CAMERA_INPUT_ID, ItemGallery, type PendingImage } from "@/components/ItemGallery";
 import { ItemRecipe } from "@/components/ItemRecipe";
 import { UsedInKits } from "@/components/UsedInKits";
@@ -1434,6 +1435,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           pending={pendingImages}
           onPendingChange={setPendingImages}
         />
+        <ItemAttachments itemId={mode === "edit" ? itemId : undefined} />
       </form>
       {mode === "edit" && itemId ? <UsedInKits itemId={itemId} /> : null}
       {changeTaxonomy && mode === "edit" && itemId ? (
