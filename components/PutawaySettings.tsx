@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { errorText } from "@/lib/errors";
 import {
@@ -237,8 +238,14 @@ export function PutawaySettings() {
                   onChange={(event) => setPattern(event.target.value)}
                 />
               </label>
-              <button type="submit" className="secondary" disabled={!canEdit || saving}>
-                Add location type
+              <button
+                type="submit"
+                className="secondary icon-button"
+                disabled={!canEdit || saving}
+                aria-label="Add location type"
+                title="Add location type"
+              >
+                <Plus size={16} strokeWidth={1.75} aria-hidden />
               </button>
             </div>
             <span className="hint">
@@ -259,8 +266,14 @@ export function PutawaySettings() {
                   onChange={(event) => setLocationCode(event.target.value)}
                 />
               </label>
-              <button type="submit" className="secondary" disabled={!canEdit || saving}>
-                Add location
+              <button
+                type="submit"
+                className="secondary icon-button"
+                disabled={!canEdit || saving}
+                aria-label="Add location"
+                title="Add location"
+              >
+                <Plus size={16} strokeWidth={1.75} aria-hidden />
               </button>
             </div>
             <span className="hint">

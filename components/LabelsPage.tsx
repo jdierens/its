@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { usePageMeta } from "@/components/AppShell";
 import { labelItemBackHref } from "@/lib/labelReturn";
 import { FormEvent, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Printer, X } from "lucide-react";
+import { Printer, Trash2, X } from "lucide-react";
 import { FastInput } from "@/components/FastField";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { SerialItemLabel, SERIAL_LABEL_PRINT_CSS } from "@/components/SerialItemLabel";
@@ -491,16 +491,32 @@ export function LabelsPage() {
           </div>
         </div>
         {mode === "serial" && serials.length > 0 ? (
-          <ul className="serial-picks" aria-label="Serials to print">
-            {serials.map((serial) => (
-              <li key={serial}>
-                <span>{serial}</span>
-                <button type="button" aria-label={`Remove ${serial}`} title={`Remove ${serial}`} onClick={() => removeSerial(serial)}>
-                  <X size={14} strokeWidth={1.75} aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
+          <table className="serial-scan" aria-label="Serials to print">
+            <thead>
+              <tr>
+                <th>Serial</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {serials.map((serial) => (
+                <tr key={serial}>
+                  <td>{serial}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={`Remove ${serial}`}
+                      title={`Remove ${serial}`}
+                      onClick={() => removeSerial(serial)}
+                    >
+                      <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         ) : null}
         {listOpen ? (
           <ul className="label-results" id="label-results" role="listbox" aria-label="Matching items">

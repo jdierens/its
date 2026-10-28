@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { memo, useCallback, useRef, useState } from "react";
@@ -613,11 +614,13 @@ export function PurchaseOrderForm({
                   {chargesEditable ? (
                     <button
                       type="button"
-                      className="secondary"
+                      className="secondary icon-button"
+                      aria-label="Remove"
+                      title="Remove"
                       onClick={() => setShipments((current) => current.filter((_, rowIndex) => rowIndex !== index))}
                     >
-                    Remove
-                  </button>
+                      <Trash2 size={16} strokeWidth={1.75} aria-hidden />
+                    </button>
                 ) : null}
               </div>
               );
@@ -625,10 +628,12 @@ export function PurchaseOrderForm({
             {chargesEditable ? (
               <button
                 type="button"
-                className="secondary"
+                className="secondary icon-button"
+                aria-label="Add tracking number"
+                title="Add tracking number"
                 onClick={() => setShipments((current) => [...current, { carrier: "", trackingNumber: "" }])}
               >
-                Add tracking number
+                <Plus size={16} strokeWidth={1.75} aria-hidden />
               </button>
             ) : null}
           </div>
@@ -706,11 +711,11 @@ export function PurchaseOrderForm({
               Add lines
               <input value={addCount} onChange={(event) => setAddCount(event.target.value)} inputMode="numeric" />
             </label>
-            <button type="button" onClick={addLines}>
-              Add
+            <button type="button" className="icon-button" aria-label="Add" title="Add" onClick={addLines}>
+              <Plus size={16} strokeWidth={1.75} aria-hidden />
             </button>
-            <button type="button" className="secondary" onClick={removeSelected}>
-              Remove selected
+            <button type="button" className="secondary icon-button" aria-label="Remove selected" title="Remove selected" onClick={removeSelected}>
+              <Trash2 size={16} strokeWidth={1.75} aria-hidden />
             </button>
             <label>
               Import

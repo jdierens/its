@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Copy, ExternalLink, ScanBarcode, Shapes, Trash2 } from "lucide-react";
+import { Camera, Copy, ExternalLink, Plus, ScanBarcode, Shapes, Trash2 } from "lucide-react";
 import {
   AttributeValueField,
   attributeValueError,
@@ -1368,8 +1368,14 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                 />
                 Allowed values
               </label>
-              <button type="button" className="secondary" onClick={addDraft}>
-                Add attribute
+              <button
+                type="button"
+                className="secondary icon-button"
+                aria-label="Add attribute"
+                title="Add attribute"
+                onClick={addDraft}
+              >
+                <Plus size={16} strokeWidth={1.75} aria-hidden />
               </button>
             </div>
           </fieldset>

@@ -1,7 +1,7 @@
 "use client";
 
 import { DragEvent, useCallback, useEffect, useRef, useState } from "react";
-import { GitMerge, Link2 } from "lucide-react";
+import { GitMerge, Link2, Loader2, Plus, Trash2 } from "lucide-react";
 import { valuesMatch, attributeValueError } from "@/components/AttributeValueField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { usePageMeta } from "@/components/AppShell";
@@ -685,8 +685,18 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
           </label>
         </div>
         <div className="actions">
-          <button type="submit" disabled={savingId === "new"}>
-            {savingId === "new" ? "Adding…" : "Add field"}
+          <button
+            type="submit"
+            className="icon-button"
+            disabled={savingId === "new"}
+            aria-label={savingId === "new" ? "Adding" : "Add field"}
+            title={savingId === "new" ? "Adding" : "Add field"}
+          >
+            {savingId === "new" ? (
+              <Loader2 className="icon-spin" size={16} strokeWidth={1.75} aria-hidden />
+            ) : (
+              <Plus size={16} strokeWidth={1.75} aria-hidden />
+            )}
           </button>
         </div>
       </form>
@@ -940,8 +950,10 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
                         )}
                         <button
                           type="button"
-                          className="secondary"
+                          className="secondary icon-button"
                           disabled={count > 0 || savingId === attribute.id}
+                          aria-label="Remove"
+                          title="Remove"
                           onClick={() =>
                             setPending({
                               kind: "value",
@@ -951,7 +963,7 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
                             })
                           }
                         >
-                          Remove
+                          <Trash2 size={16} strokeWidth={1.75} aria-hidden />
                         </button>
                       </li>
                     );
@@ -975,11 +987,13 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
                   />
                   <button
                     type="button"
-                    className="secondary"
+                    className="secondary icon-button"
                     disabled={savingId === attribute.id}
+                    aria-label="Add value"
+                    title="Add value"
                     onClick={() => void onAddValue(attribute)}
                   >
-                    Add value
+                    <Plus size={16} strokeWidth={1.75} aria-hidden />
                   </button>
                 </div>
               </div>
@@ -1030,7 +1044,10 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
               </label>
               <button
                 type="button"
+                className="icon-button"
                 disabled={!sourceTaxonomyId || savingId === "link"}
+                aria-label="Add all"
+                title="Add all"
                 onClick={() =>
                   void linkChosen(
                     catalog
@@ -1039,7 +1056,7 @@ export function TaxonomyFields({ taxonomyId }: { taxonomyId: string }) {
                   )
                 }
               >
-                Add all
+                <Plus size={16} strokeWidth={1.75} aria-hidden />
               </button>
             </div>
             {pickerFields.length === 0 ? <p className="muted">No fields match.</p> : null}

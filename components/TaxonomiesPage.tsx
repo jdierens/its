@@ -1,5 +1,6 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DragEvent, type KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -533,10 +534,12 @@ export function TaxonomiesPage() {
                     <td>
                       <button
                         type="button"
-                        className="secondary"
+                        className="secondary icon-button"
+                        aria-label={`Delete ${row.name}`}
+                        title="Delete"
                         onClick={() => void askDelete(row)}
                       >
-                        Delete
+                        <Trash2 size={16} strokeWidth={1.75} aria-hidden />
                       </button>
                     </td>
                   </tr>
