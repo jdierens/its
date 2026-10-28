@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Printer, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { usePageMeta } from "@/components/AppShell";
@@ -25,6 +25,7 @@ import {
   parsePickQty,
   pickTargetForBin,
   serialProblem,
+  omitPickTicketSku,
   sheetProgress,
   stagingBinCode,
   stagingLabel,
@@ -236,6 +237,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     })),
   );
   const showSerials = open || serialRows.length > 0;
+  const ticketLines = sheet.lines.filter((line) => !omitPickTicketSku(line.sku));
 
   return (
     <main className="page pick-page">
@@ -250,11 +252,15 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
             {formatPickQty(progress.picked)} of {formatPickQty(progress.ordered)} picked
           </p>
           <p>{sheet.stagingBin ? `Staging bin ${sheet.stagingBin}` : stagingLabel(sheet.soNumber)}</p>
+          <button type="button" className="secondary no-print" onClick={() => window.print()}>
+            <Printer size={16} strokeWidth={1.75} aria-hidden />
+            Print ticket
+          </button>
         </div>
       </header>
       {open && !sheet.stagingBin ? (
         <form
-          className="card pick-scan"
+          className="card pick-scan no-print"
           onSubmit={(event) => {
             event.preventDefault();
             const code = stagingBinCode(stageScan);
@@ -302,7 +308,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       {!canPick ? <p className="muted">You can look at this sheet. Recording a pick is turned off for this sign-in.</p> : null}
 
       {open ? (
-        <form className="card pick-scan" onSubmit={(event) => void onScan(event)}>
+        <form className="card pick-scan no-print" onSubmit={(event) => void onScan(event)}>
           <label>
             Scan a bin or serial
             <input
@@ -341,6 +347,13 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
 
       <div className="card pick-table-wrap">
         <table className="pick-sheet pick-ticket">
+          <colgroup>
+            <col className="pick-col-sku" />
+            <col className="pick-col-name" />
+            <col className="pick-col-ordered" />
+            <col className="pick-col-picked" />
+            <col className="pick-col-pending" />
+          </colgroup>
           <thead>
             <tr className="pick-head-item">
               <th>SKU</th>
@@ -349,22 +362,15 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
               <th className="num">Picked</th>
               <th className="num">Pending</th>
             </tr>
-            <tr className="pick-head-bin" aria-hidden="true">
-              <td>Bin</td>
-              <td>Location</td>
-              <td className="num">QOH</td>
-              <td>Pick qty</td>
-              <td>Pick</td>
-            </tr>
           </thead>
-          {sheet.lines.length === 0 ? (
+          {ticketLines.length === 0 ? (
             <tbody>
               <tr>
                 <td colSpan={5}>No stock lines on this order.</td>
               </tr>
             </tbody>
           ) : (
-            sheet.lines.map((line) => {
+            ticketLines.map((line) => {
               const remaining = lineRemaining(line.ordered, line.picked);
               const bins = line.bins.length > 0 ? line.bins : [null];
               return (
@@ -438,6 +444,13 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                       ) : null}
                     </td>
                   </tr>
+                  <tr className="pick-head-bin">
+                    <th scope="col">Bin</th>
+                    <th scope="col">Location</th>
+                    <th scope="col" className="num">QOH</th>
+                    <th scope="col" className="num">Pick qty</th>
+                    <th scope="col" className="num">Action</th>
+                  </tr>
                   {bins.map((bin) => {
                     const pulled = Boolean(bin && activePull?.allocationId === line.allocationId && activePull.binId === bin.binId);
                     if (!bin) {
@@ -461,7 +474,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                         <td className="num pick-code" aria-label={`On hand ${formatPickQty(bin.qty)}`}>
                           {formatPickQty(bin.qty)}
                         </td>
-                        <td>
+                        <td className="num">
                           {open ? (
                             <div className="pick-qty-cell">
                               <input
@@ -484,9 +497,9 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                             </div>
                           ) : null}
                         </td>
-                        <td>
+                        <td className="pick-action-cell">
                           {open ? (
-                            <button type="button" className="pick-action" disabled={busy} onClick={() => onLinePick(line, bin.binId, bin.qty)}>
+                            <button type="button" className="pick-action no-print" disabled={busy} onClick={() => onLinePick(line, bin.binId, bin.qty)}>
                               Pick
                             </button>
                           ) : null}
@@ -502,7 +515,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       </div>
 
       {recorded.length > 0 ? (
-        <div className="card pick-table-wrap">
+        <div className="card pick-table-wrap pick-recorded-wrap">
           <table className="pick-sheet pick-recorded">
             <thead>
               <tr>
@@ -536,7 +549,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       ) : null}
 
       {showSerials ? (
-        <div className="card pick-table-wrap">
+        <div className="card pick-table-wrap no-print">
           <table className="pick-serials">
             <thead>
               <tr>
@@ -597,33 +610,8 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         </div>
       ) : null}
 
-      {sheet.skipped.length > 0 ? (
-        <div className="card pick-table-wrap">
-          <table className="pick-sheet">
-            <thead>
-              <tr>
-                <th>Line</th>
-                <th>SKU</th>
-                <th>Name</th>
-                <th>Not picked</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sheet.skipped.map((row) => (
-                <tr key={`${row.lineNo}-${row.sku ?? "none"}`}>
-                  <td className="pick-code">{row.lineNo}</td>
-                  <td className="sku">{dash(row.sku)}</td>
-                  <td>{dash(row.name)}</td>
-                  <td>{row.reason}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-
       {open ? (
-        <div className="pick-finish">
+        <div className="pick-finish no-print">
           <button id="pick-finish" type="button" disabled={busy || Boolean(sheet.finishBlock)} onClick={() => void run(() => finishPick(sheet.orderId))}>
             Finish pick
           </button>
@@ -631,7 +619,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         </div>
       ) : null}
 
-      <p className="pick-links">
+      <p className="pick-links no-print">
         <Link href="/warehouse/pick">All picks</Link>
         {" · "}
         <Link href={`/sales/orders/${sheet.orderId}`}>Sales order</Link>

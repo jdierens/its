@@ -4,6 +4,7 @@ import {
   finishBlockMessage,
   formatPickQty,
   isStockPickLine,
+  omitPickTicketSku,
   pickSheetPlace,
   lineRemaining,
   parsePickQty,
@@ -32,8 +33,13 @@ describe("stock lines", () => {
     assert.equal(isStockPickLine({ lineKind: "product", itemType: "Product", itemId: null }), false);
     assert.equal(pickSheetPlace({ lineKind: "service", itemType: "Service" }), "omit");
     assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Service" }), "omit");
-    assert.equal(pickSheetPlace({ lineKind: "freight", itemType: "Service" }), "note");
+    assert.equal(pickSheetPlace({ lineKind: "freight", itemType: "Service" }), "omit");
+    assert.equal(pickSheetPlace({ lineKind: "fee", itemType: "Product" }), "omit");
+    assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Non-inventory" }), "omit");
     assert.equal(pickSheetPlace({ lineKind: "product", itemType: "Product" }), "pick");
+    assert.equal(omitPickTicketSku("4343"), true);
+    assert.equal(omitPickTicketSku(" 4343 "), true);
+    assert.equal(omitPickTicketSku("106683"), false);
   });
 });
 

@@ -8815,13 +8815,34 @@ input.num-input {
   white-space: nowrap;
 }
 
-.pick-ticket thead tr.pick-head-bin td {
+.pick-ticket {
+  table-layout: fixed;
+}
+
+.pick-ticket col.pick-col-sku { width: 16%; }
+.pick-ticket col.pick-col-name { width: 28%; }
+.pick-ticket col.pick-col-ordered { width: 14%; }
+.pick-ticket col.pick-col-picked { width: 21%; }
+.pick-ticket col.pick-col-pending { width: 21%; }
+
+.pick-ticket tr.pick-head-bin th {
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 650;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   white-space: nowrap;
+  background: transparent;
+  border-bottom-color: transparent;
+}
+
+.pick-ticket tr.pick-bin td:nth-child(4) .pick-qty-cell,
+.pick-ticket tr.pick-bin td.pick-action-cell {
+  justify-content: flex-end;
+}
+
+.pick-ticket tr.pick-bin td.pick-action-cell {
+  text-align: right;
 }
 
 .pick-ticket .pick-name {
@@ -8936,6 +8957,40 @@ input.num-input {
 
 .pick-pull-note {
   margin: 0;
+}
+
+.pick-sheet.pick-ticket {
+  width: 100%;
+  min-width: 48rem;
+  table-layout: fixed;
+}
+
+.pick-page .pick-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+@media print {
+  .pick-page .no-print,
+  .pick-page .pick-scan,
+  .pick-page .pick-finish,
+  .pick-page .pick-links,
+  .pick-page .sku-replace,
+  .pick-page button,
+  .pick-page input {
+    display: none !important;
+  }
+
+  .pick-page,
+  .pick-page .pick-table-wrap,
+  .pick-sheet.pick-ticket {
+    overflow: visible !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
 }
 
 @media (max-width: 800px) {

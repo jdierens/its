@@ -108,16 +108,19 @@ export function isStockPickLine(line: {
 }
 
 /**
- * Pick rows are product and kit stock.
- * Freight stays on the not-picked note, including freight allocated to service item 4343.
- * A service line, and any non-freight line whose item type is Service, is left off the sheet.
+ * Only product and kit stock is on the pick ticket.
+ * Freight, fees, services, non-inventory, and service item 4343 are omitted.
+ * They are not listed as "not picked".
  */
 export function pickSheetPlace(line: { lineKind: string; itemType: string | null }): "pick" | "note" | "omit" {
   const kind = line.lineKind || "product";
   if ((kind === "product" || kind === "kit") && line.itemType != null && STOCK_TYPES.has(line.itemType)) return "pick";
-  if (kind === "service") return "omit";
-  if (line.itemType === "Service" && kind !== "freight") return "omit";
-  return "note";
+  return "omit";
+}
+
+/** Service and freight SKUs that must not appear on the picking page, including 4343. */
+export function omitPickTicketSku(sku: string | null | undefined): boolean {
+  return (sku ?? "").trim() === "4343";
 }
 
 /**

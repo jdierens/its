@@ -836,4 +836,19 @@ revoke all on function public.assign_pick_staging_bin(uuid, text, text, uuid) fr
 grant execute on function public.issue_picked_units(uuid, uuid, uuid, uuid, uuid) to service_role;
 grant execute on function public.assign_pick_staging_bin(uuid, text, text, uuid) to service_role;
 
+create or replace function public.so_pick_sheet_place(p_kind text, p_item_type text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select case
+    when p_kind in ('product', 'kit') and p_item_type in ('Product', 'Kit/Package') then 'pick'
+    else 'omit'
+  end;
+$$;
+
+comment on function public.so_pick_sheet_place(text, text) is
+  'pick for a product or kit stock line. Everything else, including freight, fees, services, and service item 4343, is omitted from the pick sheet.';
+
 notify pgrst, 'reload schema';

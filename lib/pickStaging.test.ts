@@ -43,6 +43,7 @@ describe("staging migration", () => {
     assert.equal(body("so_pick_target_bin").includes("so_create_staging_bin"), false);
     assert.match(body("assign_pick_staging_bin"), /No bin with that code/);
     assert.match(body("pick_sales_order_line"), /issue_picked_units/);
+    assert.match(body("so_pick_sheet_place"), /else 'omit'/);
     assert.match(sql, /bin_counter/);
     assert.equal(sql.includes("next_number"), false);
   });
