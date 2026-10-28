@@ -14,6 +14,7 @@ import { errorText } from "@/lib/errors";
 import { itemListSearchNote } from "@/lib/itemListQuery";
 import {
   cellKeyAction,
+  columnOpensItem,
   editedLabel,
   isConflictMessage,
   isEditableColumn,
@@ -488,7 +489,7 @@ export function ItemsTable() {
 
     if (action === "edit") beginEdit(row, col, null);
     else if (action === "type") beginEdit(row, col, event.key);
-    else if (action === "open" && active) openItem(rows[active.row].id);
+    else if (action === "open" && active && column && columnOpensItem(column.id)) openItem(rows[active.row].id);
     else if (event.key === "ArrowDown") move(active ? row + 1 : 0, col);
     else if (event.key === "ArrowUp") move(active ? row - 1 : rows.length - 1, col);
     else if (event.key === "ArrowRight") move(active ? row : 0, active ? col + 1 : 0);
@@ -656,7 +657,7 @@ export function ItemsTable() {
       </div>
       <p id="items-help" className="hint items-help">
         Arrow keys move the cell. Enter or typing edits it. Enter and Tab save and move, Esc cancels.
-        Enter on the SKU or name opens the item. / focuses search. Click a column heading to sort the whole list.
+        Enter or double-click on the SKU opens the item. / focuses search. Click a column heading to sort the whole list.
       </p>
       {selected.size > 0 ? (
         <BulkEditBar
@@ -774,7 +775,7 @@ export function ItemsTable() {
                         onClick={() => setActive({ row: rowIndex, col: colIndex })}
                         onDoubleClick={() => {
                           if (isEditableColumn(column.id)) beginEdit(rowIndex, colIndex, null);
-                          else openItem(item.id);
+                          else if (columnOpensItem(column.id)) openItem(item.id);
                         }}
                       >
                         {column.id === "photo" ? (

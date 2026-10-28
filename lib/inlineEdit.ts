@@ -17,7 +17,6 @@ export const READ_ONLY_COLUMNS = new Set([
   "photo",
   "taxonomy",
   "sku",
-  "name",
   "quantity",
   "edited",
   "fields",
@@ -30,6 +29,7 @@ export function isEditableColumn(columnId: string): boolean {
   if (READ_ONLY_COLUMNS.has(columnId)) return false;
   if (columnId.startsWith("attr:")) return true;
   return (
+    columnId === "name" ||
     columnId === "manufacturer" ||
     columnId === "model" ||
     columnId === "part_number" ||
@@ -139,6 +139,10 @@ export function validateCell(input: {
   if (input.columnId === "product_url") {
     return { value: trimmed, error: productUrlError(trimmed) };
   }
+  if (input.columnId === "name") {
+    if (!trimmed) return { value: trimmed, error: "Name is required." };
+    return { value: trimmed, error: null };
+  }
   if (input.columnId === "manufacturer") {
     if (trimmed && !/^[0-9a-f-]{36}$/i.test(trimmed)) {
       return { value: trimmed, error: "Choose a manufacturer from the list, or add the new name." };
@@ -146,6 +150,11 @@ export function validateCell(input: {
     return { value: trimmed, error: null };
   }
   return { value: trimmed, error: null };
+}
+
+/** Enter and double-click open the item from the SKU column. */
+export function columnOpensItem(columnId: string): boolean {
+  return columnId === "sku";
 }
 
 export function cellKeyAction(input: {
@@ -167,6 +176,7 @@ export function isConflictMessage(message: string): boolean {
 
 export function patchRow(row: ItemListRow, columnId: string, value: string): ItemListRow {
   if (columnId === "manufacturer") return row;
+  if (columnId === "name") return { ...row, name: value };
   if (columnId === "model") return { ...row, model: value };
   if (columnId === "part_number") return { ...row, partNumber: value };
   if (columnId === "oem_name") return { ...row, oemName: value };
@@ -216,6 +226,7 @@ export function restoreField(current: ItemListRow, original: ItemListRow, column
 
 export function rawCellValue(row: ItemListRow, columnId: string): string {
   if (columnId === "manufacturer") return row.manufacturerId ?? "";
+  if (columnId === "name") return row.name;
   if (columnId === "model") return row.model;
   if (columnId === "part_number") return row.partNumber;
   if (columnId === "oem_name") return row.oemName;

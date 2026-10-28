@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   cellKeyAction,
+  columnOpensItem,
   editedLabel,
   isConflictMessage,
   isEditableColumn,
@@ -47,11 +48,12 @@ function row(patch: Partial<ItemListRow> = {}): ItemListRow {
   };
 }
 
-test("sku and taxonomy stay read-only while trade and attribute cells edit", () => {
+test("sku and taxonomy stay read-only while name and trade cells edit", () => {
   assert.equal(isEditableColumn("sku"), false);
   assert.equal(isEditableColumn("ebay"), false);
   assert.equal(isEditableColumn("taxonomy"), false);
-  assert.equal(isEditableColumn("name"), false);
+  assert.equal(isEditableColumn("name"), true);
+  assert.equal(isEditableColumn("quantity"), false);
   assert.equal(isEditableColumn("model"), true);
   assert.equal(isEditableColumn("oem_name"), true);
   assert.equal(isEditableColumn("oem_part_number"), true);
@@ -69,6 +71,9 @@ test("sku and taxonomy stay read-only while trade and attribute cells edit", () 
 test("enter edits a writable cell and opens a read-only one", () => {
   assert.equal(cellKeyAction({ key: "Enter", editable: true, meta: false, ctrl: false, alt: false }), "edit");
   assert.equal(cellKeyAction({ key: "Enter", editable: false, meta: false, ctrl: false, alt: false }), "open");
+  assert.equal(columnOpensItem("sku"), true);
+  assert.equal(columnOpensItem("name"), false);
+  assert.equal(columnOpensItem("taxonomy"), false);
   assert.equal(cellKeyAction({ key: "a", editable: true, meta: false, ctrl: false, alt: false }), "type");
   assert.equal(cellKeyAction({ key: "a", editable: true, meta: true, ctrl: false, alt: false }), null);
   assert.equal(cellKeyAction({ key: "/", editable: true, meta: false, ctrl: false, alt: false }), null);
@@ -101,6 +106,11 @@ test("cell checks match the item form", () => {
   assert.equal(validateCell({ columnId: "msrp", value: "12.505", condition: "Used" }).error, "Enter a price with up to 2 decimal places.");
   assert.equal(validateCell({ columnId: "item_type", value: "Service", condition: "Used" }).error, null);
   assert.match(validateCell({ columnId: "item_type", value: "Bundle", condition: "Used" }).error ?? "", /Item type/);
+  assert.equal(validateCell({ columnId: "name", value: "  DDR4 DIMM  ", condition: "Used" }).error, null);
+  assert.equal(validateCell({ columnId: "name", value: "  DDR4 DIMM  ", condition: "Used" }).value, "DDR4 DIMM");
+  assert.equal(validateCell({ columnId: "name", value: "DDR4  DIMM", condition: "Used" }).value, "DDR4  DIMM");
+  assert.equal(validateCell({ columnId: "name", value: "   ", condition: "Used" }).error, "Name is required.");
+  assert.equal(validateCell({ columnId: "name", value: "", condition: "Used" }).error, "Name is required.");
   assert.equal(validateCell({ columnId: "oem_name", value: "  Dell  ", condition: "Used" }).value, "Dell");
   assert.equal(validateCell({ columnId: "unit", value: "", condition: "Used" }).value, "Piece");
   assert.equal(validateCell({ columnId: "unit", value: "lbs", condition: "Used" }).value, "Lbs");
@@ -122,6 +132,10 @@ test("changing condition clears a note that no longer fits", () => {
 test("item type edits stay on the allowed list", () => {
   assert.equal(patchRow(row(), "item_type", "Kit/Package").itemType, "Kit/Package");
   assert.equal(patchRow(row(), "item_type", "nope").itemType, "Product");
+});
+
+test("name edits update the row", () => {
+  assert.equal(patchRow(row(), "name", "DDR4 DIMM").name, "DDR4 DIMM");
 });
 
 test("oem and unit edits update the row", () => {
