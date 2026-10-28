@@ -7041,6 +7041,45 @@ input.num-input {
   text-align: right;
 }
 
+.so-buyer-total {
+  margin: 0 0 0.9rem;
+  padding: 16px 20px;
+  background: var(--ds-card);
+  color: var(--ds-ink);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: var(--ds-shadow);
+}
+
+.so-buyer-total dl {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+}
+
+.so-buyer-total dt,
+.so-buyer-total dd {
+  margin: 0;
+}
+
+.so-buyer-total dt {
+  font-size: 0.75rem;
+  font-weight: 550;
+}
+
+.so-buyer-total dd {
+  font-size: 1.05rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.so-buyer-total dd.so-buyer-total-empty {
+  color: var(--ds-muted);
+  font-weight: 550;
+}
+
 .so-ebay-card {
   --ebay-canvas: #fafafa;
   --ebay-card: #ffffff;
