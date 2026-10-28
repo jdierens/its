@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CloudDownload, Inbox, Loader2, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { actionProblem, errorDetail, readActionBody, recoverOrderPullMessage } from "@/lib/clientActionError";
 
 export function SalesOrderListActions({ canEdit, canPullEbay }: { canEdit: boolean; canPullEbay: boolean }) {
   const router = useRouter();
@@ -15,17 +16,40 @@ export function SalesOrderListActions({ canEdit, canPullEbay }: { canEdit: boole
     setBusy(kind);
     setNotice(null);
     setProblem(null);
+    const fallback = kind === "ebay" ? "eBay orders could not be pulled." : "Winston did not start the inbox pass.";
+    const success = kind === "ebay" ? "eBay orders pulled." : "Winston is checking incoming orders.";
+    const startedAt = Date.now();
     try {
       const response = await fetch(kind === "ebay" ? "/api/ebay/orders" : "/api/sales/inbox-pass", { method: "POST" });
-      const body = (await response.json()) as { message?: string };
-      const message = body.message || (kind === "ebay" ? "eBay orders could not be pulled." : "Winston did not start the inbox pass.");
-      if (!response.ok) setProblem(message);
-      else {
-        setNotice(message);
+      const body = await readActionBody(response);
+      if (!body.httpOk) {
+        const recovered = kind === "ebay" && !body.serverMessage ? await recoverOrderPullMessage(startedAt) : null;
+        if (recovered) {
+          setNotice(recovered);
+          router.refresh();
+        } else {
+          setProblem(
+            actionProblem({
+              detailed: canPullEbay,
+              fallback,
+              status: body.status,
+              serverMessage: body.serverMessage,
+              transport: body.transport,
+            }),
+          );
+        }
+      } else {
+        setNotice(body.serverMessage || success);
         router.refresh();
       }
-    } catch {
-      setProblem(kind === "ebay" ? "eBay orders could not be pulled." : "Winston did not start the inbox pass.");
+    } catch (error) {
+      const recovered = kind === "ebay" ? await recoverOrderPullMessage(startedAt) : null;
+      if (recovered) {
+        setNotice(recovered);
+        router.refresh();
+      } else {
+        setProblem(actionProblem({ detailed: canPullEbay, fallback, transport: errorDetail(error) }));
+      }
     } finally {
       setBusy(null);
     }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Building, Cable, Contact, List, Plug, RefreshCw, Unplug } from "lucide-react";
 import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
 import { isDirty } from "@/lib/formDirty";
+import { actionProblem, errorDetail, readActionBody, recoverOrderPullMessage, type ActionBody } from "@/lib/clientActionError";
 import { RECONNECT_MESSAGE as EBAY_RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import { INTEGRATIONS, integrationReturnHref } from "@/lib/integrations";
@@ -224,23 +225,33 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
     }
   }
 
+  function ebayFailure(fallback: string, body?: ActionBody, error?: unknown): string {
+    return actionProblem({
+      detailed: true,
+      fallback,
+      status: body?.status,
+      serverMessage: body?.serverMessage,
+      transport: body?.transport ?? (error !== undefined ? errorDetail(error) : null),
+    });
+  }
+
   async function refreshEbayListings() {
     setBusy("ebay-listings");
     setEbayNotice(null);
     setEbayError(null);
     try {
       const response = await fetch("/api/ebay/listings", { method: "POST" });
-      const body = (await response.json()) as { message?: string; active?: number; unmatched?: number };
-      if (body.message === EBAY_RECONNECT_MESSAGE) setEbayError(EBAY_RECONNECT_MESSAGE);
-      else if (!response.ok) setEbayError(body.message || "eBay listings could not be refreshed.");
+      const body = await readActionBody(response);
+      if (body.serverMessage === EBAY_RECONNECT_MESSAGE) setEbayError(EBAY_RECONNECT_MESSAGE);
+      else if (!body.httpOk) setEbayError(ebayFailure("eBay listings could not be refreshed.", body));
       else {
-        const active = body.active ?? 0;
-        const unmatched = body.unmatched ?? 0;
+        const active = typeof body.json?.active === "number" ? body.json.active : 0;
+        const unmatched = typeof body.json?.unmatched === "number" ? body.json.unmatched : 0;
         setEbayNotice(`Fetched ${active} active listings. ${unmatched} do not match an item SKU.`);
       }
       await load();
     } catch (err) {
-      setEbayError(err instanceof Error ? err.message : "eBay listings could not be refreshed.");
+      setEbayError(ebayFailure("eBay listings could not be refreshed.", undefined, err));
     } finally {
       setBusy(null);
     }
@@ -250,15 +261,24 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
     setBusy("ebay-orders");
     setEbayNotice(null);
     setEbayError(null);
+    const startedAt = Date.now();
     try {
       const response = await fetch("/api/ebay/orders", { method: "POST" });
-      const body = (await response.json()) as { message?: string };
-      if (body.message === EBAY_RECONNECT_MESSAGE) setEbayError(EBAY_RECONNECT_MESSAGE);
-      else if (!response.ok) setEbayError(body.message || "eBay orders could not be pulled.");
-      else setEbayNotice(body.message || "eBay orders pulled.");
+      const body = await readActionBody(response);
+      const recovered = !body.httpOk && body.serverMessage !== EBAY_RECONNECT_MESSAGE && !body.serverMessage
+        ? await recoverOrderPullMessage(startedAt)
+        : null;
+      if (recovered) setEbayNotice(recovered);
+      else if (body.serverMessage === EBAY_RECONNECT_MESSAGE) setEbayError(EBAY_RECONNECT_MESSAGE);
+      else if (!body.httpOk) setEbayError(ebayFailure("eBay orders could not be pulled.", body));
+      else setEbayNotice(body.serverMessage || "eBay orders pulled.");
       await load();
     } catch (err) {
-      setEbayError(err instanceof Error ? err.message : "eBay orders could not be pulled.");
+      const recovered = await recoverOrderPullMessage(startedAt);
+      if (recovered) {
+        setEbayNotice(recovered);
+        await load();
+      } else setEbayError(ebayFailure("eBay orders could not be pulled.", undefined, err));
     } finally {
       setBusy(null);
     }
@@ -277,16 +297,16 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
         headers: { "Content-Type": "text/plain" },
         body: csv,
       });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) setEbayError(body.message || "The log map could not be applied.");
+      const body = await readActionBody(response);
+      if (!body.httpOk) setEbayError(ebayFailure("The log map could not be applied.", body));
       else {
-        setEbayNotice(body.message || "Legacy log map applied.");
+        setEbayNotice(body.serverMessage || "Legacy log map applied.");
         setSeedFile(null);
         setSeedInputKey((key) => key + 1);
       }
       await load();
     } catch (err) {
-      setEbayError(err instanceof Error ? err.message : "The log map could not be applied.");
+      setEbayError(ebayFailure("The log map could not be applied.", undefined, err));
     } finally {
       setBusy(null);
     }
@@ -298,12 +318,12 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
     setEbayError(null);
     try {
       const response = await fetch("/api/ebay/order-seed/backfill", { method: "POST" });
-      const body = (await response.json()) as { message?: string };
-      if (!response.ok) setEbayError(body.message || "Legacy SO numbers could not be assigned.");
-      else setEbayNotice(body.message || "Legacy SO numbers assigned.");
+      const body = await readActionBody(response);
+      if (!body.httpOk) setEbayError(ebayFailure("Legacy SO numbers could not be assigned.", body));
+      else setEbayNotice(body.serverMessage || "Legacy SO numbers assigned.");
       await load();
     } catch (err) {
-      setEbayError(err instanceof Error ? err.message : "Legacy SO numbers could not be assigned.");
+      setEbayError(ebayFailure("Legacy SO numbers could not be assigned.", undefined, err));
     } finally {
       setBusy(null);
     }
@@ -315,13 +335,13 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
     setEbayError(null);
     try {
       const response = await fetch("/api/ebay/test", { method: "POST" });
-      const body = (await response.json()) as { message?: string };
-      if (body.message === EBAY_RECONNECT_MESSAGE) setEbayError(EBAY_RECONNECT_MESSAGE);
-      else if (!response.ok) setEbayError(body.message || "eBay connection test failed.");
-      else setEbayNotice(body.message || "eBay accepted the token.");
+      const body = await readActionBody(response);
+      if (body.serverMessage === EBAY_RECONNECT_MESSAGE) setEbayError(EBAY_RECONNECT_MESSAGE);
+      else if (!body.httpOk) setEbayError(ebayFailure("eBay connection test failed.", body));
+      else setEbayNotice(body.serverMessage || "eBay accepted the token.");
       await load();
     } catch (err) {
-      setEbayError(err instanceof Error ? err.message : "eBay connection test failed.");
+      setEbayError(ebayFailure("eBay connection test failed.", undefined, err));
     } finally {
       setBusy(null);
     }
@@ -333,12 +353,14 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
     setEbayError(null);
     try {
       const response = await fetch("/api/ebay/disconnect", { method: "POST" });
-      const body = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(body.error || "Disconnect failed.");
-      setEbayNotice("eBay disconnected.");
-      await load();
+      const body = await readActionBody(response);
+      if (!body.httpOk) setEbayError(ebayFailure("Disconnect failed.", body));
+      else {
+        setEbayNotice("eBay disconnected.");
+        await load();
+      }
     } catch (err) {
-      setEbayError(err instanceof Error ? err.message : "Disconnect failed.");
+      setEbayError(ebayFailure("Disconnect failed.", undefined, err));
     } finally {
       setBusy(null);
     }

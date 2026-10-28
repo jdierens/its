@@ -28,3 +28,13 @@ export function inboxPassResult(status: number): { ok: boolean; message: string 
   if (status === 200) return { ok: true, message: INBOX_PASS_STARTED };
   return { ok: false, message: INBOX_PASS_FAILED };
 }
+
+/** Admins see the webhook status and cause. Other roles keep the generic sentence. */
+export function inboxPassFailure(input: { status?: number; cause?: string | null; detailed: boolean }): string {
+  if (!input.detailed) return INBOX_PASS_FAILED;
+  const parts = [INBOX_PASS_FAILED];
+  if (typeof input.status === "number") parts.push(`HTTP ${input.status}.`);
+  const cause = input.cause?.replace(/\s+/g, " ").trim().slice(0, 240) ?? "";
+  if (cause) parts.push(cause);
+  return parts.join(" ");
+}

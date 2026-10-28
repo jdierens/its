@@ -18,6 +18,7 @@ import {
   orderPullWindows,
   pageNext,
   parseFulfillmentOrders,
+  parseStoredPullDraft,
   positiveLabelFees,
   parseLegacyLogCsv,
   planLegacySeed,
@@ -308,10 +309,7 @@ function supabaseStore(
 ): OrderStore {
   return {
     async existing(orderIds, salesRefs) {
-      const rows = new Map<
-        string,
-        { id: string; status: string; so_number: number | string | null; ebay_order_id: string | null; ebay_sales_record_ref: string | null }
-      >();
+      const rows = new Map<string, Record<string, unknown>>();
       for (const [column, values] of [
         ["ebay_order_id", orderIds],
         ["ebay_sales_record_ref", salesRefs],
@@ -320,7 +318,9 @@ function supabaseStore(
           if (chunk.length === 0) continue;
           const { data, error } = await admin
             .from("sales_orders")
-            .select("id, status, so_number, ebay_order_id, ebay_sales_record_ref")
+            .select(
+              "id, status, so_number, ebay_order_id, ebay_sales_record_ref, order_date, ship_to, bill_to, buyer, payment_status, payment_method, payment_date, ebay_transaction_fee, ebay_order_earnings, currency, terms, incoterms",
+            )
             .in(column, chunk);
           if (error) throw new Error(error.message);
           for (const row of data ?? []) rows.set(String(row.id), row);
@@ -345,14 +345,89 @@ function supabaseStore(
           events.set(key, list);
         }
       }
-      return [...rows.values()].map((row) => ({
-        id: String(row.id),
-        status: String(row.status),
-        ebayOrderId: row.ebay_order_id,
-        ebaySalesRecordRef: row.ebay_sales_record_ref,
-        soNumber: row.so_number == null || row.so_number === "" ? null : Number(row.so_number),
-        personEdited: personEdited(events.get(String(row.id)) ?? []),
-      }));
+      const refreshIds = [...rows.entries()]
+        .filter(([id, row]) => String(row.status ?? "") === "draft" && !personEdited(events.get(id) ?? []))
+        .map(([id]) => id);
+      const linesByOrder = new Map<string, Record<string, unknown>[]>();
+      for (const id of refreshIds) linesByOrder.set(id, []);
+      const lineRows: Record<string, unknown>[] = [];
+      for (const chunk of chunks(refreshIds, 100)) {
+        if (chunk.length === 0) continue;
+        const { data, error } = await admin
+          .from("so_lines")
+          .select("id, sales_order_id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price")
+          .in("sales_order_id", chunk);
+        if (error) throw new Error(error.message);
+        for (const line of data ?? []) {
+          lineRows.push(line);
+          const key = String(line.sales_order_id);
+          const list = linesByOrder.get(key) ?? [];
+          list.push(line);
+          linesByOrder.set(key, list);
+        }
+      }
+      const allocationsByLine = new Map<string, { item_id: string; qty: unknown }[]>();
+      for (const chunk of chunks(
+        lineRows.map((line) => String(line.id)),
+        100,
+      )) {
+        if (chunk.length === 0) continue;
+        const { data, error } = await admin.from("so_line_allocations").select("so_line_id, item_id, qty").in("so_line_id", chunk);
+        if (error) throw new Error(error.message);
+        for (const allocation of data ?? []) {
+          const key = String(allocation.so_line_id);
+          const list = allocationsByLine.get(key) ?? [];
+          list.push({ item_id: String(allocation.item_id ?? ""), qty: allocation.qty });
+          allocationsByLine.set(key, list);
+        }
+      }
+      return [...rows.entries()].map(([id, row]) => {
+        const edited = personEdited(events.get(id) ?? []);
+        const lines = linesByOrder.get(id);
+        const stored =
+          lines == null
+            ? undefined
+            : (parseStoredPullDraft({
+                orderDate: row.order_date,
+                shipTo: row.ship_to,
+                billTo: row.bill_to,
+                buyer: row.buyer,
+                paymentStatus: row.payment_status,
+                paymentMethod: row.payment_method,
+                paymentDate: row.payment_date,
+                transactionFee: row.ebay_transaction_fee,
+                earnings: row.ebay_order_earnings,
+                currency: row.currency,
+                terms: row.terms,
+                incoterms: row.incoterms,
+                lines: lines.map((line) => {
+                  const allocations = allocationsByLine.get(String(line.id)) ?? [];
+                  const only = allocations.length === 1 ? allocations[0] : null;
+                  return {
+                    line_no: line.line_no,
+                    line_kind: line.line_kind,
+                    customer_part_number: line.customer_part_number,
+                    customer_description: line.customer_description,
+                    qty: line.qty,
+                    unit_price: line.unit_price,
+                    ext_price: line.ext_price,
+                    item_id: only?.item_id ?? null,
+                    allocation_qty: only?.qty ?? null,
+                    allocation_count: allocations.length,
+                  };
+                }),
+              }) ?? undefined);
+        const soNumber = row.so_number == null || row.so_number === "" ? null : Number(row.so_number);
+        return {
+          id,
+          status: String(row.status ?? ""),
+          ebayOrderId: row.ebay_order_id == null ? null : String(row.ebay_order_id),
+          ebaySalesRecordRef: row.ebay_sales_record_ref == null ? null : String(row.ebay_sales_record_ref),
+          soNumber: soNumber != null && Number.isFinite(soNumber) ? soNumber : null,
+          personEdited: edited,
+          ...(stored ? { stored } : {}),
+        };
+      });
     },
     async itemsForSkus(skus) {
       const wanted = [...new Set(skus.map((sku) => sku.trim()).filter((sku) => sku.length > 0))];

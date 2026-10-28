@@ -110,6 +110,27 @@ export type ParsedEbayOrder = {
   lines: ParsedEbayLine[];
 };
 
+/**
+ * Fields a pull would write on an unedited draft. Present only when those
+ * fields were loaded. Missing means the draft is refreshed, which is the
+ * older behavior and what a price catch-up still needs.
+ */
+export type StoredPullDraft = {
+  orderDate: string | null;
+  shipTo: SoAddress;
+  billToBlank: boolean;
+  buyer: EbayBuyer;
+  paymentStatus: string;
+  paymentMethod: string | null;
+  paymentDate: string | null;
+  transactionFee: number | null;
+  earnings: number | null;
+  currency: string;
+  termsBlank: boolean;
+  incotermsBlank: boolean;
+  lines: DraftLine[];
+};
+
 export type ExistingPullOrder = {
   id: string;
   status: string;
@@ -117,6 +138,7 @@ export type ExistingPullOrder = {
   ebaySalesRecordRef: string | null;
   personEdited: boolean;
   soNumber?: number | null;
+  stored?: StoredPullDraft;
 };
 
 export type LegacySoNumber = {
@@ -683,6 +705,18 @@ export function planOrderPull(
       continue;
     }
     if (match.status === "draft" && !match.personEdited && !match.id.startsWith("new:")) {
+      const soNumber = claimLegacy(order.ebayOrderId, match.soNumber);
+      const needsOrderId = (match.ebayOrderId ?? null) !== order.ebayOrderId;
+      const needsRecord = order.salesRecordRef != null && match.ebaySalesRecordRef !== order.salesRecordRef;
+      if (
+        !needsOrderId &&
+        !needsRecord &&
+        match.stored &&
+        pullDraftUnchanged(match.stored, prepared.order, prepared.itemIds, prepared.allocationQtys, shippingItemId, soNumber)
+      ) {
+        actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "unchanged" });
+        continue;
+      }
       actions.push({
         kind: "update",
         id: match.id,
@@ -690,7 +724,7 @@ export function planOrderPull(
         itemIds: prepared.itemIds,
         allocationQtys: prepared.allocationQtys,
         shippingItemId,
-        soNumber: claimLegacy(order.ebayOrderId, match.soNumber),
+        soNumber,
       });
       continue;
     }
@@ -839,29 +873,202 @@ export function orderInPullWindow(orderDate: string | null): boolean {
   return orderDate != null && orderDate >= EBAY_ORDER_CUTOFF;
 }
 
+const PULL_WINDOW_MS = 90 * DAY_MS;
+
 export function orderPullWindows(now: Date, watermark: string | null): { filter: string; history: boolean }[] {
   const stamp = (date: Date) => date.toISOString();
   const range = (field: string, start: Date, end: Date) => `${field}:[${stamp(start)}..${stamp(end)}]`;
   const end = now.getTime();
   if (!(end > EBAY_ORDER_CUTOFF_MS)) return [];
-  const cutoff = new Date(EBAY_ORDER_CUTOFF_MS);
   if (watermark && !Number.isNaN(Date.parse(watermark))) {
-    const modifiedStart = new Date(Math.max(Date.parse(watermark) - DAY_MS, EBAY_ORDER_CUTOFF_MS));
-    return [
-      {
-        filter: `${range("creationdate", cutoff, now)},${range("lastmodifieddate", modifiedStart, now)}`,
+    // eBay's getOrders uses only creationdate when both filters are present, so a
+    // watermark has to be lastmodifieddate by itself. Orders before the cutoff are
+    // skipped after the read. A gap longer than 90 days is split the same way as history.
+    const modifiedStart = Math.max(Date.parse(watermark) - DAY_MS, EBAY_ORDER_CUTOFF_MS);
+    const windows: { filter: string; history: boolean }[] = [];
+    for (let cursor = modifiedStart; cursor < end; cursor += PULL_WINDOW_MS) {
+      windows.push({
+        filter: range("lastmodifieddate", new Date(cursor), new Date(Math.min(cursor + PULL_WINDOW_MS, end))),
         history: false,
-      },
-    ];
+      });
+    }
+    return windows;
   }
   const windows: { filter: string; history: boolean }[] = [];
-  for (let cursor = EBAY_ORDER_CUTOFF_MS; cursor < end; cursor += 90 * DAY_MS) {
+  for (let cursor = EBAY_ORDER_CUTOFF_MS; cursor < end; cursor += PULL_WINDOW_MS) {
     windows.push({
-      filter: range("creationdate", new Date(cursor), new Date(Math.min(cursor + 90 * DAY_MS, end))),
+      filter: range("creationdate", new Date(cursor), new Date(Math.min(cursor + PULL_WINDOW_MS, end))),
       history: true,
     });
   }
   return windows;
+}
+
+function blankText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function sameMoney(left: number | null, right: number | null, places: number): boolean {
+  if (left == null || right == null) return left == null && right == null;
+  const scale = 10 ** places;
+  return Math.round(left * scale) === Math.round(right * scale);
+}
+
+function sameAddress(left: SoAddress, right: SoAddress): boolean {
+  const keys: (keyof SoAddress)[] = [
+    "line1",
+    "line2",
+    "city",
+    "countrySubDivisionCode",
+    "postalCode",
+    "country",
+    "attention",
+    "phone",
+  ];
+  return keys.every((key) => (left[key] ?? "") === (right[key] ?? ""));
+}
+
+function sameBuyer(left: EbayBuyer, right: EbayBuyer): boolean {
+  return (
+    (left.username ?? null) === (right.username ?? null) &&
+    (left.name ?? null) === (right.name ?? null) &&
+    (left.email ?? null) === (right.email ?? null) &&
+    (left.phone ?? null) === (right.phone ?? null)
+  );
+}
+
+function recordBlank(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value !== "object") return false;
+  return Object.values(value as Record<string, unknown>).every((part) => part == null || String(part).trim() === "");
+}
+
+export type StoredPullLineInput = {
+  line_no: unknown;
+  line_kind: unknown;
+  customer_part_number: unknown;
+  customer_description: unknown;
+  qty: unknown;
+  unit_price: unknown;
+  ext_price: unknown;
+  item_id: unknown;
+  allocation_qty: unknown;
+  /** More than one allocation cannot be compared to the single allocation a pull writes. */
+  allocation_count: number;
+};
+
+/**
+ * Build the snapshot a pull compares. Returns null when a line cannot be
+ * compared, so the caller refreshes that draft instead of skipping it.
+ */
+export function parseStoredPullDraft(input: {
+  orderDate: unknown;
+  shipTo: unknown;
+  billTo: unknown;
+  buyer: unknown;
+  paymentStatus: unknown;
+  paymentMethod: unknown;
+  paymentDate: unknown;
+  transactionFee: unknown;
+  earnings: unknown;
+  currency: unknown;
+  terms: unknown;
+  incoterms: unknown;
+  lines: readonly StoredPullLineInput[];
+}): StoredPullDraft | null {
+  if (input.lines.some((line) => line.allocation_count > 1)) return null;
+  const lines: DraftLine[] = [];
+  const sorted = [...input.lines].sort((left, right) => Number(left.line_no) - Number(right.line_no));
+  for (const line of sorted) {
+    const qty = finiteNumber(line.qty);
+    const lineNo = finiteNumber(line.line_no);
+    if (qty == null || lineNo == null || qty <= 0 || !Number.isSafeInteger(lineNo)) return null;
+    const kind = typeof line.line_kind === "string" ? line.line_kind : "";
+    if (kind !== "product" && kind !== "freight") return null;
+    lines.push({
+      line_no: lineNo,
+      line_kind: kind,
+      customer_part_number: blankText(line.customer_part_number),
+      customer_description: blankText(line.customer_description),
+      qty,
+      unit_price: finiteNumber(line.unit_price),
+      ext_price: finiteNumber(line.ext_price),
+      item_id: blankText(line.item_id),
+      allocation_qty: line.allocation_count === 1 ? finiteNumber(line.allocation_qty) : null,
+    });
+  }
+  const buyerRaw = input.buyer && typeof input.buyer === "object" ? (input.buyer as Record<string, unknown>) : {};
+  const paymentStatus = typeof input.paymentStatus === "string" ? input.paymentStatus : "";
+  const currency = typeof input.currency === "string" ? input.currency.trim() : "";
+  if (!currency) return null;
+  return {
+    orderDate: blankText(input.orderDate)?.slice(0, 10) ?? null,
+    shipTo: addressFromRecord(input.shipTo),
+    billToBlank: recordBlank(input.billTo),
+    buyer: {
+      username: blankText(buyerRaw.username),
+      name: blankText(buyerRaw.name),
+      email: blankText(buyerRaw.email),
+      phone: blankText(buyerRaw.phone),
+    },
+    paymentStatus,
+    paymentMethod: blankText(input.paymentMethod),
+    paymentDate: blankText(input.paymentDate)?.slice(0, 10) ?? null,
+    transactionFee: finiteNumber(input.transactionFee),
+    earnings: finiteNumber(input.earnings),
+    currency,
+    termsBlank: blankText(input.terms) == null,
+    incotermsBlank: blankText(input.incoterms) == null,
+    lines,
+  };
+}
+
+function sameDraftLine(stored: DraftLine, next: DraftLine): boolean {
+  return (
+    stored.line_no === next.line_no &&
+    stored.line_kind === next.line_kind &&
+    (stored.customer_part_number ?? null) === (next.customer_part_number ?? null) &&
+    (stored.customer_description ?? null) === (next.customer_description ?? null) &&
+    sameMoney(stored.qty, next.qty, 2) &&
+    sameMoney(stored.unit_price, next.unit_price, 4) &&
+    sameMoney(stored.ext_price, next.ext_price, 2) &&
+    (stored.item_id ?? null) === (next.item_id ?? null) &&
+    sameMoney(stored.allocation_qty, next.allocation_qty, 2)
+  );
+}
+
+/** True when refreshing this draft would write the same order, lines, and blank terms. Label fees are applied separately. */
+export function pullDraftUnchanged(
+  stored: StoredPullDraft,
+  order: ParsedEbayOrder,
+  itemIds: readonly (string | null)[],
+  allocationQtys: readonly (number | null)[],
+  shippingItemId: string | null,
+  soNumber: number | null,
+): boolean {
+  if (soNumber != null) return false;
+  if (stored.termsBlank || stored.incotermsBlank || !stored.billToBlank) return false;
+  if ((stored.orderDate ?? null) !== (order.orderDate ?? null)) return false;
+  if (!sameAddress(stored.shipTo, order.shipTo)) return false;
+  if (!sameBuyer(stored.buyer, order.buyer)) return false;
+  if (stored.paymentStatus !== order.paymentStatus) return false;
+  const method = order.paymentStatus === "paid" ? "ebay" : null;
+  if ((stored.paymentMethod ?? null) !== method) return false;
+  if ((stored.paymentDate ?? null) !== (order.paymentDate ?? null)) return false;
+  if (!sameMoney(stored.transactionFee, order.transactionFee, 2)) return false;
+  if (!sameMoney(stored.earnings, order.earnings, 2)) return false;
+  if (stored.currency !== order.currency) return false;
+  const nextLines = draftLines(order, itemIds, shippingItemId, allocationQtys);
+  if (stored.lines.length !== nextLines.length) return false;
+  return stored.lines.every((line, index) => sameDraftLine(line, nextLines[index]));
 }
 
 export function rawOrderCount(body: unknown): number {
