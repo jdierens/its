@@ -2,7 +2,7 @@
 
 import { Plus, Printer, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type ClipboardEvent, type FormEvent } from "react";
 import { usePageMeta } from "@/components/AppShell";
 import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import {
@@ -19,6 +19,13 @@ import {
 import { errorText } from "@/lib/errors";
 import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
 import { formatPullFrom, pullCue, type SerialPull } from "@/lib/pickSerialLocation";
+import {
+  applyPastedSerials,
+  classifySerialPaste,
+  formatSerialPasteReport,
+  pickSlotForSerial,
+  type SerialPasteReport,
+} from "@/lib/pickSerialPaste";
 import { cooProblem } from "@/lib/stockUnits";
 import {
   formatPickQty,
@@ -68,6 +75,8 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [replaceId, setReplaceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pasteReport, setPasteReport] = useState<SerialPasteReport | null>(null);
+  const applyingPaste = useRef(false);
   const open = canPick && sheet.pickStatus === "open";
   const progress = sheetProgress(sheet.lines);
   const title = sheet.soNumber ? `Pick SO${sheet.soNumber}` : "Pick sheet";
@@ -86,6 +95,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   async function run(action: () => Promise<PickSheetModel>) {
     setBusy(true);
     setError(null);
+    setPasteReport(null);
     try {
       setSheet(await action());
     } catch (cause) {
@@ -108,6 +118,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   }
 
   async function fillSerialLocation(raw: string, allocationId: string | null) {
+    setPasteReport(null);
     const line = allocationId ? sheet.lines.find((row) => row.allocationId === allocationId) : undefined;
     if (line) {
       const problem = serialProblem({ serial: raw, sku: line.sku, existing: itemSerials(sheet, line.sku) });
@@ -145,6 +156,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
 
   async function onScan(event: FormEvent) {
     event.preventDefault();
+    setPasteReport(null);
     const code = scan.trim();
     if (!code) return;
     const target = pickTargetForBin(
@@ -169,6 +181,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   }
 
   function onLinePick(line: PickLine, binId: string, onHand: number) {
+    setPasteReport(null);
     const remaining = lineRemaining(line.ordered, line.picked);
     const parsed = parsePickQty(qtyText[qtyKey(line.allocationId, binId)] ?? "", onHand, remaining);
     if (!parsed.ok) {
@@ -179,6 +192,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   }
 
   async function onAddSerial(line: PickLine) {
+    setPasteReport(null);
     const serial = (serialText[line.allocationId] ?? "").trim();
     const problem = serialProblem({ serial, sku: line.sku, existing: itemSerials(sheet, line.sku) });
     if (problem) {
@@ -205,16 +219,14 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     setSerialText((current) => ({ ...current, [found.allocationId]: found.serial }));
     const key = qtyKey(found.allocationId, found.binId);
     setQtyText((current) => ({ ...current, [key]: current[key]?.trim() ? current[key] : "1" }));
-    const pick = line.picks.find(
-      (row) => (row.fromBin ?? "").toUpperCase() === found.reference.toUpperCase() && row.serials.length < row.qty,
-    );
-    if (!pick) {
-      setError(`Pick a quantity from ${found.reference} before adding this serial.`);
+    const slot = pickSlotForSerial({ picks: line.picks, reference: found.reference });
+    if (!slot.ok) {
+      setError(slot.message);
       setBusy(false);
       return;
     }
     try {
-      const next = await recordPickSerial(pick.id, found.serial, (cooText[line.allocationId] ?? "").trim() || found.coo);
+      const next = await recordPickSerial(slot.pickId, found.serial, (cooText[line.allocationId] ?? "").trim() || found.coo);
       setSheet(next);
       setSerialText((current) => ({ ...current, [line.allocationId]: "" }));
       setCooText((current) => ({ ...current, [line.allocationId]: "" }));
@@ -222,6 +234,51 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     } catch (cause) {
       setError(errorText(cause));
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onPasteSerials(line: PickLine, serials: string[]) {
+    if (applyingPaste.current) return;
+    applyingPaste.current = true;
+    const country = cooProblem(cooText[line.allocationId] ?? "");
+    if (country) {
+      applyingPaste.current = false;
+      setPasteReport(null);
+      setError(country);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setPasteReport(null);
+    setSerialText((current) => ({ ...current, [line.allocationId]: "" }));
+    let currentSheet = sheet;
+    const allocationId = line.allocationId;
+    const sku = line.sku;
+    const coo = (cooText[allocationId] ?? "").trim();
+    try {
+      const report = await applyPastedSerials({
+        serials,
+        sku,
+        coo,
+        existing: () => itemSerials(currentSheet, sku),
+        picks: () => currentSheet.lines.find((row) => row.allocationId === allocationId)?.picks ?? [],
+        lookup: async (serial) => {
+          const found = await lookupPickSerial(sheet.orderId, serial, allocationId);
+          return { serial: found.serial, reference: found.reference, coo: found.coo };
+        },
+        record: async (pickId, serial, countryOfOrigin) => {
+          currentSheet = await recordPickSerial(pickId, serial, countryOfOrigin);
+          setSheet(currentSheet);
+        },
+      });
+      if (report.accepted > 0) {
+        setCooText((current) => ({ ...current, [allocationId]: "" }));
+        setPull(null);
+      }
+      setPasteReport(report.accepted > 0 || report.failures.length > 0 ? report : null);
+    } finally {
+      applyingPaste.current = false;
       setBusy(false);
     }
   }
@@ -268,6 +325,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
             event.preventDefault();
             const code = stagingBinCode(stageScan);
             if (!code) {
+              setPasteReport(null);
               setError("A bin code is five digits, a hyphen, and B, C, or P.");
               return;
             }
@@ -298,6 +356,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
           {error}
         </p>
       ) : null}
+      {pasteReport ? <SerialPasteNote report={pasteReport} /> : null}
       {activePull ? (
         <p className="banner ok pick-pull-note" role="status">
           {pullCue(activePull)}
@@ -582,6 +641,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                     onSerial={(value) => setSerialText((current) => ({ ...current, [line.allocationId]: value }))}
                     onCoo={(value) => setCooText((current) => ({ ...current, [line.allocationId]: value }))}
                     onScan={() => void fillSerialLocation(serialText[line.allocationId] ?? "", line.allocationId)}
+                    onPasteSerials={(serials) => void onPasteSerials(line, serials)}
                     onAdd={() => void onAddSerial(line)}
                   />
                 ) : null;
@@ -636,6 +696,38 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   );
 }
 
+function SerialPasteNote({ report }: { report: SerialPasteReport }) {
+  const text = formatSerialPasteReport(report);
+  return (
+    <>
+      {text.accepted ? (
+        <p className="banner ok" role="status">
+          {text.accepted}
+        </p>
+      ) : null}
+      {text.failures ? (
+        <p className="banner error" role="alert">
+          {text.failures}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function onSerialFieldPaste(
+  event: ClipboardEvent<HTMLInputElement>,
+  busy: boolean,
+  onSerial: (value: string) => void,
+  onPasteSerials: (serials: string[]) => void,
+) {
+  const plan = classifySerialPaste(event.clipboardData.getData("text"));
+  if (plan.type === "default") return;
+  event.preventDefault();
+  if (busy) return;
+  if (plan.type === "fill") onSerial(plan.serial);
+  if (plan.type === "apply") onPasteSerials(plan.serials);
+}
+
 function SerialEntryRow({
   line,
   busy,
@@ -645,6 +737,7 @@ function SerialEntryRow({
   onSerial,
   onCoo,
   onScan,
+  onPasteSerials,
   onAdd,
 }: {
   line: PickLine;
@@ -655,6 +748,7 @@ function SerialEntryRow({
   onSerial: (value: string) => void;
   onCoo: (value: string) => void;
   onScan: () => void;
+  onPasteSerials: (serials: string[]) => void;
   onAdd: () => void;
 }) {
   return (
@@ -667,6 +761,7 @@ function SerialEntryRow({
           autoComplete="off"
           spellCheck={false}
           onChange={(event) => onSerial(event.target.value)}
+          onPaste={(event) => onSerialFieldPaste(event, busy, onSerial, onPasteSerials)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
