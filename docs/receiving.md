@@ -6,7 +6,7 @@ The receiving screen posts a quantity into a bin. The top of the form is the rec
 
 | Label | Stored as | Notes |
 | --- | --- | --- |
-| Project | `stock_events.project` and, when a cycle opens, `bin_cycles.project` | A combobox. Focusing it lists this person's 10 most recently used projects from receipts with their initials, newest first. Typing narrows that list. A name that is not listed is still stored as typed. |
+| Project | `stock_events.project` and, when a cycle opens, `bin_cycles.project` | A combobox. Focusing it lists this person's 10 most recently used projects from receipts with their initials, newest first. A project with many recent lines does not hide the older names. Typing lists every project on a receipt whose code contains those letters, ignoring case, so `AZ` includes `AZSIM6930`. A name that is not listed is still stored as typed. |
 | Receiving date | `stock_events.received_on` | Defaults to today in America/Los_Angeles. |
 | Incoming bin | `stock_events.incoming_tag` and, when a cycle opens, `bin_cycles.incoming_tag` | The database column is still `incoming_tag`. |
 | Originating system | `stock_events.origin_description` and, when a cycle opens, `bin_cycles.origin_description` | A combobox, like Project. Focusing it lists originating systems already stored on receipts, newest first. Typing narrows that list. A name that is not listed is still stored as typed, and the next receipt offers it. Older receipts keep the text already stored. The database column is still `origin_description`. There is no separate system table. |
@@ -68,13 +68,13 @@ Country of origin and date code are not their own columns yet. A later migration
 
 ## Importing a list
 
-Download template on this page saves `receiving-template.xlsx`. Download CSV saves the same columns as `receiving-template.csv`. The header row is the ITS field names. One sample row follows it. The workbook also has an Instructions sheet. Open either file in Google Sheets.
+Download template, Download CSV, Import spreadsheet, and Paste rows are icon buttons at the top of this page. Download template saves `receiving-template.xlsx`. Download CSV saves the same columns as `receiving-template.csv`. The header row is the ITS field names. One sample row follows it. The workbook also has an Instructions sheet. Open either file in Google Sheets.
 
 Fill one row per receipt. `qty` and `bin` are required. The bin is a code that already exists (`10059-C`). Import does not create bins. `sku` is an exact item SKU. Leave SKU blank and fill `search` to store a pending line that does not move stock. A row with no `purchase_order` is consigned and needs `vendor`, the vendor's display name. A purchase order number such as `PO6304` supplies the vendor and is not consigned. Blank vendor, purchase order, project, receiving date, incoming bin, originating system, and system qty use the receipt header on the page.
 
 `cleaned` is for a CPU and `wiped` is for an SSD or HDD. Blank, `no`, or `yes`. Blank is no, which is the unchecked box. Other items ignore the flag. `serial` is optional. Several serials can share one cell, separated by a semicolon, a pipe, or a new line, at most one per piece. `country_of_origin` is a 2- or 3-letter code stored on those stock units. With no serial, one stock unit is recorded with that country. Fewer serials than the quantity leaves the rest as quantity only.
 
-Choose the filled file, or paste rows. Headers that match the template, or the receipt export (`Item Qty`, `Putaway`, `PO`, `COO`, and the rest), are mapped automatically. Anything else can be remapped before continuing. The preview lists each row as OK or Error. Nothing is written while a row has an error. Import posts every OK row through `receive_into_bin`, the same path as Save receipt, in one transaction. A failure while posting rolls the batch back.
+Choose the filled file from the import icon, or paste rows. Headers that match the template, or the receipt export (`Item Qty`, `Putaway`, `PO`, `COO`, and the rest), are mapped automatically. Anything else can be remapped before continuing. The preview lists each row as OK or Error. Nothing is written while a row has an error. Import posts every OK row through `receive_into_bin`, the same path as Save receipt, in one transaction. A failure while posting rolls the batch back. The commit control is an upload icon. Its name is the number of rows.
 
 Data management links here. The import logic is only on this page.
 
