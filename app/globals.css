@@ -7,6 +7,7 @@
   --color-muted: #334155;
   --color-accent: #5b21b6;
   --color-accent-foreground: #ffffff;
+  --color-icon-on-dark: #eef2ff;
   --color-sidebar: #0a0e1c;
   --color-canvas: #e8edff;
   --color-danger: #8a1f11;
@@ -27,6 +28,8 @@
   --line: rgba(15, 23, 42, 0.12);
   --accent: #5b21b6;
   --accent-ink: #ffffff;
+  /* Light tint of the dark primary fill. Icon glyphs on that fill use this, not inherited text. */
+  --icon-on-dark: #eef2ff;
   --danger-bg: #fdecea;
   --danger-ink: #8a1f11;
   --ok-bg: #e7f6ee;
@@ -1018,7 +1021,7 @@ button.label-print:hover:not(:disabled) {
 
 .page-toolbar .toolbar-save:not(:disabled) {
   background: var(--accent);
-  color: #fff;
+  color: var(--icon-on-dark);
   border-color: transparent;
 }
 
@@ -1031,13 +1034,13 @@ button.label-print:hover:not(:disabled) {
 
 .page-toolbar .toolbar-save.saving {
   background: var(--accent);
-  color: #fff;
+  color: var(--icon-on-dark);
   border-color: transparent;
 }
 
 .page-toolbar .toolbar-save.saved {
   background: var(--ok-ink);
-  color: #fff;
+  color: var(--icon-on-dark);
   border-color: transparent;
 }
 
@@ -1950,6 +1953,11 @@ button.danger {
   height: 36px;
   padding: 0;
   flex: none;
+}
+
+.items-icon:not(.secondary),
+.items-icon:not(.secondary) svg {
+  color: var(--icon-on-dark);
 }
 
 .items-tip-wrap {
@@ -3140,7 +3148,7 @@ button.ebay-more {
 #item-pricing button.price-save:not(:disabled) {
   background: var(--accent);
   background-image: none;
-  color: #fff;
+  color: var(--icon-on-dark);
   border-color: transparent;
   cursor: pointer;
 }
@@ -7738,8 +7746,41 @@ input.num-input {
   height: 44px;
   min-height: 44px;
   padding: 0;
-  color: inherit;
   text-decoration: none;
+}
+
+/*
+  Glyphs on the dark primary fill. Do not inherit page text here: --ink and
+  --ds-ink are dark in the light theme, and that paints the icon on the fill.
+  .ds a is more specific than a bare anchor, so the sales-order links are named
+  again below. Secondary chips and .icon-button stay dark-on-light.
+  .so-icon-action.secondary keeps --ds-ink from the secondary rule.
+*/
+button.so-icon-action:not(.secondary),
+.ds.so-page a.so-icon-action,
+.ds.receiving-page button.so-icon-action,
+button.so-new-order,
+.so-page a.so-new-order,
+button.so-icon-action:not(.secondary) svg,
+.ds.so-page a.so-icon-action svg,
+.ds.receiving-page button.so-icon-action svg,
+button.so-new-order svg,
+.so-page a.so-new-order svg {
+  color: var(--icon-on-dark);
+}
+
+button.so-icon-action:not(.secondary) svg,
+.ds.so-page a.so-icon-action svg,
+.ds.receiving-page button.so-icon-action svg,
+button.so-new-order svg,
+.so-page a.so-new-order svg,
+.items-icon:not(.secondary) svg,
+.page-toolbar .toolbar-save:not(:disabled) svg,
+.page-toolbar .toolbar-save.saving svg,
+.page-toolbar .toolbar-save.saved svg,
+.page-toolbar .icon-button.danger svg,
+#item-pricing button.price-save:not(:disabled) svg {
+  stroke: currentColor;
 }
 
 .so-list-actions {
@@ -7758,7 +7799,7 @@ input.num-input {
   height: 44px;
   min-height: 44px;
   padding: 0;
-  color: var(--accent-ink);
+  color: var(--icon-on-dark);
   text-decoration: none;
 }
 
