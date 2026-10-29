@@ -7911,11 +7911,13 @@ button.so-icon-action:not(.secondary),
 .ds.receiving-page button.so-icon-action,
 button.so-new-order,
 .so-page a.so-new-order,
+.cust-doc-tools button.cust-doc-print,
 button.so-icon-action:not(.secondary) svg,
 .ds.so-page a.so-icon-action svg,
 .ds.receiving-page button.so-icon-action svg,
 button.so-new-order svg,
-.so-page a.so-new-order svg {
+.so-page a.so-new-order svg,
+.cust-doc-tools button.cust-doc-print svg {
   color: var(--icon-on-dark);
 }
 
@@ -7924,6 +7926,7 @@ button.so-icon-action:not(.secondary) svg,
 .ds.receiving-page button.so-icon-action svg,
 button.so-new-order svg,
 .so-page a.so-new-order svg,
+.cust-doc-tools button.cust-doc-print svg,
 .items-icon:not(.secondary) svg,
 .page-toolbar .toolbar-save:not(:disabled) svg,
 .page-toolbar .toolbar-save.saving svg,
@@ -8722,6 +8725,17 @@ button.so-new-order svg,
   align-items: center;
   max-width: 8.5in;
   margin: 0 auto 12px;
+}
+
+.cust-doc-tools button.cust-doc-print {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
 }
 
 .cust-doc {
