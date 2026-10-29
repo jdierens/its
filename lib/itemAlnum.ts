@@ -5,6 +5,9 @@
  * A stored value contained in the query has to keep at least 3 letters or digits,
  * the same floor as a Find SKU longest word.
  * A digits-only attribute does not match that way. `96.0` is not a hit inside a part number.
+ * A `|` in the query is OR. Each alternative is normalized on its own.
+ * `7060DX5|7060PX5` matches either model. Spaces around the pipe, and empty
+ * segments from a leading, trailing, or doubled pipe, are ignored.
  */
 
 export const ITEM_ALNUM_COLUMNS = [
@@ -28,8 +31,31 @@ export function normalizeAlnum(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** The normalized field contains the normalized query. */
-export function alnumFieldContains(field: string, query: string): boolean {
+/**
+ * Pieces of a search query separated by `|`.
+ * Blank pieces from extra pipes are dropped. Spaces beside a pipe are trimmed.
+ */
+export function alnumQueryAlternatives(query: string): string[] {
+  return query
+    .split("|")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+/** Alternatives long enough for a punctuation-insensitive contains match. Identical needles are kept once. */
+export function alnumSearchTerms(query: string): string[] {
+  const terms: string[] = [];
+  const seen = new Set<string>();
+  for (const term of alnumQueryAlternatives(query)) {
+    const needle = normalizeAlnum(term);
+    if (needle.length < ALNUM_CONTAINED_MIN || seen.has(needle)) continue;
+    seen.add(needle);
+    terms.push(term);
+  }
+  return terms;
+}
+
+function alnumFieldContainsTerm(field: string, query: string): boolean {
   const hay = normalizeAlnum(field);
   const needle = normalizeAlnum(query);
   return needle.length >= ALNUM_CONTAINED_MIN && hay.includes(needle);
@@ -37,12 +63,25 @@ export function alnumFieldContains(field: string, query: string): boolean {
 
 /**
  * The normalized query contains the normalized field, and the field is shorter.
- * Equal strings are handled by `alnumFieldContains`.
+ * Equal strings are handled by `alnumFieldContainsTerm`.
  */
-export function alnumQueryContains(field: string, query: string): boolean {
+function alnumQueryContainsTerm(field: string, query: string): boolean {
   const hay = normalizeAlnum(field);
   const needle = normalizeAlnum(query);
   return hay.length >= ALNUM_CONTAINED_MIN && hay.length < needle.length && needle.includes(hay);
+}
+
+/** The normalized field contains any alternative. A query with no `|` is one term. */
+export function alnumFieldContains(field: string, query: string): boolean {
+  return alnumQueryAlternatives(query).some((term) => alnumFieldContainsTerm(field, term));
+}
+
+/**
+ * Any alternative contains the normalized field, and the field is shorter than that alternative.
+ * Equal strings are handled by `alnumFieldContains`.
+ */
+export function alnumQueryContains(field: string, query: string): boolean {
+  return alnumQueryAlternatives(query).some((term) => alnumQueryContainsTerm(field, term));
 }
 
 /** True when the normalized value is digits and nothing else. `96.0` and `0.96` are. */

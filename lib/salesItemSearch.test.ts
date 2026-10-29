@@ -13,6 +13,9 @@ test("a noisy customer part also searches its longest word", () => {
   assert.equal(longestPartToken("M393A4K40DB3-CWE"), "M393A4K40DB3");
   assert.deepEqual(salesItemSearchTokens("M393A4K40DB3-CWE"), ["M393A4K40DB3-CWE", "M393A4K40DB3"]);
   assert.deepEqual(salesItemSearchTokens("106683"), ["106683"]);
+  assert.deepEqual(salesItemSearchTokens("7060DX5|7060PX5"), ["7060DX5", "7060PX5"]);
+  assert.deepEqual(salesItemSearchTokens("7060DX5 | 7060PX5"), ["7060DX5", "7060PX5"]);
+  assert.deepEqual(salesItemSearchTokens("|7060DX5||7060PX5|"), ["7060DX5", "7060PX5"]);
 });
 
 test("Find SKU uses the items-page search sources", () => {

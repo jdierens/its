@@ -8,7 +8,9 @@ import {
   alnumContains,
   alnumDigitsOnly,
   alnumFieldContains,
+  alnumQueryAlternatives,
   alnumQueryContains,
+  alnumSearchTerms,
   attributeAlnumQueryContains,
   normalizeAlnum,
 } from "./itemAlnum.ts";
@@ -56,6 +58,60 @@ test("MZ1L2960HCJR-00A07 finds the drive name and not a digits-only attribute", 
   assert.equal(attributeAlnumQueryContains("LGA4710", "board-LGA-4710-kit"), true);
 });
 
+const DX = "DCS-7060DX5-32S";
+const PX = "DCS-7060PX5-32S";
+const OTHER = "DCS-7060TX5-32S";
+
+test("a single term matches the same way, including punctuation and the length floor", () => {
+  assert.deepEqual(alnumQueryAlternatives("7060DX5"), ["7060DX5"]);
+  assert.deepEqual(alnumSearchTerms("7060DX5"), ["7060DX5"]);
+  assert.deepEqual(alnumSearchTerms("MC"), []);
+  assert.equal(alnumFieldContains(DX, "7060DX5"), true);
+  assert.equal(alnumFieldContains(PX, "7060DX5"), false);
+  assert.equal(alnumFieldContains(DX, "  7060-DX5  "), true);
+  assert.equal(alnumFieldContains(DX, "DX"), false);
+  assert.equal(alnumContains(DX, "7060DX5"), true);
+});
+
+test("7060DX5|7060PX5 matches either model and not a third", () => {
+  assert.equal(alnumFieldContains(DX, "7060DX5|7060PX5"), true);
+  assert.equal(alnumFieldContains(PX, "7060DX5|7060PX5"), true);
+  assert.equal(alnumFieldContains(OTHER, "7060DX5|7060PX5"), false);
+  assert.equal(alnumContains(PX, "7060DX5|7060PX5"), true);
+  assert.equal(alnumFieldContains("DX57060", "7060DX5|7060PX5"), false);
+  assert.deepEqual(alnumSearchTerms("7060DX5|7060PX5"), ["7060DX5", "7060PX5"]);
+});
+
+test("spaces around the pipe are ignored", () => {
+  assert.deepEqual(alnumQueryAlternatives("7060DX5 | 7060PX5"), ["7060DX5", "7060PX5"]);
+  assert.equal(alnumFieldContains(DX, "7060DX5 | 7060PX5"), true);
+  assert.equal(alnumFieldContains(PX, "  7060DX5 | 7060PX5  "), true);
+  assert.equal(alnumFieldContains(OTHER, "7060DX5 | 7060PX5"), false);
+});
+
+test("empty pipe segments are ignored", () => {
+  assert.deepEqual(alnumQueryAlternatives("|7060DX5|"), ["7060DX5"]);
+  assert.deepEqual(alnumQueryAlternatives("7060DX5||7060PX5"), ["7060DX5", "7060PX5"]);
+  assert.deepEqual(alnumQueryAlternatives("||"), []);
+  assert.deepEqual(alnumSearchTerms("|7060DX5||"), ["7060DX5"]);
+  assert.deepEqual(alnumSearchTerms("DX|7060PX5"), ["7060PX5"]);
+  assert.equal(alnumFieldContains(DX, "|7060DX5||"), true);
+  assert.equal(alnumFieldContains(PX, "7060DX5||7060PX5|"), true);
+  assert.equal(alnumFieldContains(DX, "DX|7060PX5"), false);
+  assert.equal(alnumFieldContains(PX, "DX|7060PX5"), true);
+  assert.equal(alnumFieldContains(DX, "|"), false);
+});
+
+test("punctuation is still stripped inside each term", () => {
+  assert.equal(normalizeAlnum("7060-DX5"), "7060dx5");
+  assert.equal(normalizeAlnum("7060/PX5"), "7060px5");
+  assert.equal(alnumFieldContains(DX, "7060-DX5|7060/PX5"), true);
+  assert.equal(alnumFieldContains(PX, "7060-DX5|7060/PX5"), true);
+  assert.equal(alnumFieldContains(OTHER, "7060-DX5|7060/PX5"), false);
+  assert.deepEqual(alnumSearchTerms("7060-DX5 | 7060/PX5"), ["7060-DX5", "7060/PX5"]);
+  assert.deepEqual(alnumSearchTerms("7060-DX5|7060DX5"), ["7060-DX5"]);
+});
+
 test("item find columns are the punctuation-insensitive columns", () => {
   assert.deepEqual([...ITEM_LIST_TEXT_COLUMNS], [...ITEM_ALNUM_COLUMNS]);
 });
@@ -90,4 +146,7 @@ test("the migration normalizes the same columns the app searches", () => {
   assert.match(tightened, /saved\.value_alnum ~ '\[a-z\]'/);
   assert.match(tightened, /saved\.value_alnum like '%' \|\| n\.value \|\| '%'/);
   assert.equal(tightened.includes("i.name_alnum ~ '[a-z]'"), false);
+  const lookup = readFileSync(new URL("./itemAlnumSearch.ts", import.meta.url), "utf8");
+  assert.match(lookup, /alnumSearchTerms/);
+  assert.match(lookup, /item_ids_matching_alnum/);
 });

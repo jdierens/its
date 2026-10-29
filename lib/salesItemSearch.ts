@@ -1,5 +1,5 @@
 import { allocationQtyForLine, formatAllocationQty, parsePackLabel } from "@/lib/ebay/packs";
-import { alnumFieldContains, alnumQueryContains, normalizeAlnum } from "@/lib/itemAlnum";
+import { alnumFieldContains, alnumQueryAlternatives, alnumQueryContains, normalizeAlnum } from "@/lib/itemAlnum";
 import { itemListQueryToken } from "@/lib/itemListQuery";
 
 /**
@@ -25,11 +25,20 @@ export function longestPartToken(value: string): string {
  * The first is the items-page token. A different longest word is searched as well.
  */
 export function salesItemSearchTokens(query: string): string[] {
-  const primary = itemListQueryToken(query);
-  const longest = longestPartToken(query);
   const tokens: string[] = [];
-  if (primary) tokens.push(primary);
-  if (longest.length >= 3 && longest.toLowerCase() !== primary.toLowerCase()) tokens.push(longest);
+  const seen = new Set<string>();
+  const push = (token: string) => {
+    const key = token.toLowerCase();
+    if (!token || seen.has(key)) return;
+    seen.add(key);
+    tokens.push(token);
+  };
+  for (const alternative of alnumQueryAlternatives(query)) {
+    const primary = itemListQueryToken(alternative);
+    const longest = longestPartToken(alternative);
+    if (primary) push(primary);
+    if (longest.length >= 3 && longest.toLowerCase() !== primary.toLowerCase()) push(longest);
+  }
   return tokens;
 }
 
