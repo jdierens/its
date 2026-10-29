@@ -8767,9 +8767,20 @@ button.so-new-order svg,
   object-position: left center;
 }
 
-.cust-doc-company-name,
 .cust-doc p {
   margin: 0;
+}
+
+.cust-doc-company-name,
+.cust-doc-company-address {
+  margin: 0;
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: none;
 }
 
 .cust-doc-title {

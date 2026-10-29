@@ -18,7 +18,7 @@ export function CustomerOrderDocument({ document, orderId }: { document: Custome
           <img className="cust-doc-logo" src={CUSTOMER_DOCUMENT_LOGO} alt="" />
           <div className="cust-doc-company">
             <p className="cust-doc-company-name">{company.name}</p>
-            <p>{company.address}</p>
+            <p className="cust-doc-company-address">{company.address}</p>
           </div>
           <h1 className="cust-doc-title">{document.title}</h1>
         </header>
