@@ -8899,10 +8899,43 @@ button.so-new-order svg,
   white-space: normal;
 }
 
-/* Inventory search keeps one bin per line inside the bins cell. */
+/* One bin per line. nowrap stops a location from breaking after "." (a normal soft wrap). */
+.inventory-bin {
+  display: block;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .receive-table.inventory-results td.locations,
-.inventory-cards dd.locations {
-  white-space: pre-line;
+.inventory-cards .receive-card-row dd.locations {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* Phone cards: the label column is only as wide as the field names. Values take the rest. */
+.inventory-cards .receive-card-row dl {
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+.inventory-cards .receive-card-row dt {
+  white-space: nowrap;
+}
+
+.inventory-cards .receive-card-row dd {
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.inventory-cards .receive-card-row dd.num {
+  text-align: right;
+}
+
+.inventory-cards .inventory-item-desc {
+  display: block;
+  max-width: none;
 }
 
 /* Same heading treatment as the items grid: the active column shows ↑ or ↓. */
