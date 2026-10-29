@@ -7,6 +7,12 @@
 import { errorText } from "@/lib/errors";
 import { serialProblem } from "@/lib/pickSheet";
 
+export const UNKNOWN_SERIAL_MESSAGE = "That serial is not in inventory.";
+
+export function isUnknownSerialMessage(message: string): boolean {
+  return message.trim().toLowerCase().startsWith(UNKNOWN_SERIAL_MESSAGE.toLowerCase());
+}
+
 export type SerialPastePlan =
   | { type: "default" }
   | { type: "ignore" }
@@ -27,6 +33,8 @@ export type SerialPasteFailure = {
 export type SerialPasteReport = {
   accepted: number;
   failures: SerialPasteFailure[];
+  /** Serials that are not stock units. They are not added until the operator confirms. */
+  unknown: string[];
 };
 
 type PickSlot = {
@@ -95,8 +103,11 @@ export async function applyPastedSerials(input: {
   picks: () => readonly PickSlot[];
   lookup: (serial: string) => Promise<unknown>;
   record: (pickId: string, serial: string, coo: string | null) => Promise<void>;
+  /** Records one piece from this bin when the line has no open pull yet. */
+  pullQuantity?: (reference: string) => Promise<void>;
 }): Promise<SerialPasteReport> {
   const failures: SerialPasteFailure[] = [];
+  const unknown: string[] = [];
   let accepted = 0;
   const coo = input.coo.trim();
   for (const raw of input.serials) {
@@ -119,7 +130,11 @@ export async function applyPastedSerials(input: {
         failures.push({ serial: canonical, message: "That serial is already recorded for this item." });
         continue;
       }
-      const slot = pickSlotForSerial({ picks: input.picks(), reference: found.reference });
+      let slot = pickSlotForSerial({ picks: input.picks(), reference: found.reference });
+      if (!slot.ok && input.pullQuantity && canPullAnother(slot.message)) {
+        await input.pullQuantity(found.reference);
+        slot = pickSlotForSerial({ picks: input.picks(), reference: found.reference });
+      }
       if (!slot.ok) {
         failures.push({ serial: canonical, message: slot.message });
         continue;
@@ -127,10 +142,19 @@ export async function applyPastedSerials(input: {
       await input.record(slot.pickId, canonical, coo || found.coo);
       accepted += 1;
     } catch (cause) {
-      failures.push({ serial: label, message: errorText(cause) });
+      const message = errorText(cause);
+      if (isUnknownSerialMessage(message)) {
+        unknown.push(label);
+        continue;
+      }
+      failures.push({ serial: label, message });
     }
   }
-  return { accepted, failures };
+  return { accepted, failures, unknown };
+}
+
+function canPullAnother(message: string): boolean {
+  return message.startsWith("Pick a quantity") || message.startsWith("This pick already has a serial");
 }
 
 export function formatSerialPasteReport(report: SerialPasteReport): { accepted: string | null; failures: string | null } {

@@ -2,17 +2,18 @@
 
 import { Plus, Printer, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState, type ClipboardEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from "react";
 import { usePageMeta } from "@/components/AppShell";
 import { SalesOrderStageNav } from "@/components/SalesOrderStageNav";
 import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import {
+  confirmPulledSerials,
   finishPick,
   lookupPickSerial,
   assignPickStagingBin,
   pastePickSerials,
+  pasteSerialPulls,
   recordPick,
-  recordPickSerial,
   removePickSerial,
   setPickReplacement,
   setPickShort,
@@ -20,13 +21,29 @@ import {
 } from "@/lib/pickActions";
 import { errorText } from "@/lib/errors";
 import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
+import {
+  declineUnknownSerials,
+  mergeSerialReports,
+  lineCanTakeSerial,
+  pullFromLabel,
+  pulledAllocationForUnknowns,
+  unknownSerialPrompt,
+} from "@/lib/pickSerialConfirm";
 import { formatPullFrom, pullCue, type SerialPull } from "@/lib/pickSerialLocation";
 import {
   classifySerialPaste,
   formatSerialPasteReport,
-  pickSlotForSerial,
+  isUnknownSerialMessage,
   type SerialPasteReport,
 } from "@/lib/pickSerialPaste";
+
+type PendingUnknown = {
+  serials: string[];
+  total: number;
+  allocationId: string | null;
+  coo: string;
+  report: SerialPasteReport;
+};
 import { cooProblem } from "@/lib/stockUnits";
 import {
   formatPickQty,
@@ -63,6 +80,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pasteReport, setPasteReport] = useState<SerialPasteReport | null>(null);
+  const [pendingUnknown, setPendingUnknown] = useState<PendingUnknown | null>(null);
   const applyingPaste = useRef(false);
   const open = canPick && sheet.pickStatus === "open";
   const progress = sheetProgress(sheet.lines);
@@ -120,6 +138,18 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       const looked = await lookupPickSerial(sheet.orderId, raw, allocationId);
       if (!looked.ok) {
         setPull(null);
+        if (isUnknownSerialMessage(looked.message) && allocationId) {
+          const serial = raw.trim();
+          setSerialText((current) => ({ ...current, [allocationId]: "" }));
+          setPendingUnknown({
+            serials: [serial],
+            total: 1,
+            allocationId,
+            coo: (cooText[allocationId] ?? "").trim(),
+            report: { accepted: 0, failures: [], unknown: [serial] },
+          });
+          return;
+        }
         setError(looked.message);
         return;
       }
@@ -170,7 +200,97 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       return;
     }
     setScan("");
-    await fillSerialLocation(code, null);
+    await applySerialPulls([code]);
+  }
+
+  function onScanPaste(event: ClipboardEvent<HTMLInputElement>) {
+    const plan = classifySerialPaste(event.clipboardData.getData("text"));
+    if (plan.type === "default") return;
+    event.preventDefault();
+    if (busy) return;
+    if (plan.type === "fill") {
+      setScan(plan.serial);
+      return;
+    }
+    if (plan.type === "apply") {
+      setScan("");
+      void applySerialPulls(plan.serials);
+    }
+  }
+
+  async function applySerialPulls(serials: string[]) {
+    setBusy(true);
+    setError(null);
+    setPasteReport(null);
+    try {
+      const result = await pasteSerialPulls({ orderId: sheet.orderId, serials });
+      takeSerialResult(result, serials.length, null, "");
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function takeSerialResult(
+    result: { sheet: PickSheetModel | null; report: SerialPasteReport },
+    total: number,
+    allocationId: string | null,
+    coo: string,
+  ) {
+    const next = result.sheet ?? sheet;
+    if (result.sheet) setSheet(result.sheet);
+    if (result.report.accepted > 0) setPull(null);
+    if (result.report.unknown.length > 0) {
+      const lineId =
+        allocationId ??
+        pulledAllocationForUnknowns({
+          allocationId: null,
+          lines: next.lines,
+        });
+      setPendingUnknown({
+        serials: result.report.unknown,
+        total,
+        allocationId: lineId,
+        coo,
+        report: result.report,
+      });
+      return;
+    }
+    setPasteReport(result.report.accepted > 0 || result.report.failures.length > 0 ? result.report : null);
+  }
+
+  async function onConfirmUnknown(allocationId: string) {
+    if (!pendingUnknown) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await confirmPulledSerials({
+        orderId: sheet.orderId,
+        allocationId,
+        serials: pendingUnknown.serials,
+        coo: pendingUnknown.coo,
+      });
+      if (result.sheet) setSheet(result.sheet);
+      setPasteReport(
+        mergeSerialReports(
+          { accepted: pendingUnknown.report.accepted, failures: pendingUnknown.report.failures, unknown: [] },
+          result.report,
+        ),
+      );
+      setPendingUnknown(null);
+      setPull(null);
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onDeclineUnknown() {
+    if (!pendingUnknown) return;
+    setPasteReport(declineUnknownSerials(pendingUnknown.report));
+    setPendingUnknown(null);
   }
 
   function onLinePick(line: PickLine, binId: string, onHand: number) {
@@ -199,32 +319,20 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     }
     setBusy(true);
     setError(null);
+    const allocationId = line.allocationId;
+    const coo = (cooText[allocationId] ?? "").trim();
     try {
-      const looked = await lookupPickSerial(sheet.orderId, serial, line.allocationId);
-      if (!looked.ok) {
-        setPull(null);
-        setError(looked.message);
-        return;
+      const result = await pastePickSerials({
+        orderId: sheet.orderId,
+        allocationId,
+        serials: [serial],
+        coo,
+      });
+      takeSerialResult(result, 1, allocationId, coo);
+      if (result.report.accepted > 0 || result.report.unknown.length > 0) {
+        setSerialText((current) => ({ ...current, [allocationId]: "" }));
+        if (result.report.accepted > 0) setCooText((current) => ({ ...current, [allocationId]: "" }));
       }
-      const found = looked.value;
-      setPull(found);
-      setSerialText((current) => ({ ...current, [found.allocationId]: found.serial }));
-      const key = qtyKey(found.allocationId, found.binId);
-      setQtyText((current) => ({ ...current, [key]: current[key]?.trim() ? current[key] : "1" }));
-      const slot = pickSlotForSerial({ picks: line.picks, reference: found.reference });
-      if (!slot.ok) {
-        setError(slot.message);
-        return;
-      }
-      const saved = await recordPickSerial(slot.pickId, found.serial, (cooText[line.allocationId] ?? "").trim() || found.coo);
-      if (!saved.ok) {
-        setError(saved.message);
-        return;
-      }
-      setSheet(saved.value);
-      setSerialText((current) => ({ ...current, [line.allocationId]: "" }));
-      setCooText((current) => ({ ...current, [line.allocationId]: "" }));
-      setPull(null);
     } catch (cause) {
       setPull(null);
       setError(errorText(cause));
@@ -256,12 +364,10 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         serials,
         coo,
       });
-      if (result.sheet) setSheet(result.sheet);
+      takeSerialResult(result, serials.length, allocationId, coo);
       if (result.report.accepted > 0) {
         setCooText((current) => ({ ...current, [allocationId]: "" }));
-        setPull(null);
       }
-      setPasteReport(result.report.accepted > 0 || result.report.failures.length > 0 ? result.report : null);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -381,11 +487,13 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
               autoCapitalize="characters"
               autoComplete="off"
               onChange={(event) => setScan(event.target.value.toUpperCase())}
+              onPaste={(event) => onScanPaste(event)}
             />
           </label>
           <button type="submit" disabled={busy || !scan.trim()}>
             Scan
           </button>
+          <p className="hint">Paste a column of serials to pull each one from the bin it is in.</p>
         </form>
       ) : null}
 
@@ -596,7 +704,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                     {line?.replaced ? <span className="pick-planned">Planned {line.plannedSku}</span> : null}
                   </td>
                   <td className="num pick-code">{formatPickQty(pick.qty)}</td>
-                  <td className="pick-code">{dash(pick.fromBin)}</td>
+                  <td className="pick-code">{pullFromLabel(pick.fromBin)}</td>
                   {open ? (
                     <td>
                       <button type="button" className="secondary" disabled={busy} onClick={() => void run(() => undoPick(pick.id))}>
@@ -647,7 +755,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                       <td className="sku">{line.sku}</td>
                       <td>{serial.serial}</td>
                       <td className="pick-code">{dash(serial.coo)}</td>
-                      <td className="pick-code">{dash(pick.fromBin)}</td>
+                      <td className="pick-code">{pullFromLabel(pick.fromBin)}</td>
                       {open ? (
                         <td>
                           <div className="pick-icon-cell">
@@ -688,7 +796,87 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         {" · "}
         <Link href={`/sales/orders/${sheet.orderId}`}>Sales order</Link>
       </p>
+      {pendingUnknown ? (
+        <UnknownSerialDialog
+          pending={pendingUnknown}
+          lines={sheet.lines}
+          busy={busy}
+          onConfirm={(allocationId) => void onConfirmUnknown(allocationId)}
+          onCancel={onDeclineUnknown}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function UnknownSerialDialog({
+  pending,
+  lines,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  pending: PendingUnknown;
+  lines: readonly PickLine[];
+  busy: boolean;
+  onConfirm: (allocationId: string) => void;
+  onCancel: () => void;
+}) {
+  const choices = lines.filter((line) => lineCanTakeSerial(line));
+  const [chosen, setChosen] = useState(pending.allocationId ?? (choices.length === 1 ? choices[0].allocationId : ""));
+  const needsChoice = !pending.allocationId && choices.length !== 1;
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onCancel]);
+  const accepted =
+    pending.report.accepted > 0
+      ? pending.report.accepted === 1
+        ? "Accepted 1 serial."
+        : `Accepted ${pending.report.accepted} serials.`
+      : null;
+  return (
+    <div className="dialog-backdrop" onMouseDown={busy ? undefined : onCancel}>
+      <div
+        className="dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unknown-serial-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="unknown-serial-title">Unknown serial numbers</h2>
+        <p>
+          {accepted ? `${accepted} ` : null}
+          {unknownSerialPrompt(pending.serials.length, pending.total)}
+        </p>
+        <p className="hint">{pending.serials.join(", ")}</p>
+        {needsChoice && choices.length > 0 ? (
+          <label>
+            SKU
+            <select aria-label="SKU for these serials" value={chosen} onChange={(event) => setChosen(event.target.value)}>
+              <option value="">Choose a SKU</option>
+              {choices.map((line) => (
+                <option key={line.allocationId} value={line.allocationId}>
+                  {line.sku} {line.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {needsChoice && choices.length === 0 ? <p>Nothing on this pick still needs a quantity.</p> : null}
+        <div className="actions">
+          <button type="button" className="secondary" onClick={onCancel} disabled={busy} autoFocus>
+            Leave out
+          </button>
+          <button type="button" onClick={() => onConfirm(chosen)} disabled={busy || !chosen}>
+            {busy ? "Working…" : "Add as Pulled"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

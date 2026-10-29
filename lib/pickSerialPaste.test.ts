@@ -106,10 +106,10 @@ describe("apply pasted serials", () => {
       { serial: "V8HBEMXR", coo: "USA" },
     ]);
     assert.equal(report.accepted, 2);
+    assert.deepEqual(report.unknown, ["V8HD2PXR"]);
     assert.deepEqual(
       report.failures.map((row) => [row.serial, row.message]),
       [
-        ["V8HD2PXR", "That serial is not in inventory."],
         ["V8HOLD01", "That serial is already recorded for this item."],
         ["V8HD2NNR", "This pick already has a serial for each piece."],
         ["NOT-ON-LINE", "That serial is not on this line."],
@@ -118,13 +118,39 @@ describe("apply pasted serials", () => {
     assert.deepEqual(formatSerialPasteReport(report), {
       accepted: "Accepted 2 serials.",
       failures: [
-        "4 serials were not added.",
-        "V8HD2PXR: That serial is not in inventory.",
+        "3 serials were not added.",
         "V8HOLD01: That serial is already recorded for this item.",
         "V8HD2NNR: This pick already has a serial for each piece.",
         "NOT-ON-LINE: That serial is not on this line.",
       ].join("\n"),
     });
+  });
+
+  it("pulls one piece from the bin when the line has not been picked yet", async () => {
+    const pulls: string[] = [];
+    let picks: { id: string; fromBin: string | null; qty: number; serials: string[] }[] = [];
+    const recorded: string[] = [];
+    const report = await applyPastedSerials({
+      serials: ["V8H8GBDR", "V8HD2PXR"],
+      sku: "106683",
+      coo: "",
+      existing: () => recorded,
+      picks: () => picks,
+      lookup: async (serial) => ({ serial, reference: "20009-B", coo: null }),
+      pullQuantity: async (reference) => {
+        pulls.push(reference);
+        picks = [...picks, { id: `pick-${picks.length + 1}`, fromBin: reference, qty: 1, serials: [] }];
+      },
+      record: async (pickId, serial) => {
+        recorded.push(serial);
+        picks = picks.map((row) => (row.id === pickId ? { ...row, serials: [...row.serials, serial] } : row));
+      },
+    });
+    assert.deepEqual(pulls, ["20009-B", "20009-B"]);
+    assert.deepEqual(recorded, ["V8H8GBDR", "V8HD2PXR"]);
+    assert.equal(report.accepted, 2);
+    assert.deepEqual(report.unknown, []);
+    assert.deepEqual(report.failures, []);
   });
 
   it("asks for a picked quantity before it records, and keeps a typed country", async () => {

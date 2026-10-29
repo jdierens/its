@@ -3,6 +3,7 @@
 import { unstable_rethrow } from "next/navigation";
 import { errorText } from "@/lib/errors";
 import { pickPageAccess } from "@/lib/pickAccessServer";
+import { actionForResolvedSerial } from "@/lib/pickSerialConfirm";
 import {
   escapeIlike,
   resolveSerialPull,
@@ -10,8 +11,21 @@ import {
   type KnownSerialUnit,
   type SerialPull,
 } from "@/lib/pickSerialLocation";
-import { applyPastedSerials, type SerialPasteReport } from "@/lib/pickSerialPaste";
-import { itemSerials, pickQueueFromJson, pickSheetFromJson, type PickQueueRow, type PickSheetModel } from "@/lib/pickSheet";
+import {
+  applyPastedSerials,
+  isUnknownSerialMessage,
+  pickSlotForSerial,
+  type SerialPasteReport,
+} from "@/lib/pickSerialPaste";
+import {
+  itemSerials,
+  lineRemaining,
+  pickQueueFromJson,
+  pickSheetFromJson,
+  serialProblem,
+  type PickQueueRow,
+  type PickSheetModel,
+} from "@/lib/pickSheet";
 import { salesOperatorId } from "@/lib/salesSession";
 import { operatorInitials } from "@/lib/stockAccess";
 import { cooProblem } from "@/lib/stockUnits";
@@ -28,6 +42,7 @@ const MIGRATION = "supabase/migrations/20261027170000_sales_order_picking.sql";
 const STOCK_UNITS_MIGRATION = "supabase/migrations/20261027230000_stock_units.sql";
 const REPLACEMENT_MIGRATION = "supabase/migrations/20261028073000_so_sku_replacement.sql";
 const STAGING_MIGRATION = "supabase/migrations/20261028183000_pick_staging_choice.sql";
+const PULLED_MIGRATION = "supabase/migrations/20261029170000_pick_unknown_serials.sql";
 
 function raisePick(error: { code?: string; message?: string } | null): never {
   if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
@@ -359,6 +374,12 @@ export async function pastePickSerials(input: {
       existing: () => itemSerials(current, sku),
       picks: () => current.lines.find((row) => row.allocationId === allocationId)?.picks ?? [],
       lookup: (serial) => serialPullForSheet(supabase, current, serial, allocationId),
+      pullQuantity: async (reference) => {
+        const lineNow = current.lines.find((row) => row.allocationId === allocationId);
+        const bin = lineNow?.bins.find((row) => row.reference.trim().toUpperCase() === reference.trim().toUpperCase());
+        if (!bin) throw new Error(`That serial is in ${reference}, which is not open on this pick.`);
+        current = await pickOneFromBin(supabase, input.orderId, allocationId, bin.binId, who);
+      },
       record: async (pickId, serial, countryOfOrigin) => {
         current = await attachPickSerial(supabase, pickId, serial, countryOfOrigin, who);
       },
@@ -375,7 +396,182 @@ function refusedSerials(serials: readonly string[], message: string): SerialPast
   return {
     accepted: 0,
     failures: serials.map((serial) => ({ serial: serial.trim() || serial, message })),
+    unknown: [],
   };
+}
+
+function recordedSerials(pickSheet: PickSheetModel): string[] {
+  const found: string[] = [];
+  for (const line of pickSheet.lines) {
+    for (const pick of line.picks) {
+      for (const serial of pick.serials) found.push(serial.serial);
+    }
+  }
+  for (const orphan of pickSheet.orphans) {
+    for (const serial of orphan.serials) found.push(serial.serial);
+  }
+  return found;
+}
+
+async function pickOneFromBin(
+  supabase: SupabaseClient,
+  orderId: string,
+  allocationId: string,
+  binId: string,
+  who: { initials: string; operator: string | null },
+): Promise<PickSheetModel> {
+  const { data, error } = await supabase.rpc("pick_sales_order_line", {
+    p_order: orderId,
+    p_allocation: allocationId,
+    p_from: binId,
+    p_qty: 1,
+    p_initials: who.initials,
+    p_operator: who.operator,
+    p_request: crypto.randomUUID(),
+  });
+  if (error) raisePick(error);
+  return sheet(data);
+}
+
+/**
+ * Serial numbers alone. Each known unit is pulled from the bin it is in,
+ * on the order line for that item. Unknown serials are returned for confirmation.
+ */
+export async function pasteSerialPulls(input: {
+  orderId: string;
+  serials: readonly string[];
+}): Promise<{ sheet: PickSheetModel | null; report: SerialPasteReport }> {
+  const serials = (Array.isArray(input.serials) ? input.serials : []).filter((serial): serial is string => typeof serial === "string");
+  try {
+    await assertPicker();
+    const who = await actor();
+    const supabase = await getSupabase();
+    let current = await readPickSheet(input.orderId);
+    const failures: SerialPasteReport["failures"] = [];
+    const unknown: string[] = [];
+    let accepted = 0;
+    const seen = recordedSerials(current);
+    for (const raw of serials) {
+      const serial = raw.trim();
+      const problem = serialProblem({ serial, sku: "", existing: seen });
+      if (problem) {
+        failures.push({ serial: serial || raw, message: problem });
+        continue;
+      }
+      let pull: SerialPull;
+      try {
+        pull = await serialPullForSheet(supabase, current, serial, null);
+      } catch (cause) {
+        const message = errorText(cause);
+        if (isUnknownSerialMessage(message)) unknown.push(serial);
+        else failures.push({ serial, message });
+        continue;
+      }
+      const line = current.lines.find((row) => row.allocationId === pull.allocationId);
+      if (!line) {
+        failures.push({ serial: pull.serial, message: "That serial is not on this pick." });
+        continue;
+      }
+      if (seen.some((row) => row.toLowerCase() === pull.serial.toLowerCase())) {
+        failures.push({ serial: pull.serial, message: "That serial is already recorded for this item." });
+        continue;
+      }
+      const action = actionForResolvedSerial({
+        pull,
+        picks: line.picks,
+        remaining: lineRemaining(line.ordered, line.picked),
+      });
+      try {
+        if (action.type === "fail") {
+          failures.push({ serial: pull.serial, message: action.message });
+          continue;
+        }
+        if (action.type === "pick") {
+          current = await pickOneFromBin(supabase, input.orderId, action.allocationId, action.binId, who);
+        }
+        const refreshed = current.lines.find((row) => row.allocationId === pull.allocationId);
+        const slot =
+          action.type === "attach"
+            ? { ok: true as const, pickId: action.pickId }
+            : pickSlotForSerial({ picks: refreshed?.picks ?? [], reference: pull.reference });
+        if (!slot.ok) {
+          failures.push({ serial: pull.serial, message: slot.message });
+          continue;
+        }
+        current = await attachPickSerial(supabase, slot.pickId, pull.serial, pull.coo, who);
+        seen.push(pull.serial);
+        accepted += 1;
+      } catch (cause) {
+        failures.push({ serial: pull.serial, message: errorText(cause) });
+      }
+    }
+    return { sheet: current, report: { accepted, failures, unknown } };
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error(error);
+    return { sheet: null, report: refusedSerials(serials, errorText(error)) };
+  }
+}
+
+/** Confirmed unknown serials. Creates Pulled stock units and logs them on the line. */
+export async function confirmPulledSerials(input: {
+  orderId: string;
+  allocationId: string;
+  serials: readonly string[];
+  coo: string;
+}): Promise<{ sheet: PickSheetModel | null; report: SerialPasteReport }> {
+  const serials = (Array.isArray(input.serials) ? input.serials : []).filter((serial): serial is string => typeof serial === "string");
+  const coo = typeof input.coo === "string" ? input.coo : "";
+  try {
+    await assertPicker();
+    const who = await actor();
+    const supabase = await getSupabase();
+    let current = await readPickSheet(input.orderId);
+    const country = cooProblem(coo);
+    if (country) return { sheet: current, report: refusedSerials(serials, country) };
+    const line = current.lines.find((row) => row.allocationId === input.allocationId);
+    if (!line) return { sheet: current, report: refusedSerials(serials, "That line is not on this pick.") };
+    const failures: SerialPasteReport["failures"] = [];
+    let accepted = 0;
+    for (const raw of serials) {
+      const serial = raw.trim();
+      const { data, error } = await supabase.rpc("record_pulled_serial", {
+        p_order: input.orderId,
+        p_allocation: input.allocationId,
+        p_serial: serial,
+        p_initials: who.initials,
+        p_operator: who.operator,
+        p_coo: coo.trim() || null,
+      });
+      if (error && (error.code === "PGRST202" || /record_pulled_serial|could not find the function|schema cache/i.test(error.message ?? ""))) {
+        return {
+          sheet: current,
+          report: {
+            accepted,
+            failures: [
+              ...failures,
+              ...serials.slice(accepted + failures.length).map((row) => ({
+                serial: row.trim() || row,
+                message: `Apply ${PULLED_MIGRATION} before an unknown serial can be added.`,
+              })),
+            ],
+            unknown: [],
+          },
+        };
+      }
+      if (error) {
+        failures.push({ serial: serial || raw, message: errorText(error) });
+        continue;
+      }
+      current = sheet(data);
+      accepted += 1;
+    }
+    return { sheet: current, report: { accepted, failures, unknown: [] } };
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error(error);
+    return { sheet: null, report: refusedSerials(serials, errorText(error)) };
+  }
 }
 
 export async function finishPick(orderId: string): Promise<PickSheetModel> {
