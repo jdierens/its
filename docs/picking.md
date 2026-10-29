@@ -14,6 +14,8 @@ A kit component swap stays on the sales-order kit line. A product line can fulfi
 
 Scan a bin code in the scan box to pick the first open line that holds it. Scan or type a serial that is already a stock unit and the sheet fills the pull-from location with the bin that unit is in, highlights that row, and says which bin it is pulling from. A serial that is not in inventory, or not in a bin, is rejected and does not fill a location. Pick the quantity from that bin to record where it came from, then add the serial on the compact serial table.
 
+Pasting a spreadsheet range into a line’s serial field adds each serial the same way as Add. A Google Sheets column is one serial per line (`V8H8GBDR`, then `V8HD2PXR`, and so on), including a Windows line break. A row is separated by tabs. Blank cells are dropped. A known unit is pulled from the bin it is in. The sheet says how many were accepted and lists the ones that were not, with the reason: not in inventory, already on the item, a different item, or the pick already has a serial for every piece. One serial, typed or pasted, still waits for Enter, which only fills the pull-from bin.
+
 Serials already on the sheet, and serials typed while receiving a small quantity, are rows in a table: one line per serial, with the country of origin and, on a pick, the bin it came from.
 
 Remove and Add actions on the sheet are a trash icon and a plus icon. The name is the button’s tooltip and accessible label.
