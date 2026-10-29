@@ -21,8 +21,6 @@ import {
   Landmark,
   List,
   Wallet,
-  PanelLeftClose,
-  PanelLeftOpen,
   Settings,
   Shapes,
   ShoppingCart,
@@ -49,6 +47,15 @@ import { isNavActive, NAV_GROUPS, pageMetaFor, type PageMeta } from "@/lib/nav";
 import { isPublicPath } from "@/lib/publicPaths";
 
 const STORAGE_KEY = "its.sidebar.collapsed";
+
+function SidebarToggleGlyph() {
+  return (
+    <svg className="sidebar-toggle-glyph" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8.2 6.4 3.6 12l4.6 5.6" />
+      <path d="M11.2 7.4h9.2M11.2 12h9.2M11.2 16.6h9.2" />
+    </svg>
+  );
+}
 
 const ICONS: Record<string, LucideIcon> = {
   "/": Package,
@@ -214,6 +221,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="brand-mark">ITS</span>
               <span className="brand-version">{revisionBeside}</span>
             </Link>
+            <button
+              type="button"
+              className="sidebar-collapse"
+              aria-pressed={collapsed}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={toggleCollapsed}
+            >
+              <SidebarToggleGlyph />
+            </button>
           </div>
           <nav className="sidebar-nav" aria-label="Main">
             {groups.map((group) => (
@@ -274,20 +291,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Terms
               </Link>
             </div>
-            <button
-              type="button"
-              className="sidebar-collapse"
-              aria-pressed={collapsed}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={toggleCollapsed}
-            >
-              {collapsed ? (
-                <PanelLeftOpen size={18} strokeWidth={1.75} aria-hidden />
-              ) : (
-                <PanelLeftClose size={18} strokeWidth={1.75} aria-hidden />
-              )}
-              <span className="nav-label">{collapsed ? "Expand" : "Collapse"}</span>
-            </button>
           </div>
         </aside>
         <div className="shell-body">

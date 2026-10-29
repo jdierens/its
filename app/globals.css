@@ -1299,13 +1299,22 @@ form.dialog {
   height: 100dvh;
 }
 
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.7rem 0.7rem 0.55rem 1.15rem;
+}
+
 .brand {
   position: relative;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-height: 0;
-  padding: 0.9rem 1.15rem 0.75rem;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0;
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1346,6 +1355,7 @@ form.dialog {
   position: relative;
   z-index: 1;
   flex: none;
+  padding-bottom: 0.75rem;
   background: var(--sidebar);
 }
 
@@ -1404,29 +1414,64 @@ form.dialog {
   margin-left: 0.4rem;
 }
 
-.sidebar-collapse {
-  display: flex;
+button.sidebar-collapse {
+  display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
-  margin: 0.4rem 0.7rem 0.85rem;
-  padding: 0.48rem 0.7rem;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
   background: transparent;
-  color: #c5d0dc;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background-image: none;
+  color: var(--sidebar-ink);
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
 }
 
-.sidebar-collapse:hover {
-  background: rgba(255, 255, 255, 0.06);
+button.sidebar-collapse:hover {
+  background: rgba(255, 255, 255, 0.08);
+  background-image: none;
+  color: #fff;
+}
+
+button.sidebar-collapse:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 2px;
+}
+
+.sidebar-toggle-glyph {
+  display: block;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.app-shell.collapsed .sidebar-toggle-glyph {
+  transform: scaleX(-1);
 }
 
 .app-shell.collapsed .sidebar {
-  width: 76px;
+  width: 88px;
+}
+
+.app-shell.collapsed .brand-block {
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.6rem 0.3rem 0.45rem;
 }
 
 .app-shell.collapsed .brand {
+  flex: none;
   justify-content: center;
   gap: 0;
-  padding: 0.85rem 0.4rem 0.65rem;
+  min-height: 0;
+  padding: 0;
 }
 
 .app-shell.collapsed .brand-version {
@@ -1445,8 +1490,7 @@ form.dialog {
   display: none;
 }
 
-.app-shell.collapsed .nav-link,
-.app-shell.collapsed .sidebar-collapse {
+.app-shell.collapsed .nav-link {
   justify-content: center;
   padding-left: 0;
   padding-right: 0;
@@ -1819,10 +1863,18 @@ button.danger {
     display: inline;
   }
 
-  .app-shell.collapsed .brand {
+  .brand-block,
+  .app-shell.collapsed .brand-block {
     justify-content: flex-start;
     gap: 0.5rem;
     padding: 0.9rem 1.15rem 0.75rem;
+  }
+
+  .app-shell.collapsed .brand {
+    justify-content: flex-start;
+    gap: 0.5rem;
+    min-height: 0;
+    padding: 0;
   }
 
   .app-shell.collapsed .brand-version {
@@ -1835,8 +1887,7 @@ button.danger {
     white-space: nowrap;
   }
 
-  .app-shell.collapsed .nav-link,
-  .app-shell.collapsed .sidebar-collapse {
+  .app-shell.collapsed .nav-link {
     justify-content: flex-start;
     padding: 0.48rem 0.7rem;
   }
@@ -1869,7 +1920,7 @@ button.danger {
     color: #8b98a8;
   }
 
-  .sidebar-collapse {
+  button.sidebar-collapse {
     display: none;
   }
 
