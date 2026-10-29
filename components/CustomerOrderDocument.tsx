@@ -99,7 +99,7 @@ export function CustomerOrderDocument({ document, orderId }: { document: Custome
         <table className="cust-doc-lines">
           <thead>
             <tr>
-              <th>
+              <th className="sku">
                 DDS
                 <br />
                 SKU
@@ -117,7 +117,7 @@ export function CustomerOrderDocument({ document, orderId }: { document: Custome
           <tbody>
             {document.lines.map((line, index) => (
               <tr key={`${line.sku}-${index}`}>
-                <td className="cust-doc-sku">{line.sku}</td>
+                <td className="sku cust-doc-sku">{line.sku}</td>
                 <td>
                   <div>{line.description}</div>
                   {line.extra.map((extra) => (

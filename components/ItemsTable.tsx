@@ -699,6 +699,7 @@ export function ItemsTable() {
                   aria-sort={activeSort ? (sort.ascending ? "ascending" : "descending") : sortable ? "none" : undefined}
                   scope="col"
                   title={column.id === "coo" ? "Country of origin" : undefined}
+                  className={column.id === "sku" ? "sku" : undefined}
                 >
                   {column.id === "photo" ? (
                     <>
@@ -756,6 +757,7 @@ export function ItemsTable() {
                         aria-selected={selectedCell}
                         tabIndex={selectedCell && !editingCell ? 0 : -1}
                         className={[
+                          column.id === "sku" ? "sku" : "",
                           column.id === "name" ||
                           column.id === "fields" ||
                           column.id === "manufacturer" ||

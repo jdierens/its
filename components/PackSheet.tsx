@@ -371,7 +371,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
           <table className="pick-sheet">
             <thead>
               <tr>
-                <th>SKU</th>
+                <th className="sku">SKU</th>
                 <th>Name</th>
                 <th className="num">Picked</th>
                 <th className="num">Packed</th>

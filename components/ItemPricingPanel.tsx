@@ -598,7 +598,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                       {QUOTE_SOURCE_LABELS[quote.source]}
                       {quote.outlier ? <span className="badge-outlier">Outlier</span> : null}
                     </td>
-                    <td className="sku num">
+                    <td className="tabular num">
                       {formatMoney(quote.price, quote.currency)}
                       {quote.url ? (
                         <>
@@ -609,7 +609,7 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                         </>
                       ) : null}
                     </td>
-                    <td className="sku num">{formatQty(quote.qty)}</td>
+                    <td className="tabular num">{formatQty(quote.qty)}</td>
                     <td>{quote.condition || "—"}</td>
                     <td>
                       {sellerLabel(quote)}
@@ -738,10 +738,10 @@ export function ItemPricingPanel({ itemId }: { itemId: string }) {
                 {visibleTxns.map((txn) => (
                   <tr key={txn.id}>
                     <td>{txn.type === "buy" ? "Buy" : "Sell"}</td>
-                    <td className="sku">{txn.txnDate}</td>
-                    <td className="sku num">{formatQty(txn.qty)}</td>
-                    <td className="sku num">{formatMoney(txn.unitPrice)}</td>
-                    <td className="sku num">{formatMoney(txn.total)}</td>
+                    <td className="tabular">{txn.txnDate}</td>
+                    <td className="tabular num">{formatQty(txn.qty)}</td>
+                    <td className="tabular num">{formatMoney(txn.unitPrice)}</td>
+                    <td className="tabular num">{formatMoney(txn.total)}</td>
                     <td>
                       {txn.type === "sell" ? txn.customerName || "—" : txn.vendorName || "—"}
                       {txn.notes ? <span className="hint">{txn.notes}</span> : null}
