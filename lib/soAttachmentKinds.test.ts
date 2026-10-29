@@ -20,5 +20,8 @@ test("the sales order file control offers every kind", () => {
   const source = readFileSync(new URL("../components/SalesOrderAttachments.tsx", import.meta.url), "utf8");
   assert.match(source, /SO_ATTACHMENT_KINDS\.map/);
   assert.match(source, /parseSoAttachmentKind/);
+  assert.match(source, /className="so-file-input"/);
+  assert.match(source, /aria-label="Add PDF"/);
+  assert.equal(source.includes(">PDF<"), false);
   assert.equal(source.includes('uploadSoAttachments(orderId, "customer_po"'), false);
 });

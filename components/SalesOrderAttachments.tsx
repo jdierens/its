@@ -1,7 +1,7 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { errorText } from "@/lib/errors";
 import {
@@ -23,6 +23,7 @@ export function SalesOrderAttachments({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const fileInput = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<SoAttachmentKind>(SO_ATTACHMENT_KINDS[0].id);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -90,7 +91,7 @@ export function SalesOrderAttachments({
       ) : null}
       {canEdit && orderId ? (
         <div className="so-file-add">
-          <label>
+          <label className="so-file-type">
             Type
             <select
               value={kind}
@@ -107,19 +108,30 @@ export function SalesOrderAttachments({
               ))}
             </select>
           </label>
-          <label>
-            PDF
-            <input
-              type="file"
-              accept="application/pdf,.pdf"
-              multiple
-              disabled={busy}
-              onChange={(event) => {
-                void upload(event.target.files);
-                event.target.value = "";
-              }}
-            />
-          </label>
+          <button
+            type="button"
+            className="secondary so-icon-add"
+            disabled={busy}
+            aria-label="Add PDF"
+            title="Add PDF"
+            onClick={() => fileInput.current?.click()}
+          >
+            <Plus size={16} strokeWidth={1.75} aria-hidden />
+          </button>
+          <input
+            ref={fileInput}
+            className="so-file-input"
+            type="file"
+            accept="application/pdf,.pdf"
+            multiple
+            disabled={busy}
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(event) => {
+              void upload(event.target.files);
+              event.target.value = "";
+            }}
+          />
         </div>
       ) : null}
       <p className="hint">Customer PO, shipping label, or another sales-order PDF. PDF only, in the private sales-order bucket.</p>
