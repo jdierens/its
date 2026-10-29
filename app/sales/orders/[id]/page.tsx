@@ -3,7 +3,7 @@ import { SalesOrderForm } from "@/components/SalesOrderForm";
 import { errorText } from "@/lib/errors";
 import { fetchEbayDraftDefaults } from "@/lib/ebayOrderDefaultsSettings";
 import { pacificToday } from "@/lib/salesOrderDraft";
-import { listSalesLookups, loadSalesOrder, suggestSalesOrderNumber } from "@/lib/salesOrders";
+import { listSalesLookups, loadSalesOrder, loadSalesOrderPickStatus, suggestSalesOrderNumber } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,11 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
   const access = await salesPageAccess();
 
   try {
-    const [order, lookups, ebayDefaults] = await Promise.all([
+    const [order, lookups, ebayDefaults, pickStatus] = await Promise.all([
       loadSalesOrder(id),
       listSalesLookups(),
       fetchEbayDraftDefaults(),
+      loadSalesOrderPickStatus(id),
     ]);
     const suggestedNumber = order?.status === "draft" ? await suggestSalesOrderNumber() : null;
     if (!order) {
@@ -40,6 +41,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
         defaultEbaySalesRep={ebayDefaults.salesRep}
         defaultEbayPaymentTerms={ebayDefaults.paymentTerms}
         defaultEbayIncoterms={ebayDefaults.incoterms}
+        pickStatus={pickStatus}
       />
     );
   } catch (error) {

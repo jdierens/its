@@ -19,3 +19,5 @@ Serials already on the sheet, and serials typed while receiving a small quantity
 Remove and Add actions on the sheet are a trash icon and a plus icon. The name is the button’s tooltip and accessible label.
 
 Finishing the pick leaves the sales order on picking. The sheet links to packing. Opening packing sets the order to packing. Warehouse → Packing is written up in [Packing](packing.md).
+
+The header beside the sales order number is the same stage control as the sales order and the pack sheet. It goes back to the order, and on to packing once this pick is finished. Opening this sheet after the order has moved on shows the pick and does not start it again.

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, Package, PackageCheck, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Check, FileCheck, FileText, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import { EBAY_ORDER_CUSTOMER_NAME, EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
@@ -11,6 +11,7 @@ import { qtyForSkuPick } from "@/lib/salesItemSearch";
 import { useRouter } from "next/navigation";
 import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
+import { SalesOrderStageNav } from "@/components/SalesOrderStageNav";
 import { Badge } from "@/components/ui/badge";
 import { lineComplianceDisplay } from "@/lib/customerDocument";
 import { errorText } from "@/lib/errors";
@@ -19,6 +20,7 @@ import { isManagedPaypalFee, syncPaypalFeeLines, type PaypalFeeCatalog } from "@
 import { fetchPaypalFeeCatalog } from "@/lib/paypalFeeSettings";
 import { paymentMethodChoices } from "@/lib/salesPaymentMethods";
 import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
+import type { SalesOrderPickStatus } from "@/lib/salesOrderStages";
 import {
   compareMappedLine,
   compareMappedOrder,
@@ -154,6 +156,7 @@ export function SalesOrderForm({
   defaultEbaySalesRep,
   defaultEbayPaymentTerms,
   defaultEbayIncoterms,
+  pickStatus = null,
 }: {
   order: SalesOrderView | null;
   lookups: SalesLookups;
@@ -164,6 +167,7 @@ export function SalesOrderForm({
   defaultEbaySalesRep: string;
   defaultEbayPaymentTerms: string;
   defaultEbayIncoterms: string;
+  pickStatus?: SalesOrderPickStatus;
 }) {
   const router = useRouter();
   const locked = salesOrderFormLocked(canEdit, order?.status ?? null);
@@ -778,10 +782,19 @@ export function SalesOrderForm({
       >
         <div className="so-sticky">
           <div className="so-sticky-lead">
-            <p className="so-identity">
+            <div className="so-identity">
               <span className="sku">{number}</span>
+              {orderId ? (
+                <SalesOrderStageNav
+                  orderId={orderId}
+                  status={status}
+                  pickStatus={pickStatus}
+                  numbered={Boolean(order?.number)}
+                  current="order"
+                />
+              ) : null}
               <Badge tone={salesOrderBadgeTone(status)}>{salesOrderStatusLabel(status)}</Badge>
-            </p>
+            </div>
             {!locked && drafting ? (
               <label className="so-number-field">
                 Sales order number
@@ -824,26 +837,6 @@ export function SalesOrderForm({
                 title="Invoice"
               >
                 <FileText size={18} strokeWidth={1.75} aria-hidden />
-              </Link>
-            ) : null}
-            {order?.id && order.number && (status === "approved" || status === "picking") ? (
-              <Link
-                className="button so-icon-action"
-                href={`/warehouse/pick/${order.id}`}
-                aria-label="Picking"
-                title="Picking"
-              >
-                <PackageCheck size={18} strokeWidth={1.75} aria-hidden />
-              </Link>
-            ) : null}
-            {order?.id && order.number && (status === "packing" || status === "packed") ? (
-              <Link
-                className="button so-icon-action"
-                href={`/warehouse/pack/${order.id}`}
-                aria-label="Packing"
-                title="Packing"
-              >
-                <Package size={18} strokeWidth={1.75} aria-hidden />
               </Link>
             ) : null}
             {orderId && canEdit && status !== "cancelled" && status !== "closed" ? (

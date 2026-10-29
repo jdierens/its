@@ -4,6 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { usePageMeta } from "@/components/AppShell";
+import { SalesOrderStageNav } from "@/components/SalesOrderStageNav";
 import {
   addPackagingType,
   addShippingBin,
@@ -206,7 +207,16 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
     <main className="page pick-page">
       <header className="pick-head">
         <div>
-          <h1>{title}</h1>
+          <div className="pick-title">
+            <h1>{title}</h1>
+            <SalesOrderStageNav
+              orderId={sheet.orderId}
+              status={sheet.status}
+              pickStatus={sheet.pickStatus}
+              numbered={sheet.soNumber != null}
+              current="pack"
+            />
+          </div>
           <p>{sheet.customer || "No customer"}</p>
           {sheet.customerPo ? <p className="muted">Customer PO {sheet.customerPo}</p> : null}
         </div>
