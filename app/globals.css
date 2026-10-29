@@ -8899,6 +8899,12 @@ button.so-new-order svg,
   white-space: normal;
 }
 
+/* Inventory search keeps one bin per line inside the bins cell. */
+.receive-table.inventory-results td.locations,
+.inventory-cards dd.locations {
+  white-space: pre-line;
+}
+
 .inventory-empty .num,
 .inventory-empty .locations {
   color: var(--muted);
