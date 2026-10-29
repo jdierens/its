@@ -1,3 +1,5 @@
+import { salesOrderListReference } from "@/lib/salesOrderDraft";
+
 export type PickOwnership = "owned" | "consigned";
 
 export type PickBin = {
@@ -68,7 +70,8 @@ export type PickSheetModel = {
   soNumber: number | null;
   status: string;
   customer: string;
-  customerPo: string | null;
+  /** Sales order list order reference: eBay order id, otherwise the customer PO. */
+  orderReference: string | null;
   pickListId: string | null;
   pickStatus: "open" | "picked" | "short" | null;
   stagingBin: string | null;
@@ -87,7 +90,8 @@ export type PickQueueRow = {
   soNumber: number;
   status: string;
   customer: string;
-  customerPo: string | null;
+  /** Sales order list order reference: eBay order id, otherwise the customer PO. */
+  orderReference: string | null;
   orderDate: string | null;
   pickStatus: string | null;
   stagingBin: string | null;
@@ -299,6 +303,15 @@ function textOrNull(value: unknown): string | null {
   return raw || null;
 }
 
+/** Same value the sales order list shows in the Order reference column. */
+function listOrderReference(row: Record<string, unknown>): string | null {
+  const value = salesOrderListReference({
+    ebayOrderId: textOrNull(row.ebay_order_id),
+    customerPo: textOrNull(row.customer_po),
+  });
+  return value || null;
+}
+
 function pickListStatus(value: unknown): "open" | "picked" | "short" | null {
   if (value == null) return null;
   if (value === "open" || value === "picked" || value === "short") return value;
@@ -381,7 +394,7 @@ export function pickSheetFromJson(value: unknown): PickSheetModel {
     soNumber: soNumber == null ? null : soNumber,
     status: text(row.status),
     customer: text(row.customer),
-    customerPo: textOrNull(row.customer_po),
+    orderReference: listOrderReference(row),
     pickListId: textOrNull(row.pick_list_id),
     pickStatus,
     stagingBin: textOrNull(row.staging_bin),
@@ -456,7 +469,7 @@ export function pickQueueFromJson(value: unknown): PickQueueRow[] {
       soNumber,
       status: text(row.status),
       customer: text(row.customer),
-      customerPo: textOrNull(row.customer_po),
+      orderReference: listOrderReference(row),
       orderDate: textOrNull(row.order_date),
       pickStatus: textOrNull(row.pick_status),
       stagingBin: textOrNull(row.staging_bin),

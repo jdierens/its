@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   finishBlockMessage,
@@ -193,6 +194,8 @@ describe("pick sheet json", () => {
     assert.equal(sheet.allowReplacement, false);
     assert.equal(sheet.lines[0].plannedSku, "106683");
     assert.equal(sheet.lines[0].replaced, false);
+    assert.equal(sheet.orderReference, "PO-1");
+    assert.equal("customerPo" in sheet, false);
     assert.equal("unit_price" in (sheet as object), false);
     const queue = pickQueueFromJson([
       {
@@ -210,5 +213,64 @@ describe("pick sheet json", () => {
     ]);
     assert.equal(queue[0].soNumber, 27767);
     assert.equal(queue[0].ordered, 2);
+    assert.equal(queue[0].orderReference, null);
+  });
+
+  it("uses the sales order list reference on the sheet and the queue", () => {
+    const base = {
+      order_id: "edefb794-d601-4f39-99bc-cefd0fd67d00",
+      so_number: 27767,
+      status: "picking",
+      customer: "Example",
+      customer_po: "PO-1",
+      pick_list_id: null,
+      pick_status: null,
+      staging_bin: null,
+      staging: [],
+      finish_block: null,
+      handoff: null,
+      lines: [],
+      skipped: [],
+      orphans: [],
+    };
+    assert.equal(
+      pickSheetFromJson({ ...base, ebay_order_id: "12-03456-78901" }).orderReference,
+      "12-03456-78901",
+    );
+    assert.equal(pickSheetFromJson({ ...base, ebay_order_id: "  " }).orderReference, "PO-1");
+    assert.equal(pickSheetFromJson({ ...base, customer_po: null, ebay_order_id: null }).orderReference, null);
+    const queue = pickQueueFromJson([
+      {
+        order_id: base.order_id,
+        so_number: 27767,
+        status: "approved",
+        customer: "Example",
+        customer_po: "",
+        ebay_order_id: " 12-03456-78901 ",
+        order_date: null,
+        pick_status: null,
+        staging_bin: null,
+        ordered: 1,
+        picked: 0,
+      },
+    ]);
+    assert.equal(queue[0].orderReference, "12-03456-78901");
+  });
+});
+
+describe("pick order reference migration", () => {
+  const sql = readFileSync(
+    new URL("../supabase/migrations/20261029020000_pick_order_reference.sql", import.meta.url),
+    "utf8",
+  );
+
+  it("adds the eBay order id to the pick sheet and the pick queue only", () => {
+    assert.match(sql, /p\.proname = 'sales_order_pick_sheet'/);
+    assert.match(sql, /p\.proname = 'list_pick_queue'/);
+    assert.match(sql, /''ebay_order_id'', v_order\.ebay_order_id/);
+    assert.match(sql, /''ebay_order_id'', o\.ebay_order_id/);
+    assert.equal(sql.includes("list_pack_queue"), false);
+    assert.equal(sql.includes("sales_order_pack_sheet"), false);
+    assert.equal(sql.includes("list_ship_queue"), false);
   });
 });

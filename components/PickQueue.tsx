@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
 import { formatPickQty, pickQueueLabel, stagingDisplay, type PickQueueRow } from "@/lib/pickSheet";
 
 export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
@@ -16,7 +17,7 @@ export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
               <tr>
                 <th>Order</th>
                 <th>Customer</th>
-                <th>Customer PO</th>
+                <th>{SALES_ORDER_REFERENCE_LABEL}</th>
                 <th>Order date</th>
                 <th>Status</th>
                 <th>Picked</th>
@@ -30,7 +31,7 @@ export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
                     <Link href={`/warehouse/pick/${row.orderId}`}>SO{row.soNumber}</Link>
                   </td>
                   <td>{row.customer || "—"}</td>
-                  <td className="pick-code">{row.customerPo || "—"}</td>
+                  <td className="pick-code">{row.orderReference || "—"}</td>
                   <td className="pick-code">{row.orderDate || "—"}</td>
                   <td className="pick-code">{pickQueueLabel(row.status, row.pickStatus)}</td>
                   <td className="pick-code">

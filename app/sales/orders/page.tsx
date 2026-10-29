@@ -3,7 +3,12 @@ import { SalesOrderListActions } from "@/components/SalesOrderListActions";
 import { SalesOrderListMemory, SalesOrderListSwitch } from "@/components/SalesOrderListSwitch";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
-import { formatSalesMoney, salesOrderListScope, salesOrderStatusLabel } from "@/lib/salesOrderDraft";
+import {
+  formatSalesMoney,
+  SALES_ORDER_REFERENCE_LABEL,
+  salesOrderListScope,
+  salesOrderStatusLabel,
+} from "@/lib/salesOrderDraft";
 import { listSalesOrders } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
 import { stockSettingsWritable } from "@/lib/stockAccess";
@@ -52,7 +57,7 @@ export default async function SalesOrdersPage({
                 <tr>
                   <th>Number</th>
                   <th>Customer</th>
-                  <th>Order reference</th>
+                  <th>{SALES_ORDER_REFERENCE_LABEL}</th>
                   <th>Status</th>
                   <th>Order date</th>
                   <th>Ship date</th>
@@ -85,7 +90,7 @@ export default async function SalesOrdersPage({
                 <dl>
                   <dt>Customer</dt>
                   <dd>{order.customerName}</dd>
-                  <dt>Order reference</dt>
+                  <dt>{SALES_ORDER_REFERENCE_LABEL}</dt>
                   <dd>{order.orderReference}</dd>
                   <dt>Status</dt>
                   <dd>{salesOrderStatusLabel(order.status)}</dd>

@@ -466,6 +466,9 @@ export function addressFromRecord(value: unknown): SoAddress {
   };
 }
 
+/** Title of the sales order list column filled by salesOrderListReference. */
+export const SALES_ORDER_REFERENCE_LABEL = "Order reference";
+
 /**
  * List column. An eBay order shows the eBay order id. Any other order shows the customer PO.
  * The stored internal reference is not shown.
