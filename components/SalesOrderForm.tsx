@@ -14,6 +14,10 @@ import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
 import { Badge } from "@/components/ui/badge";
 import { lineComplianceDisplay } from "@/lib/customerDocument";
 import { errorText } from "@/lib/errors";
+import { type OrderContact } from "@/lib/orderContact";
+import { isManagedPaypalFee, syncPaypalFeeLines, type PaypalFeeCatalog } from "@/lib/paypalFee";
+import { fetchPaypalFeeCatalog } from "@/lib/paypalFeeSettings";
+import { paymentMethodChoices } from "@/lib/salesPaymentMethods";
 import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import {
   compareMappedLine,
@@ -46,6 +50,7 @@ import {
   cancelSalesOrder,
   salesCustomerDefaults,
   saveEmptyLineAllocation,
+  fillBlankOrderContact,
   saveSalesOrderForForm,
   searchSalesCustomers,
   searchSalesItems,
@@ -201,6 +206,12 @@ export function SalesOrderForm({
   const [paymentDate, setPaymentDate] = useState(order?.paymentDate ?? "");
   const [paymentRef, setPaymentRef] = useState(order?.paymentRef ?? "");
   const [paymentAmount, setPaymentAmount] = useState(order?.paymentAmount ?? "");
+  const [contactName, setContactName] = useState(order?.contactName ?? "");
+  const [contactEmail, setContactEmail] = useState(order?.contactEmail ?? "");
+  const [contactPhone, setContactPhone] = useState(order?.contactPhone ?? "");
+  const [feeCatalog, setFeeCatalog] = useState<PaypalFeeCatalog | null>(null);
+  const [feeCatalogReady, setFeeCatalogReady] = useState(false);
+  const [paypalFeeError, setPaypalFeeError] = useState<string | null>(null);
   const [ebayTransactionFee, setEbayTransactionFee] = useState(order?.ebayTransactionFee ?? "");
   const [ebayLabelFee, setEbayLabelFee] = useState(order?.ebayLabelFee ?? "");
   const [ebayAdFee, setEbayAdFee] = useState(order?.ebayAdFee ?? "");
@@ -266,6 +277,9 @@ export function SalesOrderForm({
       paymentDate,
       paymentRef,
       paymentAmount: showMoney ? paymentAmount : "",
+      contactName,
+      contactEmail,
+      contactPhone,
       ebayTransactionFee: showMoney ? ebayTransactionFee : "",
       ebayLabelFee: showMoney ? ebayLabelFee : "",
       ebayAdFee: showMoney ? ebayAdFee : "",
@@ -275,6 +289,7 @@ export function SalesOrderForm({
         customerPartNumber: line.customerPartNumber,
         customerDescription: line.customerDescription,
         lineNote: line.lineNote,
+        managedFee: line.managedFee,
         qty: line.qty,
         unitPrice: showMoney ? line.unitPrice : "",
         condition: line.condition,
@@ -675,6 +690,83 @@ export function SalesOrderForm({
   const orderCompare = showMoney ? compareMappedOrder(lines) : null;
   const anyQtyMismatch = lineCompares.some((row) => row.qtyMismatch);
   const net = showMoney ? sellerNet(ebayOrderEarnings, ebayLabelFee) : null;
+  const methodChoices = paymentMethodChoices({
+    ebay: ebayOrder,
+    current: paymentMethod,
+    known: lookups.paymentMethods,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchPaypalFeeCatalog()
+      .then((catalog) => {
+        if (!cancelled) setFeeCatalog(catalog);
+      })
+      .catch((error) => {
+        if (!cancelled) setPaypalFeeError(errorText(error));
+      })
+      .finally(() => {
+        if (!cancelled) setFeeCatalogReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (locked) return;
+    if (ebayOrder) {
+      if (paymentMethod !== "ebay") setPaymentMethod("ebay");
+    } else if (paymentMethod === "ebay") {
+      setPaymentMethod("");
+    }
+    const method = ebayOrder ? "ebay" : paymentMethod === "ebay" ? "" : paymentMethod;
+    if (method.toLowerCase() === "paypal" && !feeCatalogReady) return;
+    const result = syncPaypalFeeLines(lines, {
+      paymentMethod: method,
+      shipCountry: shipTo.country,
+      billCountry: billTo.country,
+      catalog: feeCatalog,
+      createLine: (previous, item, unitPrice, extPrice) => ({
+        ...(previous ?? blankLine()),
+        lineKind: "fee",
+        managedFee: "paypal",
+        customerPartNumber: item.sku,
+        customerDescription: item.description.trim() || item.name || "PayPal fee",
+        qty: "1",
+        unitPrice,
+        extPrice,
+        allocations: [
+          {
+            itemId: item.id,
+            sku: item.sku,
+            name: item.name,
+            description: item.description,
+            usHts: "",
+            eccn: "",
+            qty: "1",
+            unitPrice,
+            extPrice,
+            actualItemId: "",
+            actualSku: "",
+            actualName: "",
+            swapReason: "",
+          },
+        ],
+      }),
+    });
+    setPaypalFeeError(result.error);
+    if (feeLineSignature(result.lines) !== feeLineSignature(lines)) {
+      linesRef.current = result.lines;
+      setLines(result.lines);
+    }
+  }, [locked, ebayOrder, paymentMethod, shipTo.country, billTo.country, lines, feeCatalog, feeCatalogReady]);
+
+  function applyContact(found: OrderContact) {
+    setContactName((current) => current.trim() || found.person);
+    setContactEmail((current) => current.trim() || found.email);
+    setContactPhone((current) => current.trim() || found.phone);
+  }
 
   return (
     <main className="page so-page ds">
@@ -882,6 +974,22 @@ export function SalesOrderForm({
             </label>
           ) : null}
         </div>
+          {ebayOrder ? null : (
+            <div className="so-head-row so-contact-row">
+              <label>
+                Contact person
+                <input id="so-contact-person" aria-label="Contact person" value={contactName} disabled={locked} onChange={(event) => setContactName(event.target.value)} />
+              </label>
+              <label>
+                Email
+                <input id="so-contact-email" aria-label="Contact email" type="email" autoComplete="off" value={contactEmail} disabled={locked} onChange={(event) => setContactEmail(event.target.value)} />
+              </label>
+              <label>
+                Phone
+                <input id="so-contact-phone" aria-label="Contact phone" value={contactPhone} disabled={locked} onChange={(event) => setContactPhone(event.target.value)} />
+              </label>
+            </div>
+          )}
         </header>
         <div className="so-workspace">
           <aside className="so-aside">
@@ -1014,6 +1122,8 @@ export function SalesOrderForm({
               </thead>
               <tbody>
                 {lines.map((line, index) => {
+                  const paypalFee = isManagedPaypalFee(line);
+                  const lineLocked = locked || paypalFee;
                   const needsItem = lineRequiresItem(line.lineKind);
                   const ebayFreight = (line.lineKind || "product") === "freight" && ebayOrder;
                   const showAllocations = needsItem || ebayFreight;
@@ -1028,13 +1138,13 @@ export function SalesOrderForm({
                     ["so-line-main", end ? "so-line-end" : "", lineMismatch ? "so-line-mismatch" : ""].filter(Boolean).join(" ");
                   return (
                     <Fragment key={index}>
-                      <tr className={rowClass(false)}>
+                      <tr className={rowClass(false)} id={paypalFee ? "so-paypal-fee" : undefined}>
                         <td>
                           <input
                             id={`so-line-part-${index}`}
                             aria-label={`Customer part number ${index + 1}`}
                             value={line.customerPartNumber}
-                            disabled={locked}
+                            disabled={lineLocked}
                             onChange={(event) => updateLine(index, { customerPartNumber: event.target.value })}
                             onBlur={(event) => {
                               if (!locked && lineRequiresItem(line.lineKind)) void matchCleanSku(index, event.target.value, true);
@@ -1046,7 +1156,7 @@ export function SalesOrderForm({
                           <input
                             aria-label={`Customer description ${index + 1}`}
                             value={line.customerDescription}
-                            disabled={locked}
+                            disabled={lineLocked}
                             onChange={(event) => updateLine(index, { customerDescription: event.target.value })}
                           />
                           {compliance.underDescription ? <p className="so-line-meta">{compliance.underDescription}</p> : null}
@@ -1057,7 +1167,7 @@ export function SalesOrderForm({
                             aria-label={`Customer qty ${index + 1}`}
                             inputMode="decimal"
                             value={line.qty}
-                            disabled={locked}
+                            disabled={lineLocked}
                             onChange={(event) => changeLineMoney(index, "qty", event.target.value)}
                             onBlur={(event) => changeLineMoney(index, "qty", event.target.value, true)}
                           />
@@ -1070,7 +1180,7 @@ export function SalesOrderForm({
                               inputMode="decimal"
                               value={line.unitPrice}
                               currency={currency}
-                              disabled={locked}
+                              disabled={lineLocked}
                               onChange={(event) => changeLineMoney(index, "unit", event.target.value)}
                               onBlur={(event) => changeLineMoney(index, "unit", event.target.value, true)}
                             />
@@ -1084,14 +1194,14 @@ export function SalesOrderForm({
                               inputMode="decimal"
                               value={line.extPrice}
                               currency={currency}
-                              disabled={locked}
+                              disabled={lineLocked}
                               onChange={(event) => changeLineMoney(index, "ext", event.target.value)}
                               onBlur={(event) => changeLineMoney(index, "ext", event.target.value, true)}
                             />
                           </td>
                         ) : null}
                         <td className="so-line-remove">
-                          {!locked ? (
+                          {!lineLocked ? (
                             <RemoveButton
                               label="Remove line"
                               onClick={() =>
@@ -1324,6 +1434,8 @@ export function SalesOrderForm({
                                   </label>
                                 </div>
                               </div>
+                            ) : paypalFee ? (
+                              <p className="hint">PayPal fee. Quantity stays 1. The price follows the fee item description and the order total without this line.</p>
                             ) : (
                               <p className="hint">This line does not need an ITS item.</p>
                             )}
@@ -1339,7 +1451,7 @@ export function SalesOrderForm({
                             rows={1}
                             ref={fitLineNote}
                             value={line.lineNote}
-                            disabled={locked}
+                            disabled={lineLocked}
                             onChange={(event) => {
                               updateLine(index, { lineNote: event.target.value });
                               fitLineNote(event.currentTarget);
@@ -1448,9 +1560,14 @@ export function SalesOrderForm({
             </label>
             <label>
               Payment method
-              <select id="so-payment-method" value={paymentMethod} disabled={locked} onChange={(event) => setPaymentMethod(event.target.value)}>
-                <option value="">Choose a payment method</option>
-                {lookups.paymentMethods.map((method) => (
+              <select
+                id="so-payment-method"
+                value={ebayOrder ? "ebay" : paymentMethod}
+                disabled={locked || ebayOrder}
+                onChange={(event) => setPaymentMethod(event.target.value)}
+              >
+                {ebayOrder ? null : <option value="">Choose a payment method</option>}
+                {methodChoices.map((method) => (
                   <option key={method.code} value={method.code}>
                     {method.label}
                   </option>
@@ -1468,6 +1585,11 @@ export function SalesOrderForm({
               </label>
             ) : null}
           </div>
+          {paypalFeeError ? (
+            <p className="banner error" role="alert">
+              {paypalFeeError}
+            </p>
+          ) : null}
         </fieldset>
 
         <fieldset className="so-notes-files">
@@ -1557,7 +1679,7 @@ export function SalesOrderForm({
               ) : null}
             </div>
             {showMoney ? (
-              <SalesOrderAttachments orderId={orderId} attachments={order?.attachments ?? []} canEdit={filesEditable} />
+              <SalesOrderAttachments orderId={orderId} attachments={order?.attachments ?? []} canEdit={filesEditable} onContact={applyContact} />
             ) : null}
           </div>
         </fieldset>
@@ -1666,8 +1788,24 @@ function blankLine(): FormLine {
     unitPrice: "",
     extPrice: "",
     condition: "",
+    managedFee: "",
     allocations: [],
   };
+}
+
+function feeLineSignature(lines: FormLine[]): string {
+  return JSON.stringify(
+    lines.map((line) => ({
+      kind: line.lineKind,
+      managed: line.managedFee,
+      part: line.customerPartNumber,
+      description: line.customerDescription,
+      qty: line.qty,
+      unit: line.unitPrice,
+      ext: line.extPrice,
+      items: line.allocations.map((row) => ({ id: row.itemId, qty: row.qty, unit: row.unitPrice, ext: row.extPrice })),
+    })),
+  );
 }
 
 function orderIsEbay(order: SalesOrderView | null): boolean {

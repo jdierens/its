@@ -22,6 +22,8 @@ import {
 import { parseWindowDays } from "@/lib/pricing/quotes";
 import { PutawaySettings } from "@/components/PutawaySettings";
 import { fetchReplacementPickAllowed, saveReplacementPickAllowed } from "@/lib/replacementSettings";
+import { fetchPaypalFeeSettings, savePaypalFeeSkus, type PaypalFeeSetting } from "@/lib/paypalFeeSettings";
+import { searchSalesItems, type SalesSkuHit } from "@/lib/salesOrders";
 
 export function SettingsPage() {
   const [days, setDays] = useState("90");
@@ -32,6 +34,8 @@ export function SettingsPage() {
   const [template, setTemplate] = useState<LabelTemplateId>(DEFAULT_LABEL_TEMPLATE);
   const [binTemplates, setBinTemplates] = useState<BinLabelTemplates>(emptyBinLabelTemplates);
   const [allowReplacement, setAllowReplacement] = useState(false);
+  const [domesticFee, setDomesticFee] = useState<PaypalFeeSetting>({ sku: "102475", name: "", description: "" });
+  const [internationalFee, setInternationalFee] = useState<PaypalFeeSetting>({ sku: "102476", name: "", description: "" });
   const [nextNumber, setNextNumber] = useState("20000");
   const [highestIssued, setHighestIssued] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,7 +47,7 @@ export function SettingsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const [value, labelTemplate, binLabelTemplates, counter, ebayDefaults, termChoices, replacementPick] = await Promise.all([
+        const [value, labelTemplate, binLabelTemplates, counter, ebayDefaults, termChoices, replacementPick, paypalFees] = await Promise.all([
           fetchSalesWindowDays(),
           fetchLabelTemplate(),
           fetchBinLabelTemplates(),
@@ -51,6 +55,7 @@ export function SettingsPage() {
           fetchEbayDraftDefaults(),
           fetchSalesPaymentTerms(),
           fetchReplacementPickAllowed(),
+          fetchPaypalFeeSettings(),
         ]);
         if (!cancelled) {
           setDays(String(value));
@@ -59,6 +64,8 @@ export function SettingsPage() {
           setEbayIncoterms(ebayDefaults.incoterms);
           setPaymentTerms(termChoices);
           setAllowReplacement(replacementPick);
+          setDomesticFee(paypalFees.domestic);
+          setInternationalFee(paypalFees.international);
           setTemplate(labelTemplate);
           setBinTemplates(binLabelTemplates);
           setNextNumber(String(counter.nextNumber));
@@ -116,6 +123,7 @@ export function SettingsPage() {
       const savedTerms = await saveEbayDefaultPaymentTerms(ebayPaymentTerms);
       const savedIncoterms = await saveEbayDefaultIncoterms(ebayIncoterms);
       await saveReplacementPickAllowed(allowReplacement);
+      const savedFees = await savePaypalFeeSkus(domesticFee.sku, internationalFee.sku);
       await saveSalesWindowDays(parsed);
       await saveLabelTemplate(template);
       await saveBinLabelTemplates(binTemplates);
@@ -123,6 +131,8 @@ export function SettingsPage() {
       setEbaySalesRep(savedRep);
       setEbayPaymentTerms(savedTerms);
       setEbayIncoterms(savedIncoterms);
+      setDomesticFee(savedFees.domestic);
+      setInternationalFee(savedFees.international);
       setNextNumber(String(savedNext));
       setHighestIssued(counter.highestIssued);
       setSaved(true);
@@ -236,6 +246,31 @@ export function SettingsPage() {
           New and pulled eBay drafts use this when Incoterms are empty. An empty value stays FOB.
         </span>
         <fieldset className="label-settings">
+          <legend>PayPal fee</legend>
+          <FeeSkuField
+            id="paypal-fee-domestic"
+            label="Fee - Paypal Domestic"
+            item={domesticFee}
+            disabled={loading}
+            onChange={(item) => {
+              setDomesticFee(item);
+              setSaved(false);
+            }}
+          />
+          <span className="hint">{feeHint(domesticFee, "102475")}</span>
+          <FeeSkuField
+            id="paypal-fee-international"
+            label="Fee - Paypal International"
+            item={internationalFee}
+            disabled={loading}
+            onChange={(item) => {
+              setInternationalFee(item);
+              setSaved(false);
+            }}
+          />
+          <span className="hint">{feeHint(internationalFee, "102476")}</span>
+        </fieldset>
+        <fieldset className="label-settings">
           <legend>Labels</legend>
           <label htmlFor="label-template">
             <span>Item</span>
@@ -339,6 +374,94 @@ export function SettingsPage() {
       </form>
       <PutawaySettings />
     </main>
+  );
+}
+
+function feeHint(item: PaypalFeeSetting, fallback: string): string {
+  const sku = item.sku.trim() || fallback;
+  if (!item.name && !item.description) return `Default SKU ${fallback}. The item description must include a fee like $0.75 + 3.5%.`;
+  return [sku, item.name, item.description].filter(Boolean).join(" · ");
+}
+
+function FeeSkuField({
+  id,
+  label,
+  item,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  item: PaypalFeeSetting;
+  disabled: boolean;
+  onChange: (item: PaypalFeeSetting) => void;
+}) {
+  const [query, setQuery] = useState(item.sku);
+  const [open, setOpen] = useState(false);
+  const [hits, setHits] = useState<SalesSkuHit[]>([]);
+
+  useEffect(() => {
+    setQuery(item.sku);
+  }, [item.sku]);
+
+  useEffect(() => {
+    const needle = query.trim();
+    if (!open || needle.length < 1 || needle === item.sku) {
+      setHits([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void searchSalesItems(needle)
+        .then((result) => setHits(result.ok ? result.hits : []))
+        .catch(() => setHits([]));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query, open, item.sku]);
+
+  return (
+    <label className="combo" htmlFor={id}>
+      <span>{label}</span>
+      <input
+        id={id}
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        value={query}
+        autoComplete="off"
+        disabled={disabled}
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 200);
+          if (query.trim() && query.trim() !== item.sku) onChange({ sku: query.trim(), name: "", description: item.description });
+        }}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+      />
+      {open && query.trim() ? (
+        <ul className="combo-menu" role="listbox">
+          {hits.map((hit) => (
+            <li key={hit.id}>
+              <button
+                type="button"
+                className="combo-option"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange({ sku: hit.sku, name: hit.name, description: "" });
+                  setQuery(hit.sku);
+                  setOpen(false);
+                }}
+              >
+                {hit.sku}
+                {hit.name ? ` — ${hit.name}` : ""}
+              </button>
+            </li>
+          ))}
+          {hits.length === 0 ? <li className="combo-empty">No matching item.</li> : null}
+        </ul>
+      ) : null}
+    </label>
   );
 }
 

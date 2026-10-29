@@ -81,6 +81,11 @@ export type SoLineInput = {
   customerDescription: string;
   /** Optional note printed under the description. Blank until the form sends one. */
   lineNote?: string;
+  /**
+   * paypal on the one line this app adds for a PayPal fee.
+   * Blank on a line a person entered, including the same SKU.
+   */
+  managedFee?: string;
   qty: string;
   unitPrice: string;
   condition: string;
@@ -117,6 +122,10 @@ export type SoDraftInput = {
   paymentDate: string;
   paymentRef: string;
   paymentAmount: string;
+  /** Person, email, and phone for an order that is not from eBay. */
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
   ebayTransactionFee: string;
   ebayLabelFee: string;
   ebayAdFee: string;
@@ -656,6 +665,9 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
     payment_date: input.paymentDate,
     payment_ref: input.paymentRef,
     payment_amount: input.paymentAmount,
+    contact_name: input.contactName,
+    contact_email: input.contactEmail,
+    contact_phone: input.contactPhone,
     ebay_transaction_fee: input.ebayTransactionFee,
     ebay_label_fee: input.ebayLabelFee,
     ebay_ad_fee: input.ebayAdFee,
@@ -665,6 +677,7 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
       customer_part_number: line.customerPartNumber,
       customer_description: line.customerDescription,
       line_note: line.lineNote ?? "",
+      managed_fee: line.managedFee ?? "",
       qty: line.qty,
       unit_price: line.unitPrice,
       condition: line.condition,

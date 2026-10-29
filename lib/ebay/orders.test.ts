@@ -253,7 +253,7 @@ function storedFor(
     billToBlank: true,
     buyer: order.buyer,
     paymentStatus: order.paymentStatus,
-    paymentMethod: order.paymentStatus === "paid" ? "ebay" : null,
+    paymentMethod: "ebay",
     paymentDate: order.paymentDate,
     transactionFee: order.transactionFee,
     earnings: order.earnings,

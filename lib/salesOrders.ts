@@ -25,6 +25,9 @@ import { salesOperatorId, salesPageAccess } from "@/lib/salesSession";
 import { loadSoAttachments, type SoAttachmentView } from "@/lib/soAttachments";
 import { operatorInitials } from "@/lib/stockAccess";
 import { EBAY_SHIPPING_ITEM_SKU } from "@/lib/ebay/orderMap";
+import { mergeBlankContact, type OrderContact } from "@/lib/orderContact";
+import { syncPaypalFeeLines } from "@/lib/paypalFee";
+import { fetchPaypalFeeCatalog } from "@/lib/paypalFeeSettings";
 import { parsePackLabel } from "@/lib/ebay/packs";
 import { alnumContains } from "@/lib/itemAlnum";
 import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
@@ -100,6 +103,8 @@ export type SalesLineView = {
   htsCode: string;
   eccn: string;
   lineNote: string;
+  /** paypal on the auto-managed PayPal fee line. Blank on every other line. */
+  managedFee: string;
   qty: string;
   unitPrice: string;
   extPrice: string;
@@ -147,6 +152,9 @@ export type SalesOrderView = {
   paymentDate: string;
   paymentRef: string;
   paymentAmount: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
   ebayTransactionFee: string;
   ebayLabelFee: string;
   ebayAdFee: string;
@@ -389,9 +397,13 @@ function salesOrderSelect(
   withAllocPrice: boolean,
   withLineNote: boolean,
   withReplacement: boolean,
+  withManagedFee: boolean,
+  withContact: boolean,
 ): string {
   const payment = withPayment ? ", payment_amount" : "";
+  const contact = withContact ? ", contact_name, contact_email, contact_phone" : "";
   const note = withLineNote ? ", line_note" : "";
+  const managed = withManagedFee ? ", managed_fee" : "";
   const item = "sku, name, description, us_hts, eccn";
   // actual_item_id is a second FK to items. A bare items(...) embed is ambiguous.
   const plannedItem = `items!so_line_allocations_item_id_fkey(${item})`;
@@ -401,7 +413,7 @@ function salesOrderSelect(
   const allocations = withAllocPrice
     ? `so_line_allocations(item_id, qty, unit_price, ext_price, alloc_no${replacement}, ${plannedItem})`
     : `so_line_allocations(item_id, qty${replacement}, ${plannedItem})`;
-  return `${ORDER_HEAD}${payment}, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, hts_code, eccn${note}, ${allocations}), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)`;
+  return `${ORDER_HEAD}${contact}${payment}, ebay_order_id, ebay_sales_record_ref, buyer, ebay_transaction_fee, ebay_label_fee, ebay_ad_fee, ebay_order_earnings, customers(display_name), so_lines(id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price, condition, hts_code, eccn${note}${managed}, ${allocations}), so_customer_notes(kind, customer_text, response, counter_text, created_at), so_events(event, operator_label, occurred_at, note)`;
 }
 
 function missingColumn(error: { message?: string } | null, column: string): boolean {
@@ -417,16 +429,21 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
   let withAllocPrice = true;
   let withLineNote = true;
   let withReplacement = true;
+  let withManagedFee = true;
+  let withContact = true;
   const loadOrder = () =>
     supabase
       .from("sales_orders")
-      .select(salesOrderSelect(withPayment, withAllocPrice, withLineNote, withReplacement))
+      .select(salesOrderSelect(withPayment, withAllocPrice, withLineNote, withReplacement, withManagedFee, withContact))
       .eq("id", id)
       .maybeSingle();
   let loaded: { data: any; error: { message?: string } | null } = await loadOrder();
-  for (let attempt = 0; attempt < 5 && loaded.error; attempt += 1) {
+  for (let attempt = 0; attempt < 7 && loaded.error; attempt += 1) {
     const message = loaded.error.message ?? "";
     if (withPayment && missingColumn(loaded.error, "payment_amount")) withPayment = false;
+    else if (withContact && (missingColumn(loaded.error, "contact_name") || missingColumn(loaded.error, "contact_email") || missingColumn(loaded.error, "contact_phone")))
+      withContact = false;
+    else if (withManagedFee && missingColumn(loaded.error, "managed_fee")) withManagedFee = false;
     else if (withLineNote && missingColumn(loaded.error, "line_note")) withLineNote = false;
     else if (
       withReplacement &&
@@ -508,6 +525,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
         htsCode: text(line.hts_code),
         eccn: text(line.eccn),
         lineNote: text(line.line_note),
+        managedFee: text(line.managed_fee),
         qty: formatQty(line.qty),
         unitPrice: visible.unitPrice,
         extPrice: visible.extPrice,
@@ -575,6 +593,9 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     paymentDate: dateValue(data.payment_date) ?? "",
     paymentRef: text(data.payment_ref),
     paymentAmount: shown.paymentAmount,
+    contactName: text(data.contact_name),
+    contactEmail: text(data.contact_email),
+    contactPhone: text(data.contact_phone),
     ebayTransactionFee: shown.ebayTransactionFee,
     ebayLabelFee: shown.ebayLabelFee,
     ebayAdFee: shown.ebayAdFee,
@@ -604,11 +625,16 @@ async function salesOrderIsEbay(input: SoDraftInput): Promise<boolean> {
   if (!input.id || !UUID.test(input.id)) return false;
   const { data, error } = await (await getSupabase())
     .from("sales_orders")
-    .select("source, channel, ebay_order_id")
+    .select("source, channel, ebay_order_id, ebay_sales_record_ref")
     .eq("id", input.id)
     .maybeSingle();
   if (error || !data) return false;
-  return data.source === "ebay" || data.channel === "ebay" || (data.ebay_order_id != null && String(data.ebay_order_id).trim() !== "");
+  return (
+    data.source === "ebay" ||
+    data.channel === "ebay" ||
+    text(data.ebay_order_id) !== "" ||
+    text(data.ebay_sales_record_ref) !== ""
+  );
 }
 
 /**
@@ -702,7 +728,45 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   const persisted = access.canViewMoney ? draft : { ...draft, internalNotes: input.id ? await readInternalNotes(input.id) : "" };
   const allocated = await attachEbayShipping(persisted);
   const ebay = await salesOrderIsEbay(allocated);
-  const stored = ebay ? { ...allocated, billTo: emptyAddress() } : allocated;
+  if (!ebay && allocated.paymentMethod.trim().toLowerCase() === "ebay") {
+    throw new Error("eBay is only for an eBay order.");
+  }
+  const method = ebay ? "ebay" : allocated.paymentMethod;
+  const paypal = method.trim().toLowerCase() === "paypal";
+  const fees = syncPaypalFeeLines(allocated.lines, {
+    paymentMethod: method,
+    shipCountry: allocated.shipTo.country,
+    billCountry: allocated.billTo.country,
+    catalog: paypal ? await fetchPaypalFeeCatalog() : null,
+    createLine: (previous, item, unitPrice) => ({
+      lineKind: "fee",
+      managedFee: "paypal",
+      customerPartNumber: item.sku,
+      customerDescription: item.description.trim() || item.name || "PayPal fee",
+      lineNote: previous?.lineNote ?? "",
+      qty: "1",
+      unitPrice,
+      condition: previous?.condition ?? "",
+      allocations: [{ itemId: item.id, qty: "1", unitPrice }],
+    }),
+  });
+  if (fees.error) throw new Error(fees.error);
+  if (method.trim()) {
+    const knownMethod = await (await getSupabase()).from("so_payment_methods").select("code").eq("code", method.trim()).maybeSingle();
+    if (knownMethod.error) throw new Error(salesError(knownMethod.error));
+    if (!knownMethod.data) {
+      throw new Error("Apply supabase/migrations/20261029010000_sales_order_paypal_fee.sql before using this payment method.");
+    }
+  }
+  const stored = {
+    ...allocated,
+    paymentMethod: method,
+    billTo: ebay ? emptyAddress() : allocated.billTo,
+    contactName: ebay ? "" : allocated.contactName.trim(),
+    contactEmail: ebay ? "" : allocated.contactEmail.trim(),
+    contactPhone: ebay ? "" : allocated.contactPhone.trim(),
+    lines: fees.lines,
+  };
   const { data, error } = await (await getSupabase()).rpc("write_sales_order", {
     p_payload: toSalesOrderPayload(stored),
     p_initials: await operatorInitials(),
@@ -725,6 +789,55 @@ export async function suggestSalesOrderNumber(): Promise<number> {
 export type SalesSave =
   | { ok: true; id: string; addressWarning: string | null }
   | { ok: false; message: string };
+
+const CONTACT_EDITABLE = new Set(["draft", "approved", "picking"]);
+
+/** Fills a blank contact on a non-eBay order. A value already stored stays. */
+export async function fillBlankOrderContact(orderId: string, found: OrderContact): Promise<OrderContact> {
+  const access = await salesPageAccess();
+  if (!access.canEdit || !UUID.test(orderId)) return found;
+  const supabase = await getSupabase();
+  const loaded = await supabase
+    .from("sales_orders")
+    .select("status, source, channel, ebay_order_id, ebay_sales_record_ref, contact_name, contact_email, contact_phone")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (loaded.error) {
+    if (
+      missingColumn(loaded.error, "contact_name") ||
+      missingColumn(loaded.error, "contact_email") ||
+      missingColumn(loaded.error, "contact_phone")
+    ) {
+      return found;
+    }
+    throw new Error(salesError(loaded.error));
+  }
+  const row = loaded.data;
+  if (!row) return found;
+  const ebay =
+    row.source === "ebay" ||
+    row.channel === "ebay" ||
+    text(row.ebay_order_id) !== "" ||
+    text(row.ebay_sales_record_ref) !== "";
+  if (ebay || !CONTACT_EDITABLE.has(String(row.status))) return found;
+  const current = { person: text(row.contact_name), email: text(row.contact_email), phone: text(row.contact_phone) };
+  const merged = mergeBlankContact(current, found);
+  if (merged.person === current.person && merged.email === current.email && merged.phone === current.phone) return merged;
+  const updated = await supabase
+    .from("sales_orders")
+    .update({
+      contact_name: merged.person || null,
+      contact_email: merged.email || null,
+      contact_phone: merged.phone || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", orderId);
+  if (updated.error) {
+    if (missingColumn(updated.error, "contact_name")) return merged;
+    throw new Error(salesError(updated.error));
+  }
+  return merged;
+}
 
 /** Save a draft. Failures are returned so production does not replace them with the digest page. */
 export async function saveSalesOrderForForm(input: SoDraftInput): Promise<SalesSave> {
