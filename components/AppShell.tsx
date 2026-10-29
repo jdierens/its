@@ -6,6 +6,7 @@ import {
   BadgeDollarSign,
   Boxes,
   Building,
+  ClipboardCheck,
   ClipboardList,
   Contact,
   Database,
@@ -67,8 +68,9 @@ const ICONS: Record<string, LucideIcon> = {
   "/sales/orders": ShoppingCart,
   "/purchasing/orders": ClipboardList,
   "/warehouse/inventory": Search,
-  "/warehouse/pick": PackageCheck,
   "/warehouse/receiving": PackagePlus,
+  "/warehouse/cycle-count": ClipboardCheck,
+  "/warehouse/pick": PackageCheck,
   "/scan": ScanLine,
   "/warehouse/bins": Boxes,
   "/pricing": BadgeDollarSign,
@@ -238,6 +240,26 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className="nav-group-label">{group.label}</div>
                 {group.items.map((item) => {
                   const Icon = ICONS[item.href] ?? Package;
+                  if (item.disabled) {
+                    const comingSoon = `${item.label}, coming soon`;
+                    return (
+                      <div key={item.href}>
+                        <span
+                          className="nav-link nav-link-disabled"
+                          role="link"
+                          aria-disabled="true"
+                          aria-label={comingSoon}
+                          title={comingSoon}
+                        >
+                          <Icon size={18} strokeWidth={1.75} aria-hidden />
+                          <span className="nav-label">
+                            {item.label}
+                            <span className="nav-soon">Soon</span>
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  }
                   const matchingChildren = item.children?.filter((child) => isNavActive(child.href, pathname)) ?? [];
                   const specificHref = matchingChildren.reduce(
                     (best, child) => (child.href.length > best.length ? child.href : best),

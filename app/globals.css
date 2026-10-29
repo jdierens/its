@@ -1389,6 +1389,25 @@ form.dialog {
   color: #e0f2fe;
 }
 
+.nav-link.nav-link-disabled {
+  color: var(--sidebar-muted);
+  cursor: default;
+}
+
+.nav-link.nav-link-disabled:hover {
+  background: transparent;
+  color: var(--sidebar-muted);
+}
+
+.nav-soon {
+  margin-left: 0.4rem;
+  color: var(--sidebar-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .sidebar-legal {
   display: flex;
   flex-wrap: wrap;
