@@ -17,6 +17,7 @@ import {
   undoPick,
 } from "@/lib/pickActions";
 import { errorText } from "@/lib/errors";
+import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
 import { formatPullFrom, pullCue, type SerialPull } from "@/lib/pickSerialLocation";
 import { cooProblem } from "@/lib/stockUnits";
 import {
@@ -245,7 +246,9 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         <div>
           <h1>{title}</h1>
           <p>{sheet.customer || "No customer"}</p>
-          {sheet.customerPo ? <p className="muted">Customer PO {sheet.customerPo}</p> : null}
+          {sheet.orderReference ? (
+            <p className="muted">{SALES_ORDER_REFERENCE_LABEL} {sheet.orderReference}</p>
+          ) : null}
         </div>
         <div>
           <p className="pick-progress">

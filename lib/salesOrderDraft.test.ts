@@ -12,6 +12,7 @@ import {
   normalizeSalesDraftLines,
   withEbayShippingItem,
   salesOrderListHref,
+  SALES_ORDER_REFERENCE_LABEL,
   salesOrderListReference,
   salesOrderListScope,
   salesOrderListViewToRestore,
@@ -152,6 +153,7 @@ describe("sales order draft", () => {
   });
 
   it("lists an eBay order id or a customer PO and skips the internal reference", () => {
+    assert.equal(SALES_ORDER_REFERENCE_LABEL, "Order reference");
     assert.equal(salesOrderListReference({ ebayOrderId: "12-03456-78901", customerPo: "PO-1" }), "12-03456-78901");
     assert.equal(salesOrderListReference({ customerPo: "PO-1" }), "PO-1");
     assert.equal(salesOrderListReference({ customerPo: "" }), "");

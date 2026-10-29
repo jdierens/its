@@ -1,6 +1,6 @@
 # Picking
 
-Warehouse → Picking lists approved orders that have a product or kit line. Opening an order starts the pick sheet. Opening it does not create a warehouse bin and does not take a number from the bin counter.
+Warehouse → Picking lists approved orders that have a product or kit line. The list and the pick ticket header show Order reference, the same column as the sales order list. That value is the eBay order id when the order has one, and otherwise the customer PO. The stored internal reference is not shown. Apply `supabase/migrations/20261029020000_pick_order_reference.sql` by hand so the eBay order id is on the pick payload. Deploying does not run it. Until that file is applied, the reference falls back to the customer PO. Opening an order starts the pick sheet. Opening it does not create a warehouse bin and does not take a number from the bin counter.
 
 Until someone scans a bin, staging is the label `staging bin SO27767` for sales order 27767. That label is tied to the sales order number. It is not a bin such as `20018-B`. A pick still leaves the stock bin. Scan an existing bin, for example `20111-B`, and choose Use bin to put the pick in that bin. A code that is not already a bin is refused. Apply `supabase/migrations/20261028183000_pick_staging_choice.sql` by hand. Deploying does not run it.
 
