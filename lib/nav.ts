@@ -14,6 +14,8 @@ export type NavItem = {
   label: string;
   href: string;
   description: string;
+  /** Shown in the menu, with no page. The shell does not link it. */
+  disabled?: boolean;
   children?: NavItem[];
 };
 
@@ -72,6 +74,22 @@ export const NAV_GROUPS: NavGroup[] = [
         description: "Find a SKU and see on-hand quantity by bin.",
       },
       {
+        label: "Receiving",
+        href: "/warehouse/receiving",
+        description: "Receive purchase orders into inventory.",
+      },
+      {
+        label: "Move inventory",
+        href: "/warehouse/move",
+        description: "Move a bin, a nested bin, or a quantity.",
+      },
+      {
+        label: "Cycle count",
+        href: "/warehouse/cycle-count",
+        description: "Coming soon.",
+        disabled: true,
+      },
+      {
         label: "Picking",
         href: "/warehouse/pick",
         description: "Pick approved sales orders into a staging bin.",
@@ -85,16 +103,6 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Shipping",
         href: "/warehouse/ship",
         description: "Packed orders waiting to ship. Labels are not built yet.",
-      },
-      {
-        label: "Receiving",
-        href: "/warehouse/receiving",
-        description: "Receive purchase orders into inventory.",
-      },
-      {
-        label: "Move inventory",
-        href: "/warehouse/move",
-        description: "Move a bin, a nested bin, or a quantity.",
       },
       {
         label: "Scan",
@@ -401,6 +409,7 @@ export function pageMetaFor(pathname: string): PageMeta {
 
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
+      if (item.disabled) continue;
       const child = item.children?.find((entry) => entry.href === pathname);
       if (child) {
         return {
