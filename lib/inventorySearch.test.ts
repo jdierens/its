@@ -154,8 +154,13 @@ test("inventory search is a warehouse page and reuses receiving Find", () => {
   assert.doesNotMatch(source, /\.ilike\(/);
   assert.doesNotMatch(source, /rpc\(/);
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-  assert.match(css, /\.receive-table\.inventory-results td\.locations,\s*\.inventory-cards dd\.locations \{\s*white-space: pre-line;/);
+  assert.match(css, /\.inventory-bin\s*\{[^}]*white-space:\s*nowrap/);
+  assert.match(css, /\.inventory-cards \.receive-card-row dl\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0,\s*1fr\)/);
+  assert.match(css, /\.inventory-cards \.receive-card-row dd\s*\{[^}]*text-align:\s*left/);
+  assert.match(css, /\.inventory-cards \.receive-card-row dd\.num\s*\{[^}]*text-align:\s*right/);
+  assert.doesNotMatch(css, /inventory-results td\.locations,\s*\.inventory-cards dd\.locations \{\s*white-space:\s*pre-line/);
   const page = readFileSync(new URL("../components/InventorySearchPage.tsx", import.meta.url), "utf8");
+  assert.match(page, /className="inventory-bin"/);
   assert.match(page, /aria-sort=/);
   assert.match(page, /sortInventoryHits/);
   assert.match(page, /inventory-col-sort/);

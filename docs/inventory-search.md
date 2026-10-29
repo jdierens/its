@@ -16,7 +16,7 @@ SKU sorts with numeric order (`20` before `100`). Item sorts by name, then descr
 
 ## On hand
 
-Quantity is the sum of `bin_contents.qty` on open bin cycles. A closed cycle is not counted. The bin's location is `bins.current_location_id`. Bins are one total per reference, in reference order, using the same label as a receiving Summary putaway. Several bins stay in one cell, one bin per line. A location is added the same way a receipt putaway shows it:
+Quantity is the sum of `bin_contents.qty` on open bin cycles. A closed cycle is not counted. The bin's location is `bins.current_location_id`. Bins are one total per reference, in reference order, using the same label as a receiving Summary putaway. Several bins stay in one cell, one bin per line. A bin does not break after a period in the location. A location is added the same way a receipt putaway shows it:
 
 ```
 (x33)20000-B · HWS.00.00.00
@@ -27,4 +27,4 @@ A bin with no location is `(x14)10002-C`. Several receipts of the same SKU in on
 
 Receiving's "already in this bin" note calls `suggest_bins_for_sku`, which is limited to the project on the receipt. This page does not use that function. It lists every open bin, on any project. The open cycle stores a project. This version does not add an ownership column.
 
-No migration. The page reads `bin_contents`, `bin_cycles`, `bins`, and `locations` with the service role, the same way receiving does. Below 800px the table becomes cards. The search input is 16px on a phone.
+No migration. The page reads `bin_contents`, `bin_cycles`, `bins`, and `locations` with the service role, the same way receiving does. Below 800px the table becomes cards. The label column is only as wide as the field names. Values use the remaining width: text on the left, the on-hand quantity on the right, and the item description across that full value width. The search input is 16px on a phone.

@@ -85,6 +85,15 @@ function ItemCell({ hit }: { hit: InventoryHit }) {
   );
 }
 
+/** One block per bin so a location code cannot wrap after a period. */
+function BinLines({ text }: { text: string }) {
+  return text.split("\n").map((line, index) => (
+    <span className="inventory-bin" key={index}>
+      {line}
+    </span>
+  ));
+}
+
 export function InventorySearchPage() {
   const params = useSearchParams();
   const initial = params.get("q") ?? "";
@@ -273,7 +282,7 @@ export function InventorySearchPage() {
                       </td>
                       <td className="num fit">{hit.qty}</td>
                       <td className="locations" title={hit.locations || undefined}>
-                        {hit.empty ? INVENTORY_NO_BINS : hit.locations}
+                        <BinLines text={hit.empty ? INVENTORY_NO_BINS : hit.locations} />
                       </td>
                     </tr>
                   ))}
@@ -299,7 +308,9 @@ export function InventorySearchPage() {
                     <dt>On hand</dt>
                     <dd className="num">{hit.qty}</dd>
                     <dt>Bins</dt>
-                    <dd className="locations">{hit.empty ? INVENTORY_NO_BINS : hit.locations}</dd>
+                    <dd className="locations" title={hit.locations || undefined}>
+                      <BinLines text={hit.empty ? INVENTORY_NO_BINS : hit.locations} />
+                    </dd>
                   </dl>
                 </li>
               ))}
