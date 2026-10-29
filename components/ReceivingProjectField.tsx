@@ -1,7 +1,8 @@
 "use client";
 
 import { KeyboardEvent, useEffect, useId, useState } from "react";
-import { filterRecentProjects } from "@/lib/receivingProjects";
+import { searchReceivingProjects } from "@/lib/receivingActions";
+import { filterRecentProjects, projectChoices } from "@/lib/receivingProjects";
 
 function ReceivingValueList({
   id,
@@ -14,6 +15,7 @@ function ReceivingValueList({
   options,
   disabled,
   onChange,
+  lookup,
 }: {
   id: string;
   label: string;
@@ -25,12 +27,36 @@ function ReceivingValueList({
   options: string[];
   disabled: boolean;
   onChange: (value: string) => void;
+  lookup?: (query: string) => Promise<string[]>;
 }) {
   const listId = useId();
   const [open, setOpen] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [active, setActive] = useState(-1);
-  const shown = narrow ? filterRecentProjects(options, value) : options;
+  const [remote, setRemote] = useState<string[] | null>(null);
+  const pool = narrow && remote !== null ? projectChoices(remote, options) : options;
+  const shown = narrow ? filterRecentProjects(pool, value) : options;
+
+  useEffect(() => {
+    if (!lookup || !narrow || value.trim() === "") {
+      setRemote(null);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void lookup(value)
+        .then((found) => {
+          if (!cancelled) setRemote(found);
+        })
+        .catch(() => {
+          if (!cancelled) setRemote(null);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [lookup, narrow, value]);
 
   useEffect(() => {
     if (disabled) setOpen(false);
@@ -163,13 +189,14 @@ export function ReceivingProjectField({
     <ReceivingValueList
       id="receive-project"
       label="Project"
-      listLabel="Recent projects"
+      listLabel="Projects"
       clearLabel="Clear project"
       emptyHint="No recent projects yet. Type a name to start one."
-      noMatchHint="No recent project matches. The name you type is used."
+      noMatchHint="No matching project. The name you type is used."
       value={value}
       options={projects}
       disabled={disabled}
+      lookup={searchReceivingProjects}
       onChange={onChange}
     />
   );

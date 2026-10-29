@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Download, Upload } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { ClipboardPaste, CornerDownLeft, Download, FileSpreadsheet, Upload } from "lucide-react";
 import { templateCsv } from "@/lib/data/csv";
 import {
   applyRememberedMapping,
@@ -15,7 +15,7 @@ import {
   type ColumnMapping,
 } from "@/lib/data/matchColumns";
 import { parseCsvText, parseSpreadsheet, type SheetTable } from "@/lib/data/parseTable";
-import { mappingColumns, templateColumns } from "@/lib/data/registry";
+import { mappingColumns } from "@/lib/data/registry";
 import { templateWorkbook } from "@/lib/data/templateWorkbook";
 import { errorText } from "@/lib/errors";
 import {
@@ -27,7 +27,6 @@ import {
 import { RECEIVING_TABLE, type ReceivingImportDefaults } from "@/lib/receivingImport";
 
 const columns = mappingColumns(RECEIVING_TABLE);
-const template = templateColumns(RECEIVING_TABLE);
 
 function saveBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
@@ -66,6 +65,8 @@ export function ReceivingImport({
   const [busy, setBusy] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [fileName, setFileName] = useState("");
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const sheet = sheets.find((item) => item.name === sheetName) ?? sheets[0] ?? null;
   const missing = sheet ? missingRequired(columns, mapping) : [];
@@ -200,102 +201,102 @@ export function ReceivingImport({
     }
   }
 
+  const importLabel = busy ? "Importing…" : `Import ${okCount} ${okCount === 1 ? "row" : "rows"}`;
+
   return (
-    <div className="data-page" id="receive-import">
+    <div className="receive-import-root">
+      <div className="receive-import-tools" id="receive-import" role="group" aria-label="Receiving spreadsheet">
+        <button
+          type="button"
+          className="icon-button"
+          title="Download template"
+          aria-label="Download template"
+          disabled={busy}
+          onClick={() => void downloadXlsx()}
+        >
+          <Download size={18} strokeWidth={1.75} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          title="Download CSV"
+          aria-label="Download CSV"
+          disabled={busy}
+          onClick={downloadCsv}
+        >
+          <FileSpreadsheet size={18} strokeWidth={1.75} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          title="Import spreadsheet"
+          aria-label="Import spreadsheet"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          <Upload size={18} strokeWidth={1.75} aria-hidden />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          title="Paste rows"
+          aria-label="Paste rows"
+          aria-expanded={pasteOpen}
+          disabled={busy}
+          onClick={() => setPasteOpen((open) => !open)}
+        >
+          <ClipboardPaste size={18} strokeWidth={1.75} aria-hidden />
+        </button>
+        <input
+          ref={fileRef}
+          id="receive-import-file"
+          className="sr-only"
+          type="file"
+          tabIndex={-1}
+          aria-hidden
+          accept=".csv,.txt,.xlsx,.xls,text/csv"
+          disabled={busy}
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            event.target.value = "";
+            void onFile(file);
+          }}
+        />
+      </div>
       {error ? (
         <p className="banner error" role="alert">
           {error}
         </p>
       ) : null}
-
-      <section className="card data-card">
-        <h2>Template</h2>
-        <p>
-          Download the sheet, fill one row per receipt, and import it here. The header uses ITS field names. A row with no
-          purchase order is consigned and needs a vendor. Blank vendor, purchase order, project, receiving date, incoming
-          bin, originating system, and system qty use the receipt header above.
-        </p>
-        <div className="data-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Column</th>
-                <th>Status</th>
-                <th>Example</th>
-              </tr>
-            </thead>
-            <tbody>
-              {template.map((column) => (
-                <tr key={column.key}>
-                  <td className="tabular">{column.key}</td>
-                  <td className={column.required ? "data-required" : ""}>{column.required ? "Required" : "Optional"}</td>
-                  <td>{column.example}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="hint">
-          Cleaned is for a CPU and Wiped is for an SSD or HDD. Blank is no. Serial is optional; several serials go in one
-          cell separated by a semicolon, a pipe, or a new line. Country of origin is a 2- or 3-letter code. The sample row
-          is an example. Replace it before importing.
-        </p>
-        <div className="actions receive-import-actions">
-          <button type="button" className="receive-import-go" onClick={() => void downloadXlsx()}>
-            <Download size={18} strokeWidth={1.75} aria-hidden />
-            Download template
-          </button>
-          <button type="button" className="secondary" onClick={downloadCsv}>
-            Download CSV
-          </button>
-        </div>
-      </section>
-
-      <section className="card data-card" id="receive-import-upload">
-        <h2>Import</h2>
-        <div className="data-import-row">
-          <div className="data-file-field">
-            <span className="data-label">Spreadsheet</span>
-            <label className="button secondary file-button">
-              Choose file
-              <input
-                id="receive-import-file"
-                type="file"
-                accept=".csv,.txt,.xlsx,.xls,text/csv"
-                disabled={busy}
-                onChange={(event) => {
-                  const file = event.target.files?.[0] ?? null;
-                  event.target.value = "";
-                  void onFile(file);
-                }}
-              />
-            </label>
-            <span className="hint">{fileName || "CSV or Excel"}</span>
-          </div>
-          <div className="desk-fields data-paste-field">
-            <label htmlFor="receive-import-paste">
-              <span>Or paste rows</span>
-            </label>
+      {pasteOpen ? (
+        <section className="card data-card" id="receive-import-upload">
+          <div className="receive-paste-row">
             <textarea
               id="receive-import-paste"
+              aria-label="Paste rows"
+              placeholder="Paste rows"
               value={paste}
               disabled={busy}
               onChange={(event) => setPaste(event.target.value)}
             />
-            <button type="button" className="secondary" disabled={busy || paste.trim() === ""} onClick={onPaste}>
-              Use pasted rows
+            <button
+              type="button"
+              className="icon-button"
+              title="Use pasted rows"
+              aria-label="Use pasted rows"
+              disabled={busy || paste.trim() === ""}
+              onClick={onPaste}
+            >
+              <CornerDownLeft size={18} strokeWidth={1.75} aria-hidden />
             </button>
           </div>
-        </div>
-        <p className="hint">
-          The spreadsheet stays on this device. CSV may use commas, semicolons, or tabs. Column names can be the template
-          headers or the same labels as a receipt export, and you can remap them before the preview.
-        </p>
-      </section>
+        </section>
+      ) : null}
 
       {showMap && sheet ? (
         <section className="card data-card" id="receive-import-map">
           <h2>Match columns</h2>
+          {fileName ? <p className="hint">{fileName}</p> : null}
           {sheets.length > 1 ? (
             <div className="desk-fields data-sheet">
               <label>
@@ -435,12 +436,13 @@ export function ReceivingImport({
                 <button
                   id="receive-import-commit"
                   type="button"
-                  className="receive-import-go"
+                  className="so-icon-action"
                   disabled={busy || errorCount > 0 || okCount === 0}
+                  aria-label={importLabel}
+                  title={importLabel}
                   onClick={() => void onImport()}
                 >
                   <Upload size={18} strokeWidth={1.75} aria-hidden />
-                  {busy ? "Importing…" : `Import ${okCount} ${okCount === 1 ? "row" : "rows"}`}
                 </button>
               </div>
             </div>

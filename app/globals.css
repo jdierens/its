@@ -5202,12 +5202,21 @@ button.bin-label-hit:focus-visible {
 
 .receiving-page .no-print {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.55rem;
   min-width: 0;
+  align-items: start;
+}
+
+.receiving-page .no-print > * {
+  grid-column: 1 / -1;
 }
 
 .receiving-page .page-note {
+  grid-column: 1;
+  grid-row: 1;
   margin: 0;
+  align-self: center;
 }
 
 .receiving-page #receive-line form {
@@ -8178,6 +8187,76 @@ button.so-new-order svg,
   min-height: 44px;
   padding: 0;
   border-radius: var(--ds-radius);
+}
+
+.receive-import-root {
+  display: contents;
+}
+
+.receive-import-root > * {
+  grid-column: 1 / -1;
+}
+
+.receive-import-root > .card {
+  overflow: visible;
+  height: auto;
+}
+
+.receive-import-root > .receive-import-tools {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+}
+
+.receive-import-tools {
+  display: flex;
+  flex: none;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.receive-import-tools .icon-button,
+.receive-paste-row .icon-button {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: var(--ds-radius);
+}
+
+.receive-import-tools .icon-button:focus-visible,
+.receive-paste-row .icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ds-ring);
+}
+
+.receive-paste-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.receive-paste-row textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 6.5rem;
+}
+
+@media (max-width: 640px) {
+  .receiving-page .no-print {
+    grid-template-columns: 1fr;
+  }
+
+  .receive-import-root > .receive-import-tools {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+  }
+
+  .receiving-page .page-note {
+    grid-row: 2;
+  }
 }
 
 .receive-import-actions {

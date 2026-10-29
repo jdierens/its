@@ -9,8 +9,13 @@ import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import type { LabelItem } from "@/lib/types";
 import { scanTokensInSearchOrder } from "@/lib/receivingScan";
 import {
-  RECENT_PROJECT_SCAN,
-  distinctRecentProjects,
+  PROJECT_MATCH_LIMIT,
+  PROJECT_SCAN_PAGE,
+  PROJECT_SCAN_PAGES,
+  RECENT_PROJECT_LIMIT,
+  collectDistinctProjects,
+  projectScanFinished,
+  projectSearchPattern,
   recentProjectStorageKey,
   type RecentProjectRow,
 } from "@/lib/receivingProjects";
@@ -371,29 +376,55 @@ export async function recentReceivingProjects(): Promise<RecentReceivingProjects
   return { storageKey, projects, latest: projects[0] ?? null };
 }
 
+/**
+ * Projects whose code contains the typed text, from every receipt, newest first.
+ * The closed recent list is not the source: one busy project can fill that window
+ * and hide an older code such as AZSIM6930.
+ */
+export async function searchReceivingProjects(query: string): Promise<string[]> {
+  const pattern = projectSearchPattern(query);
+  if (!pattern) return [];
+  return projectNames({ pattern, limit: PROJECT_MATCH_LIMIT });
+}
+
 async function projectsForOperator(initials: string): Promise<string[]> {
-  const supabase = await getSupabase();
-  const viewed = await supabase
-    .from("receipt_lines")
-    .select("project")
-    .eq("operator_initials", initials)
-    .order("received_on", { ascending: false, nullsFirst: false })
-    .order("occurred_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(RECENT_PROJECT_SCAN);
-  if (!viewed.error) return distinctRecentProjects((viewed.data ?? []) as RecentProjectRow[]);
+  return projectNames({ initials, limit: RECENT_PROJECT_LIMIT });
+}
+
+async function projectNames(options: { initials?: string; pattern?: string; limit: number }): Promise<string[]> {
+  const viewed = await readProjectPages("receipt_lines", options);
+  if (!viewed.error) return viewed.names;
   if (!missingSchema(viewed.error)) rpcError(viewed.error);
-  const legacy = await supabase
-    .from("stock_events")
-    .select("project")
-    .eq("event_type", "receive_into_bin")
-    .eq("operator_initials", initials)
-    .order("received_on", { ascending: false, nullsFirst: false })
-    .order("occurred_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(RECENT_PROJECT_SCAN);
+  const legacy = await readProjectPages("stock_events", options);
   if (legacy.error) rpcError(legacy.error);
-  return distinctRecentProjects((legacy.data ?? []) as RecentProjectRow[]);
+  return legacy.names;
+}
+
+async function readProjectPages(
+  source: "receipt_lines" | "stock_events",
+  options: { initials?: string; pattern?: string; limit: number },
+): Promise<{ names: string[]; error: { code?: string; message?: string } | null }> {
+  const supabase = await getSupabase();
+  const pages: RecentProjectRow[][] = [];
+  for (let index = 0; index < PROJECT_SCAN_PAGES; index += 1) {
+    const from = index * PROJECT_SCAN_PAGE;
+    const to = from + PROJECT_SCAN_PAGE - 1;
+    let request = supabase.from(source).select("project");
+    if (source === "stock_events") request = request.eq("event_type", "receive_into_bin");
+    if (options.initials) request = request.eq("operator_initials", options.initials);
+    if (options.pattern) request = request.ilike("project", options.pattern);
+    const viewed = await request
+      .order("received_on", { ascending: false, nullsFirst: false })
+      .order("occurred_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
+    if (viewed.error) return { names: [], error: viewed.error };
+    const batch = (viewed.data ?? []) as RecentProjectRow[];
+    pages.push(batch);
+    const names = collectDistinctProjects(pages, options.limit, PROJECT_SCAN_PAGE);
+    if (projectScanFinished(names, batch, options.limit, PROJECT_SCAN_PAGE)) return { names, error: null };
+  }
+  return { names: collectDistinctProjects(pages, options.limit, PROJECT_SCAN_PAGE), error: null };
 }
 
 export type ReceivingScanResult = {
