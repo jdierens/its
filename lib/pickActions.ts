@@ -1,5 +1,6 @@
 "use server";
 
+import { unstable_rethrow } from "next/navigation";
 import { errorText } from "@/lib/errors";
 import { pickPageAccess } from "@/lib/pickAccessServer";
 import {
@@ -9,10 +10,19 @@ import {
   type KnownSerialUnit,
   type SerialPull,
 } from "@/lib/pickSerialLocation";
-import { pickQueueFromJson, pickSheetFromJson, type PickQueueRow, type PickSheetModel } from "@/lib/pickSheet";
+import { applyPastedSerials, type SerialPasteReport } from "@/lib/pickSerialPaste";
+import { itemSerials, pickQueueFromJson, pickSheetFromJson, type PickQueueRow, type PickSheetModel } from "@/lib/pickSheet";
 import { salesOperatorId } from "@/lib/salesSession";
 import { operatorInitials } from "@/lib/stockAccess";
+import { cooProblem } from "@/lib/stockUnits";
 import { getSupabase } from "@/lib/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export type PickResult<T> = { ok: true; value: T } | { ok: false; message: string };
+
+function pickFailure(error: unknown): PickResult<never> {
+  return { ok: false, message: errorText(error) };
+}
 
 const MIGRATION = "supabase/migrations/20261027170000_sales_order_picking.sql";
 const STOCK_UNITS_MIGRATION = "supabase/migrations/20261027230000_stock_units.sql";
@@ -123,11 +133,14 @@ export async function recordPick(input: {
   return sheet(data);
 }
 
-export async function recordPickSerial(pickId: string, serial: string, coo?: string | null): Promise<PickSheetModel> {
-  await assertPicker();
-  const who = await actor();
+async function attachPickSerial(
+  supabase: SupabaseClient,
+  pickId: string,
+  serial: string,
+  coo: string | null | undefined,
+  who: { initials: string; operator: string | null },
+): Promise<PickSheetModel> {
   const country = coo?.trim() || null;
-  const supabase = await getSupabase();
   const payload = {
     p_pick: pickId,
     p_serial: serial,
@@ -143,6 +156,20 @@ export async function recordPickSerial(pickId: string, serial: string, coo?: str
   }
   if (error) raisePick(error);
   return sheet(data);
+}
+
+export async function recordPickSerial(
+  pickId: string,
+  serial: string,
+  coo?: string | null,
+): Promise<PickResult<PickSheetModel>> {
+  try {
+    await assertPicker();
+    return { ok: true, value: await attachPickSerial(await getSupabase(), pickId, serial, coo, await actor()) };
+  } catch (error) {
+    unstable_rethrow(error);
+    return pickFailure(error);
+  }
 }
 
 export async function removePickSerial(unitId: string): Promise<PickSheetModel> {
@@ -202,15 +229,29 @@ function stockUnitsMissing(error: { code?: string; message?: string }): boolean 
 /**
  * Resolves a scanned serial to the bin it is in now. The location is only
  * returned when the unit is on this order and still in an open pick bin.
+ * Expected failures are returned. A thrown error would be omitted in production.
  */
 export async function lookupPickSerial(
   orderId: string,
   serial: string,
   allocationId?: string | null,
+): Promise<PickResult<SerialPull>> {
+  try {
+    await assertPicker();
+    const pull = await serialPullForSheet(await getSupabase(), await readPickSheet(orderId), serial, allocationId);
+    return { ok: true, value: pull };
+  } catch (error) {
+    unstable_rethrow(error);
+    return pickFailure(error);
+  }
+}
+
+async function serialPullForSheet(
+  supabase: SupabaseClient,
+  pickSheet: PickSheetModel,
+  serial: string,
+  allocationId?: string | null,
 ): Promise<SerialPull> {
-  await assertPicker();
-  const sheet = await readPickSheet(orderId);
-  const supabase = await getSupabase();
   const { data, error } = await supabase
     .from("stock_units")
     .select("item_id, serial_number, status, bin_id, country_of_origin")
@@ -259,7 +300,7 @@ export async function lookupPickSerial(
     }
   }
 
-  const orderSkus = new Set(sheet.lines.map((line) => line.sku.trim().toLowerCase()));
+  const orderSkus = new Set(pickSheet.lines.map((line) => line.sku.trim().toLowerCase()));
   const units: KnownSerialUnit[] = rows.map((row) => {
     const sku = skuById.get(row.item_id) ?? "";
     const bin = row.bin_id ? referenceById.get(row.bin_id) : undefined;
@@ -279,11 +320,62 @@ export async function lookupPickSerial(
   const resolved = resolveSerialPull({
     serial,
     units,
-    lines: serialPullLines(sheet.lines),
+    lines: serialPullLines(pickSheet.lines),
     allocationId,
   });
   if (!resolved.ok) throw new Error(resolved.message);
   return resolved.pull;
+}
+
+/**
+ * Applies a spreadsheet column in one action.
+ * Each serial is looked up and attached here, and a business failure is returned
+ * on that serial. Throwing once per serial is omitted in production and shows up
+ * as a Server Components digest for every line in the paste.
+ */
+export async function pastePickSerials(input: {
+  orderId: string;
+  allocationId: string;
+  serials: readonly string[];
+  coo: string;
+}): Promise<{ sheet: PickSheetModel | null; report: SerialPasteReport }> {
+  const serials = (Array.isArray(input.serials) ? input.serials : []).filter((serial): serial is string => typeof serial === "string");
+  const coo = typeof input.coo === "string" ? input.coo : "";
+  try {
+    await assertPicker();
+    const who = await actor();
+    const supabase = await getSupabase();
+    let current = await readPickSheet(input.orderId);
+    const country = cooProblem(coo);
+    if (country) return { sheet: current, report: refusedSerials(serials, country) };
+    const line = current.lines.find((row) => row.allocationId === input.allocationId);
+    if (!line) return { sheet: current, report: refusedSerials(serials, "That line is not on this pick.") };
+    const sku = line.sku;
+    const allocationId = input.allocationId;
+    const report = await applyPastedSerials({
+      serials,
+      sku,
+      coo,
+      existing: () => itemSerials(current, sku),
+      picks: () => current.lines.find((row) => row.allocationId === allocationId)?.picks ?? [],
+      lookup: (serial) => serialPullForSheet(supabase, current, serial, allocationId),
+      record: async (pickId, serial, countryOfOrigin) => {
+        current = await attachPickSerial(supabase, pickId, serial, countryOfOrigin, who);
+      },
+    });
+    return { sheet: current, report };
+  } catch (error) {
+    unstable_rethrow(error);
+    console.error(error);
+    return { sheet: null, report: refusedSerials(serials, errorText(error)) };
+  }
+}
+
+function refusedSerials(serials: readonly string[], message: string): SerialPasteReport {
+  return {
+    accepted: 0,
+    failures: serials.map((serial) => ({ serial: serial.trim() || serial, message })),
+  };
 }
 
 export async function finishPick(orderId: string): Promise<PickSheetModel> {

@@ -179,4 +179,48 @@ describe("apply pasted serials", () => {
       { serial: "v8h8gbdr", message: "That serial is already recorded for this item." },
     ]);
   });
+
+  it("keeps a thrown record message and still adds the next serial", async () => {
+    const recorded: string[] = [];
+    const report = await applyPastedSerials({
+      serials: ["V8H8GBDR", "V8HD2PXR"],
+      sku: "106683",
+      coo: "",
+      existing: () => recorded,
+      picks: () => [{ id: "pick-1", fromBin: "20009-B", qty: 5, serials: recorded }],
+      lookup: async (serial) => ({ serial, reference: "20009-B", coo: null }),
+      record: async (_pickId, serial) => {
+        if (serial === "V8H8GBDR") throw new Error("That serial is in 20010-B.");
+        recorded.push(serial);
+      },
+    });
+    assert.deepEqual(recorded, ["V8HD2PXR"]);
+    assert.equal(report.accepted, 1);
+    assert.deepEqual(report.failures, [{ serial: "V8H8GBDR", message: "That serial is in 20010-B." }]);
+  });
+
+  it("treats a missing lookup as that serial's failure and continues", async () => {
+    const recorded: string[] = [];
+    const report = await applyPastedSerials({
+      serials: ["V8H8GBDR", "V8HD2PXR", "V8HBEMXR"],
+      sku: "106683",
+      coo: "",
+      existing: () => recorded,
+      picks: () => [{ id: "pick-1", fromBin: "20009-B", qty: 5, serials: recorded }],
+      lookup: async (serial) => {
+        if (serial === "V8H8GBDR") return undefined;
+        if (serial === "V8HD2PXR") return { serial, reference: "   ", coo: null };
+        return { serial, reference: "20009-B", coo: "USA" };
+      },
+      record: async (_pickId, serial) => {
+        recorded.push(serial);
+      },
+    });
+    assert.deepEqual(recorded, ["V8HBEMXR"]);
+    assert.equal(report.accepted, 1);
+    assert.deepEqual(report.failures, [
+      { serial: "V8H8GBDR", message: "That serial could not be looked up." },
+      { serial: "V8HD2PXR", message: "That serial could not be looked up." },
+    ]);
+  });
 });

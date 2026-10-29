@@ -6,6 +6,7 @@ import { pickPageAccess } from "@/lib/pickAccessServer";
 import { salesOrderPickOpenRefused, salesOrderStageActive } from "@/lib/salesOrderStages";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
