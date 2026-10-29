@@ -498,7 +498,7 @@ export function BinView({ reference }: { reference: string }) {
                             />
                           </label>
                         </th>
-                        <th>SKU</th>
+                        <th className="sku">SKU</th>
                         <th>Name</th>
                         <th className="num">Qty</th>
                       </tr>
@@ -526,7 +526,7 @@ export function BinView({ reference }: { reference: string }) {
                                 />
                               </label>
                             </td>
-                            <td>{row.sku}</td>
+                            <td className="sku">{row.sku}</td>
                             <td>{row.name}</td>
                             <td className="num">{row.qty}</td>
                           </tr>

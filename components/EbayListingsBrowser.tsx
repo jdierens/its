@@ -75,7 +75,7 @@ export function EbayListingsBrowser({
                 <tr>
                   <th>Picture</th>
                   <th>Listing</th>
-                  <th>Custom label</th>
+                  <th className="sku">Custom label</th>
                   <th className="num">Qty</th>
                   <th>Item</th>
                 </tr>
@@ -133,7 +133,7 @@ function ListingRow({
         </a>
         <span className="hint ebay-item-id">{row.ebayItemId}</span>
       </td>
-      <td>
+      <td className="sku">
         <span className="sku">{row.customLabel || "—"}</span>
         {row.packQty > 1 ? <span className="code-badge">{row.packQty}x</span> : null}
         {row.parentSku ? <span className="hint">Parent {row.parentSku}</span> : null}

@@ -435,12 +435,12 @@ export function BinLabelsPage() {
               ) : (
                 recent.map((bin) => (
                   <tr key={bin.id}>
-                    <td className="sku">{bin.reference}</td>
+                    <td className="tabular">{bin.reference}</td>
                     <td>{binTypeLabel(bin.type)}</td>
                     <td>{binCreatedLabel(bin.createdAt)}</td>
                     <td>{bin.createdBy ?? ""}</td>
                     <td>{bin.currentLocationId ?? ""}</td>
-                    <td className="sku">{bin.printedCount}</td>
+                    <td className="tabular">{bin.printedCount}</td>
                     <td>
                       <button
                         type="button"

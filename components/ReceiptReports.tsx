@@ -172,7 +172,7 @@ export function ReceiptReports({
                 <table className="receive-table">
                   <thead>
                     <tr>
-                      <th className="fit">SKU</th>
+                      <th className="fit sku">SKU</th>
                       <th className="summary-item">Item</th>
                       <th className="num fit">Qty</th>
                       <th className="locations">Putaway</th>
@@ -188,7 +188,7 @@ export function ReceiptReports({
                           key={row.pending ? `pending:${index}` : `item:${index}`}
                           className={row.pending ? "receipt-line receipt-unmatched" : "receipt-line"}
                         >
-                          <td className="fit">{row.sku}</td>
+                          <td className="fit sku">{row.sku}</td>
                           <td className="summary-item" title={item || undefined}>
                             {item}
                           </td>

@@ -419,7 +419,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
           </colgroup>
           <thead>
             <tr className="pick-head-item">
-              <th>SKU</th>
+              <th className="sku">SKU</th>
               <th>Name</th>
               <th className="num">Ordered</th>
               <th className="num">Picked</th>
@@ -582,7 +582,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
           <table className="pick-sheet pick-recorded">
             <thead>
               <tr>
-                <th>SKU</th>
+                <th className="sku">SKU</th>
                 <th className="num">Qty</th>
                 <th>From</th>
                 {open ? <th /> : null}
@@ -616,7 +616,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
           <table className="pick-serials">
             <thead>
               <tr>
-                <th>SKU</th>
+                <th className="sku">SKU</th>
                 <th>Serial</th>
                 <th>COO</th>
                 <th>From</th>

@@ -238,7 +238,7 @@ export function ItemAttributeSearch() {
         <table className="item-search-table">
           <thead>
             <tr>
-              <th>SKU</th>
+              <th className="sku">SKU</th>
               <th>Name</th>
               <th>Manufacturer</th>
               <th>Part number</th>
@@ -280,7 +280,7 @@ function ResultRow({ item }: { item: SearchItem }) {
   const badge = matchBadge(item.matchCount, item.seedCount);
   return (
     <tr>
-      <td>
+      <td className="sku">
         <Link href={`/items/${item.id}`}>{item.sku || "—"}</Link>
       </td>
       <td>

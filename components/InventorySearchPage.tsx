@@ -175,7 +175,7 @@ export function InventorySearchPage() {
               <table className="receive-table inventory-results" id="inventory-results">
                 <thead>
                   <tr>
-                    <th className="fit">SKU</th>
+                    <th className="fit sku">SKU</th>
                     <th className="item">Item</th>
                     <th className="num fit">On hand</th>
                     <th className="locations">Bins</th>
@@ -189,7 +189,7 @@ export function InventorySearchPage() {
                       className={hit.empty ? "inventory-empty" : undefined}
                       aria-selected={index === active}
                     >
-                      <td className="fit">
+                      <td className="fit sku">
                         <Link href={`/items/${hit.id}`}>{hit.sku || "—"}</Link>
                       </td>
                       <td className="item">

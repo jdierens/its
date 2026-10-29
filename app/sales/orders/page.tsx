@@ -67,7 +67,7 @@ export default async function SalesOrdersPage({
               <tbody>
                 {orders.map((order) => (
                   <tr key={order.id}>
-                    <td className="sku">
+                    <td className="tabular">
                       <Link href={`/sales/orders/${order.id}`}>{order.number}</Link>
                     </td>
                     <td>{order.customerName}</td>

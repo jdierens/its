@@ -321,7 +321,7 @@ export function DataBinsPage() {
             <tbody>
               {template.map((column) => (
                 <tr key={column.key}>
-                  <td className="sku">{column.key}</td>
+                  <td className="tabular">{column.key}</td>
                   <td className={column.required ? "data-required" : ""}>
                     {column.required ? "Required" : "Optional"}
                   </td>
@@ -489,8 +489,8 @@ export function DataBinsPage() {
                 {preview.rows.map((row) => (
                   <tr key={`${row.row}-${row.code}`} className={row.status === "error" ? "data-unmapped" : ""}>
                     <td className="num">{row.row}</td>
-                    <td className="sku">{row.code}</td>
-                    <td className="sku">{row.location}</td>
+                    <td className="tabular">{row.code}</td>
+                    <td className="tabular">{row.location}</td>
                     <td>{row.note}</td>
                     <td>
                       <span className={`data-pill data-pill-${row.status}`}>{statusLabel(row.status)}</span>
@@ -587,7 +587,7 @@ export function DataBinsPage() {
                       return (
                         <td
                           key={`${header}-${cell}`}
-                          className={numericExport(header) ? "num" : header === "code" || header === "location" ? "sku" : ""}
+                          className={numericExport(header) ? "num" : header === "code" || header === "location" ? "tabular" : ""}
                         >
                           {value}
                         </td>

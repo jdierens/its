@@ -227,7 +227,7 @@ export function ReceivingImport({
             <tbody>
               {template.map((column) => (
                 <tr key={column.key}>
-                  <td className="sku">{column.key}</td>
+                  <td className="tabular">{column.key}</td>
                   <td className={column.required ? "data-required" : ""}>{column.required ? "Required" : "Optional"}</td>
                   <td>{column.example}</td>
                 </tr>
@@ -382,7 +382,7 @@ export function ReceivingImport({
               <thead>
                 <tr>
                   <th className="num">Row</th>
-                  <th>SKU</th>
+                  <th className="sku">SKU</th>
                   <th>Search</th>
                   <th className="num">Qty</th>
                   <th>Bin</th>
@@ -399,9 +399,9 @@ export function ReceivingImport({
                     <td className="sku">{row.sku}</td>
                     <td>{row.search}</td>
                     <td className="num">{row.qty ?? ""}</td>
-                    <td className="sku">{row.bin}</td>
+                    <td className="tabular">{row.bin}</td>
                     <td>{row.vendor}</td>
-                    <td className="sku">{row.purchaseOrder}</td>
+                    <td className="tabular">{row.purchaseOrder}</td>
                     <td>
                       <span className={`data-pill data-pill-${row.status}`}>{statusLabel(row.status)}</span>
                     </td>

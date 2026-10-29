@@ -146,7 +146,7 @@ export function ItemRecipe({
       <table className="kit-table">
         <thead>
           <tr>
-            <th>SKU</th>
+            <th className="sku">SKU</th>
             <th>Name</th>
             <th className="num">Qty</th>
             <th>Notes</th>
@@ -161,7 +161,7 @@ export function ItemRecipe({
           ) : (
             rows.map((row) => (
               <tr key={row.key}>
-                <td data-label="SKU">{row.sku}</td>
+                <td className="sku" data-label="SKU">{row.sku}</td>
                 <td data-label="Name">
                   {row.name} {row.generic ? <span className="code-badge">Generic</span> : null}
                 </td>
