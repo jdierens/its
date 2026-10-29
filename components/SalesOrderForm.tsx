@@ -1549,13 +1549,13 @@ export function SalesOrderForm({
                   <Plus size={16} strokeWidth={1.75} aria-hidden />
                 </button>
               ) : null}
+              {showMoney ? (
+                <label className="so-internal-notes">
+                  Internal notes
+                  <textarea value={internalNotes} disabled={locked} onChange={(event) => setInternalNotes(event.target.value)} />
+                </label>
+              ) : null}
             </div>
-            {showMoney ? (
-              <label>
-                Internal notes
-                <textarea value={internalNotes} disabled={locked} onChange={(event) => setInternalNotes(event.target.value)} />
-              </label>
-            ) : null}
             {showMoney ? (
               <SalesOrderAttachments orderId={orderId} attachments={order?.attachments ?? []} canEdit={filesEditable} />
             ) : null}
