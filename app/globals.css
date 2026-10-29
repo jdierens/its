@@ -6375,7 +6375,8 @@ input.num-input {
   white-space: nowrap;
 }
 
-.data-pill-new {
+.data-pill-new,
+.data-pill-ok {
   background: #e5f6ea;
   color: #146c36;
 }
@@ -8005,6 +8006,32 @@ button.so-new-order svg,
   min-height: 44px;
   padding: 0;
   border-radius: var(--ds-radius);
+}
+
+.receive-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.receive-import-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+#receive-import {
+  scroll-margin-top: 1.25rem;
+}
+
+.ds.receiving-page button.receive-import-go,
+.ds.receiving-page button.receive-import-go svg {
+  color: var(--icon-on-dark);
+}
+
+.ds.receiving-page button.receive-import-go svg {
+  stroke: currentColor;
 }
 
 .ds.receiving-page button.so-icon-action:focus-visible {

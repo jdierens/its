@@ -72,6 +72,7 @@ test("the template is generated from the importer column spec", async () => {
   assert.deepEqual(parsed.sheets[0]?.headers, ["code", "location", "note"]);
   assert.deepEqual(parsed.sheets[0]?.rows[0], ["12345-B", "HWS.01.02.03", "existing shelf box"]);
   assert.equal(parsed.sheets[1]?.headers[1], "Required");
+  assert.equal(parsed.sheets[1]?.headers[5], "Description");
   assert.match(parsed.sheets[1]?.rows.map((row) => row.join(" ")).join("\n"), /HWS, HWR/);
 });
 

@@ -28,8 +28,8 @@ export async function templateWorkbook(
   XLSX.utils.book_append_sheet(
     workbook,
     XLSX.utils.aoa_to_sheet([
-      ["Column", "Required", "Format", "Example", "Allowed values"],
-      ...instructions.map((row) => [row.column, row.required, row.format, row.example, row.allowed]),
+      ["Column", "Required", "Format", "Example", "Allowed values", "Description"],
+      ...instructions.map((row) => [row.column, row.required, row.format, row.example, row.allowed, row.description]),
     ]),
     "Instructions",
   );

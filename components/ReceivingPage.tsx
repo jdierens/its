@@ -8,6 +8,7 @@ import { FastInput } from "@/components/FastField";
 import { barcodeValue, LABEL_PRINT_CSS } from "@/components/ItemLabel";
 import { PrintedLabel } from "@/components/labelRenderers";
 import { ReceiptCard, ReceiptTableRow } from "@/components/ReceiptInline";
+import { ReceivingImport } from "@/components/ReceivingImport";
 import { ReceiptReports, type ReceiptListView } from "@/components/ReceiptReports";
 import { ReceivingOriginField, ReceivingProjectField } from "@/components/ReceivingProjectField";
 import { fetchBinCounter, reprintBin } from "@/lib/binActions";
@@ -1190,6 +1191,26 @@ export function ReceivingPage() {
             A receipt with no purchase order is consigned and requires a vendor.
           </p>
         </section>
+
+        <ReceivingImport
+          defaults={{
+            project,
+            receivedOn,
+            incomingBin: incomingTag,
+            origin,
+            originQty,
+            vendorId: purchaseOrderId ? "" : vendorId,
+            vendorName: purchaseOrderId
+              ? poVendorName
+              : (vendorOptions.find((vendor) => vendor.id === vendorId)?.name ?? ""),
+            purchaseOrderId: purchaseOrderId ?? "",
+            purchaseOrderNumber: purchaseOrderId ? purchaseOrderNumber : "",
+          }}
+          onImported={() => {
+            setEntryPage(1);
+            setListStamp((current) => current + 1);
+          }}
+        />
 
         {receipt ? (
           <section className="receive-saved" id="receive-saved" aria-label="Saved receipt">
