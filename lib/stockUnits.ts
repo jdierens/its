@@ -2,7 +2,15 @@
  * Optional serial and country-of-origin capture for a receipt.
  * bin quantity stays authoritative. Each returned row becomes one stock unit.
  * A blank serial with a country still counts. A blank row does not.
+ *
+ * A spreadsheet paste splits on tabs and newlines, the same way a pick does.
+ * A comma on a line is still that line's country. Pasting more than one serial
+ * sets the quantity to that count. A quantity typed afterward stays in charge:
+ * more serials than pieces is refused, and fewer leaves the rest as quantity only.
  */
+
+import { errorText } from "@/lib/errors";
+import { classifySerialPaste, parsePastedSerials } from "@/lib/pickSerialPaste";
 
 export const RECEIVE_UNIT_ROW_CAP = 8;
 export const SERIAL_MAX_LENGTH = 80;
@@ -73,23 +81,85 @@ export function resizeUnitRows(current: readonly UnitDraft[], count: number, coo
   return next;
 }
 
-function splitSerialLine(line: string): { serial: string; coo: string | null } {
-  const index = line.search(/[,\t]/);
-  if (index >= 0) {
-    return { serial: line.slice(0, index).trim(), coo: line.slice(index + 1).trim() };
-  }
-  return { serial: line.trim(), coo: null };
+function sameCoo(left: string, right: string): boolean {
+  return left.trim().toUpperCase() === right.trim().toUpperCase();
 }
 
+/**
+ * One receipt's serials from a spreadsheet paste.
+ * Newlines and tabs are cells. A comma on a line is "serial, country".
+ * Empty cells are dropped. A line with no country uses the shared one.
+ */
 function pasteDrafts(paste: string, defaultCoo: string): UnitDraft[] {
   const drafts: UnitDraft[] = [];
-  for (const raw of paste.split(/\r?\n/)) {
-    const line = raw.trim();
+  const text = paste.replace(/^\uFEFF/, "");
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/^\uFEFF/, "").trim();
     if (!line) continue;
-    const split = splitSerialLine(line);
-    drafts.push({ serial: split.serial, coo: split.coo ?? defaultCoo });
+    const comma = line.indexOf(",");
+    if (comma >= 0) {
+      const serial = line.slice(0, comma).trim();
+      const coo = line.slice(comma + 1).trim();
+      if (!serial && !coo) continue;
+      drafts.push({ serial, coo: coo || defaultCoo });
+      continue;
+    }
+    for (const serial of parsePastedSerials(line)) drafts.push({ serial, coo: defaultCoo });
   }
   return drafts;
+}
+
+export type ReceiveSerialPastePlan =
+  | { type: "default" }
+  | { type: "ignore" }
+  | { type: "fill"; serial: string; coo: string | null }
+  | { type: "apply"; qty: string; rows: UnitDraft[]; paste: string };
+
+/**
+ * A column or row pasted onto the receive serial field.
+ * More than one serial replaces the list and sets the quantity to that count.
+ * One serial stays in the field. `coo` is set only when that one line named a country.
+ */
+export function applyReceiveSerialPaste(text: string, defaultCoo: string): ReceiveSerialPastePlan {
+  const kind = classifySerialPaste(text);
+  if (kind.type === "default" || kind.type === "ignore") return kind;
+  const drafts = pasteDrafts(text, defaultCoo);
+  if (drafts.length === 0) return { type: "ignore" };
+  if (kind.type === "fill" || drafts.length === 1) {
+    return {
+      type: "fill",
+      serial: drafts[0].serial,
+      coo: text.includes(",") ? drafts[0].coo : null,
+    };
+  }
+  const qty = String(drafts.length);
+  if (drafts.length > RECEIVE_UNIT_ROW_CAP) {
+    return { type: "apply", qty, rows: [], paste: pastedSerialText(drafts, defaultCoo) };
+  }
+  return { type: "apply", qty, rows: drafts, paste: "" };
+}
+
+function pastedSerialText(drafts: readonly UnitDraft[], defaultCoo: string): string {
+  const sharedOnly = drafts.every((row) => row.serial.trim() && sameCoo(row.coo, defaultCoo));
+  if (sharedOnly) return drafts.map((row) => row.serial.trim()).join("\n");
+  return rowsToPaste(drafts);
+}
+
+const RECEIVE_SERIAL_SENTENCE =
+  /That serial is already recorded for this item\.|That serial is already in this receipt\.|Enter at most one serial for each piece\.|A serial is at most 80 characters\.|That scan is the SKU, not a serial\.|That scan is a bin code, not a serial\.|Choose an item before entering serials\.|Enter at most 2000 serials on one receipt\.|Use a 2- or 3-letter country code\.|Serials must be a list\./;
+
+/**
+ * The sentence to show when a receipt's serials are refused.
+ * Call this inside the server action and return the text. A thrown error is
+ * replaced in production by the generic Server Components digest.
+ */
+export function receiveSerialFailure(error: unknown): string {
+  const text = errorText(error);
+  if (/stock_units_item_serial_idx/i.test(text)) return "That serial is already recorded for this item.";
+  const known = text.match(RECEIVE_SERIAL_SENTENCE);
+  if (known) return known[0];
+  if (/Server Components render/i.test(text)) return "The receipt was not saved.";
+  return text || "The receipt was not saved.";
 }
 
 function unitProblem(draft: UnitDraft, sku: string, seen: readonly string[]): string | null {
@@ -116,7 +186,7 @@ export function collectReceiveUnits(input: {
 }): { ok: true; units: StockUnitInput[] } | { ok: false; message: string } {
   if (!Number.isInteger(input.qty) || input.qty < 1) return { ok: true, units: [] };
   const drafts =
-    input.qty > RECEIVE_UNIT_ROW_CAP
+    input.qty > RECEIVE_UNIT_ROW_CAP || input.paste.trim()
       ? pasteDrafts(input.paste, input.pasteCoo)
       : input.rows.slice(0, input.qty);
   const units: StockUnitInput[] = [];

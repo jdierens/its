@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardEvent, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Save, TriangleAlert } from "lucide-react";
 import { BinLabel, binLabelPrintCss } from "@/components/BinLabel";
 import { FastInput } from "@/components/FastField";
@@ -76,6 +76,7 @@ import {
 import type { LabelItem } from "@/lib/types";
 import {
   RECEIVE_UNIT_ROW_CAP,
+  applyReceiveSerialPaste,
   collectReceiveUnits,
   receiveUnitRows,
   resizeUnitRows,
@@ -881,7 +882,7 @@ export function ReceivingPage() {
     setSaving(true);
     setError(null);
     try {
-      const result = await receiveIntoBin({
+      const saved = await receiveIntoBin({
         reference,
         itemId: lineItem?.id ?? null,
         qty: parsed.qty,
@@ -900,6 +901,12 @@ export function ReceivingPage() {
         vendorId: owner.vendorId,
         purchaseOrderId: owner.purchaseOrderId,
       });
+      if (!saved.ok) {
+        releaseSave(false);
+        setError(saved.message);
+        return;
+      }
+      const result = saved.receipt;
       const printedOn = todayLabel(new Date());
       setReceipt({ result, item: lineItem, search, qty: parsed.qty, printedOn, qtyWarning });
       typed.current = "";
@@ -1058,6 +1065,55 @@ export function ReceivingPage() {
         : null;
   const labelSheet = previewBinLabelSheet(shownBinType, printingItem);
   const labelPage = binLabelAtPageMm(labelSheet);
+
+  function sharedSerialCoo(): string {
+    const typed = pasteCoo.trim();
+    if (typed) return typed;
+    if (lineQty.ok && lineQty.qty <= RECEIVE_UNIT_ROW_CAP) return unitCooDefault.current;
+    return pasteCoo;
+  }
+
+  function onReceiveSerialPaste(event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>, index: number | null) {
+    const shared = sharedSerialCoo();
+    const text = event.clipboardData.getData("text");
+    const plan = applyReceiveSerialPaste(text, shared);
+    if (plan.type === "default") {
+      const serial = text.trim();
+      if (index == null && serial && !lineQty.ok) {
+        event.preventDefault();
+        setQty("1");
+        setUnitPaste("");
+        setUnitRows([{ serial, coo: shared }]);
+      }
+      return;
+    }
+    if (plan.type === "ignore") {
+      event.preventDefault();
+      return;
+    }
+    if (plan.type === "fill") {
+      if (index == null) {
+        if (lineQty.ok) return;
+        event.preventDefault();
+        setQty("1");
+        setUnitPaste("");
+        setUnitRows([{ serial: plan.serial, coo: plan.coo ?? shared }]);
+        return;
+      }
+      event.preventDefault();
+      setUnitRows((current) =>
+        current.map((entry, entryIndex) =>
+          entryIndex === index ? { ...entry, serial: plan.serial, coo: plan.coo ?? entry.coo } : entry,
+        ),
+      );
+      return;
+    }
+    event.preventDefault();
+    setQty(plan.qty);
+    setUnitRows(plan.rows);
+    setUnitPaste(plan.paste);
+    if (plan.paste) setPasteCoo(shared);
+  }
 
   function choosePurchaseOrder(hit: ReceivingPurchaseOrder) {
     setPurchaseOrderId(hit.id);
@@ -1487,41 +1543,13 @@ export function ReceivingPage() {
                 </button>
               </div>
             </div>
-            {lineQty.ok ? (
-              <div className="receive-units">
+            <div className="receive-units">
                 <p className="hint">
                   Serials and country of origin are optional. Leave them blank to receive quantity only.
+                  Paste a spreadsheet column or row into a serial field. More than one serial sets the quantity to that count.
                   {item?.coo ? ` COO prefills from the item (${item.coo}).` : " COO is a 2- or 3-letter country code."}
                 </p>
-                {lineQty.qty > RECEIVE_UNIT_ROW_CAP ? (
-                  <div className="receive-unit-paste">
-                    <label htmlFor="receive-serials">
-                      <span>Serials, one per line</span>
-                      <textarea
-                        id="receive-serials"
-                        rows={4}
-                        value={unitPaste}
-                        disabled={busy}
-                        autoComplete="off"
-                        spellCheck={false}
-                        placeholder={"SN-1\nSN-2, CHN"}
-                        onChange={(event) => setUnitPaste(event.target.value)}
-                      />
-                    </label>
-                    <label htmlFor="receive-paste-coo">
-                      <span>COO</span>
-                      <input
-                        id="receive-paste-coo"
-                        value={pasteCoo}
-                        disabled={busy}
-                        autoComplete="off"
-                        spellCheck={false}
-                        placeholder="USA"
-                        onChange={(event) => setPasteCoo(event.target.value.toUpperCase())}
-                      />
-                    </label>
-                  </div>
-                ) : (
+                {lineQty.ok && lineQty.qty <= RECEIVE_UNIT_ROW_CAP && !unitPaste.trim() ? (
                   <table className="receive-serials">
                     <thead>
                       <tr>
@@ -1542,6 +1570,7 @@ export function ReceivingPage() {
                               disabled={busy}
                               autoComplete="off"
                               spellCheck={false}
+                              onPaste={(event) => onReceiveSerialPaste(event, index)}
                               onChange={(event) => {
                                 const value = event.target.value;
                                 setUnitRows((current) =>
@@ -1575,9 +1604,37 @@ export function ReceivingPage() {
                       ))}
                     </tbody>
                   </table>
+                ) : (
+                  <div className="receive-unit-paste">
+                    <label htmlFor="receive-serials">
+                      <span>Serials, one per line</span>
+                      <textarea
+                        id="receive-serials"
+                        rows={4}
+                        value={unitPaste}
+                        disabled={busy}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder={"SN-1\nSN-2, CHN"}
+                        onPaste={(event) => onReceiveSerialPaste(event, null)}
+                        onChange={(event) => setUnitPaste(event.target.value)}
+                      />
+                    </label>
+                    <label htmlFor="receive-paste-coo">
+                      <span>COO</span>
+                      <input
+                        id="receive-paste-coo"
+                        value={pasteCoo}
+                        disabled={busy}
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder="USA"
+                        onChange={(event) => setPasteCoo(event.target.value.toUpperCase())}
+                      />
+                    </label>
+                  </div>
                 )}
               </div>
-            ) : null}
             {qtyMultipleWarning ? (
               <p className="banner warn" id="receive-qty-warn" role="status" title={qtyMultipleWarning}>
                 <TriangleAlert size={18} strokeWidth={1.75} aria-hidden />

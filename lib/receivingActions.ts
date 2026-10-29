@@ -1,5 +1,6 @@
 "use server";
 
+import { unstable_rethrow } from "next/navigation";
 import { authRequired } from "@/lib/authRequired";
 import { readAppUser } from "@/lib/appUserRecord";
 import { errorText } from "@/lib/errors";
@@ -47,7 +48,7 @@ import {
 } from "@/lib/stockReceive";
 import { isBinType, type BinType } from "@/lib/bins";
 import { CONSIGNED_RECEIVE_MIGRATION, receiveConsignment } from "@/lib/consignedReceive";
-import type { StockUnitInput } from "@/lib/stockUnits";
+import { receiveSerialFailure, type StockUnitInput } from "@/lib/stockUnits";
 import { lastPutawayBinReference, receivingBinCreateMessage } from "@/lib/receivingLine";
 import { RECENT_ORIGIN_SCAN, distinctRecentOrigins } from "@/lib/receivingOrigins";
 import { getSupabase } from "@/lib/supabase";
@@ -422,6 +423,14 @@ export async function searchReceivingScan(raw: string): Promise<ReceivingScanRes
   return { scanRaw, token: tokens[0] ?? null, tried, exact: null, matches: [], truncated: false };
 }
 
+export type ReceiveResult = { ok: true; receipt: ReceiptResult } | { ok: false; message: string };
+
+const RECEIVE_SCHEMA_MESSAGE = `Apply ${STOCK_UNITS_MIGRATION} and ${CONSIGNED_RECEIVE_MIGRATION} before receiving. A receipt without a purchase order has to name a vendor and is stored as consigned.`;
+
+/**
+ * Post one receipt. Failures are returned so production does not replace a
+ * refused serial, or any other sentence from the database, with the digest.
+ */
 export async function receiveIntoBin(input: {
   reference: string;
   itemId: string | null;
@@ -440,44 +449,47 @@ export async function receiveIntoBin(input: {
   units?: StockUnitInput[] | null;
   vendorId?: string | null;
   purchaseOrderId?: string | null;
-}): Promise<ReceiptResult> {
-  const owner = receiveConsignment({
-    purchaseOrderId: input.purchaseOrderId,
-    vendorId: input.vendorId,
-  });
-  if (!owner.ok) throw new Error(owner.message);
-  const initials = await operatorInitials();
-  const receivedOn = receivingDateToStore(input.receivedOn);
-  const supabase = await getSupabase();
-  const units = (input.units ?? []).filter((unit) => unit.serial || unit.coo);
-  const payload = {
-    p_reference: input.reference,
-    p_item_id: input.itemId || null,
-    p_qty: input.qty,
-    p_initials: initials,
-    p_comment: input.comment,
-    p_project: input.project,
-    p_origin: input.origin,
-    p_incoming_tag: input.incomingTag,
-    p_received_on: receivedOn,
-    p_origin_qty: input.originQty,
-    p_client_request_id: input.clientRequestId,
-    p_scan_raw: input.scanRaw?.trim() || null,
-    p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
-    p_cleaned: input.itemId ? (input.cleaned ?? null) : null,
-    p_wiped: input.itemId ? (input.wiped ?? null) : null,
-    p_vendor_id: owner.vendorId,
-    p_purchase_order_id: owner.purchaseOrderId,
-    ...(units.length > 0 ? { p_units: units } : {}),
-  };
-  const { data, error } = await supabase.rpc("receive_into_bin", payload);
-  if (error && (missingSchema(error) || missingColumn(error))) {
-    throw new Error(
-      `Apply ${STOCK_UNITS_MIGRATION} and ${CONSIGNED_RECEIVE_MIGRATION} before receiving. A receipt without a purchase order has to name a vendor and is stored as consigned.`,
-    );
+}): Promise<ReceiveResult> {
+  try {
+    const owner = receiveConsignment({
+      purchaseOrderId: input.purchaseOrderId,
+      vendorId: input.vendorId,
+    });
+    if (!owner.ok) return { ok: false, message: owner.message };
+    const initials = await operatorInitials();
+    const receivedOn = receivingDateToStore(input.receivedOn);
+    const supabase = await getSupabase();
+    const units = (input.units ?? []).filter((unit) => unit.serial || unit.coo);
+    const payload = {
+      p_reference: input.reference,
+      p_item_id: input.itemId || null,
+      p_qty: input.qty,
+      p_initials: initials,
+      p_comment: input.comment,
+      p_project: input.project,
+      p_origin: input.origin,
+      p_incoming_tag: input.incomingTag,
+      p_received_on: receivedOn,
+      p_origin_qty: input.originQty,
+      p_client_request_id: input.clientRequestId,
+      p_scan_raw: input.scanRaw?.trim() || null,
+      p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
+      p_cleaned: input.itemId ? (input.cleaned ?? null) : null,
+      p_wiped: input.itemId ? (input.wiped ?? null) : null,
+      p_vendor_id: owner.vendorId,
+      p_purchase_order_id: owner.purchaseOrderId,
+      ...(units.length > 0 ? { p_units: units } : {}),
+    };
+    const { data, error } = await supabase.rpc("receive_into_bin", payload);
+    if (error && (missingSchema(error) || missingColumn(error))) {
+      return { ok: false, message: RECEIVE_SCHEMA_MESSAGE };
+    }
+    if (error) return { ok: false, message: receiveSerialFailure(error) };
+    return { ok: true, receipt: receiptFromJson(data) };
+  } catch (cause) {
+    unstable_rethrow(cause);
+    return { ok: false, message: receiveSerialFailure(cause) };
   }
-  if (error) rpcError(error);
-  return receiptFromJson(data);
 }
 
 export async function editReceipt(input: {
