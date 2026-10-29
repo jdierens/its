@@ -232,6 +232,22 @@ export function pickTargetForBin(
   return null;
 }
 
+/** Serials already recorded for this SKU, including picks that are no longer on a line. */
+export function itemSerials(sheet: PickSheetModel, sku: string): string[] {
+  const found: string[] = [];
+  for (const line of sheet.lines) {
+    if (line.sku !== sku) continue;
+    for (const pick of line.picks) {
+      for (const serial of pick.serials) found.push(serial.serial);
+    }
+  }
+  for (const orphan of sheet.orphans) {
+    if (orphan.sku !== sku) continue;
+    for (const serial of orphan.serials) found.push(serial.serial);
+  }
+  return found;
+}
+
 export function serialProblem(input: { serial: string; sku: string; existing: readonly string[] }): string | null {
   const serial = input.serial.trim();
   if (!serial) return "Enter a serial.";

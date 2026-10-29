@@ -72,9 +72,20 @@ export function pickSlotForSerial(input: {
   return { ok: false, message: `Pick a quantity from ${reference} before adding this serial.` };
 }
 
+/** A lookup has to name the unit and the bin it is in. Anything else is a failed read. */
+function pastedPull(value: unknown): PastedSerialPull | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as { serial?: unknown; reference?: unknown; coo?: unknown };
+  if (typeof row.serial !== "string" || typeof row.reference !== "string" || !row.reference.trim()) return null;
+  if (row.coo != null && typeof row.coo !== "string") return null;
+  const coo = typeof row.coo === "string" ? row.coo.trim() || null : null;
+  return { serial: row.serial, reference: row.reference.trim(), coo };
+}
+
 /**
  * Add each pasted serial the same way as Add: look up the unit, then attach it
  * to a pick that still has room. One failure does not stop the rest.
+ * A lookup that returns nothing fails that serial only.
  */
 export async function applyPastedSerials(input: {
   serials: readonly string[];
@@ -82,7 +93,7 @@ export async function applyPastedSerials(input: {
   coo: string;
   existing: () => readonly string[];
   picks: () => readonly PickSlot[];
-  lookup: (serial: string) => Promise<PastedSerialPull>;
+  lookup: (serial: string) => Promise<unknown>;
   record: (pickId: string, serial: string, coo: string | null) => Promise<void>;
 }): Promise<SerialPasteReport> {
   const failures: SerialPasteFailure[] = [];
@@ -95,28 +106,28 @@ export async function applyPastedSerials(input: {
       failures.push({ serial: serial || raw, message: problem });
       continue;
     }
-    let found: PastedSerialPull;
+    let label = serial || raw;
     try {
-      found = await input.lookup(serial);
-    } catch (cause) {
-      failures.push({ serial, message: errorText(cause) });
-      continue;
-    }
-    const canonical = found.serial.trim() || serial;
-    if (input.existing().some((row) => row.toLowerCase() === canonical.toLowerCase())) {
-      failures.push({ serial: canonical, message: "That serial is already recorded for this item." });
-      continue;
-    }
-    const slot = pickSlotForSerial({ picks: input.picks(), reference: found.reference });
-    if (!slot.ok) {
-      failures.push({ serial: canonical, message: slot.message });
-      continue;
-    }
-    try {
+      const found = pastedPull(await input.lookup(serial));
+      if (!found) {
+        failures.push({ serial: label, message: "That serial could not be looked up." });
+        continue;
+      }
+      const canonical = found.serial.trim() || serial;
+      label = canonical;
+      if (input.existing().some((row) => row.toLowerCase() === canonical.toLowerCase())) {
+        failures.push({ serial: canonical, message: "That serial is already recorded for this item." });
+        continue;
+      }
+      const slot = pickSlotForSerial({ picks: input.picks(), reference: found.reference });
+      if (!slot.ok) {
+        failures.push({ serial: canonical, message: slot.message });
+        continue;
+      }
       await input.record(slot.pickId, canonical, coo || found.coo);
       accepted += 1;
     } catch (cause) {
-      failures.push({ serial: canonical, message: errorText(cause) });
+      failures.push({ serial: label, message: errorText(cause) });
     }
   }
   return { accepted, failures };

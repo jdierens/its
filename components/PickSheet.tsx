@@ -10,6 +10,7 @@ import {
   finishPick,
   lookupPickSerial,
   assignPickStagingBin,
+  pastePickSerials,
   recordPick,
   recordPickSerial,
   removePickSerial,
@@ -21,7 +22,6 @@ import { errorText } from "@/lib/errors";
 import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
 import { formatPullFrom, pullCue, type SerialPull } from "@/lib/pickSerialLocation";
 import {
-  applyPastedSerials,
   classifySerialPaste,
   formatSerialPasteReport,
   pickSlotForSerial,
@@ -30,6 +30,7 @@ import {
 import { cooProblem } from "@/lib/stockUnits";
 import {
   formatPickQty,
+  itemSerials,
   lineRemaining,
   parsePickQty,
   pickTargetForBin,
@@ -44,21 +45,6 @@ import {
 
 function qtyKey(allocationId: string, binId: string): string {
   return `${allocationId}:${binId}`;
-}
-
-function itemSerials(sheet: PickSheetModel, sku: string): string[] {
-  const found: string[] = [];
-  for (const line of sheet.lines) {
-    if (line.sku !== sku) continue;
-    for (const pick of line.picks) {
-      for (const serial of pick.serials) found.push(serial.serial);
-    }
-  }
-  for (const orphan of sheet.orphans) {
-    if (orphan.sku !== sku) continue;
-    for (const serial of orphan.serials) found.push(serial.serial);
-  }
-  return found;
 }
 
 function dash(value: string | null | undefined): string {
@@ -131,7 +117,13 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     setBusy(true);
     setError(null);
     try {
-      const found = await lookupPickSerial(sheet.orderId, raw, allocationId);
+      const looked = await lookupPickSerial(sheet.orderId, raw, allocationId);
+      if (!looked.ok) {
+        setPull(null);
+        setError(looked.message);
+        return;
+      }
+      const found = looked.value;
       if (itemSerials(sheet, found.sku).some((row) => row.toLowerCase() === found.serial.toLowerCase())) {
         setPull(null);
         setError("That serial is already recorded for this item.");
@@ -207,32 +199,34 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     }
     setBusy(true);
     setError(null);
-    let found: SerialPull;
     try {
-      found = await lookupPickSerial(sheet.orderId, serial, line.allocationId);
-    } catch (cause) {
-      setPull(null);
-      setError(errorText(cause));
-      setBusy(false);
-      return;
-    }
-    setPull(found);
-    setSerialText((current) => ({ ...current, [found.allocationId]: found.serial }));
-    const key = qtyKey(found.allocationId, found.binId);
-    setQtyText((current) => ({ ...current, [key]: current[key]?.trim() ? current[key] : "1" }));
-    const slot = pickSlotForSerial({ picks: line.picks, reference: found.reference });
-    if (!slot.ok) {
-      setError(slot.message);
-      setBusy(false);
-      return;
-    }
-    try {
-      const next = await recordPickSerial(slot.pickId, found.serial, (cooText[line.allocationId] ?? "").trim() || found.coo);
-      setSheet(next);
+      const looked = await lookupPickSerial(sheet.orderId, serial, line.allocationId);
+      if (!looked.ok) {
+        setPull(null);
+        setError(looked.message);
+        return;
+      }
+      const found = looked.value;
+      setPull(found);
+      setSerialText((current) => ({ ...current, [found.allocationId]: found.serial }));
+      const key = qtyKey(found.allocationId, found.binId);
+      setQtyText((current) => ({ ...current, [key]: current[key]?.trim() ? current[key] : "1" }));
+      const slot = pickSlotForSerial({ picks: line.picks, reference: found.reference });
+      if (!slot.ok) {
+        setError(slot.message);
+        return;
+      }
+      const saved = await recordPickSerial(slot.pickId, found.serial, (cooText[line.allocationId] ?? "").trim() || found.coo);
+      if (!saved.ok) {
+        setError(saved.message);
+        return;
+      }
+      setSheet(saved.value);
       setSerialText((current) => ({ ...current, [line.allocationId]: "" }));
       setCooText((current) => ({ ...current, [line.allocationId]: "" }));
       setPull(null);
     } catch (cause) {
+      setPull(null);
       setError(errorText(cause));
     } finally {
       setBusy(false);
@@ -253,31 +247,23 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     setError(null);
     setPasteReport(null);
     setSerialText((current) => ({ ...current, [line.allocationId]: "" }));
-    let currentSheet = sheet;
     const allocationId = line.allocationId;
-    const sku = line.sku;
     const coo = (cooText[allocationId] ?? "").trim();
     try {
-      const report = await applyPastedSerials({
+      const result = await pastePickSerials({
+        orderId: sheet.orderId,
+        allocationId,
         serials,
-        sku,
         coo,
-        existing: () => itemSerials(currentSheet, sku),
-        picks: () => currentSheet.lines.find((row) => row.allocationId === allocationId)?.picks ?? [],
-        lookup: async (serial) => {
-          const found = await lookupPickSerial(sheet.orderId, serial, allocationId);
-          return { serial: found.serial, reference: found.reference, coo: found.coo };
-        },
-        record: async (pickId, serial, countryOfOrigin) => {
-          currentSheet = await recordPickSerial(pickId, serial, countryOfOrigin);
-          setSheet(currentSheet);
-        },
       });
-      if (report.accepted > 0) {
+      if (result.sheet) setSheet(result.sheet);
+      if (result.report.accepted > 0) {
         setCooText((current) => ({ ...current, [allocationId]: "" }));
         setPull(null);
       }
-      setPasteReport(report.accepted > 0 || report.failures.length > 0 ? report : null);
+      setPasteReport(result.report.accepted > 0 || result.report.failures.length > 0 ? result.report : null);
+    } catch (cause) {
+      setError(errorText(cause));
     } finally {
       applyingPaste.current = false;
       setBusy(false);
