@@ -5,8 +5,12 @@ import {
   INVENTORY_NO_BINS,
   formatInventoryBins,
   inventoryBinTotals,
+  inventoryBinsSortLabel,
   inventoryHits,
   inventoryOnHand,
+  sortInventoryHits,
+  toggleInventorySort,
+  type InventoryHit,
 } from "./inventorySearch.ts";
 import { NAV_GROUPS, pageMetaFor } from "./nav.ts";
 
@@ -62,6 +66,77 @@ test("a match with no open quantity stays in the list", () => {
   assert.equal(INVENTORY_NO_BINS, "no bins");
 });
 
+function hit(partial: Partial<InventoryHit> & Pick<InventoryHit, "id">): InventoryHit {
+  return {
+    sku: partial.sku ?? partial.id,
+    name: partial.name ?? "",
+    description: partial.description ?? "",
+    qty: partial.qty ?? 0,
+    locations: partial.locations ?? "",
+    empty: partial.empty ?? false,
+    ...partial,
+  };
+}
+
+test("column sort starts ascending and then toggles", () => {
+  assert.deepEqual(toggleInventorySort(null, "qty"), { key: "qty", dir: "asc" });
+  assert.deepEqual(toggleInventorySort({ key: "qty", dir: "asc" }, "qty"), { key: "qty", dir: "desc" });
+  assert.deepEqual(toggleInventorySort({ key: "qty", dir: "desc" }, "qty"), { key: "qty", dir: "asc" });
+  assert.deepEqual(toggleInventorySort({ key: "qty", dir: "desc" }, "sku"), { key: "sku", dir: "asc" });
+});
+
+test("search results sort on the client and ties keep search order", () => {
+  const hits = [
+    hit({ id: "exact", sku: "100", name: "Drive", description: "Same", qty: 2, locations: "(x2)20000-B" }),
+    hit({ id: "later", sku: "20", name: "Adapter", description: "Other", qty: 10, locations: "(x10)10002-C\n(x1)30000-B" }),
+    hit({ id: "empty", sku: "3000", name: "", description: "Bare", qty: 0, locations: "", empty: true }),
+    hit({ id: "tie", sku: "100", name: "Drive", description: "Same", qty: 2, locations: "(x2)20000-B" }),
+  ];
+  const original = hits.map((row) => row.id);
+
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "sku", dir: "asc" }).map((row) => row.id),
+    ["later", "exact", "tie", "empty"],
+  );
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "sku", dir: "desc" }).map((row) => row.id),
+    ["empty", "exact", "tie", "later"],
+  );
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "item", dir: "asc" }).map((row) => row.id),
+    ["empty", "later", "exact", "tie"],
+  );
+  assert.deepEqual(
+    sortInventoryHits(
+      [
+        hit({ id: "zebra", sku: "1", name: "Drive", description: "Zebra" }),
+        hit({ id: "alpha", sku: "2", name: "Drive", description: "Alpha" }),
+      ],
+      { key: "item", dir: "asc" },
+    ).map((row) => row.id),
+    ["alpha", "zebra"],
+  );
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "qty", dir: "asc" }).map((row) => row.id),
+    ["empty", "exact", "tie", "later"],
+  );
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "qty", dir: "desc" }).map((row) => row.id),
+    ["later", "exact", "tie", "empty"],
+  );
+  assert.equal(inventoryBinsSortLabel(hits[1]!), "10002-C\n30000-B");
+  assert.equal(inventoryBinsSortLabel(hits[2]!), "no bins");
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "bins", dir: "asc" }).map((row) => row.id),
+    ["later", "exact", "tie", "empty"],
+  );
+  assert.deepEqual(sortInventoryHits(hits, null).map((row) => row.id), original);
+  assert.deepEqual(
+    hits.map((row) => row.id),
+    original,
+  );
+});
+
 test("inventory search is a warehouse page and reuses receiving Find", () => {
   const warehouse = NAV_GROUPS.find((group) => group.label === "Warehouse");
   const item = warehouse?.items.find((entry) => entry.href === "/warehouse/inventory");
@@ -80,4 +155,8 @@ test("inventory search is a warehouse page and reuses receiving Find", () => {
   assert.doesNotMatch(source, /rpc\(/);
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /\.receive-table\.inventory-results td\.locations,\s*\.inventory-cards dd\.locations \{\s*white-space: pre-line;/);
+  const page = readFileSync(new URL("../components/InventorySearchPage.tsx", import.meta.url), "utf8");
+  assert.match(page, /aria-sort=/);
+  assert.match(page, /sortInventoryHits/);
+  assert.match(page, /inventory-col-sort/);
 });

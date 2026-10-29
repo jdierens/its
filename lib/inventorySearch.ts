@@ -91,6 +91,65 @@ export function binsByItem(rows: readonly InventoryContentSource[]): Map<string,
   return map;
 }
 
+export type InventorySortKey = "sku" | "item" | "qty" | "bins";
+
+export type InventorySortDir = "asc" | "desc";
+
+export type InventorySort = {
+  key: InventorySortKey;
+  dir: InventorySortDir;
+};
+
+const INVENTORY_SORT_OPTIONS: Intl.CollatorOptions = { numeric: true, sensitivity: "base" };
+
+/**
+ * Bins column sort key. Each line drops the `(xqty)` prefix so the column sorts by
+ * bin reference and location, not by the quantity painted on the line. The cell is
+ * already one bin per line in reference order, so the first line leads and later
+ * lines break ties. An empty match sorts as the visible label `no bins`.
+ */
+export function inventoryBinsSortLabel(hit: InventoryHit): string {
+  if (hit.empty) return INVENTORY_NO_BINS;
+  return hit.locations.replace(/^\(x\d+(?:\.\d+)?\)/gm, "");
+}
+
+/** First click on a heading sorts ascending. Another click on it swaps direction. */
+export function toggleInventorySort(current: InventorySort | null, key: InventorySortKey): InventorySort {
+  if (current?.key === key) return { key, dir: current.dir === "asc" ? "desc" : "asc" };
+  return { key, dir: "asc" };
+}
+
+function compareInventoryText(left: string, right: string): number {
+  return left.localeCompare(right, "en", INVENTORY_SORT_OPTIONS);
+}
+
+/** Item sorts by name, then description. A blank name stays blank (the em dash is only display). */
+export function compareInventoryHits(left: InventoryHit, right: InventoryHit, key: InventorySortKey): number {
+  switch (key) {
+    case "sku":
+      return compareInventoryText(left.sku.trim(), right.sku.trim());
+    case "item": {
+      const name = compareInventoryText(left.name.trim(), right.name.trim());
+      if (name !== 0) return name;
+      return compareInventoryText(left.description.trim(), right.description.trim());
+    }
+    case "qty":
+      return left.qty - right.qty;
+    case "bins":
+      return compareInventoryText(inventoryBinsSortLabel(left), inventoryBinsSortLabel(right));
+  }
+}
+
+/**
+ * Sort the rows already returned for this search. Equal values keep search order
+ * (an exact SKU stays ahead of a tie). No sort leaves that order unchanged.
+ */
+export function sortInventoryHits(hits: readonly InventoryHit[], sort: InventorySort | null): InventoryHit[] {
+  if (!sort) return [...hits];
+  const factor = sort.dir === "asc" ? 1 : -1;
+  return [...hits].sort((left, right) => factor * compareInventoryHits(left, right, sort.key));
+}
+
 /** Keep the search ranking. An item with no open quantity stays, with qty 0. */
 export function inventoryHits(
   matches: readonly InventoryMatch[],
