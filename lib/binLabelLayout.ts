@@ -27,19 +27,30 @@ export const BIN_BARCODE_HEIGHT_PX = 50;
 export const BIN_BARCODE_QUIET_MODULES = 10;
 
 /**
- * Pallet (DK-1202). Same page as the serial label: tape width, then feed.
- * The page is landscape, so the 100 mm feed is the width and the 62 mm tape is the height.
+ * Pallet art (DK-1202), same sheet as the serial label.
+ * 100 mm runs along the feed and 62 mm runs across the tape, so the reference
+ * can stay large. This is the on-screen label. It is not the driver page.
  */
 export const PALLET_LABEL_SIZE = "62 × 100 mm";
 export const PALLET_LABEL_WIDTH_MM = 100;
 export const PALLET_LABEL_HEIGHT_MM = 62;
 
+/**
+ * Brother QL-820NWB paper "62 x 100 mm" (DK-1202).
+ * The PPD page is 62 mm across the print head and 100 mm along the feed.
+ * Chrome does not turn that paper sideways, so a 100 mm-wide page clips the
+ * right side. Print rotates the 100 × 62 mm art onto this page.
+ */
+export const DK1202_PAGE_WIDTH_MM = 62;
+export const DK1202_PAGE_HEIGHT_MM = 100;
+
 /** Side padding. The reference uses the width that remains. The barcode max sits inside it. */
 export const PALLET_LABEL_PAD_X_MM = 3;
 
 /**
- * Top and bottom padding. DK-1202 does not print the last ~1.5 mm of the 62 mm tape.
- * Those edges are the top and bottom of this landscape page, same as the serial label.
+ * Top and bottom padding of the art. DK-1202 does not print the last ~1.5 mm of the
+ * 62 mm tape. Those edges are the top and bottom of the art. Print rotates the art,
+ * so they land on the left and right of the 62 mm-wide driver page.
  */
 export const PALLET_LABEL_PAD_TOP_MM = 2.2;
 export const PALLET_LABEL_PAD_BOTTOM_MM = 2.6;
@@ -211,10 +222,14 @@ export function binLabelHitClass(type: string | null | undefined): string {
   return type === "P" ? "bin-label-hit bin-label-hit-pallet" : "bin-label-hit";
 }
 
+/**
+ * `@page` size for one print job. A pallet job uses the Brother paper
+ * (62 mm wide, 100 mm tall). Crate and box stay the verified 90 × 29 mm page.
+ */
 export function binLabelAtPageMm(sheet: BinLabelSheet): { widthMm: number; heightMm: number } {
   const pallet = sheet.mode === "pallet" || (sheet.mode === "mixed" && sheet.defaultPallet);
   return pallet
-    ? { widthMm: PALLET_LABEL_WIDTH_MM, heightMm: PALLET_LABEL_HEIGHT_MM }
+    ? { widthMm: DK1202_PAGE_WIDTH_MM, heightMm: DK1202_PAGE_HEIGHT_MM }
     : { widthMm: BIN_LABEL_WIDTH_MM, heightMm: BIN_LABEL_HEIGHT_MM };
 }
 

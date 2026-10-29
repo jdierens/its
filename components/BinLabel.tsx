@@ -23,6 +23,8 @@ import {
   PALLET_BARCODE_MAX_MM,
   PALLET_BRAND_FONT_MM,
   PALLET_BRAND_LETTER_SPACING_EM,
+  DK1202_PAGE_HEIGHT_MM,
+  DK1202_PAGE_WIDTH_MM,
   PALLET_LABEL_HEIGHT_MM,
   PALLET_LABEL_PAD_BOTTOM_MM,
   PALLET_LABEL_PAD_TOP_MM,
@@ -196,7 +198,7 @@ export function BinLabel({ reference, type, layout, sheet }: BinLabelProps) {
       style={{ width: `${page.widthMm}mm`, height: `${page.heightMm}mm` }}
     >
       {pallet ? (
-        <>
+        <div className="bin-label-pallet-art">
           <div className="bin-label-pallet-brand">{BIN_LABEL_BRAND}</div>
           {layout === "qr" && symbol ? (
             <svg
@@ -221,7 +223,7 @@ export function BinLabel({ reference, type, layout, sheet }: BinLabelProps) {
               {reference}
             </span>
           </div>
-        </>
+        </div>
       ) : layout === "qr" && symbol ? (
         <>
           <div className="bin-label-copy">{caption}</div>
@@ -266,7 +268,7 @@ export function binLabelPrintCss(sheet: BinLabelSheet): string {
 }
 
 @page bin-pallet {
-  size: ${PALLET_LABEL_WIDTH_MM}mm ${PALLET_LABEL_HEIGHT_MM}mm;
+  size: ${DK1202_PAGE_WIDTH_MM}mm ${DK1202_PAGE_HEIGHT_MM}mm;
   margin: 0;
 }
 
@@ -343,6 +345,11 @@ export function binLabelPrintCss(sheet: BinLabelSheet): string {
   padding: ${PALLET_LABEL_PAD_TOP_MM}mm ${PALLET_LABEL_PAD_X_MM}mm ${PALLET_LABEL_PAD_BOTTOM_MM}mm;
   justify-content: flex-start;
   gap: ${PALLET_STACK_GAP_MM}mm;
+}
+
+/* Screen keeps the flex column on the label. Print turns this into the rotated art. */
+.bin-label-pallet-art {
+  display: contents;
 }
 
 .bin-label-pallet-brand {
@@ -535,6 +542,34 @@ export function binLabelPrintCss(sheet: BinLabelSheet): string {
     page-break-inside: avoid;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /* The driver page is 62 mm wide. The 100 mm art is rotated so it fills that page. */
+  .bin-label-pallet {
+    width: ${DK1202_PAGE_WIDTH_MM}mm !important;
+    height: ${DK1202_PAGE_HEIGHT_MM}mm !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    position: relative !important;
+    display: block !important;
+  }
+
+  .bin-label-pallet-art {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: ${PALLET_STACK_GAP_MM}mm;
+    box-sizing: border-box;
+    width: ${PALLET_LABEL_WIDTH_MM}mm;
+    height: ${PALLET_LABEL_HEIGHT_MM}mm;
+    padding: ${PALLET_LABEL_PAD_TOP_MM}mm ${PALLET_LABEL_PAD_X_MM}mm ${PALLET_LABEL_PAD_BOTTOM_MM}mm;
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: top left;
+    transform: translateX(${DK1202_PAGE_WIDTH_MM}mm) rotate(90deg);
+    background: #fff;
   }
 
   .print-sheet .bin-label:last-child {

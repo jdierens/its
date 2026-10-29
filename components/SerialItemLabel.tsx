@@ -2,7 +2,7 @@
 
 import JsBarcode from "jsbarcode";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { mmToCssPx } from "@/lib/binLabelLayout";
+import { DK1202_PAGE_HEIGHT_MM, DK1202_PAGE_WIDTH_MM, mmToCssPx } from "@/lib/binLabelLayout";
 import {
   SERIAL_BARCODE_MAX_MM,
   SERIAL_HEAD_GAP_MM,
@@ -134,41 +134,43 @@ export function SerialItemLabel({
       data-head={headMode}
       style={{ width: `${SERIAL_LABEL_WIDTH_MM}mm`, height: `${SERIAL_LABEL_HEIGHT_MM}mm` }}
     >
-      <div
-        className={["serial-label-head", showQuantity ? "show-qty" : "", headMode === "stacked" ? "stacked" : ""]
-          .filter(Boolean)
-          .join(" ")}
-        ref={headRef}
-      >
-        <div className="serial-label-sku" ref={skuRef}>
-          {shownSku}
-        </div>
-        <div className="serial-label-desc">{shownDescription}</div>
-        {showQuantity ? (
-          <div className="serial-label-qty" ref={qtyRef}>
-            {qtyText}
+      <div className="serial-label-art">
+        <div
+          className={["serial-label-head", showQuantity ? "show-qty" : "", headMode === "stacked" ? "stacked" : ""]
+            .filter(Boolean)
+            .join(" ")}
+          ref={headRef}
+        >
+          <div className="serial-label-sku" ref={skuRef}>
+            {shownSku}
           </div>
-        ) : null}
-      </div>
-      <div className="serial-label-code-row">
-        {codeMarkSide === "left" ? mark : null}
-        <div className="serial-label-bars-col" ref={columnRef}>
-          <svg ref={svgRef} className="serial-label-bars" role="img" aria-label={`Code 128 barcode for ${serial}`} />
-          <div className="serial-label-human">
-            <span
-              ref={humanMeasureRef}
-              className="serial-label-human-measure"
-              aria-hidden="true"
-              style={{ fontSize: `${SERIAL_HUMAN_FONT_MM}mm` }}
-            >
-              {serial}
-            </span>
-            <span ref={humanTextRef} className="serial-label-human-text" style={{ fontSize: `${humanFontMm}mm` }}>
-              {serial}
-            </span>
-          </div>
+          <div className="serial-label-desc">{shownDescription}</div>
+          {showQuantity ? (
+            <div className="serial-label-qty" ref={qtyRef}>
+              {qtyText}
+            </div>
+          ) : null}
         </div>
-        {codeMarkSide === "right" ? mark : null}
+        <div className="serial-label-code-row">
+          {codeMarkSide === "left" ? mark : null}
+          <div className="serial-label-bars-col" ref={columnRef}>
+            <svg ref={svgRef} className="serial-label-bars" role="img" aria-label={`Code 128 barcode for ${serial}`} />
+            <div className="serial-label-human">
+              <span
+                ref={humanMeasureRef}
+                className="serial-label-human-measure"
+                aria-hidden="true"
+                style={{ fontSize: `${SERIAL_HUMAN_FONT_MM}mm` }}
+              >
+                {serial}
+              </span>
+              <span ref={humanTextRef} className="serial-label-human-text" style={{ fontSize: `${humanFontMm}mm` }}>
+                {serial}
+              </span>
+            </div>
+          </div>
+          {codeMarkSide === "right" ? mark : null}
+        </div>
       </div>
     </article>
   );
@@ -176,7 +178,7 @@ export function SerialItemLabel({
 
 export const SERIAL_LABEL_PRINT_CSS = `
 @page {
-  size: ${SERIAL_LABEL_WIDTH_MM}mm ${SERIAL_LABEL_HEIGHT_MM}mm;
+  size: ${DK1202_PAGE_WIDTH_MM}mm ${DK1202_PAGE_HEIGHT_MM}mm;
   margin: 0;
 }
 
@@ -184,8 +186,9 @@ export const SERIAL_LABEL_PRINT_CSS = `
   width: ${SERIAL_LABEL_WIDTH_MM}mm;
   height: ${SERIAL_LABEL_HEIGHT_MM}mm;
   box-sizing: border-box;
-  /* DK-1202 is 62 × 100 mm. The print head does not cover the last ~1.5 mm of the 62 mm tape.
-     Those edges are the top and bottom of this landscape page. */
+  /* DK-1202 art is 100 mm along the feed and 62 mm across the tape. The print head
+     misses about 1.5 mm on each tape edge. Those edges are the top and bottom of this art.
+     Print rotates the art onto the driver's 62 mm × 100 mm page. */
   padding: 2.2mm 3mm 2.6mm;
   display: flex;
   flex-direction: column;
@@ -197,6 +200,10 @@ export const SERIAL_LABEL_PRINT_CSS = `
   color: #000;
   opacity: 1;
   font-family: Helvetica, Arial, sans-serif;
+}
+
+.serial-label-art {
+  display: contents;
 }
 
 .serial-label-head {
@@ -328,7 +335,7 @@ export const SERIAL_LABEL_PRINT_CSS = `
     margin: 0 !important;
     padding: 0 !important;
     background: #fff !important;
-    width: ${SERIAL_LABEL_WIDTH_MM}mm !important;
+    width: ${DK1202_PAGE_WIDTH_MM}mm !important;
     height: auto !important;
   }
 
@@ -371,6 +378,12 @@ export const SERIAL_LABEL_PRINT_CSS = `
   }
 
   .serial-label {
+    width: ${DK1202_PAGE_WIDTH_MM}mm !important;
+    height: ${DK1202_PAGE_HEIGHT_MM}mm !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    position: relative !important;
+    display: block !important;
     break-after: page;
     page-break-after: always;
     break-inside: avoid;
@@ -379,6 +392,23 @@ export const SERIAL_LABEL_PRINT_CSS = `
     opacity: 1 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  .serial-label-art {
+    display: flex !important;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3.6mm;
+    box-sizing: border-box;
+    width: ${SERIAL_LABEL_WIDTH_MM}mm;
+    height: ${SERIAL_LABEL_HEIGHT_MM}mm;
+    padding: 2.2mm 3mm 2.6mm;
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: top left;
+    transform: translateX(${DK1202_PAGE_WIDTH_MM}mm) rotate(90deg);
+    background: #fff;
   }
 
   .print-sheet .serial-label:last-child {

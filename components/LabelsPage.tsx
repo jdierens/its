@@ -556,18 +556,17 @@ export function LabelsPage() {
         <div className="print-help">
           {mode === "serial" ? (
             <>
-              <p>Brother QL-820NWB, DK-1202 die-cut labels, from a Mac browser. In the print dialog use:</p>
+              <p>Brother QL-820NWB, DK-1202 die-cut labels, from a Mac browser. The dialog should already show:</p>
               <ul>
                 <li>Paper size: {SERIAL_LABEL_SIZE}</li>
-                <li>Orientation: Landscape</li>
                 <li>Scale: 100%</li>
                 <li>Margins: None</li>
                 <li>Headers and footers: off</li>
               </ul>
               <p>
-                Each page is {SERIAL_LABEL_SIZE}. The 62 mm side is the tape width across the print head, and the
-                100 mm side is the feed, so the page is landscape. Each serial is one page, and copies print that page
-                again.
+                The Brother paper is 62 mm across the tape and 100 mm along the feed. The label art is turned
+                onto that page, so leave orientation alone. Landscape clips the right side. Each serial is one
+                page, and copies print that page again.
                 {SERIAL_LABEL_SHOW_QTY
                   ? " Qty on label is printed on every page and does not change stock."
                   : " Printing does not change stock."}{" "}
