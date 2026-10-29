@@ -6883,6 +6883,11 @@ input.num-input {
   margin-bottom: 0.9rem;
 }
 
+.so-head-row.so-contact-row {
+  grid-template-columns: minmax(10rem, 1.1fr) minmax(12rem, 1.5fr) minmax(8rem, 0.9fr);
+  margin-bottom: 0;
+}
+
 .so-pay-row {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 0;
@@ -7800,6 +7805,10 @@ input.num-input {
       11rem
       minmax(8.5rem, 1.05fr)
       minmax(8.5rem, 10rem);
+  }
+
+  .ds-banner .so-head-row.so-contact-row {
+    grid-template-columns: minmax(10rem, 1.1fr) minmax(12rem, 1.5fr) minmax(8rem, 0.9fr);
   }
 }
 

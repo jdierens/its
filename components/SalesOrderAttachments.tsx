@@ -10,6 +10,7 @@ import {
   soAttachmentKindLabel,
   type SoAttachmentKind,
 } from "@/lib/soAttachmentKinds";
+import { type OrderContact } from "@/lib/orderContact";
 import { deleteSoAttachment, type SoAttachmentView } from "@/lib/soAttachments";
 import { uploadSoAttachments } from "@/lib/soAttachmentUpload";
 
@@ -17,10 +18,12 @@ export function SalesOrderAttachments({
   orderId,
   attachments,
   canEdit,
+  onContact,
 }: {
   orderId: string | null;
   attachments: SoAttachmentView[];
   canEdit: boolean;
+  onContact?: (contact: OrderContact) => void;
 }) {
   const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -33,7 +36,7 @@ export function SalesOrderAttachments({
     setBusy(true);
     setMessage(null);
     try {
-      await uploadSoAttachments(orderId, kind, [...files]);
+      await uploadSoAttachments(orderId, kind, [...files], onContact);
       router.refresh();
     } catch (error) {
       setMessage(errorText(error));

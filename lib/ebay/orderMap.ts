@@ -782,7 +782,7 @@ export function draftOrderRow(input: {
     buyer: input.order.buyer,
     payment_requirement: "prepay",
     payment_status: input.order.paymentStatus,
-    payment_method: input.order.paymentStatus === "paid" ? "ebay" : null,
+    payment_method: "ebay",
     payment_date: input.order.paymentDate,
     ebay_transaction_fee: input.order.transactionFee,
     ebay_label_fee: input.order.labelFee === undefined ? null : input.order.labelFee,
@@ -1060,7 +1060,7 @@ export function pullDraftUnchanged(
   if (!sameAddress(stored.shipTo, order.shipTo)) return false;
   if (!sameBuyer(stored.buyer, order.buyer)) return false;
   if (stored.paymentStatus !== order.paymentStatus) return false;
-  const method = order.paymentStatus === "paid" ? "ebay" : null;
+  const method = "ebay";
   if ((stored.paymentMethod ?? null) !== method) return false;
   if ((stored.paymentDate ?? null) !== (order.paymentDate ?? null)) return false;
   if (!sameMoney(stored.transactionFee, order.transactionFee, 2)) return false;

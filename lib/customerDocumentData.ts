@@ -84,9 +84,9 @@ export async function loadCustomerDocument(
     carrier: text(foundMethod?.carrier),
     carrierAccount: order.carrierAccount,
   });
-  const email = customer.error ? "" : text(customer.data?.primary_email);
-  const phone = order.shipTo.phone.trim() || (customer.error ? "" : text(customer.data?.phone));
-  const shipTail = [phone, email].filter(Boolean);
+  const email = order.contactEmail.trim() || (customer.error ? "" : text(customer.data?.primary_email));
+  const phone = order.contactPhone.trim() || order.shipTo.phone.trim() || (customer.error ? "" : text(customer.data?.phone));
+  const shipTail = [order.contactName.trim(), phone, email].filter(Boolean);
   const document = buildCustomerDocument({
     kind,
     soNumber,

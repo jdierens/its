@@ -260,6 +260,8 @@ describe("sales order draft", () => {
     const lines = payload.lines as { line_kind: string; allocations: { item_id: string }[] }[];
     assert.equal(payload.channel, "direct");
     assert.equal(payload.payment_method, "wire_ach");
+    assert.equal(payload.contact_name, "");
+    assert.equal((lines[0] as { managed_fee: string }).managed_fee, "");
     assert.equal(payload.ebay_transaction_fee, "1.25");
     assert.equal(payload.payment_amount, "20.00");
     assert.equal(lines[0].line_kind, "product");
@@ -482,6 +484,9 @@ function sampleDraft(): SoDraftInput {
     paymentRequirement: "terms",
     paymentMethod: "wire_ach",
     paymentDate: "2026-10-24",
+    contactName: "",
+    contactEmail: "",
+    contactPhone: "",
     paymentRef: "WIRE-1",
     paymentAmount: "20.00",
     ebayTransactionFee: "1.25",

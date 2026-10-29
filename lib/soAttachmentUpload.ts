@@ -1,4 +1,7 @@
 import { withDeadline } from "@/lib/deadline";
+import { contactFromPoText, contactHasAny, type OrderContact } from "@/lib/orderContact";
+import { pdfText } from "@/lib/pdfText";
+import { fillBlankOrderContact } from "@/lib/salesOrders";
 import {
   commitSoAttachmentUpload,
   discardSoAttachmentUpload,
@@ -34,8 +37,14 @@ async function putSignedUpload(signedUrl: string, file: Blob): Promise<void> {
 }
 
 /** Uploads each PDF straight to Storage, then records the row. Bytes stay off the server action. */
-export async function uploadSoAttachments(orderId: string, kind: string, files: File[]): Promise<void> {
+export async function uploadSoAttachments(
+  orderId: string,
+  kind: string,
+  files: File[],
+  onContact?: (contact: OrderContact) => void,
+): Promise<void> {
   for (const file of files) {
+    const found = kind === "customer_po" ? await contactFromCustomerPo(file) : null;
     const ticket = await withDeadline(
       reserveSoAttachmentUpload(orderId, { name: file.name, type: file.type, size: file.size, kind }),
       SAVE_MS,
@@ -59,5 +68,20 @@ export async function uploadSoAttachments(orderId: string, kind: string, files: 
       await discardSoAttachmentUpload(ticket.path).catch(() => undefined);
       throw error;
     }
+    if (found && contactHasAny(found)) {
+      try {
+        onContact?.(await fillBlankOrderContact(orderId, found));
+      } catch {
+        onContact?.(found);
+      }
+    }
+  }
+}
+
+async function contactFromCustomerPo(file: File): Promise<OrderContact | null> {
+  try {
+    return contactFromPoText(await pdfText(new Uint8Array(await file.arrayBuffer())));
+  } catch {
+    return null;
   }
 }
