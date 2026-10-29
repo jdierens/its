@@ -86,6 +86,14 @@ The sales-order form shows the fulfilled SKU on the mapped row and the planned S
 
 Apply `supabase/migrations/20261028073000_so_sku_replacement.sql` by hand after the stock-unit and kit migrations. Deploying does not run it.
 
+## Stage navigation
+
+The sales order, the pick sheet, and the pack sheet use the same control beside the order number. The filled stage is the page you are on. Previous and next go to the nearest other stage this order can open. Any reachable stage can be clicked. A stage that is not reachable yet is greyed and is not a link.
+
+A draft opens only the sales order. Approving the order opens picking. Packing stays off until the pick list is picked or short, or the order is already packing, packed, or further along. Those later pages can still be opened. Cancelling an order that already has a pick list leaves that sheet available to look at.
+
+Shipping is not in the control. Warehouse → Shipping is the list of packed orders, and there is no page for one order. `salesOrderShipHref` in `lib/salesOrderStages.ts` is the hook. When that function returns a path, Shipping shows in the control and stays off until the order is packed.
+
 ## Picking
 
 Warehouse → Picking is written up in [Picking](picking.md). Product and kit stock lines are the pick rows. Freight, fees, services, and service item 4343 are left off the page entirely. The item row is followed by the bin titles, then the bins. Picked lines up with pick qty. Pending lines up with the Pick button. Print ticket prints that sheet.

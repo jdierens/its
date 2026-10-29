@@ -33,6 +33,7 @@ import { alnumContains } from "@/lib/itemAlnum";
 import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
 import { itemIdsMatchingListQuery } from "@/lib/itemListSearch";
 import { rankSalesItemHits, salesItemSearchTokens } from "@/lib/salesItemSearch";
+import type { SalesOrderPickStatus } from "@/lib/salesOrderStages";
 import { getSupabase } from "@/lib/supabase";
 
 export type SalesCustomerHit = { id: string; name: string };
@@ -423,6 +424,27 @@ function salesOrderSelect(
 function missingColumn(error: { message?: string } | null, column: string): boolean {
   if (!error?.message) return false;
   return new RegExp(column, "i").test(error.message) && /schema cache|could not find|does not exist/i.test(error.message);
+}
+
+/** Latest pick list that was not cancelled. Null when picking has not started, or the table is not there yet. */
+export async function loadSalesOrderPickStatus(orderId: string): Promise<SalesOrderPickStatus> {
+  if (!UUID.test(orderId)) return null;
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("so_pick_lists")
+      .select("status")
+      .eq("sales_order_id", orderId)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error || !data?.length) return null;
+    const status = String(data[0].status);
+    if (status === "open" || status === "picked" || status === "short") return status;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function loadSalesOrder(id: string): Promise<SalesOrderView | null> {

@@ -10,4 +10,6 @@ Finish packing sets the order to packed and stores `packed_at`. Warehouse → Sh
 
 The fulfilled SKU is the one that was picked. A replacement shows that SKU, with the planned SKU under it.
 
+The header beside the sales order number is the same stage control as the sales order and the pick sheet. It goes back to those pages. Packing in that control stays off until the pick is finished.
+
 Apply `supabase/migrations/20261028233000_sales_order_packing.sql` by hand on project `fxsbpreasbdalwthyzvk` after `supabase/migrations/20261028222000_so_shipping_label.sql` and the picking migrations. Deploying does not run it.

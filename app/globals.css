@@ -6846,6 +6846,7 @@ input.num-input {
 
 .so-identity {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   margin: 0 0 0.85rem;
@@ -7641,6 +7642,136 @@ input.num-input {
   min-width: 8.25rem;
   max-width: 8.25rem;
   justify-content: center;
+}
+
+/*
+  Stage control beside the sales-order number. The filled segment is this page.
+  A later stage stays grey until the order can open it, and it is not a link.
+  The dark fill matches the list switch. On the zinc sales-order surface the
+  tokens flip with the dark theme.
+*/
+.so-stage-nav {
+  display: inline-flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 100%;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ds-input-border, var(--input-border));
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ds-card, var(--card));
+  color: var(--ds-ink, var(--ink));
+}
+
+.so-stage-nav ol {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.so-stage-nav li {
+  display: flex;
+  align-items: stretch;
+  margin: 0;
+  padding: 0;
+}
+
+.so-stage-nav > * + *,
+.so-stage-nav li + li {
+  border-left: 1px solid var(--ds-input-border, var(--input-border));
+}
+
+.so-stage-nav a,
+.so-stage-nav button,
+.so-stage-nav .so-stage-current {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--ds-ink, var(--ink));
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.so-stage-nav .so-stage-jump {
+  width: 32px;
+  padding: 0;
+}
+
+.ds .so-stage-nav a,
+.ds.so-page .so-stage-nav a {
+  color: var(--ds-ink);
+}
+
+.so-stage-nav a:hover {
+  background: color-mix(in srgb, var(--ds-ink, #0f172a) 8%, transparent);
+  background-image: none;
+}
+
+.so-stage-nav .so-stage-current {
+  background: var(--ds-ink, #0f172a);
+  background-image: none;
+  color: var(--ds-canvas, #fff);
+  cursor: default;
+}
+
+.so-stage-nav button,
+.so-stage-nav button:disabled {
+  background: transparent;
+  background-image: none;
+  color: var(--ds-muted, #64748b);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.so-stage-nav a:focus-visible,
+.so-stage-nav button:focus-visible {
+  outline: 2px solid var(--ds-ink, var(--ink));
+  outline-offset: -2px;
+  position: relative;
+  z-index: 1;
+}
+
+.ds.so-page .so-stage-nav button,
+.ds.so-page .so-stage-nav a,
+.ds.so-page .so-stage-nav .so-stage-current {
+  border-radius: 0;
+  min-height: 0;
+}
+
+@media (max-width: 800px) {
+  .so-stage-nav {
+    height: 44px;
+  }
+
+  .so-page .so-stage-nav button,
+  .so-page .so-stage-nav a,
+  .pick-page .so-stage-nav button,
+  .pick-page .so-stage-nav a {
+    min-height: 0;
+    height: 100%;
+  }
 }
 
 .so-card {
@@ -9126,6 +9257,13 @@ button.so-new-order svg,
 .pick-head {
   justify-content: space-between;
   align-items: start;
+}
+
+.pick-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
 }
 
 .pick-progress {

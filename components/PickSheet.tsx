@@ -4,6 +4,7 @@ import { Plus, Printer, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, type ClipboardEvent, type FormEvent } from "react";
 import { usePageMeta } from "@/components/AppShell";
+import { SalesOrderStageNav } from "@/components/SalesOrderStageNav";
 import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import {
   finishPick,
@@ -301,7 +302,16 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     <main className="page pick-page">
       <header className="pick-head">
         <div>
-          <h1>{title}</h1>
+          <div className="pick-title">
+            <h1>{title}</h1>
+            <SalesOrderStageNav
+              orderId={sheet.orderId}
+              status={sheet.status}
+              pickStatus={sheet.pickStatus}
+              numbered={sheet.soNumber != null}
+              current="pick"
+            />
+          </div>
           <p>{sheet.customer || "No customer"}</p>
           {sheet.orderReference ? (
             <p className="muted">{SALES_ORDER_REFERENCE_LABEL} {sheet.orderReference}</p>
