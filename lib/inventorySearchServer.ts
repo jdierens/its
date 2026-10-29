@@ -5,9 +5,12 @@ import {
   inventoryHits,
   type InventoryContentSource,
   type InventoryHit,
+  type InventoryMatch,
 } from "@/lib/inventorySearch";
+import { alnumQueryAlternatives } from "@/lib/itemAlnum";
 import { searchReceivingScan } from "@/lib/receivingActions";
 import { scanSearchNote } from "@/lib/receivingScan";
+import type { LabelItem } from "@/lib/types";
 import { getSupabase } from "@/lib/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -90,23 +93,63 @@ async function openBinContents(supabase: SupabaseClient, itemIds: string[]): Pro
   });
 }
 
-/** Receiving Find, then on-hand quantity and bin locations for each hit. */
+/**
+ * Receiving Find, then on-hand quantity and bin locations for each hit.
+ * `|` is OR before that scan. `7060DX5|7060PX5` keeps either model.
+ */
 export async function searchInventory(raw: string): Promise<InventorySearchResult> {
   const query = raw.trim().slice(0, 500);
   if (!query) return { ok: true, query: "", note: null, hits: [], truncated: false };
+  const terms = alnumQueryAlternatives(query);
+  if (terms.length === 0) return { ok: true, query, note: null, hits: [], truncated: false };
   try {
-    const result = await searchReceivingScan(query);
-    const found = Boolean(result.exact || result.matches.length > 0);
-    const note = scanSearchNote({ token: result.token, tried: result.tried, found });
+    const scans = await Promise.all(terms.map((term) => searchReceivingScan(term)));
+    const found = scans.some((result) => result.exact || result.matches.length > 0);
+    const note =
+      scans
+        .map((result) =>
+          scanSearchNote({
+            token: result.token,
+            tried: result.tried,
+            found: Boolean(result.exact || result.matches.length > 0),
+          }),
+        )
+        .filter((line): line is string => Boolean(line))
+        .join(" ") || null;
     if (!found) return { ok: true, query, note, hits: [], truncated: false };
+    const matches = mergeScanMatches(scans);
     const supabase = await getSupabase();
     const contents = await openBinContents(
       supabase,
-      result.matches.map((match) => match.id),
+      matches.map((match) => match.id),
     );
-    const hits = inventoryHits(result.matches, contents);
-    return { ok: true, query, note, hits, truncated: result.truncated };
+    const hits = inventoryHits(matches, contents);
+    return {
+      ok: true,
+      query,
+      note,
+      hits,
+      truncated: scans.some((result) => result.truncated),
+    };
   } catch (cause) {
     return { ok: false, message: errorText(cause) };
   }
+}
+
+function mergeScanMatches(scans: readonly { matches: readonly LabelItem[] }[]): InventoryMatch[] {
+  const matches: InventoryMatch[] = [];
+  const seen = new Set<string>();
+  for (const scan of scans) {
+    for (const match of scan.matches) {
+      if (seen.has(match.id)) continue;
+      seen.add(match.id);
+      matches.push({
+        id: match.id,
+        sku: match.sku,
+        name: match.name,
+        description: match.description,
+      });
+    }
+  }
+  return matches;
 }

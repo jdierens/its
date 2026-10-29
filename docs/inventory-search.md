@@ -6,7 +6,7 @@ The items list already has a search, and Advanced search filters by taxonomy. Th
 
 ## Search
 
-The field uses receiving Find (`searchReceivingScan`). A scan is split on spaces. The longest token is tried first, and a tie prefers the token that has both letters and digits. That token uses the items-page search: SKU, name, description, model, part number, OEM name, OEM part number, product URL, attribute values, manufacturer, manufacturer alias, and eBay item id, including the punctuation-insensitive match already in the database. There is no second matcher.
+The field uses receiving Find (`searchReceivingScan`). A `|` is OR, applied before the scan is split on spaces. `7060DX5|7060PX5` and `7060DX5 | 7060PX5` match either term, so a DCS-7060DX5 and a DCS-7060PX5 both stay in the list. Empty segments from a leading, trailing, or doubled pipe are ignored. Each alternative is still one scan: spaces split that alternative, the longest token is tried first, and a tie prefers the token that has both letters and digits. Letters and digits are kept and the same minimum length applies inside each term. That token uses the items-page search: SKU, name, description, model, part number, OEM name, OEM part number, product URL, attribute values, manufacturer, manufacturer alias, and eBay item id, including the punctuation-insensitive match already in the database. There is no second matcher.
 
 Results stay a list. An exact SKU is ranked first and is not hidden. A match with no open quantity stays in the list so the SKU can still be found. On hand is 0 and Bins reads `no bins`. Enter runs the search. The SKU opens the item. Arrow keys move the highlight. A `q` parameter fills the field, for example `/warehouse/inventory?q=106683`.
 

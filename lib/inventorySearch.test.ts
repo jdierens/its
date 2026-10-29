@@ -75,6 +75,7 @@ test("inventory search is a warehouse page and reuses receiving Find", () => {
   );
   const source = readFileSync(new URL("./inventorySearchServer.ts", import.meta.url), "utf8");
   assert.match(source, /searchReceivingScan/);
+  assert.match(source, /alnumQueryAlternatives/);
   assert.doesNotMatch(source, /\.ilike\(/);
   assert.doesNotMatch(source, /rpc\(/);
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");

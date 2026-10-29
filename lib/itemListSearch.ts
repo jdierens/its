@@ -3,7 +3,7 @@ import { itemIdsMatchingEbayItemId } from "@/lib/ebay/listings";
 import { errorText } from "@/lib/errors";
 import { ITEM_ALNUM_COLUMNS } from "@/lib/itemAlnum";
 import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
-import { itemListQueryToken } from "@/lib/itemListQuery";
+import { itemListQueryTokens } from "@/lib/itemListQuery";
 
 /** Columns the items list matches with a case-insensitive contains search. */
 export const ITEM_LIST_TEXT_COLUMNS = ITEM_ALNUM_COLUMNS;
@@ -22,7 +22,8 @@ export function itemListLikePattern(raw: string): string {
 }
 
 /**
- * Item ids for one items-page query token.
+ * Item ids for an items-page query.
+ * `|` is OR: each alternative keeps the longest-word token, and a row matches any of them.
  * Null means the query has no token, so the list is not filtered.
  * An empty array means nothing matched.
  */
@@ -31,8 +32,23 @@ export async function itemIdsMatchingListQuery(
   q: string,
   options?: { taxonomyId?: string | null; perSourceLimit?: number },
 ): Promise<string[] | null> {
-  const searchText = itemListQueryToken(q);
-  if (!searchText) return null;
+  const tokens = itemListQueryTokens(q);
+  if (tokens.length === 0) return null;
+  const lists = await Promise.all(tokens.map((token) => itemIdsMatchingListToken(supabase, token, options)));
+  if (tokens.length === 1) return lists[0] ?? [];
+  const matched = new Set<string>();
+  for (const list of lists) {
+    for (const id of list ?? []) matched.add(id);
+  }
+  return [...matched];
+}
+
+/** Item ids for one items-page query token. */
+async function itemIdsMatchingListToken(
+  supabase: SupabaseClient,
+  searchText: string,
+  options?: { taxonomyId?: string | null; perSourceLimit?: number },
+): Promise<string[]> {
   const pattern = itemListLikePattern(searchText);
   const taxonomyId = options?.taxonomyId?.trim() || null;
   const limit = options?.perSourceLimit;
