@@ -66,6 +66,20 @@ The text the operator typed to find the item is stored on `stock_events.search_q
 
 Country of origin and date code are not their own columns yet. A later migration can add nullable `country_of_origin` and `date_code` on `stock_events` and fill them on insert from the tokens that were not the search hit: a two-letter token as the country, and a four-digit token as the YYWW date code, only when that reading is unambiguous. `scan_raw` stays, so older lines can be read back without rewriting the ledger. Those values belong on the receipt, not on the item, because the same part ships under many date codes.
 
+## Importing a list
+
+Download template on this page saves `receiving-template.xlsx`. Download CSV saves the same columns as `receiving-template.csv`. The header row is the ITS field names. One sample row follows it. The workbook also has an Instructions sheet. Open either file in Google Sheets.
+
+Fill one row per receipt. `qty` and `bin` are required. The bin is a code that already exists (`10059-C`). Import does not create bins. `sku` is an exact item SKU. Leave SKU blank and fill `search` to store a pending line that does not move stock. A row with no `purchase_order` is consigned and needs `vendor`, the vendor's display name. A purchase order number such as `PO6304` supplies the vendor and is not consigned. Blank vendor, purchase order, project, receiving date, incoming bin, originating system, and system qty use the receipt header on the page.
+
+`cleaned` is for a CPU and `wiped` is for an SSD or HDD. Blank, `no`, or `yes`. Blank is no, which is the unchecked box. Other items ignore the flag. `serial` is optional. Several serials can share one cell, separated by a semicolon, a pipe, or a new line, at most one per piece. `country_of_origin` is a 2- or 3-letter code stored on those stock units. With no serial, one stock unit is recorded with that country. Fewer serials than the quantity leaves the rest as quantity only.
+
+Choose the filled file, or paste rows. Headers that match the template, or the receipt export (`Item Qty`, `Putaway`, `PO`, `COO`, and the rest), are mapped automatically. Anything else can be remapped before continuing. The preview lists each row as OK or Error. Nothing is written while a row has an error. Import posts every OK row through `receive_into_bin`, the same path as Save receipt, in one transaction. A failure while posting rolls the batch back.
+
+Data management links here. The import logic is only on this page.
+
+Apply `supabase/migrations/20261029040000_receiving_import.sql` by hand after `supabase/migrations/20261027233000_consigned_receive.sql`. It is additive. It adds `import_receiving_rows` and does not change `receive_into_bin`. Row level security is unchanged. The function is granted to `service_role` only. It has not been applied. Until it is applied, the preview says so and nothing is posted.
+
 ## Migrations
 
 Apply `supabase/migrations/20261023055637_receiving_form.sql`, then `supabase/migrations/20261023061105_receive_request_id.sql`. The first one adds the receipt columns and the ten-argument `receive_into_bin`. It also leaves the eight-argument function in place: that signature stores today's date in America/Los_Angeles and a blank originating quantity, then calls the ten-argument function. The live site still uses the eight-argument signature, so dropping it before this branch is merged would stop receiving. A later migration can drop that wrapper after the new form is the only caller. The second migration stores the client request id on the new line. Receipt rows cannot be updated, so the id is written on the insert.
@@ -79,3 +93,5 @@ Apply `supabase/migrations/20261026021000_receipt_pending_item.sql` by hand afte
 Apply `supabase/migrations/20261026201500_receipt_putaway_bin.sql` by hand after that migration before a posted line can change its putaway bin. It is additive. It replaces the fifteen-argument `edit_receipt` so a putaway change moves that quantity from the old bin to the new one. The fourteen-argument edit function stays and still keeps the stored bin. Row level security is unchanged. The function is granted to `service_role` only. It has not been applied. Until it is applied, a posted putaway change is refused.
 
 Apply `supabase/migrations/20261027230000_stock_units.sql`, then `supabase/migrations/20261027233000_consigned_receive.sql`, by hand on project `fxsbpreasbdalwthyzvk` before receiving will post. The second one requires a vendor on every receipt that has no purchase order and stores that receipt as consigned. Until it is applied, the receiving screen refuses the save instead of posting a receipt with no vendor.
+
+Apply `supabase/migrations/20261029040000_receiving_import.sql` by hand after the consigned receive migration before a filled sheet can be imported. It is additive and has not been applied.

@@ -59,6 +59,15 @@ export function DataHome() {
             </div>
           </section>
         ))}
+        <section className="card data-card">
+          <h2>Receiving</h2>
+          <p>Download a receiving template or import a filled sheet. Rows post on the receiving page, through the same receive path as a line saved there.</p>
+          <div className="actions">
+            <Link className="button" href="/warehouse/receiving#receive-import">
+              Open receiving import
+            </Link>
+          </div>
+        </section>
       </div>
     </main>
   );

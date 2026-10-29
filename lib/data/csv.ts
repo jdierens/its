@@ -25,6 +25,7 @@ export type InstructionRow = {
   format: string;
   example: string;
   allowed: string;
+  description: string;
 };
 
 export function instructionRows(table: DataTable, extraAllowed: Record<string, string[]> = {}): InstructionRow[] {
@@ -34,6 +35,7 @@ export function instructionRows(table: DataTable, extraAllowed: Record<string, s
     format: column.format,
     example: column.example,
     allowed: [...column.allowed, ...(extraAllowed[column.key] ?? [])].join(", "),
+    description: column.description,
   }));
 }
 
