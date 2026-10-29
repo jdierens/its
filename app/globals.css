@@ -8905,6 +8905,49 @@ button.so-new-order svg,
   white-space: pre-line;
 }
 
+/* Same heading treatment as the items grid: the active column shows ↑ or ↓. */
+.inventory-results th button.inventory-col-sort,
+.inventory-sort-bar button.inventory-col-sort {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.inventory-results th button.inventory-col-sort {
+  width: 100%;
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+
+.inventory-results th.num.fit {
+  min-width: 6.5rem;
+}
+
+.inventory-results th.sku button.inventory-col-sort,
+.inventory-results th.num button.inventory-col-sort {
+  justify-content: flex-end;
+}
+
+.inventory-results th button.inventory-col-sort:hover,
+.inventory-sort-bar button.inventory-col-sort:hover {
+  color: var(--accent);
+}
+
+.inventory-sort-bar {
+  display: none;
+}
+
 .inventory-empty .num,
 .inventory-empty .locations {
   color: var(--muted);
@@ -8914,6 +8957,21 @@ button.so-new-order svg,
   .inventory-search-field input {
     min-height: 44px;
     font-size: 16px;
+  }
+
+  .inventory-sort-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.9rem;
+    margin-top: 0.75rem;
+  }
+
+  .inventory-sort-bar button.inventory-col-sort {
+    min-height: 44px;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
   }
 }
 

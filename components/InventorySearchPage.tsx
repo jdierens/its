@@ -3,11 +3,73 @@
 import { FastInput } from "@/components/FastField";
 import { usePageMeta } from "@/components/AppShell";
 import { errorText } from "@/lib/errors";
-import { INVENTORY_NO_BINS, type InventoryHit } from "@/lib/inventorySearch";
+import {
+  INVENTORY_NO_BINS,
+  sortInventoryHits,
+  toggleInventorySort,
+  type InventoryHit,
+  type InventorySort,
+  type InventorySortKey,
+} from "@/lib/inventorySearch";
 import { searchInventory } from "@/lib/inventorySearchServer";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+
+function sortDirection(sort: InventorySort | null, column: InventorySortKey): InventorySort["dir"] | null {
+  return sort?.key === column ? sort.dir : null;
+}
+
+function SortButton({
+  label,
+  column,
+  sort,
+  onSort,
+  labelled = false,
+}: {
+  label: string;
+  column: InventorySortKey;
+  sort: InventorySort | null;
+  onSort: (key: InventorySortKey) => void;
+  /** Mobile bar has no column header, so the button name includes the direction. */
+  labelled?: boolean;
+}) {
+  const direction = sortDirection(sort, column);
+  const directionName = direction === "asc" ? "ascending" : "descending";
+  return (
+    <button
+      type="button"
+      className="inventory-col-sort"
+      title={`Sort by ${label}`}
+      aria-label={labelled ? (direction ? `Sort by ${label}, ${directionName}` : `Sort by ${label}`) : undefined}
+      onClick={() => onSort(column)}
+    >
+      {label}
+      {direction ? <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span> : null}
+    </button>
+  );
+}
+
+function SortHeading({
+  label,
+  column,
+  className,
+  sort,
+  onSort,
+}: {
+  label: string;
+  column: InventorySortKey;
+  className: string;
+  sort: InventorySort | null;
+  onSort: (key: InventorySortKey) => void;
+}) {
+  const direction = sortDirection(sort, column);
+  return (
+    <th className={className} scope="col" aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"}>
+      <SortButton label={label} column={column} sort={sort} onSort={onSort} />
+    </th>
+  );
+}
 
 function ItemCell({ hit }: { hit: InventoryHit }) {
   const description = hit.description.trim();
@@ -29,6 +91,7 @@ export function InventorySearchPage() {
   const [identifier, setIdentifier] = useState(initial);
   const [edited, setEdited] = useState(Boolean(initial.trim()));
   const [hits, setHits] = useState<InventoryHit[]>([]);
+  const [sort, setSort] = useState<InventorySort | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [active, setActive] = useState(-1);
@@ -64,6 +127,8 @@ export function InventorySearchPage() {
       requestId.current += 1;
     };
   }, [edited, identifier]);
+
+  const rows = useMemo(() => sortInventoryHits(hits, sort), [hits, sort]);
 
   async function runSearch(raw: string) {
     const query = raw.trim();
@@ -104,18 +169,23 @@ export function InventorySearchPage() {
       void runSearch(typed.current);
       return;
     }
-    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && hits.length > 0 && settled === typed.current.trim()) {
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && rows.length > 0 && settled === typed.current.trim()) {
       event.preventDefault();
       setActive((current) => {
         const next = event.key === "ArrowDown" ? current + 1 : current - 1;
-        if (next < 0) return hits.length - 1;
-        if (next >= hits.length) return 0;
+        if (next < 0) return rows.length - 1;
+        if (next >= rows.length) return 0;
         return next;
       });
     }
   }
 
-  const listOpen = hits.length > 0;
+  function onColumnSort(key: InventorySortKey) {
+    setSort((current) => toggleInventorySort(current, key));
+    if (hits.length > 0) setActive(0);
+  }
+
+  const listOpen = rows.length > 0;
 
   return (
     <main className="page inventory-search-page">
@@ -141,7 +211,7 @@ export function InventorySearchPage() {
               aria-expanded={listOpen}
               aria-controls="inventory-results"
               aria-busy={searching}
-              aria-activedescendant={active >= 0 ? `inventory-hit-${hits[active]?.id}` : undefined}
+              aria-activedescendant={active >= 0 ? `inventory-hit-${rows[active]?.id}` : undefined}
               onDraft={(value) => {
                 typed.current = value;
               }}
@@ -171,18 +241,24 @@ export function InventorySearchPage() {
         ) : null}
         {listOpen ? (
           <>
+            <div className="inventory-sort-bar" role="group" aria-label="Sort matches">
+              <SortButton labelled label="SKU" column="sku" sort={sort} onSort={onColumnSort} />
+              <SortButton labelled label="Item" column="item" sort={sort} onSort={onColumnSort} />
+              <SortButton labelled label="On hand" column="qty" sort={sort} onSort={onColumnSort} />
+              <SortButton labelled label="Bins" column="bins" sort={sort} onSort={onColumnSort} />
+            </div>
             <div className="receive-table-scroll">
               <table className="receive-table inventory-results" id="inventory-results">
                 <thead>
                   <tr>
-                    <th className="fit sku">SKU</th>
-                    <th className="item">Item</th>
-                    <th className="num fit">On hand</th>
-                    <th className="locations">Bins</th>
+                    <SortHeading label="SKU" column="sku" className="fit sku" sort={sort} onSort={onColumnSort} />
+                    <SortHeading label="Item" column="item" className="item" sort={sort} onSort={onColumnSort} />
+                    <SortHeading label="On hand" column="qty" className="num fit" sort={sort} onSort={onColumnSort} />
+                    <SortHeading label="Bins" column="bins" className="locations" sort={sort} onSort={onColumnSort} />
                   </tr>
                 </thead>
                 <tbody>
-                  {hits.map((hit, index) => (
+                  {rows.map((hit, index) => (
                     <tr
                       key={hit.id}
                       id={`inventory-hit-${hit.id}`}
@@ -205,7 +281,7 @@ export function InventorySearchPage() {
               </table>
             </div>
             <ul className="receive-cards inventory-cards" aria-label="Inventory matches">
-              {hits.map((hit, index) => (
+              {rows.map((hit, index) => (
                 <li
                   key={hit.id}
                   className={hit.empty ? "receive-card-row inventory-empty" : "receive-card-row"}

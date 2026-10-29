@@ -10,6 +10,10 @@ The field uses receiving Find (`searchReceivingScan`). A `|` is OR, applied befo
 
 Results stay a list. An exact SKU is ranked first and is not hidden. A match with no open quantity stays in the list so the SKU can still be found. On hand is 0 and Bins reads `no bins`. Enter runs the search. The SKU opens the item. Arrow keys move the highlight. A `q` parameter fills the field, for example `/warehouse/inventory?q=106683`.
 
+Click a column heading to sort the rows already on the page. The first click sorts ascending. The next click on that heading sorts descending, and further clicks swap. The active heading shows ↑ or ↓ and sets `aria-sort`. The list stays in search order until a heading is clicked. A later search on this page keeps that column and direction. Equal values keep search order, so an exact SKU stays ahead of a tie. Below 800px the table is hidden and the same four headings sit above the cards.
+
+SKU sorts with numeric order (`20` before `100`). Item sorts by name, then description. A blank name stays blank. The em dash in an empty name cell is only for display. On hand sorts by the quantity. Bins sorts by the cell text after each line drops its `(xqty)` prefix, so `10002-C` comes before `20000-B` even when the first line shows a larger quantity. Those lines stay one bin per line, already in reference order: the first line is the lowest bin reference and later lines break a tie. An empty match sorts as the visible label `no bins`. The quantity on a bin line does not change the order. On hand is the quantity sort.
+
 ## On hand
 
 Quantity is the sum of `bin_contents.qty` on open bin cycles. A closed cycle is not counted. The bin's location is `bins.current_location_id`. Bins are one total per reference, in reference order, using the same label as a receiving Summary putaway. Several bins stay in one cell, one bin per line. A location is added the same way a receipt putaway shows it:
