@@ -7615,6 +7615,14 @@ input.num-input {
   display: none;
 }
 
+/* One width for every sales-order status. Sized for the longest label, Awaiting Payment. */
+.so-status {
+  width: 8.25rem;
+  min-width: 8.25rem;
+  max-width: 8.25rem;
+  justify-content: center;
+}
+
 .so-card {
   padding: 0.7rem 0;
   border-bottom: 1px solid var(--line);

@@ -73,7 +73,9 @@ export default async function SalesOrdersPage({
                     <td>{order.customerName}</td>
                     <td>{order.orderReference}</td>
                     <td>
-                      <Badge tone={order.status}>{salesOrderStatusLabel(order.status)}</Badge>
+                      <Badge className="so-status" tone={order.status}>
+                        {salesOrderStatusLabel(order.status)}
+                      </Badge>
                     </td>
                     <td>{order.orderDate ?? ""}</td>
                     <td>{order.shipDate ?? ""}</td>
@@ -93,7 +95,11 @@ export default async function SalesOrdersPage({
                   <dt>{SALES_ORDER_REFERENCE_LABEL}</dt>
                   <dd>{order.orderReference}</dd>
                   <dt>Status</dt>
-                  <dd>{salesOrderStatusLabel(order.status)}</dd>
+                  <dd>
+                    <Badge className="so-status" tone={order.status}>
+                      {salesOrderStatusLabel(order.status)}
+                    </Badge>
+                  </dd>
                   <dt>Order date</dt>
                   <dd>{order.orderDate ?? ""}</dd>
                   <dt>Ship date</dt>
