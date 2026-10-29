@@ -1,8 +1,10 @@
 import { labelQuantityCommit } from "@/lib/labelDesk";
 
 /**
- * DK-1202. Named like the item label's 29 × 90 mm: tape width, then feed length.
- * The page is landscape, so the 100 mm feed is the width and the 62 mm tape is the height.
+ * DK-1202 art. Named like the item label's 29 × 90 mm: tape width, then feed length.
+ * The art is 100 mm along the feed and 62 mm across the tape. The Brother dialog
+ * page is the other way around: 62 mm wide and 100 mm tall. Print rotates this
+ * art onto that page. See DK1202_PAGE_WIDTH_MM.
  */
 export const SERIAL_LABEL_SIZE = "62 × 100 mm";
 export const SERIAL_LABEL_WIDTH_MM = 100;

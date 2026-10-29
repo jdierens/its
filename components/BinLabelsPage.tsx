@@ -374,19 +374,19 @@ export function BinLabelsPage() {
         <div className="print-help">
           {previewType === "P" ? (
             <>
-              <p>Brother QL-820NWB, DK-1202 die-cut labels. In the print dialog use:</p>
+              <p>Brother QL-820NWB, DK-1202 die-cut labels. The dialog should already show:</p>
               <ul>
                 <li>Paper size: 62 × 100 mm</li>
-                <li>Orientation: Landscape</li>
                 <li>Scale: 100%</li>
                 <li>Margins: None</li>
                 <li>Headers and footers: off</li>
               </ul>
               <p>
-                Each page is 62 × 100 mm. The 62 mm side is the tape width across the print head, and the
-                100 mm side is the feed, so the page is landscape. Crate and box labels stay 29 × 90 mm.
-                Print one type at a time. A batch that mixes pallets with crates or boxes uses a different
-                page size per label; if the dialog offers only one paper size, split the batch.
+                The Brother paper is 62 mm across the tape and 100 mm along the feed. The label art is
+                turned onto that page, so leave orientation alone. Landscape clips the right side. Crate
+                and box labels stay 29 × 90 mm, landscape. Print one type at a time. A batch that mixes
+                pallets with crates or boxes uses a different page size per label; if the dialog offers
+                only one paper size, split the batch.
               </p>
             </>
           ) : (

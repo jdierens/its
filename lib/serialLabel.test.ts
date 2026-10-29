@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mmToCssPx } from "./binLabelLayout.ts";
+import { DK1202_PAGE_HEIGHT_MM, DK1202_PAGE_WIDTH_MM, mmToCssPx } from "./binLabelLayout.ts";
 import {
   SERIAL_BARCODE_HEIGHT_MM,
   SERIAL_BARCODE_MAX_MM,
   SERIAL_DESCRIPTION_MAX,
   SERIAL_HEAD_GAP_MM,
   SERIAL_HUMAN_FONT_MM,
+  SERIAL_LABEL_HEIGHT_MM,
   SERIAL_LABEL_PAD_X_MM,
   SERIAL_LABEL_SHOW_QTY,
   SERIAL_LABEL_SIZE,
@@ -37,6 +38,10 @@ test("serial description stays on two lines and ends with an ellipsis", () => {
 
 test("serial label size is named like the 29 × 90 mm item label", () => {
   assert.equal(SERIAL_LABEL_SIZE, "62 × 100 mm");
+  assert.equal(SERIAL_LABEL_WIDTH_MM, 100);
+  assert.equal(SERIAL_LABEL_HEIGHT_MM, 62);
+  assert.equal(DK1202_PAGE_WIDTH_MM, 62);
+  assert.equal(DK1202_PAGE_HEIGHT_MM, 100);
 });
 
 test("107132 and SRM7C-1 keep the description beside the SKU", () => {

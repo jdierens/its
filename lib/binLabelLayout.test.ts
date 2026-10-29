@@ -10,6 +10,8 @@ import {
   BIN_LABEL_WIDTH_MM,
   PALLET_BARCODE_HEIGHT_MM,
   PALLET_BARCODE_MAX_MM,
+  DK1202_PAGE_HEIGHT_MM,
+  DK1202_PAGE_WIDTH_MM,
   PALLET_LABEL_HEIGHT_MM,
   PALLET_LABEL_SIZE,
   PALLET_LABEL_WIDTH_MM,
@@ -60,7 +62,7 @@ test("crate and box stay on the 29 × 90 mm page", () => {
   assert.equal(binLabelPage("C").heightMm, 29);
 });
 
-test("a pallet label uses the 62 × 100 mm serial page and stacks DDS above the reference", () => {
+test("a pallet label uses the 62 × 100 mm serial art and stacks DDS above the reference", () => {
   assert.equal(PALLET_LABEL_SIZE, "62 × 100 mm");
   assert.equal(PALLET_LABEL_WIDTH_MM, 100);
   assert.equal(PALLET_LABEL_HEIGHT_MM, 62);
@@ -70,6 +72,8 @@ test("a pallet label uses the 62 × 100 mm serial page and stacks DDS above the 
   assert.equal(page.stock, "DK-1202");
   assert.equal(page.widthMm, 100);
   assert.equal(page.heightMm, 62);
+  assert.equal(DK1202_PAGE_WIDTH_MM, 62);
+  assert.equal(DK1202_PAGE_HEIGHT_MM, 100);
   assert.equal(PALLET_BARCODE_HEIGHT_MM, 16);
   assert.equal(PALLET_BARCODE_MAX_MM, 90);
   assert.ok(PALLET_BARCODE_MAX_MM <= palletReferenceWidthMm());
@@ -108,7 +112,7 @@ test("a pallet QR stays on the 62 × 100 mm label and leaves room for the refere
 test("print page size follows the bin type, and a mixed job names only the pages that differ", () => {
   const pallet = binLabelSheet(["P", "P"]);
   assert.equal(pallet.mode, "pallet");
-  assert.deepEqual(binLabelAtPageMm(pallet), { widthMm: 100, heightMm: 62 });
+  assert.deepEqual(binLabelAtPageMm(pallet), { widthMm: 62, heightMm: 100 });
   assert.equal(binLabelNamedPage("P", pallet), null);
 
   const crate = binLabelSheet(["C", "B"]);
@@ -120,7 +124,7 @@ test("print page size follows the bin type, and a mixed job names only the pages
   const palletFirst = binLabelSheet(["P", "C"]);
   assert.equal(palletFirst.mode, "mixed");
   assert.equal(palletFirst.defaultPallet, true);
-  assert.deepEqual(binLabelAtPageMm(palletFirst), { widthMm: 100, heightMm: 62 });
+  assert.deepEqual(binLabelAtPageMm(palletFirst), { widthMm: 62, heightMm: 100 });
   assert.equal(binLabelNamedPage("P", palletFirst), null);
   assert.equal(binLabelNamedPage("C", palletFirst), "bin-standard");
 
@@ -137,7 +141,7 @@ test("print page size follows the bin type, and a mixed job names only the pages
 test("a bin on screen keeps its page while idle, and an item print uses the short page", () => {
   const pallet = previewBinLabelSheet("P", false);
   assert.equal(pallet.mode, "pallet");
-  assert.deepEqual(binLabelAtPageMm(pallet), { widthMm: 100, heightMm: 62 });
+  assert.deepEqual(binLabelAtPageMm(pallet), { widthMm: 62, heightMm: 100 });
 
   const crate = previewBinLabelSheet("C", false);
   assert.equal(crate.mode, "standard");
