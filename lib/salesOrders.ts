@@ -83,9 +83,9 @@ export type SalesAllocationView = {
   name: string;
   /** items.description. Printed documents use this, not the item name. */
   description: string;
-  /** items.condition. Printed on the order confirmation when set. */
+  /** items.condition. Printed on the invoice and order confirmation when set. */
   condition?: string;
-  /** items.condition_note. Printed on the order confirmation when set. */
+  /** items.condition_note. Printed on the invoice and order confirmation when set. */
   conditionNote?: string;
   usHts: string;
   eccn: string;
