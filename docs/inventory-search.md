@@ -12,9 +12,12 @@ Results stay a list. An exact SKU is ranked first and is not hidden. A match wit
 
 ## On hand
 
-Quantity is the sum of `bin_contents.qty` on open bin cycles. A closed cycle is not counted. The bin's location is `bins.current_location_id`. Bins are one total per reference, in reference order, in the same shape as a receiving Summary putaway cell. A location is added the same way a receipt putaway shows it:
+Quantity is the sum of `bin_contents.qty` on open bin cycles. A closed cycle is not counted. The bin's location is `bins.current_location_id`. Bins are one total per reference, in reference order, using the same label as a receiving Summary putaway. Several bins stay in one cell, one bin per line. A location is added the same way a receipt putaway shows it:
 
-`(x33)20000-B · HWS.00.00.00 | (x51)20007-B · HWS.00.00.00`
+```
+(x33)20000-B · HWS.00.00.00
+(x51)20007-B · HWS.00.00.00
+```
 
 A bin with no location is `(x14)10002-C`. Several receipts of the same SKU in one bin add together.
 

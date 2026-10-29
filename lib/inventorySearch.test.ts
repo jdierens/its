@@ -16,7 +16,7 @@ test("bin totals use the receiving summary shape and include a location", () => 
       { reference: "10037", qty: 8, locationCode: null },
       { reference: "10002-C", qty: 14, locationCode: null },
     ]),
-    "(x14)10002-C | (x8)10037",
+    "(x14)10002-C\n(x8)10037",
   );
   const onHand = inventoryOnHand([
     { reference: "20009-B", qty: 51, locationCode: "HWS.00.00.00" },
@@ -28,7 +28,7 @@ test("bin totals use the receiving summary shape and include a location", () => 
   assert.equal(onHand.qty, 168);
   assert.equal(
     onHand.locations,
-    "(x33)20000-B · HWS.00.00.00 | (x51)20007-B · HWS.00.00.00 | (x33)20008-B · HWS.00.00.00 | (x51)20009-B · HWS.00.00.00",
+    "(x33)20000-B · HWS.00.00.00\n(x51)20007-B · HWS.00.00.00\n(x33)20008-B · HWS.00.00.00\n(x51)20009-B · HWS.00.00.00",
   );
 });
 
@@ -77,4 +77,6 @@ test("inventory search is a warehouse page and reuses receiving Find", () => {
   assert.match(source, /searchReceivingScan/);
   assert.doesNotMatch(source, /\.ilike\(/);
   assert.doesNotMatch(source, /rpc\(/);
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.receive-table\.inventory-results td\.locations,\s*\.inventory-cards dd\.locations \{\s*white-space: pre-line;/);
 });

@@ -36,7 +36,7 @@ export type InventoryHit = {
   name: string;
   description: string;
   qty: number;
-  /** `(x14)10002-C · HWS.00.00.00 | (x8)10037`. Empty when nothing is on hand. */
+  /** One bin per line, for example `(x14)10002-C · HWS.00.00.00` then `(x8)10037`. Empty when nothing is on hand. */
   locations: string;
   empty: boolean;
 };
@@ -62,11 +62,11 @@ export function inventoryBinTotals(rows: readonly InventoryBinRow[]): InventoryB
   );
 }
 
-/** Receiving Summary putaway style, with the bin's location when it has one. */
+/** Receiving Summary putaway style, one bin per line, with the bin's location when it has one. */
 export function formatInventoryBins(bins: readonly InventoryBinQty[]): string {
   return inventoryBinTotals(bins)
     .map((bin) => `(x${bin.qty})${putawayLabel(bin.reference, bin.locationCode)}`)
-    .join(" | ");
+    .join("\n");
 }
 
 export function inventoryOnHand(rows: readonly InventoryBinRow[]): { qty: number; locations: string } {
