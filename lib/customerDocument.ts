@@ -111,11 +111,17 @@ export type CustomerDocumentLineInput = {
   extPrice: string;
   htsCode: string;
   eccn: string;
+  /** Sales-order line condition. Used only when the mapped SKU has none. */
+  condition?: string;
   lineNote?: string;
   allocations: {
     sku: string;
     name: string;
     description?: string;
+    /** items.condition. New or Used. */
+    condition?: string;
+    /** items.condition_note. */
+    conditionNote?: string;
     qty: string;
     unitPrice: string;
     extPrice: string;
@@ -137,6 +143,25 @@ export type CustomerDocumentLine = {
   extPrice: string;
 };
 
+/**
+ * Invoice and confirmation description, in order. Blank parts are left off.
+ * Customer PO text is never included.
+ */
+export function documentLineDescription(input: {
+  sku: string;
+  itemDescription: string;
+  condition: string;
+  conditionNote: string;
+}): { description: string; extra: string[] } {
+  const description = input.itemDescription.trim() || input.sku.trim() || "Item";
+  const condition = input.condition.trim();
+  const conditionNote = input.conditionNote.trim();
+  return {
+    description,
+    extra: [condition ? `Condition: ${condition}` : "", conditionNote ? `Condition note: ${conditionNote}` : ""].filter(Boolean),
+  };
+}
+
 /** One printed row per mapped SKU. The same SKU stays on separate rows when the prices differ. */
 export function customerDocumentLines(lines: CustomerDocumentLineInput[], currency: string): CustomerDocumentLine[] {
   const printed: CustomerDocumentLine[] = [];
@@ -147,6 +172,8 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
         ? mapped.map((row) => ({
             sku: row.sku,
             description: row.description ?? "",
+            condition: row.condition ?? "",
+            conditionNote: row.conditionNote ?? "",
             htsCode: row.htsCode ?? "",
             eccn: row.eccn ?? "",
             qty: row.qty,
@@ -158,6 +185,8 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
             {
               sku: line.customerPartNumber,
               description: "",
+              condition: "",
+              conditionNote: "",
               htsCode: "",
               eccn: "",
               qty: line.qty,
@@ -168,18 +197,17 @@ export function customerDocumentLines(lines: CustomerDocumentLineInput[], curren
           ];
     for (const source of sources) {
       if (!(Number(source.qty) > 0)) continue;
-      const written = line.customerDescription
-        .split(/\r?\n/)
-        .map((part) => part.trim())
-        .filter(Boolean);
-      const itemDescription = source.description.trim();
-      const description = itemDescription || written[0] || source.sku.trim() || "Item";
-      const extra = itemDescription ? written : written.slice(1);
+      const copy = documentLineDescription({
+        sku: source.sku,
+        itemDescription: source.description.trim(),
+        condition: source.condition.trim() || (line.condition ?? "").trim(),
+        conditionNote: source.conditionNote,
+      });
       const ext = source.extPrice.trim() || lineExtension(source.qty, source.unitPrice) || "";
       printed.push({
         sku: source.sku.trim(),
-        description,
-        extra,
+        description: copy.description,
+        extra: copy.extra,
         compliance: resolvedCompliance(line, source),
         lineNote: (line.lineNote ?? "").trim(),
         serials: serialLines(source.serials),

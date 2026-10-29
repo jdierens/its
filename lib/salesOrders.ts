@@ -83,6 +83,10 @@ export type SalesAllocationView = {
   name: string;
   /** items.description. Printed documents use this, not the item name. */
   description: string;
+  /** items.condition. Printed on the invoice and order confirmation when set. */
+  condition?: string;
+  /** items.condition_note. Printed on the invoice and order confirmation when set. */
+  conditionNote?: string;
   usHts: string;
   eccn: string;
   qty: string;
@@ -404,7 +408,7 @@ function salesOrderSelect(
   const contact = withContact ? ", contact_name, contact_email, contact_phone" : "";
   const note = withLineNote ? ", line_note" : "";
   const managed = withManagedFee ? ", managed_fee" : "";
-  const item = "sku, name, description, us_hts, eccn";
+  const item = "sku, name, description, condition, condition_note, us_hts, eccn";
   // actual_item_id is a second FK to items. A bare items(...) embed is ambiguous.
   const plannedItem = `items!so_line_allocations_item_id_fkey(${item})`;
   const replacement = withReplacement
@@ -506,6 +510,8 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
             sku: String(item?.sku ?? ""),
             name: String(item?.name ?? ""),
             description: String(item?.description ?? ""),
+            condition: text(item?.condition),
+            conditionNote: text(item?.condition_note),
             usHts: text(item?.us_hts),
             eccn: text(item?.eccn),
             qty,

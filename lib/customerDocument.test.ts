@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildCustomerDocument,
+  documentLineDescription,
   CUSTOMER_DOCUMENT_LOGO,
   customerDocumentBarcode,
   customerDocumentLines,
@@ -39,6 +40,11 @@ describe("customer document", () => {
       confirmation.lines.map((line) => line.sku),
       invoice.lines.map((line) => line.sku),
     );
+    assert.equal(invoice.lines[0].description, "106699");
+    assert.equal(confirmation.lines[0].description, invoice.lines[0].description);
+    assert.deepEqual(invoice.lines[0].extra, []);
+    assert.deepEqual(confirmation.lines[0].extra, invoice.lines[0].extra);
+    assert.equal(invoice.lines[0].description.includes("Samsung"), false);
   });
 
   it("keeps the same SKU on separate rows at different prices", () => {
@@ -72,8 +78,134 @@ describe("customer document", () => {
     assert.equal(lines[1].sku, "4343");
     assert.equal(lines[0].unitPrice, "$74.88");
     assert.equal(lines[1].unitPrice, "$501.60");
-    assert.deepEqual(lines[0].extra, ["EXPRESS 12:00"]);
-    assert.equal(lines[1].description, "Shipping & Handling Charge");
+    assert.equal(lines[0].description, "4343");
+    assert.equal(lines[1].description, "4343");
+    assert.deepEqual(lines[0].extra, []);
+    assert.deepEqual(lines[1].extra, []);
+    assert.equal([lines[0].description, ...lines[0].extra, lines[1].description, ...lines[1].extra].join("\n").includes("Shipping"), false);
+  });
+
+  it("does not copy customer PO wording onto an invoice or a confirmation", () => {
+    const source = [
+      {
+        customerPartNumber: "CUST-9",
+        customerDescription: "Samsung PM9A3\ncondition per PO: Great",
+        qty: "8",
+        unitPrice: "1150",
+        extPrice: "9200",
+        htsCode: "",
+        eccn: "",
+        condition: "New",
+        lineNote: "Ship in original tray",
+        allocations: [
+          {
+            sku: "106699",
+            name: "Samsung PM9A3 7.68TB",
+            description: "7.68TB NVMe U.2 mixed use",
+            condition: "Used",
+            conditionNote: "pulled from a working server",
+            qty: "8",
+            unitPrice: "1150",
+            extPrice: "9200",
+            htsCode: "8523.51.0000",
+            eccn: "5A992.c",
+          },
+        ],
+      },
+    ];
+    const invoiceDocument = buildCustomerDocument({ ...sample("invoice"), lines: source });
+    const confirmationDocument = buildCustomerDocument({ ...sample("confirmation"), lines: source });
+    assert.ok(invoiceDocument && confirmationDocument);
+    assert.equal(invoiceDocument.title, "INVOICE");
+    assert.equal(confirmationDocument.title, "ORDER CONFIRMATION");
+    assert.deepEqual(
+      invoiceDocument.lines.map((line) => ({ description: line.description, extra: line.extra, compliance: line.compliance })),
+      confirmationDocument.lines.map((line) => ({ description: line.description, extra: line.extra, compliance: line.compliance })),
+    );
+    const lines = invoiceDocument.lines;
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].sku, "106699");
+    assert.equal(lines[0].description, "7.68TB NVMe U.2 mixed use");
+    assert.deepEqual(lines[0].extra, ["Condition: Used", "Condition note: pulled from a working server"]);
+    assert.equal(lines[0].compliance, "HTS: 8523.51.0000   ECCN: 5A992.c");
+    assert.equal(lines[0].lineNote, "Ship in original tray");
+    const printed = [lines[0].description, ...lines[0].extra, lines[0].compliance, lines[0].lineNote].join("\n");
+    assert.equal(printed.includes("condition per PO"), false);
+    assert.equal(printed.includes("Great"), false);
+    assert.equal(printed.includes("Samsung"), false);
+    assert.equal(printed.includes("CUST-9"), false);
+
+    const blanks = customerDocumentLines(
+      [
+        {
+          customerPartNumber: "",
+          customerDescription: "condition per PO: Great",
+          qty: "1",
+          unitPrice: "10",
+          extPrice: "10",
+          htsCode: "",
+          eccn: "5A992.c",
+          allocations: [
+            {
+              sku: "106699",
+              name: "Samsung",
+              description: "",
+              condition: "   ",
+              conditionNote: "",
+              qty: "1",
+              unitPrice: "10",
+              extPrice: "10",
+              htsCode: "",
+              eccn: "",
+            },
+          ],
+        },
+      ],
+      "USD",
+    );
+    assert.equal(blanks[0].description, "106699");
+    assert.deepEqual(blanks[0].extra, []);
+    assert.equal(blanks[0].compliance, "ECCN: 5A992.c");
+    assert.equal([blanks[0].description, ...blanks[0].extra, blanks[0].compliance].join("\n").includes("Great"), false);
+
+    const fromLine = customerDocumentLines(
+      [
+        {
+          customerPartNumber: "CUST-9",
+          customerDescription: "condition per PO: Great",
+          qty: "1",
+          unitPrice: "10",
+          extPrice: "10",
+          htsCode: "8471.70.0000",
+          eccn: "",
+          condition: "New",
+          allocations: [
+            {
+              sku: "106700",
+              name: "Drive",
+              description: "960GB SATA",
+              qty: "1",
+              unitPrice: "10",
+              extPrice: "10",
+            },
+          ],
+        },
+      ],
+      "USD",
+    );
+    assert.equal(fromLine[0].description, "960GB SATA");
+    assert.deepEqual(fromLine[0].extra, ["Condition: New"]);
+    assert.equal(fromLine[0].compliance, "HTS: 8471.70.0000");
+    assert.equal(fromLine[0].extra.some((line) => line.includes("per PO")), false);
+
+    const noteOnly = documentLineDescription({
+      sku: "106699",
+      itemDescription: "7.68TB NVMe",
+      condition: "",
+      conditionNote: "Factory Sealed",
+    });
+    assert.equal(noteOnly.description, "7.68TB NVMe");
+    assert.deepEqual(noteOnly.extra, ["Condition note: Factory Sealed"]);
   });
 
   it("prints the item description, not the item name, when the customer left no description", () => {
@@ -141,6 +273,7 @@ describe("customer document", () => {
       "USD",
     );
     assert.equal(lines[0].description, "7.68TB NVMe");
+    assert.deepEqual(lines[0].extra, []);
     assert.equal(lines[0].compliance, "HTS: 8523.51.0000   ECCN: 5A992.c");
     assert.equal(lines[0].lineNote, "Ship in original tray");
 
