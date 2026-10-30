@@ -38,7 +38,15 @@ import { getSupabase } from "@/lib/supabase";
 
 export type SalesCustomerHit = { id: string; name: string };
 
-export type SalesSkuHit = { id: string; sku: string; name: string; partNumber: string; usHts: string; eccn: string };
+export type SalesSkuHit = {
+  id: string;
+  sku: string;
+  name: string;
+  partNumber: string;
+  usHts: string;
+  eccn: string;
+  itemType?: string;
+};
 
 export type SalesLookups = {
   terms: { code: string; label: string }[];
@@ -90,6 +98,8 @@ export type SalesAllocationView = {
   conditionNote?: string;
   usHts: string;
   eccn: string;
+  /** Product, Kit/Package, Service, or Non-inventory. Blank until the item is loaded. */
+  itemType?: string;
   qty: string;
   unitPrice: string;
   extPrice: string;
@@ -264,7 +274,7 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
   const supabase = await getSupabase();
   const { data, error } = await supabase
     .from("items")
-    .select("id, sku, name, part_number, oem_part_number, us_hts, eccn")
+    .select("id, sku, name, part_number, oem_part_number, us_hts, eccn, item_type")
     .or(
       [
         `part_number.ilike.${pattern}`,
@@ -289,7 +299,7 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
   const missing = alnumIds.filter((id) => !seen.has(id));
   const extraRows: typeof ilikeRows = [];
   if (missing.length > 0) {
-    const extra = await supabase.from("items").select("id, sku, name, part_number, oem_part_number, us_hts, eccn").in("id", missing);
+    const extra = await supabase.from("items").select("id, sku, name, part_number, oem_part_number, us_hts, eccn, item_type").in("id", missing);
     if (extra.error) throw new Error(salesError(extra.error));
     extraRows.push(...(extra.data ?? []));
   }
@@ -304,6 +314,7 @@ export async function suggestSalesSkus(part: string): Promise<SalesSkuHit[]> {
       partNumber: String(row.part_number ?? row.oem_part_number ?? ""),
       usHts: text(row.us_hts),
       eccn: text(row.eccn),
+      itemType: text(row.item_type),
     }));
 }
 
@@ -326,7 +337,7 @@ export async function searchSalesItems(query: string): Promise<SalesItemSearch> 
     const idLists = await Promise.all(tokens.map((token) => itemIdsMatchingListQuery(supabase, token, { perSourceLimit: 40 })));
     const ids = [...new Set(idLists.flatMap((list) => list ?? []))].slice(0, 120);
     if (ids.length === 0) return { ok: true, hits: [] };
-    const { data, error } = await supabase.from("items").select("id, sku, name, part_number, oem_part_number, us_hts, eccn").in("id", ids);
+    const { data, error } = await supabase.from("items").select("id, sku, name, part_number, oem_part_number, us_hts, eccn, item_type").in("id", ids);
     if (error) throw new Error(salesError(error));
     const hits = (data ?? []).map((row) => {
       const part = String(row.part_number ?? "");
@@ -342,6 +353,7 @@ export async function searchSalesItems(query: string): Promise<SalesItemSearch> 
         partNumber: oemHit && !partHit ? oem : part || oem,
         usHts: text(row.us_hts),
         eccn: text(row.eccn),
+        itemType: text(row.item_type),
       };
     });
     return { ok: true, hits: rankSalesItemHits(tokens, hits) };
@@ -409,7 +421,7 @@ function salesOrderSelect(
   const contact = withContact ? ", contact_name, contact_email, contact_phone" : "";
   const note = withLineNote ? ", line_note" : "";
   const managed = withManagedFee ? ", managed_fee" : "";
-  const item = "sku, name, description, condition, condition_note, us_hts, eccn";
+  const item = "sku, name, description, condition, condition_note, us_hts, eccn, item_type";
   // actual_item_id is a second FK to items. A bare items(...) embed is ambiguous.
   const plannedItem = `items!so_line_allocations_item_id_fkey(${item})`;
   const replacement = withReplacement
@@ -536,6 +548,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
             conditionNote: text(item?.condition_note),
             usHts: text(item?.us_hts),
             eccn: text(item?.eccn),
+            itemType: text(item?.item_type),
             qty,
             unitPrice,
             extPrice,

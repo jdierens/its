@@ -50,6 +50,16 @@ export function parseExtension(value: string): number | null {
   return parseDecimal(value, EXT_DECIMALS, EXT_MAX);
 }
 
+/** Sales-order unit price. A leading minus is a discount or a fee. Purchase orders stay unsigned. */
+export function parseSignedUnitCost(value: string): number | null {
+  return parseSignedDecimal(value, UNIT_DECIMALS, UNIT_MAX);
+}
+
+/** Sales-order extension. A leading minus is a discount or a fee. Purchase orders stay unsigned. */
+export function parseSignedExtension(value: string): number | null {
+  return parseSignedDecimal(value, EXT_DECIMALS, EXT_MAX);
+}
+
 export type PriceEdit = "qty" | "unit" | "ext";
 
 /** Recompute the other price. The field being typed is left as typed. */
@@ -84,9 +94,19 @@ export function syncLinePrices(input: {
 }
 
 function parseDecimal(value: string, places: number, max: number): number | null {
+  return parseDecimalText(value, places, max, false);
+}
+
+function parseSignedDecimal(value: string, places: number, max: number): number | null {
+  return parseDecimalText(value, places, max, true);
+}
+
+function parseDecimalText(value: string, places: number, max: number, signed: boolean): number | null {
   const trimmed = value.trim().replace(/[$,]/g, "");
-  if (!new RegExp(`^\\d+(\\.\\d{1,${places}})?$`).test(trimmed)) return null;
+  const pattern = signed ? `^-?\\d+(\\.\\d{1,${places}})?$` : `^\\d+(\\.\\d{1,${places}})?$`;
+  if (!new RegExp(pattern).test(trimmed)) return null;
   const amount = Number(trimmed);
-  if (!Number.isFinite(amount) || amount > max) return null;
+  if (!Number.isFinite(amount) || Math.abs(amount) > max) return null;
+  if (!signed && amount < 0) return null;
   return amount;
 }

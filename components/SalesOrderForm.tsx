@@ -31,6 +31,7 @@ import {
   formatSalesOrderNumber,
   INCOTERMS,
   lineExtension,
+  lineKindForCredit,
   lineRequiresItem,
   qtyForAddedMapping,
   syncAllocationMoney,
@@ -301,6 +302,9 @@ export function SalesOrderForm({
           itemId: row.itemId,
           qty: row.qty,
           unitPrice: showMoney ? row.unitPrice : "",
+          sku: row.sku,
+          name: row.name,
+          itemType: row.itemType,
           actualItemId: row.actualItemId,
           actualSku: row.actualSku,
           actualName: row.actualName,
@@ -383,6 +387,7 @@ export function SalesOrderForm({
       qty: string;
       usHts?: string;
       eccn?: string;
+      itemType?: string;
     },
   ): SalesAllocationView {
     const priced = syncAllocationMoney({
@@ -399,6 +404,7 @@ export function SalesOrderForm({
       description: allocation.description ?? "",
       usHts: allocation.usHts ?? "",
       eccn: allocation.eccn ?? "",
+      itemType: allocation.itemType ?? "",
       qty: allocation.qty,
       unitPrice: priced.unitPrice,
       extPrice: priced.extPrice,
@@ -498,7 +504,15 @@ export function SalesOrderForm({
       }) || firstQty;
     putAllocation(
       index,
-      pricedAllocation(line, { itemId: hit.id, sku: hit.sku, name: hit.name, qty, usHts: hit.usHts, eccn: hit.eccn }),
+      pricedAllocation(line, {
+        itemId: hit.id,
+        sku: hit.sku,
+        name: hit.name,
+        qty,
+        usHts: hit.usHts,
+        eccn: hit.eccn,
+        itemType: hit.itemType,
+      }),
       false,
     );
     setAllocateQuery((current) => ({ ...current, [index]: "" }));
@@ -525,7 +539,7 @@ export function SalesOrderForm({
         return;
       }
       const source = hits.find((hit) => hit.id === allocation.itemId);
-      const priced = pricedAllocation(latest, { ...allocation, usHts: source?.usHts, eccn: source?.eccn });
+      const priced = pricedAllocation(latest, { ...allocation, usHts: source?.usHts, eccn: source?.eccn, itemType: source?.itemType });
       const previous = putAllocation(index, priced, onlyIfEmpty);
       if (previous && onlyIfEmpty) await persistEmpty(previous, priced);
       if (!onlyIfEmpty) setMessage(null);
@@ -592,7 +606,7 @@ export function SalesOrderForm({
             return;
           }
           const source = hits.find((hit) => hit.id === allocation.itemId);
-          const priced = pricedAllocation(latest, { ...allocation, usHts: source?.usHts, eccn: source?.eccn });
+          const priced = pricedAllocation(latest, { ...allocation, usHts: source?.usHts, eccn: source?.eccn, itemType: source?.itemType });
           const previous = putAllocation(index, priced, true);
           if (previous) void persistEmpty(previous, priced);
         })
@@ -687,11 +701,12 @@ export function SalesOrderForm({
     order?.ebayOrderId || order?.ebaySalesRecordRef || channel.trim().toLowerCase() === "ebay" || (order?.channel ?? "").toLowerCase() === "ebay",
   );
   const ebayCustomer = customerName.trim().toLowerCase() === EBAY_ORDER_CUSTOMER_NAME.toLowerCase();
+  const creditLines = lines.map((line) => ({ ...line, lineKind: lineKindForCredit(line) }));
   const buyerTotal = showMoney
-    ? salesOrderTotal(lines.map((line) => ({ extPrice: line.extPrice || lineExtension(line.qty, line.unitPrice) || "" })))
+    ? salesOrderTotal(creditLines.map((line) => ({ extPrice: line.extPrice || lineExtension(line.qty, line.unitPrice) || "" })))
     : null;
-  const lineCompares = lines.map((line) => compareMappedLine(line));
-  const orderCompare = showMoney ? compareMappedOrder(lines) : null;
+  const lineCompares = creditLines.map((line) => compareMappedLine(line));
+  const orderCompare = showMoney ? compareMappedOrder(creditLines) : null;
   const anyQtyMismatch = lineCompares.some((row) => row.qtyMismatch);
   const net = showMoney ? sellerNet(ebayOrderEarnings, ebayLabelFee) : null;
   const methodChoices = paymentMethodChoices({
@@ -1117,9 +1132,11 @@ export function SalesOrderForm({
                 {lines.map((line, index) => {
                   const paypalFee = isManagedPaypalFee(line);
                   const lineLocked = locked || paypalFee;
-                  const needsItem = lineRequiresItem(line.lineKind);
-                  const ebayFreight = (line.lineKind || "product") === "freight" && ebayOrder;
-                  const showAllocations = needsItem || ebayFreight;
+                  const kind = lineKindForCredit(line);
+                  const needsItem = lineRequiresItem(kind);
+                  const ebayFreight = kind === "freight" && ebayOrder;
+                  const creditSku = !paypalFee && (kind === "discount" || kind === "fee" || kind === "service");
+                  const showAllocations = needsItem || ebayFreight || creditSku;
                   const showFinder = showAllocations && !locked;
                   const showNoItemHint = !showAllocations;
                   const showExtra = showFinder || showNoItemHint;
@@ -1140,7 +1157,7 @@ export function SalesOrderForm({
                             disabled={lineLocked}
                             onChange={(event) => updateLine(index, { customerPartNumber: event.target.value })}
                             onBlur={(event) => {
-                              if (!locked && lineRequiresItem(line.lineKind)) void matchCleanSku(index, event.target.value, true);
+                              if (!locked && lineRequiresItem(kind)) void matchCleanSku(index, event.target.value, true);
                             }}
                           />
                           {lineMismatch && compared ? <p className="so-diff-flag">{mappedDiffText(compared, currency, showMoney)}</p> : null}
@@ -1230,7 +1247,7 @@ export function SalesOrderForm({
                                     ) : null}
                                   </span>
                                   <span className="so-allocation-label">{allocation.actualItemId ? "Fulfillment SKU" : "Mapped SKU"}</span>
-                                  {!locked && (line.lineKind === "product" || line.lineKind === "kit") ? (
+                                  {!locked && (kind === "product" || kind === "kit") ? (
                                     <span className="so-replace-actions">
                                       <button
                                         type="button"
