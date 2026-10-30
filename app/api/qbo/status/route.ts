@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readQboConfig } from "@/lib/qbo/config";
+import { chunkPhaseUnavailable } from "@/lib/qbo/logShape";
 import { connectionStatus } from "@/lib/qbo/oauth";
 import { getSupabase } from "@/lib/supabase";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
@@ -14,6 +15,7 @@ type LogRow = {
   entity: string;
   direction: string;
   status: string;
+  phase?: string | null;
   message: string | null;
 };
 
@@ -84,24 +86,41 @@ function latest(left: string | null, right: string | null): string | null {
   return Date.parse(left) >= Date.parse(right) ? left : right;
 }
 
+const LOG_COLUMNS = "id, started_at, finished_at, entity, direction, status, message";
+
 async function readLogs() {
   try {
-    const { data, error } = await (await getSupabase())
+    const supabase = await getSupabase();
+    const withPhase = await supabase
       .from("qbo_sync_log")
-      .select("id, started_at, finished_at, entity, direction, status, message")
+      .select(`${LOG_COLUMNS}, phase`)
       .order("created_at", { ascending: false })
       .limit(20);
-    if (error) return [];
-    return ((data ?? []) as LogRow[]).map((row) => ({
-      id: row.id,
-      startedAt: row.started_at,
-      finishedAt: row.finished_at,
-      entity: row.entity,
-      direction: row.direction,
-      status: row.status,
-      message: row.message,
-    }));
+    if (withPhase.error && chunkPhaseUnavailable(withPhase.error.message)) {
+      const plain = await supabase
+        .from("qbo_sync_log")
+        .select(LOG_COLUMNS)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (plain.error) return [];
+      return mapLogs(plain.data, false);
+    }
+    if (withPhase.error) return [];
+    return mapLogs(withPhase.data, true);
   } catch {
     return [];
   }
+}
+
+function mapLogs(data: unknown, hasPhase: boolean) {
+  return ((data ?? []) as LogRow[]).map((row) => ({
+    id: row.id,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    entity: row.entity,
+    direction: row.direction,
+    status: row.status,
+    phase: hasPhase && (row.phase === "in_flight" || row.phase === "completed") ? row.phase : null,
+    message: row.message,
+  }));
 }

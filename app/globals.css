@@ -3014,6 +3014,10 @@ button.ebay-more {
   white-space: normal;
 }
 
+.log-table tr.log-in-flight td {
+  background: rgba(91, 33, 182, 0.06);
+}
+
 .items-empty {
   margin: 0;
   padding: 0.8rem;

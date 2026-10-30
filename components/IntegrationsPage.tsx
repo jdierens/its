@@ -8,6 +8,7 @@ import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageT
 import { isDirty } from "@/lib/formDirty";
 import { actionProblem, errorDetail, readActionBody, recoverOrderPullMessage, type ActionBody } from "@/lib/clientActionError";
 import { RECONNECT_MESSAGE as EBAY_RECONNECT_MESSAGE } from "@/lib/ebay/messages";
+import { logPhaseLabel } from "@/lib/qbo/logShape";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import { INTEGRATIONS, integrationReturnHref } from "@/lib/integrations";
 import type { PlaidStatus } from "@/lib/plaid/types";
@@ -26,6 +27,7 @@ type LogEntry = {
   entity: string;
   direction: string;
   status: string;
+  phase?: "in_flight" | "completed" | null;
   message: string | null;
 };
 
@@ -144,6 +146,29 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
     const query = params.toString();
     router.replace(query ? `${target}?${query}` : target);
   }, [focus, params, router]);
+
+  useEffect(() => {
+    if (busy !== "sync" && busy !== "customer" && busy !== "vendor") return;
+    let cancelled = false;
+    const refreshLogs = async () => {
+      try {
+        const response = await fetch("/api/qbo/status", { cache: "no-store" });
+        if (!response.ok || cancelled) return;
+        const next = (await response.json()) as StatusResponse;
+        if (!cancelled) setStatus(next);
+      } catch {
+        // Keep the log already on screen until the next successful read.
+      }
+    };
+    const timer = setInterval(() => {
+      void refreshLogs();
+    }, 2000);
+    void refreshLogs();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [busy]);
 
   useEffect(() => {
     const choice = loadChoice();
@@ -807,6 +832,10 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
       </section> : null}
       {focus === "quickbooks" ? <section className="card integration-card">
         <h2>Recent sync log</h2>
+        <p className="hint">
+          Each pull chunk is one row. It shows In flight while that request is reading QuickBooks, then the
+          same row shows Completed.
+        </p>
         {status && status.logs.length > 0 ? (
           <table className="log-table">
             <thead>
@@ -814,17 +843,19 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
                 <th>When</th>
                 <th>Entity</th>
                 <th>Direction</th>
+                <th>Phase</th>
                 <th>Status</th>
                 <th>Message</th>
               </tr>
             </thead>
             <tbody>
               {status.logs.map((entry) => (
-                <tr key={entry.id}>
+                <tr key={entry.id} className={logPhaseLabel(entry) === "In flight" ? "log-in-flight" : undefined}>
                   <td>{formatWhen(entry.startedAt)}</td>
                   <td>{entry.entity}</td>
                   <td>{entry.direction}</td>
-                  <td>{entry.status}</td>
+                  <td>{logPhaseLabel(entry)}</td>
+                  <td>{entry.status === "in_flight" ? "in flight" : entry.status}</td>
                   <td>{entry.message || "—"}</td>
                 </tr>
               ))}
