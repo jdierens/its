@@ -9,6 +9,7 @@ import {
   draftLines,
   EBAY_SHIPPING_ITEM_SKU,
   draftOrderRow,
+  ebaySoReferenceAssignment,
   EBAY_ORDER_CUSTOMER_NAME,
   EBAY_ORDER_CUSTOMER_QBO_ID,
   EBAY_PULL_OPERATOR_LABEL,
@@ -526,34 +527,43 @@ function supabaseStore(
             continue;
           }
           await fillBlankEbayTerms(admin, action.id, defaults.paymentTerms, defaults.incoterms);
+          let approvedNow = false;
           if (action.soNumber != null) {
+            const now = new Date().toISOString();
             const numbered = await admin
               .from("sales_orders")
-              .update({ so_number: action.soNumber, sheet_ref: `SO#${action.soNumber}`, updated_at: new Date().toISOString() })
+              .update({
+                ...ebaySoReferenceAssignment(action.soNumber, now),
+                updated_at: now,
+              })
               .eq("id", action.id)
               .eq("status", "draft")
-              .is("so_number", null);
+              .is("so_number", null)
+              .select("id");
             if (numbered.error && numbered.error.code !== "23505") throw new Error("A legacy SO number could not be saved.");
+            approvedNow = !numbered.error && (numbered.data?.length ?? 0) > 0;
           }
           const removed = await admin.from("so_lines").delete().eq("sales_order_id", action.id);
           if (removed.error) throw new Error("A draft sales order could not be updated.");
           await insertLines(admin, action.id, action);
-          await insertEvent(admin, action.id, "updated", "draft", "draft");
+          await insertEvent(admin, action.id, "updated", "draft", approvedNow ? "approved" : "draft");
+          if (approvedNow && action.soNumber != null) {
+            await insertEvent(admin, action.id, "approved", "draft", "approved", `SO${action.soNumber}`);
+          }
           updated += 1;
           continue;
         }
+        const createdRow = draftOrderRow({
+          order: action.order,
+          customerId: customer.id,
+          soNumber: action.soNumber,
+          salesRep: defaults.salesRep,
+          paymentTerms: defaults.paymentTerms,
+          incoterms: defaults.incoterms,
+        });
         const inserted = await admin
           .from("sales_orders")
-          .insert(
-            draftOrderRow({
-              order: action.order,
-              customerId: customer.id,
-              soNumber: action.soNumber,
-              salesRep: defaults.salesRep,
-              paymentTerms: defaults.paymentTerms,
-              incoterms: defaults.incoterms,
-            }),
-          )
+          .insert(createdRow)
           .select("id")
           .single();
         if (inserted.error?.code === "23505" && action.soNumber != null && /so_number|number_unique/i.test(inserted.error.message ?? "")) {
@@ -593,7 +603,11 @@ function supabaseStore(
         if (inserted.error || !inserted.data) throw new Error("A draft sales order could not be created.");
         const id = String(inserted.data.id);
         await insertLines(admin, id, action);
-        await insertEvent(admin, id, "created", null, "draft");
+        const createdStatus = String(createdRow.status);
+        await insertEvent(admin, id, "created", null, createdStatus);
+        if (createdStatus === "approved" && action.soNumber != null) {
+          await insertEvent(admin, id, "approved", "draft", "approved", `SO${action.soNumber}`);
+        }
         created += 1;
       }
       return { created, updated, linked };
@@ -1075,11 +1089,12 @@ async function replaceLegacyMap(admin: SupabaseClient, map: LegacyMapEntry[]): P
 async function assignLegacyNumbers(admin: SupabaseClient, assignments: SoNumberAssignment[]): Promise<number> {
   let assigned = 0;
   for (const assignment of assignments) {
+    const now = new Date().toISOString();
     const updated = await admin
       .from("sales_orders")
       .update({
-        so_number: assignment.soNumber,
-        updated_at: new Date().toISOString(),
+        ...ebaySoReferenceAssignment(assignment.soNumber, now),
+        updated_at: now,
       })
       .eq("id", assignment.id)
       .eq("status", "draft")
@@ -1094,8 +1109,7 @@ async function assignLegacyNumbers(admin: SupabaseClient, assignments: SoNumberA
         .eq("id", assignment.id)
         .is("ebay_sales_record_ref", null);
     }
-    await admin.from("sales_orders").update({ sheet_ref: `SO#${assignment.soNumber}` }).eq("id", assignment.id).is("sheet_ref", null);
-    await insertEvent(admin, assignment.id, "linked", "draft", "draft", `SO${assignment.soNumber}`);
+    await insertEvent(admin, assignment.id, "approved", "draft", "approved", `SO${assignment.soNumber}`);
     assigned += 1;
   }
   return assigned;
