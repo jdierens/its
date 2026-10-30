@@ -28,7 +28,21 @@ Disconnect calls Intuit's revoke endpoint and deletes the local row.
 
 **Sync** on Admin > Integrations > QuickBooks chooses customers, vendors, or both, and Pull from QuickBooks, Push ITS changes, or Both. Both is the default. **Start sync** uses that choice. **Sync customers** and **Sync vendors** run one entity with the same direction. **Full resync** ignores that entity's change cursor and reads every active and inactive record, unless a pull of that list is already unfinished, in which case it continues. The toolbar Save remembers the checkboxes, direction, and full-resync choice in `localStorage`. Connect, disconnect, test, and sync are icons in that same toolbar.
 
-A full list is read in Id order, 100 records at a time, two pages per request. The page stays open and calls the sync route again until the list is done. The line looks like `Customers 3,500 / 8,102`. `qbo_sync_cursor.start_position` is the next 1-based position, and `query_total` is the count QuickBooks reported. Each finished page is saved before the next one starts, and each request writes a progress row to `qbo_sync_log`. A request that fails or is cut off leaves that position in place. The next sync continues there. Rows match on `qbo_id`, so reading the same page again updates the contact instead of inserting another one. `last_sync_at` and `cdc_since` change only when the list is finished. `cdc_since` is the time the pull started, so edits made while the pages were loading are included in the next incremental pull. The route allows 60 seconds, and one request stays well under that.
+A full list is read in Id order, 100 records at a time, two pages per request. The page stays open and calls the sync route again until the list is done. The line looks like `Customers 3,500 / 8,102`. `qbo_sync_cursor.start_position` is the next 1-based position, and `query_total` is the count QuickBooks reported. Each finished page is saved before the next one starts. Each request keeps one `qbo_sync_log` row for that chunk. A request that fails or is cut off leaves that position in place. The next sync continues there. Rows match on `qbo_id`, so reading the same page again updates the contact instead of inserting another one. `last_sync_at` and `cdc_since` change only when the list is finished. `cdc_since` is the time the pull started, so edits made while the pages were loading are included in the next incremental pull. The route allows 60 seconds, and one request stays well under that.
+
+That chunk row starts with `phase` `in_flight`, `status` `in_flight`, and an empty `finished_at`. The message is the progress already stored, such as `Customers 3,400 / 8,102. Pull is still running.` When the chunk finishes, the same row becomes `phase` `completed` and `status` `ok` or `error`, `finished_at` is set, and the message moves to the new progress or the result line. A contact that was deleted or left in conflict still gets its own log row. Apply `supabase/migrations/20261030153000_qbo_sync_log_chunk_phase.sql` by hand. Until that file is applied, the chunk is still one completed row and the in-flight flag is not stored.
+
+To watch the flip, apply that file, open QuickBooks under Admin, and start a customer sync. Leave the page open. Recent sync log refreshes about every two seconds. During a chunk the newest customer row shows Phase In flight. When the request returns, that same row shows Phase Completed and the message has moved forward. In the SQL editor:
+
+```sql
+select id, phase, status, started_at, finished_at, message
+from public.qbo_sync_log
+where entity in ('customer', 'vendor')
+order by created_at desc
+limit 5;
+```
+
+During the request the newest `id` has `phase` `in_flight` and `finished_at` null. After the request, that `id` has `phase` `completed` and `finished_at` filled in.
 
 Customers and vendors each have a last-sync time and a CDC cursor in `qbo_sync_cursor`. Syncing one does not move the other. The first migration copies the previous shared cursor onto both. A push updates the last-sync time and leaves the cursor. A finished pull sets the cursor to the time that pull started, with a two-minute overlap on the next incremental pull. An incremental pull also stops after one change page and continues on the next request. `POST /api/qbo/sync` requires `{ entities: ["customer" and/or "vendor"], direction: "pull" | "push" | "both", full: boolean }`. The browser sends push once, then pull one entity at a time until each report says it is done.
 

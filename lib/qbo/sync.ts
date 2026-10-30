@@ -3,7 +3,7 @@ import { ReconnectError, TokenRequestError } from "@/lib/qbo/auth";
 import { companyUrl, type QboConfig } from "@/lib/qbo/config";
 import { formatQboError } from "@/lib/qbo/failure";
 import { isStaleSyncToken, qboRequest, type QboResult } from "@/lib/qbo/http";
-import { writeSyncLog } from "@/lib/qbo/log";
+import { finishSyncChunk, openSyncChunk, writeSyncLog } from "@/lib/qbo/log";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import {
   formatQboTime,
@@ -50,6 +50,8 @@ export type SyncReport = {
 const SELECT_COLUMNS =
   "id, display_name, company_name, given_name, family_name, primary_email, phone, billing_address, shipping_address, tax_id, notes, active, qbo_id, qbo_sync_token, qbo_last_updated, sync_status";
 
+type ChunkLog = { id: string | null };
+
 let syncing = false;
 
 type TokenBox = { token: string };
@@ -84,6 +86,10 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
       let stopped = false;
       let position: number | null = null;
       let total: number | null = null;
+      const chunkLog: ChunkLog = { id: null };
+      let failureMessage: string | null = null;
+      let failureDetail: Record<string, string | number | null> | null = null;
+      const direction = options.direction === "push" ? "push" : "pull";
       try {
         if (options.direction !== "pull") {
           const auth = await validAccessToken();
@@ -102,6 +108,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
             kind,
             options.full,
             startedAt,
+            chunkLog,
           );
           Object.assign(counts, addCounts(counts, outcome.counts));
           done = outcome.done;
@@ -109,34 +116,43 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
           total = outcome.total;
         }
       } catch (error) {
-        if (error instanceof ReconnectError || error instanceof TokenRequestError) throw error;
+        if (error instanceof ReconnectError || error instanceof TokenRequestError) {
+          if (chunkLog.id) {
+            await finishSyncChunk(chunkLog.id, {
+              entity: kind,
+              direction,
+              status: "error",
+              message: error.message,
+              startedAt,
+              detail: { intuitTid: error.intuitTid, ...callDetail(error) },
+            });
+            chunkLog.id = null;
+          }
+          throw error;
+        }
         stopped = true;
         done = false;
         counts.errors += 1;
         const progress = await readCursor(admin, kind).catch(() => null);
         const where = progress?.start_position ? ` before position ${progress.start_position}` : "";
         const reason = error instanceof Error ? error.message : "QuickBooks sync failed.";
-        await writeSyncLog({
-          entity: kind,
-          direction: options.direction === "push" ? "push" : "pull",
-          status: "error",
-          message: `${qboEntityName(kind)} pull failed${where}. Run sync again to continue. ${reason}`.slice(0, 500),
-          startedAt,
-          detail: { ...callDetail(error), startPosition: progress?.start_position ?? null },
-        });
+        failureMessage = `${qboEntityName(kind)} ${direction} failed${where}. Run sync again to continue. ${reason}`;
+        failureDetail = { ...callDetail(error), startPosition: progress?.start_position ?? null };
       }
       results.push({ entity: kind, ...counts, done, stopped, position, total });
       const progressLine =
         position === null ? null : `${formatPullProgress(kind, position, total)}. Pull is still running.`;
-      await writeSyncLog({
+      await finishSyncChunk(chunkLog.id, {
         entity: kind,
-        direction: options.direction === "push" ? "push" : "pull",
+        direction,
         status: counts.errors > 0 || stopped ? "error" : "ok",
-        message: stopped
-          ? `${qboEntityName(kind)} pull stopped${position === null ? "" : ` at ${formatPullProgress(kind, position, total)}`}. Run sync again to continue.`
-          : done
-            ? formatEntityResult(kind, counts)
-            : progressLine ?? `${qboEntityName(kind)} pull is still running.`,
+        message:
+          failureMessage ??
+          (stopped
+            ? `${qboEntityName(kind)} ${direction} stopped${position === null ? "" : ` at ${formatPullProgress(kind, position, total)}`}. Run sync again to continue.`
+            : done
+              ? formatEntityResult(kind, counts)
+              : progressLine ?? `${qboEntityName(kind)} pull is still running.`),
         startedAt,
         detail: {
           created: counts.created,
@@ -145,6 +161,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
           errors: counts.errors,
           position,
           total,
+          ...(failureDetail ?? {}),
         },
       });
     }
@@ -335,6 +352,25 @@ type PullOutcome = {
   counts: EntityCounts;
 };
 
+async function ensureChunkLog(
+  chunkLog: ChunkLog,
+  entry: {
+    entity: ContactKind;
+    message: string;
+    startedAt: string;
+    detail: Record<string, string | number | null>;
+  },
+): Promise<void> {
+  if (chunkLog.id) return;
+  chunkLog.id = await openSyncChunk({
+    entity: entry.entity,
+    direction: "pull",
+    message: entry.message,
+    startedAt: entry.startedAt,
+    detail: entry.detail,
+  });
+}
+
 async function pullKind(
   admin: SupabaseClient,
   config: QboConfig,
@@ -343,12 +379,13 @@ async function pullKind(
   kind: ContactKind,
   full: boolean,
   startedAt: string,
+  chunkLog: ChunkLog,
 ): Promise<PullOutcome> {
   const stored = await readCursor(admin, kind);
   if (stored.start_position !== null || full || !stored.cdc_since) {
-    return pullQueryChunk(admin, config, realmId, box, kind, startedAt, stored);
+    return pullQueryChunk(admin, config, realmId, box, kind, startedAt, stored, chunkLog);
   }
-  return pullCdcChunk(admin, config, realmId, box, kind, startedAt, stored);
+  return pullCdcChunk(admin, config, realmId, box, kind, startedAt, stored, chunkLog);
 }
 
 async function pullQueryChunk(
@@ -359,12 +396,20 @@ async function pullQueryChunk(
   kind: ContactKind,
   startedAt: string,
   stored: StoredCursor,
+  chunkLog: ChunkLog,
 ): Promise<PullOutcome> {
   const name = qboEntityName(kind);
   const startAt = stored.start_position ?? 1;
   const previous = stored.start_position === null ? emptyCounts() : stored.pull_counts ?? emptyCounts();
   const pullStarted = stored.start_position === null ? startedAt : stored.pull_started_at ?? startedAt;
   let total = stored.query_total;
+  const seen = Math.max(0, startAt - 1);
+  await ensureChunkLog(chunkLog, {
+    entity: kind,
+    message: `${formatPullProgress(kind, seen, total)}. Pull is still running.`,
+    startedAt,
+    detail: { position: seen, total, startPosition: startAt },
+  });
   if (stored.start_position === null) {
     total = await fetchCount(config, realmId, box, kind);
     await saveProgress(admin, kind, stored, {
@@ -377,15 +422,7 @@ async function pullQueryChunk(
   }
   const counts = emptyCounts();
   let start = startAt;
-  let position = Math.max(0, start - 1);
-  await writeSyncLog({
-    entity: kind,
-    direction: "pull",
-    status: "ok",
-    message: `${formatPullProgress(kind, position, total)}. Pull is still running.`,
-    startedAt,
-    detail: { position, total, startPosition: start },
-  });
+  let position = seen;
   for (let page = 0; page < PAGES_PER_CHUNK; page += 1) {
     const result = await authed<Record<string, unknown>>(
       box,
@@ -438,9 +475,17 @@ async function pullCdcChunk(
   kind: ContactKind,
   startedAt: string,
   stored: StoredCursor,
+  chunkLog: ChunkLog,
 ): Promise<PullOutcome> {
   const watermark = stored.resume_since ?? stored.cdc_since;
-  if (!watermark) return pullQueryChunk(admin, config, realmId, box, kind, startedAt, stored);
+  if (!watermark) return pullQueryChunk(admin, config, realmId, box, kind, startedAt, stored, chunkLog);
+  const label = kind === "customer" ? "Customers" : "Vendors";
+  await ensureChunkLog(chunkLog, {
+    entity: kind,
+    message: `${label}: still reading changes.`,
+    startedAt,
+    detail: { position: null, total: null },
+  });
   const cursor = stored.resume_since ?? formatQboTime(new Date(Date.parse(watermark) - OVERLAP_MS));
   const previous = stored.resume_since ? stored.pull_counts ?? emptyCounts() : emptyCounts();
   const pullStarted = stored.resume_since ? stored.pull_started_at ?? startedAt : startedAt;
