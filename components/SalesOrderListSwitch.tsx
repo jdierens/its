@@ -11,27 +11,38 @@ import {
   type SalesOrderListView,
 } from "@/lib/salesOrderDraft";
 
-export function SalesOrderListSwitch({ view }: { view: SalesOrderListView }) {
+export function SalesOrderListSwitch({
+  view,
+  search = "",
+  children,
+}: {
+  view: SalesOrderListView;
+  search?: string;
+  children?: ReactNode;
+}) {
   const showAll = view === "all";
   return (
     <div className="so-list-switch">
       <p className="label-caption">{showAll ? "Every sales order" : "Drafts that still need processing"}</p>
-      <nav className="label-segments" aria-label="Which sales orders to show">
-        <Link
-          href={salesOrderListHref("drafts")}
-          aria-current={showAll ? undefined : "page"}
-          onClick={() => writeSalesOrderListView(window.localStorage, "drafts")}
-        >
-          Drafts to process
-        </Link>
-        <Link
-          href={salesOrderListHref("all")}
-          aria-current={showAll ? "page" : undefined}
-          onClick={() => writeSalesOrderListView(window.localStorage, "all")}
-        >
-          All orders
-        </Link>
-      </nav>
+      <div className="so-list-switch-row">
+        <nav className="label-segments" aria-label="Which sales orders to show">
+          <Link
+            href={salesOrderListHref("drafts", search)}
+            aria-current={showAll ? undefined : "page"}
+            onClick={() => writeSalesOrderListView(window.localStorage, "drafts")}
+          >
+            Drafts to process
+          </Link>
+          <Link
+            href={salesOrderListHref("all", search)}
+            aria-current={showAll ? "page" : undefined}
+            onClick={() => writeSalesOrderListView(window.localStorage, "all")}
+          >
+            All orders
+          </Link>
+        </nav>
+        {children}
+      </div>
     </div>
   );
 }
@@ -50,7 +61,7 @@ export function SalesOrderListMemory({ view, children }: { view: SalesOrderListV
     });
     if (next && next !== view) {
       setHold(true);
-      router.replace(salesOrderListHref(next));
+      router.replace(salesOrderListHref(next, window.location.search));
       return;
     }
     setHold(false);

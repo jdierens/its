@@ -510,8 +510,12 @@ export const SALES_ORDER_LIST_VIEW_KEY = "its.salesOrders.listView";
 
 export type SalesOrderListView = "drafts" | "all";
 
-export function salesOrderListHref(view: SalesOrderListView): string {
-  return view === "all" ? "/sales/orders?view=all" : "/sales/orders?view=drafts";
+/** List address for a view. Other query params, such as a search, stay. */
+export function salesOrderListHref(view: SalesOrderListView, search = ""): string {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  params.delete("view");
+  params.set("view", view);
+  return `/sales/orders?${params.toString()}`;
 }
 
 export function readSalesOrderListView(storage: Pick<Storage, "getItem">): SalesOrderListView | null {

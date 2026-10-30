@@ -436,6 +436,8 @@ describe("sales order list view", () => {
     writeSalesOrderListView(storage, "all");
     assert.equal(readSalesOrderListView(storage), "all");
     assert.equal(salesOrderListHref("all"), "/sales/orders?view=all");
+    assert.equal(salesOrderListHref("all", "q=SO1%7CPO-2"), "/sales/orders?q=SO1%7CPO-2&view=all");
+    assert.equal(salesOrderListHref("drafts", "?q=acme&view=all"), "/sales/orders?q=acme&view=drafts");
     assert.equal(salesOrderListViewToRestore({ hasViewParam: false, stored: "all" }), "all");
     assert.equal(salesOrderListViewToRestore({ hasViewParam: true, stored: "all" }), null);
     writeSalesOrderListView(storage, "drafts");

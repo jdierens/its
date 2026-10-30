@@ -7225,7 +7225,72 @@ input.num-input {
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem 1rem;
-  margin: 0.5rem 0 1rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.so-list-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.so-list-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.so-list-search .so-list-query {
+  width: min(28rem, 100%);
+  flex: 1 1 16rem;
+}
+
+.so-list-count {
+  margin: 0;
+}
+
+.so-sort-bar {
+  display: none;
+}
+
+/* Same heading treatment as inventory search: the active column shows ↑ or ↓. */
+.so-page .so-table-scroll th button.so-col-sort,
+.so-page .so-sort-bar button.so-col-sort {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 0;
+  white-space: nowrap;
+}
+
+.so-page .so-table-scroll th button.so-col-sort {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.so-page .so-table-scroll th.num button.so-col-sort {
+  justify-content: flex-end;
+}
+
+.so-page .so-table-scroll th button.so-col-sort:hover,
+.so-page .so-sort-bar button.so-col-sort:hover {
+  color: var(--accent);
 }
 
 .so-allocate {
@@ -7893,6 +7958,27 @@ input.num-input {
     height: 1.25rem;
     min-height: 1.25rem;
   }
+
+  .so-page .label-segments button {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .so-sort-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.9rem;
+    margin: 0 0 0.75rem;
+  }
+
+  .so-page .so-sort-bar button.so-col-sort {
+    width: auto;
+    min-height: 44px;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ds-muted, var(--muted));
+  }
 }
 
 /*
@@ -8455,12 +8541,15 @@ button.so-new-order svg,
   border-radius: var(--ds-radius);
 }
 
-.ds .label-segments a {
+.ds .label-segments a,
+.ds .label-segments button {
   color: var(--ds-ink);
 }
 
-.ds .label-segments a[aria-current="page"] {
+.ds .label-segments a[aria-current="page"],
+.ds .label-segments button[aria-pressed="true"] {
   background: #18181b;
+  background-image: none;
   color: #fafafa;
 }
 
@@ -8568,8 +8657,10 @@ button.so-new-order svg,
     color: #a5b4fc;
   }
 
-  .ds .label-segments a[aria-current="page"] {
+  .ds .label-segments a[aria-current="page"],
+  .ds .label-segments button[aria-pressed="true"] {
     background: #fafafa;
+    background-image: none;
     color: #18181b;
   }
 
