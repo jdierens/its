@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  LABEL_RESULT_CAP,
   descriptionSnippet,
   escapeLike,
   labelLikeOr,
   labelLookupChoice,
+  labelMatchLimit,
   labelResultApplies,
   labelTaxonomyFields,
   sortLabelMatches,
@@ -21,6 +23,13 @@ function item(patch: Partial<LabelItem>): LabelItem {
     ...patch,
   };
 }
+
+test("a label search cap stays at 25 unless a larger limit is asked for", () => {
+  assert.equal(labelMatchLimit(undefined), LABEL_RESULT_CAP);
+  assert.equal(labelMatchLimit(Number.NaN), LABEL_RESULT_CAP);
+  assert.equal(labelMatchLimit(0), LABEL_RESULT_CAP);
+  assert.equal(labelMatchLimit(200.9), 200);
+});
 
 test("taxonomy codes come from the embedded row", () => {
   assert.deepEqual(labelTaxonomyFields({ short_code: "ssd", long_code: "dsk/ssd", name: "SSD" }), {

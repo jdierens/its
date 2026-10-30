@@ -6,7 +6,7 @@ import { findItemForLabel } from "@/lib/items";
 import {
   escapeLike,
   labelTaxonomyFields,
-  LABEL_RESULT_CAP,
+  labelMatchLimit,
   sortLabelMatches,
   type LabelLookupResult,
 } from "@/lib/labelLookup";
@@ -58,7 +58,7 @@ async function labelRowsById(supabase: SupabaseClient, ids: string[]): Promise<R
   return rows;
 }
 
-export async function searchItemsForLabel(raw: string): Promise<LabelLookupResult> {
+export async function searchItemsForLabel(raw: string, cap?: number): Promise<LabelLookupResult> {
   const query = raw.trim().slice(0, 200);
   if (!query) return { exact: null, matches: [], truncated: false };
 
@@ -90,10 +90,11 @@ export async function searchItemsForLabel(raw: string): Promise<LabelLookupResul
   }
 
   const rows = await labelRowsById(supabase, ids);
-  const matches = sortLabelMatches(rows.map(toHit), query).slice(0, LABEL_RESULT_CAP);
+  const limit = labelMatchLimit(cap);
+  const matches = sortLabelMatches(rows.map(toHit), query).slice(0, limit);
   return {
     exact: exactRow ? toHit(exactRow) : null,
     matches,
-    truncated: ids.length > LABEL_RESULT_CAP,
+    truncated: ids.length > limit,
   };
 }

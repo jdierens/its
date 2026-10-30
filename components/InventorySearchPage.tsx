@@ -5,15 +5,18 @@ import { usePageMeta } from "@/components/AppShell";
 import { errorText } from "@/lib/errors";
 import {
   INVENTORY_NO_BINS,
+  INVENTORY_STOCK_PARAM,
+  inventoryStockMode,
   sortInventoryHits,
   toggleInventorySort,
   type InventoryHit,
   type InventorySort,
   type InventorySortKey,
+  type InventoryStock,
 } from "@/lib/inventorySearch";
 import { searchInventory } from "@/lib/inventorySearchServer";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 function sortDirection(sort: InventorySort | null, column: InventorySortKey): InventorySort["dir"] | null {
@@ -71,6 +74,51 @@ function SortHeading({
   );
 }
 
+function stockModeLabel(stock: InventoryStock): string {
+  return stock === "in" ? "In stock" : "All";
+}
+
+/** Names the current mode and what a click does. The visible text is the mode. */
+function stockModeName(stock: InventoryStock): string {
+  return stock === "in"
+    ? "On hand filter: in stock only. Show all quantities, including zero."
+    : "On hand filter: all quantities. Show in stock only.";
+}
+
+/**
+ * On hand still sorts. The mode beside it toggles in stock only and all.
+ * Both sit on the quantity heading, including the phone sort bar.
+ */
+function OnHandControls({
+  sort,
+  stock,
+  onSort,
+  onStock,
+  labelled = false,
+}: {
+  sort: InventorySort | null;
+  stock: InventoryStock;
+  onSort: (key: InventorySortKey) => void;
+  onStock: () => void;
+  labelled?: boolean;
+}) {
+  return (
+    <div className="inventory-qty-head">
+      <SortButton labelled={labelled} label="On hand" column="qty" sort={sort} onSort={onSort} />
+      <button
+        type="button"
+        className="inventory-stock"
+        aria-pressed={stock === "in"}
+        aria-label={stockModeName(stock)}
+        title={stockModeName(stock)}
+        onClick={onStock}
+      >
+        {stockModeLabel(stock)}
+      </button>
+    </div>
+  );
+}
+
 function ItemCell({ hit }: { hit: InventoryHit }) {
   const description = hit.description.trim();
   return (
@@ -95,11 +143,15 @@ function BinLines({ text }: { text: string }) {
 }
 
 export function InventorySearchPage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const params = useSearchParams();
   const initial = params.get("q") ?? "";
+  const stock = inventoryStockMode(params.get(INVENTORY_STOCK_PARAM));
   const [identifier, setIdentifier] = useState(initial);
   const [edited, setEdited] = useState(Boolean(initial.trim()));
   const [hits, setHits] = useState<InventoryHit[]>([]);
+  const [matched, setMatched] = useState(0);
   const [sort, setSort] = useState<InventorySort | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
@@ -110,6 +162,9 @@ export function InventorySearchPage() {
   const requestId = useRef(0);
   const wait = useRef(0);
   const typed = useRef(initial);
+  const stockRef = useRef(stock);
+  const stockImmediate = useRef(false);
+  stockRef.current = stock;
 
   usePageMeta({
     title: "Inventory search",
@@ -117,10 +172,13 @@ export function InventorySearchPage() {
   });
 
   useEffect(() => {
+    const immediate = stockImmediate.current;
+    stockImmediate.current = false;
     if (!edited) return;
     const query = identifier.trim();
     if (!query) {
       setHits([]);
+      setMatched(0);
       setActive(-1);
       setNote(null);
       setTruncated(false);
@@ -129,20 +187,21 @@ export function InventorySearchPage() {
       return;
     }
     wait.current = window.setTimeout(() => {
-      void runSearch(query);
-    }, 300);
+      void runSearch(query, stock);
+    }, immediate ? 0 : 300);
     return () => {
       window.clearTimeout(wait.current);
       requestId.current += 1;
     };
-  }, [edited, identifier]);
+  }, [edited, identifier, stock]);
 
   const rows = useMemo(() => sortInventoryHits(hits, sort), [hits, sort]);
 
-  async function runSearch(raw: string) {
+  async function runSearch(raw: string, mode: InventoryStock) {
     const query = raw.trim();
     if (!query) {
       setHits([]);
+      setMatched(0);
       setError("Enter a SKU, name, or description.");
       return;
     }
@@ -150,20 +209,23 @@ export function InventorySearchPage() {
     setSearching(true);
     setError(null);
     try {
-      const result = await searchInventory(query);
+      const result = await searchInventory(query, mode);
       if (id !== requestId.current) return;
       if (typed.current.trim() !== query) return;
+      if (stockRef.current !== mode) return;
       if (!result.ok) {
         setHits([]);
+        setMatched(0);
         setError(result.message);
         return;
       }
       setNote(result.note);
       setTruncated(result.truncated);
       setSettled(query);
+      setMatched(result.matched);
       setHits(result.hits);
       setActive(result.hits.length > 0 ? 0 : -1);
-      if (result.hits.length === 0) setError("No items found");
+      if (result.hits.length === 0 && result.matched === 0) setError("No items found");
     } catch (cause) {
       if (id === requestId.current) setError(errorText(cause));
     } finally {
@@ -175,7 +237,7 @@ export function InventorySearchPage() {
     if (event.key === "Enter") {
       event.preventDefault();
       window.clearTimeout(wait.current);
-      void runSearch(typed.current);
+      void runSearch(typed.current, stock);
       return;
     }
     if ((event.key === "ArrowDown" || event.key === "ArrowUp") && rows.length > 0 && settled === typed.current.trim()) {
@@ -194,12 +256,33 @@ export function InventorySearchPage() {
     if (hits.length > 0) setActive(0);
   }
 
-  const listOpen = rows.length > 0;
+  function onStock() {
+    const next = new URLSearchParams(params.toString());
+    const typedQuery = identifier.trim();
+    if (typedQuery) next.set("q", typedQuery);
+    else next.delete("q");
+    if (stock === "in") next.set(INVENTORY_STOCK_PARAM, "all");
+    else next.delete(INVENTORY_STOCK_PARAM);
+    const query = next.toString();
+    stockImmediate.current = true;
+    setHits([]);
+    setMatched(0);
+    setActive(-1);
+    setError(null);
+    setNote(null);
+    setTruncated(false);
+    if (settled) setSearching(true);
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
+
+  const stockEmpty = Boolean(settled) && !searching && !error && stock === "in" && matched > 0 && rows.length === 0;
+  const showFrame = rows.length > 0 || (Boolean(settled) && searching) || stockEmpty;
 
   return (
     <main className="page inventory-search-page">
       <p className="page-note">
-        Same search as receiving. Each match shows the on-hand quantity and the bins that hold it.
+        Same search as receiving. Each match shows the on-hand quantity and the bins that hold it. On hand
+        starts at in stock only.
       </p>
       <section className="card" aria-busy={searching}>
         <div className="inventory-search-field">
@@ -217,7 +300,7 @@ export function InventorySearchPage() {
               placeholder="SKU, name, part number, or description"
               role="combobox"
               aria-autocomplete="list"
-              aria-expanded={listOpen}
+              aria-expanded={showFrame}
               aria-controls="inventory-results"
               aria-busy={searching}
               aria-activedescendant={active >= 0 ? `inventory-hit-${rows[active]?.id}` : undefined}
@@ -230,6 +313,7 @@ export function InventorySearchPage() {
                 setEdited(true);
                 setIdentifier(value);
                 setHits([]);
+                setMatched(0);
                 setActive(-1);
                 setNote(null);
                 setTruncated(false);
@@ -248,12 +332,15 @@ export function InventorySearchPage() {
             {error}
           </p>
         ) : null}
-        {listOpen ? (
+        {stockEmpty ? (
+          <p className="hint">No on-hand quantity for this search. On hand is set to in stock only.</p>
+        ) : null}
+        {showFrame ? (
           <>
-            <div className="inventory-sort-bar" role="group" aria-label="Sort matches">
+            <div className="inventory-sort-bar" role="group" aria-label="Sort matches and on-hand filter">
               <SortButton labelled label="SKU" column="sku" sort={sort} onSort={onColumnSort} />
               <SortButton labelled label="Item" column="item" sort={sort} onSort={onColumnSort} />
-              <SortButton labelled label="On hand" column="qty" sort={sort} onSort={onColumnSort} />
+              <OnHandControls labelled sort={sort} stock={stock} onSort={onColumnSort} onStock={onStock} />
               <SortButton labelled label="Bins" column="bins" sort={sort} onSort={onColumnSort} />
             </div>
             <div className="receive-table-scroll">
@@ -262,10 +349,23 @@ export function InventorySearchPage() {
                   <tr>
                     <SortHeading label="SKU" column="sku" className="fit sku" sort={sort} onSort={onColumnSort} />
                     <SortHeading label="Item" column="item" className="item" sort={sort} onSort={onColumnSort} />
-                    <SortHeading label="On hand" column="qty" className="num fit" sort={sort} onSort={onColumnSort} />
+                    <th
+                      className="num fit"
+                      scope="col"
+                      aria-sort={
+                        sortDirection(sort, "qty") === "asc"
+                          ? "ascending"
+                          : sortDirection(sort, "qty") === "desc"
+                            ? "descending"
+                            : "none"
+                      }
+                    >
+                      <OnHandControls sort={sort} stock={stock} onSort={onColumnSort} onStock={onStock} />
+                    </th>
                     <SortHeading label="Bins" column="bins" className="locations" sort={sort} onSort={onColumnSort} />
                   </tr>
                 </thead>
+                {rows.length > 0 ? (
                 <tbody>
                   {rows.map((hit, index) => (
                     <tr
@@ -287,8 +387,10 @@ export function InventorySearchPage() {
                     </tr>
                   ))}
                 </tbody>
+                ) : null}
               </table>
             </div>
+            {rows.length > 0 ? (
             <ul className="receive-cards inventory-cards" aria-label="Inventory matches">
               {rows.map((hit, index) => (
                 <li
@@ -315,6 +417,7 @@ export function InventorySearchPage() {
                 </li>
               ))}
             </ul>
+            ) : null}
           </>
         ) : null}
       </section>
