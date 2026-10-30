@@ -2,9 +2,9 @@ import {
   extensionFromUnit,
   formatExtension,
   formatUnitPrice,
-  parseExtension,
   parseQty,
-  parseUnitCost,
+  parseSignedExtension,
+  parseSignedUnitCost,
   roundPlaces,
   unitFromExtension,
   UNIT_DECIMALS,
@@ -68,6 +68,10 @@ export type SoAllocationInput = {
   qty: string;
   /** Unit price of this mapped SKU. Blank until a default or the user fills it. */
   unitPrice: string;
+  /** Present when the form knows the SKU. Used to tell a discount from a product. */
+  sku?: string;
+  name?: string;
+  itemType?: string;
   /** Fulfilled SKU when it differs from itemId. Blank means ship the planned SKU. */
   actualItemId?: string;
   actualSku?: string;
@@ -214,8 +218,8 @@ export function partMatches(customerPart: string, itemPart: string): boolean {
 export function lineExtension(qty: string, unitPrice: string): string | null {
   const quantity = Number(qty);
   const price = Number(unitPrice);
-  if (!Number.isFinite(quantity) || !Number.isFinite(price) || quantity <= 0 || price < 0) return null;
-  return (Math.round(quantity * price * 100) / 100).toFixed(2);
+  if (!Number.isFinite(quantity) || !Number.isFinite(price) || quantity <= 0) return null;
+  return (Math.round((quantity * price + (price >= 0 ? 1e-8 : -1e-8)) * 100) / 100).toFixed(2);
 }
 
 export type SalesPriceEdit = "qty" | "unit" | "ext";
@@ -230,19 +234,19 @@ function unitForExtension(qty: number, ext: number): number {
   for (let step = 1; step <= 50; step += 1) {
     const lower = roundPlaces(direct - step * UNIT_STEP, UNIT_DECIMALS);
     const higher = roundPlaces(direct + step * UNIT_STEP, UNIT_DECIMALS);
-    if (lower >= 0 && extensionFromUnit(qty, lower) === target) return lower;
+    if ((target < 0 || lower >= 0) && extensionFromUnit(qty, lower) === target) return lower;
     if (extensionFromUnit(qty, higher) === target) return higher;
   }
   return direct;
 }
 
 function canonicalUnit(value: string): string {
-  const parsed = parseUnitCost(value);
+  const parsed = parseSignedUnitCost(value);
   return parsed == null ? value : formatUnitPrice(parsed);
 }
 
 function canonicalExt(value: string): string {
-  const parsed = parseExtension(value);
+  const parsed = parseSignedExtension(value);
   return parsed == null ? value : formatExtension(parsed);
 }
 
@@ -262,8 +266,8 @@ export function syncSalesLineMoney(input: {
   const unitPrice = input.commit && input.edited === "unit" ? canonicalUnit(input.unitPrice) : input.unitPrice;
   const extPrice = input.commit && input.edited === "ext" ? canonicalExt(input.extPrice) : input.extPrice;
   const qty = parseQty(input.qty);
-  const unit = parseUnitCost(unitPrice);
-  const ext = parseExtension(extPrice);
+  const unit = parseSignedUnitCost(unitPrice);
+  const ext = parseSignedExtension(extPrice);
   if (qty == null || qty <= 0) return { unitPrice, extPrice };
 
   if (input.edited === "unit") {
@@ -307,7 +311,7 @@ export function syncAllocationMoney(input: {
   if (qty == null || qty <= 0) return { unitPrice, extPrice };
 
   if (input.edited === "ext") {
-    const ext = parseExtension(extPrice);
+    const ext = parseSignedExtension(extPrice);
     if (ext == null) return { unitPrice, extPrice };
     const nextUnit = unitForExtension(qty, ext);
     const achieved = extensionFromUnit(qty, nextUnit);
@@ -317,7 +321,7 @@ export function syncAllocationMoney(input: {
     };
   }
 
-  const unit = parseUnitCost(unitPrice);
+  const unit = parseSignedUnitCost(unitPrice);
   if (unit == null) return { unitPrice, extPrice };
   return { unitPrice, extPrice: formatExtension(extensionFromUnit(qty, unit)) };
 }
@@ -647,6 +651,47 @@ export function hideSalesMoney<
   };
 }
 
+const CREDIT_LINE_KINDS = new Set(["freight", "fee", "service", "discount", "other"]);
+
+function negativeUnit(value: string | undefined): boolean {
+  if (!value?.trim()) return false;
+  const amount = parseSignedUnitCost(value);
+  return amount != null && amount < 0;
+}
+
+/**
+ * Product and kit lines stay at a zero or positive unit price.
+ * A negative price on a discount, fee, service, freight, or other line is kept.
+ * A product line whose text or mapped SKU is a discount, fee, or service is stored as that kind
+ * so the negative extension reduces the order total. A product or kit SKU stays a product line.
+ * Mirrors so_price_line_kind in the sales-order migration.
+ */
+export function lineKindForCredit(input: {
+  lineKind: string;
+  unitPrice: string;
+  customerPartNumber: string;
+  customerDescription: string;
+  allocations: { sku?: string; name?: string; itemType?: string; unitPrice?: string }[];
+}): string {
+  const kind = input.lineKind || "product";
+  const negative = negativeUnit(input.unitPrice) || input.allocations.some((row) => negativeUnit(row.unitPrice));
+  if (!negative) return kind;
+  const stock = input.allocations.some((row) => row.itemType === "Product" || row.itemType === "Kit/Package");
+  if (stock) return kind;
+  if (CREDIT_LINE_KINDS.has(kind)) return kind;
+  const text = [input.customerPartNumber, input.customerDescription, ...input.allocations.flatMap((row) => [row.sku ?? "", row.name ?? ""])]
+    .join(" ")
+    .toLowerCase();
+  if (text.includes("discount")) return "discount";
+  if (/(^|[^a-z0-9])fee([^a-z0-9]|$)|wirefee/.test(text) || text.includes("charge")) return "fee";
+  if (/(^|[^a-z0-9])service([^a-z0-9]|$)/.test(text)) return "service";
+  const types = input.allocations.map((row) => row.itemType).filter((type): type is string => Boolean(type));
+  if (types.length > 0 && types.every((type) => type === "Service" || type === "Non-inventory")) {
+    return types.every((type) => type === "Service") ? "service" : "fee";
+  }
+  return kind;
+}
+
 /** JSON body for write_sales_order. The number is not sent; approval assigns it. */
 export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown> {
   return {
@@ -680,7 +725,7 @@ export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown
     ebay_ad_fee: input.ebayAdFee,
     ebay_order_earnings: input.ebayOrderEarnings,
     lines: input.lines.map((line) => ({
-      line_kind: line.lineKind || "product",
+      line_kind: lineKindForCredit(line),
       customer_part_number: line.customerPartNumber,
       customer_description: line.customerDescription,
       line_note: line.lineNote ?? "",

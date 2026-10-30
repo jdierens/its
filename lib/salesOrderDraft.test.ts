@@ -8,6 +8,7 @@ import {
   hideSalesMoney,
   invoiceNumber,
   lineExtension,
+  lineKindForCredit,
   lineRequiresItem,
   normalizeSalesDraftLines,
   withEbayShippingItem,
@@ -50,6 +51,99 @@ describe("sales order draft", () => {
   it("extends a line from quantity and unit price", () => {
     assert.equal(lineExtension("10", "12.5"), "125.00");
     assert.equal(lineExtension("0", "12.5"), null);
+    assert.equal(lineExtension("1", "-25"), "-25.00");
+    assert.equal(lineExtension("2", "-12.5"), "-25.00");
+  });
+
+  it("prices a sales discount and a wire fee as negative extensions and subtracts them from the total", () => {
+    const discount = syncSalesLineMoney({ qty: "1", unitPrice: "-25", extPrice: "", edited: "unit", commit: true });
+    assert.equal(discount.unitPrice, "-25.00");
+    assert.equal(discount.extPrice, "-25.00");
+
+    const fromExt = syncSalesLineMoney({ qty: "2", unitPrice: "", extPrice: "-10.00", edited: "ext", commit: true });
+    assert.equal(fromExt.unitPrice, "-5.00");
+    assert.equal(fromExt.extPrice, "-10.00");
+    assert.equal(lineExtension("2", fromExt.unitPrice), "-10.00");
+
+    const wire = syncAllocationMoney({ qty: "1", unitPrice: "-15", extPrice: "", edited: "unit", commit: true });
+    assert.equal(wire.unitPrice, "-15.00");
+    assert.equal(wire.extPrice, "-15.00");
+
+    const draft = sampleDraft();
+    draft.lines = [
+      {
+        lineKind: "product",
+        customerPartNumber: "106683",
+        customerDescription: "Drive",
+        qty: "1",
+        unitPrice: "100",
+        condition: "",
+        allocations: [{ itemId: "drive", sku: "106683", name: "Drive", itemType: "Product", qty: "1", unitPrice: "100" }],
+      },
+      {
+        lineKind: "product",
+        customerPartNumber: "5619",
+        customerDescription: "Sales Discount",
+        qty: "1",
+        unitPrice: "-25",
+        condition: "",
+        allocations: [{ itemId: "discount", sku: "5619", name: "Sales Discount", itemType: "Service", qty: "1", unitPrice: "-25" }],
+      },
+      {
+        lineKind: "product",
+        customerPartNumber: "6117",
+        customerDescription: "Bank Charge_WireFee",
+        qty: "1",
+        unitPrice: "-15",
+        condition: "",
+        allocations: [{ itemId: "wire", sku: "6117", name: "Bank Charge_WireFee", itemType: "Service", qty: "1", unitPrice: "-15" }],
+      },
+    ];
+    const payload = toSalesOrderPayload(draft);
+    const lines = payload.lines as { line_kind: string; unit_price: string; qty: string }[];
+    assert.equal(lines[0].line_kind, "product");
+    assert.equal(lines[1].line_kind, "discount");
+    assert.equal(lines[2].line_kind, "fee");
+    assert.equal(lineKindForCredit(draft.lines[1]), "discount");
+    assert.equal(
+      salesOrderTotal(draft.lines.map((line) => ({ extPrice: lineExtension(line.qty, line.unitPrice) ?? "" }))),
+      60,
+    );
+    assert.equal(formatSalesMoney(60, "USD"), "$60.00");
+    assert.equal(formatSalesMoney(-25, "USD"), "-$25.00");
+  });
+
+  it("keeps a negative price off a product SKU and allows a service credit with no discount in the name", () => {
+    assert.equal(
+      lineKindForCredit({
+        lineKind: "product",
+        unitPrice: "-10",
+        customerPartNumber: "106683",
+        customerDescription: "Drive",
+        allocations: [{ sku: "106683", name: "Drive", itemType: "Product", unitPrice: "-10" }],
+      }),
+      "product",
+    );
+    assert.equal(
+      lineKindForCredit({
+        lineKind: "product",
+        unitPrice: "-8",
+        customerPartNumber: "4343",
+        customerDescription: "SRVC\\FREIGHT-OUT",
+        allocations: [{ sku: "4343", name: "SRVC\\FREIGHT-OUT", itemType: "Service", unitPrice: "-8" }],
+      }),
+      "service",
+    );
+    assert.equal(
+      lineKindForCredit({
+        lineKind: "fee",
+        unitPrice: "35.75",
+        customerPartNumber: "102475",
+        customerDescription: "PayPal fee",
+        allocations: [],
+      }),
+      "fee",
+    );
   });
 
   it("keeps quantity, unit price, and extension consistent", () => {

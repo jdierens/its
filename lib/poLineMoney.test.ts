@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   extensionFromUnit,
   formatUnitPrice,
+  parseSignedUnitCost,
+  parseUnitCost,
   pricesMatch,
   syncLinePrices,
   unitFromExtension,
@@ -33,4 +35,10 @@ test("a changed quantity keeps the unit price and recomputes the extension", () 
 test("prices that are not a rounding difference are rejected", () => {
   assert.equal(pricesMatch(3, 1, 100), false);
   assert.equal(pricesMatch(2, 10, 20), true);
+});
+
+test("purchase-order prices stay unsigned and sales-order prices may be negative", () => {
+  assert.equal(parseUnitCost("-12.50"), null);
+  assert.equal(parseSignedUnitCost("-12.50"), -12.5);
+  assert.equal(parseSignedUnitCost("12.50"), 12.5);
 });
