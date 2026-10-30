@@ -8902,10 +8902,28 @@ button.so-new-order svg,
 }
 
 .ebay-listings-search button,
-.ebay-match button {
+.ebay-match button,
+.ebay-listings-export button {
   height: 1.75rem;
   padding: 0 0.7rem;
   font-size: 0.82rem;
+}
+
+.ebay-listings-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.ebay-listings-export-note {
+  margin: 0;
+}
+
+.ebay-listings-export .export-error {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .ebay-listing-photo {
@@ -9016,11 +9034,16 @@ button.so-new-order svg,
   .ebay-listings-filters a,
   .ebay-listings-search input,
   .ebay-listings-search button,
+  .ebay-listings-export button,
   .ebay-match input,
   .ebay-match button,
   .ebay-listing-later button {
     min-height: 44px;
     height: auto;
+  }
+
+  .ebay-listings-export {
+    margin-left: 0;
   }
 
   .ebay-listings-search input,

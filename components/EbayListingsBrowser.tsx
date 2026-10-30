@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { EbayListingMatch } from "@/components/EbayListingMatch";
+import { EbayListingsExport } from "@/components/EbayListingsExport";
 import {
   EBAY_LISTINGS_PAGE_SIZE,
   type EbayListingMatchFilter,
@@ -15,9 +17,11 @@ const FILTERS: { id: EbayListingMatchFilter; label: string }[] = [
 export function EbayListingsBrowser({
   browser,
   canMatch,
+  googleConfigured,
 }: {
   browser: EbayListingsBrowserResult;
   canMatch: boolean;
+  googleConfigured: boolean;
 }) {
   const pageCount = Math.max(1, Math.ceil(browser.total / EBAY_LISTINGS_PAGE_SIZE));
   const from = browser.total === 0 ? 0 : (browser.page - 1) * EBAY_LISTINGS_PAGE_SIZE + 1;
@@ -27,7 +31,8 @@ export function EbayListingsBrowser({
     <>
       <p className="page-note">
         Active listings from the last refresh. Matching a row sets the ITS item. It does not change the custom label on eBay.
-        Pushing a SKU and ending a listing are not available yet.
+        Pushing a SKU and ending a listing are not available yet. Export CSV and Open in Google Sheets include every active
+        listing that matches the search and filter, not only this page.
       </p>
       <div className="ebay-listings-bar">
         <nav className="ebay-listings-filters" aria-label="Listing match">
@@ -52,6 +57,9 @@ export function EbayListingsBrowser({
           {browser.match !== "all" ? <input type="hidden" name="match" value={browser.match} /> : null}
           <button type="submit">Search</button>
         </form>
+        <Suspense fallback={null}>
+          <EbayListingsExport q={browser.q} match={browser.match} googleConfigured={googleConfigured} />
+        </Suspense>
       </div>
       {browser.message ? (
         <p className="banner error" role="alert">

@@ -28,7 +28,8 @@ export default function ExportSetupPage() {
       </ol>
       <p>
         The spreadsheet is created in the signed-in person&apos;s My Drive and named{" "}
-        <code>ITS items export YYYY-MM-DD HH:mm</code> (Pacific time).
+        <code>ITS items export YYYY-MM-DD HH:mm</code> (Pacific time). eBay listings uses the same
+        Google connection. That sheet is named <code>ITS eBay listings YYYY-MM-DD HH:mm</code>.
       </p>
     </main>
   );
