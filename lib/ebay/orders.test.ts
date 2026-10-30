@@ -7,6 +7,7 @@ import {
   applyLabelFees,
   draftLines,
   draftOrderRow,
+  ebaySoReferenceAssignment,
   labelFeeFilter,
   orderPullWindows,
   parseFulfillmentOrders,
@@ -15,6 +16,7 @@ import {
   planLegacySeed,
   planOrderPull,
   pullDraftUnchanged,
+  salesOrderStatusForAssignment,
   type StoredPullDraft,
   type ExistingPullOrder,
   type ExistingSeedOrder,
@@ -128,6 +130,71 @@ test("a paid eBay order becomes an unnumbered draft under the given customer", (
   const lines = draftLines(action.order, action.itemIds);
   assert.equal(lines[0].item_id, "item-1");
   assert.equal(lines[0].ext_price, 10);
+});
+
+test("an eBay order is approved when an SO reference is assigned, and a direct order stays a draft", () => {
+  const order = ebayOrder({ ebayOrderId: "19-00001-00019" });
+  const approvedAt = "2026-10-30T15:00:00.000Z";
+  const unnumbered = draftOrderRow({ order, customerId: "customer-ebay", approvedAt });
+  assert.equal(unnumbered.status, "draft");
+  assert.equal(unnumbered.so_number, null);
+  assert.equal(unnumbered.sheet_ref, undefined);
+  assert.equal(unnumbered.approved_at, null);
+  assert.equal(unnumbered.customer_id, "customer-ebay");
+
+  const approved = draftOrderRow({ order, customerId: "customer-ebay", soNumber: 27254, approvedAt });
+  assert.equal(approved.status, "approved");
+  assert.equal(approved.so_number, 27254);
+  assert.equal(approved.sheet_ref, "SO#27254");
+  assert.equal(approved.approved_at, approvedAt);
+  assert.equal(approved.approved_by, null);
+  assert.equal(approved.source, "ebay");
+  assert.deepEqual(ebaySoReferenceAssignment(27254, approvedAt), {
+    status: "approved",
+    so_number: 27254,
+    sheet_ref: "SO#27254",
+    approved_at: approvedAt,
+    approved_by: null,
+  });
+
+  assert.equal(salesOrderStatusForAssignment({ source: "ebay", soNumber: 27254 }), "approved");
+  assert.equal(salesOrderStatusForAssignment({ source: "ebay", soNumber: null }), "draft");
+  assert.equal(salesOrderStatusForAssignment({ source: "manual", soNumber: 27254 }), "draft");
+  assert.equal(salesOrderStatusForAssignment({ source: "email", soNumber: 27254 }), "draft");
+  assert.equal(salesOrderStatusForAssignment({ source: "whatsapp", soNumber: 1 }), "draft");
+});
+
+test("a pull links an eBay order already mapped to an ITS SO and creates the rest under eBay Customer", () => {
+  const freshId = "19-00001-00019";
+  const actions = planOrderPull(
+    [ebayOrder(), ebayOrder({ ebayOrderId: freshId, salesRecordRef: "88001" })],
+    [{ id: "so-27000", status: "shipped", soNumber: 27000, ebayOrderId: null, ebaySalesRecordRef: "445566", personEdited: true }],
+    [],
+    [{ ebayOrderId: freshId, soNumber: 27254 }],
+  );
+  assert.equal(actions[0].kind, "link");
+  if (actions[0].kind === "link") assert.equal(actions[0].id, "so-27000");
+  assert.equal(actions[1].kind, "create");
+  if (actions[1].kind !== "create") return;
+  assert.equal(actions[1].soNumber, 27254);
+  const row = draftOrderRow({
+    order: actions[1].order,
+    customerId: "customer-ebay",
+    soNumber: actions[1].soNumber,
+    approvedAt: "2026-10-30T15:00:00.000Z",
+  });
+  assert.equal(row.status, "approved");
+  assert.equal(row.customer_id, "customer-ebay");
+  assert.equal(row.sheet_ref, "SO#27254");
+  assert.equal(row.ebay_order_id, freshId);
+
+  const unmatched = planOrderPull([ebayOrder({ ebayOrderId: "19-00001-00020", salesRecordRef: null })], [], []);
+  assert.equal(unmatched[0].kind, "create");
+  if (unmatched[0].kind !== "create") return;
+  assert.equal(unmatched[0].soNumber, null);
+  const draft = draftOrderRow({ order: unmatched[0].order, customerId: "customer-ebay" });
+  assert.equal(draft.status, "draft");
+  assert.equal(draft.so_number, null);
 });
 
 test("an existing eBay order id or sales record is not drafted again", () => {

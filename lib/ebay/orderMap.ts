@@ -688,7 +688,7 @@ export function planOrderPull(
       const soNumber = claimLegacy(order.ebayOrderId, null);
       remember({
         id: `new:${order.ebayOrderId}`,
-        status: "draft",
+        status: salesOrderStatusForAssignment({ source: "ebay", soNumber }),
         ebayOrderId: order.ebayOrderId,
         ebaySalesRecordRef: order.salesRecordRef,
         personEdited: false,
@@ -751,6 +751,37 @@ export function planOrderPull(
   return actions;
 }
 
+/**
+ * An eBay order is approved when this pull assigns an SO reference.
+ * A direct, email, or WhatsApp order stays a draft. Those orders are not
+ * created here; `write_sales_order` inserts them as drafts and does not
+ * assign `so_number`.
+ */
+export function salesOrderStatusForAssignment(input: {
+  source: string;
+  soNumber: number | null | undefined;
+}): "draft" | "approved" {
+  if (input.source === "ebay" && input.soNumber != null) return "approved";
+  return "draft";
+}
+
+/** Sheet-style SO reference written with `so_number` when an eBay order is approved. */
+export function ebaySoReferenceAssignment(soNumber: number, approvedAt: string): {
+  status: "approved";
+  so_number: number;
+  sheet_ref: string;
+  approved_at: string;
+  approved_by: null;
+} {
+  return {
+    status: "approved",
+    so_number: soNumber,
+    sheet_ref: `SO#${soNumber}`,
+    approved_at: approvedAt,
+    approved_by: null,
+  };
+}
+
 export function draftOrderRow(input: {
   order: ParsedEbayOrder;
   customerId: string;
@@ -761,14 +792,20 @@ export function draftOrderRow(input: {
   paymentTerms?: string | null;
   /** app_settings ebay_default_incoterms. Empty becomes FOB. */
   incoterms?: string | null;
+  /** Used when soNumber is set. Defaults to the current time. */
+  approvedAt?: string;
 }): Record<string, unknown> {
+  const assigned =
+    input.soNumber != null
+      ? ebaySoReferenceAssignment(input.soNumber, input.approvedAt ?? new Date().toISOString())
+      : null;
   return {
-    status: "draft",
-    so_number: input.soNumber ?? null,
+    status: salesOrderStatusForAssignment({ source: "ebay", soNumber: input.soNumber }),
+    so_number: assigned?.so_number ?? null,
     sales_rep: ebaySalesRepFromSetting(input.salesRep),
     terms: ebayPaymentTermsFromSetting(input.paymentTerms),
     incoterms: ebayIncotermsFromSetting(input.incoterms),
-    ...(input.soNumber != null ? { sheet_ref: `SO#${input.soNumber}` } : {}),
+    ...(assigned ? { sheet_ref: assigned.sheet_ref } : {}),
     customer_id: input.customerId,
     order_date: input.order.orderDate,
     ship_to: input.order.shipTo,
@@ -789,7 +826,7 @@ export function draftOrderRow(input: {
     ebay_ad_fee: null,
     ebay_order_earnings: input.order.earnings,
     operator_id: null,
-    approved_at: null,
+    approved_at: assigned?.approved_at ?? null,
     approved_by: null,
   };
 }
