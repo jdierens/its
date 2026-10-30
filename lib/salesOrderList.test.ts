@@ -164,6 +164,7 @@ describe("sales order list search", () => {
   it("matches the status label, a date, and the total that is on the row", () => {
     assert.equal(salesOrderMatchesSearch(rows[2], "Picking"), true);
     assert.equal(salesOrderMatchesSearch(rows[2], "2026-11-01"), true);
+    assert.equal(salesOrderMatchesSearch(rows[2], "11/01/26"), true);
     assert.equal(salesOrderMatchesSearch(rows[0], "1200.50"), true);
     assert.equal(salesOrderMatchesSearch(rows[0], "$1,200.50"), true);
     assert.equal(salesOrderMatchesSearch(rows[1], "1200"), false);
@@ -191,6 +192,8 @@ describe("sales order list page", () => {
     assert.match(page, /aria-sort=/);
     assert.match(page, /so-col-sort/);
     assert.match(page, /visibleSalesOrders/);
+    assert.match(page, /formatDataDate\(order\.orderDate\)/);
+    assert.match(page, /formatDataDate\(order\.shipDate\)/);
     assert.match(page, /Hide eBay/);
     assert.match(page, /QueryField/);
     assert.match(list, /salesOrderIsEcommerce/);
