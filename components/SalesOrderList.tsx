@@ -82,7 +82,7 @@ function SortHeading({
       scope="col"
       aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"}
     >
-      <SortButton label={label} column={column} sort={activeSort} onSort={onSort} />
+      <SortButton label={label} column={column} sort={sort} onSort={onSort} />
     </th>
   );
 }
