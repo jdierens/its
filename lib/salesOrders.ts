@@ -21,6 +21,7 @@ import {
   type SoAddress,
   type SoDraftInput,
 } from "@/lib/salesOrderDraft";
+import { salesOrderIsEcommerce } from "@/lib/salesOrderList";
 import { salesOperatorId, salesPageAccess } from "@/lib/salesSession";
 import { loadSoAttachments, type SoAttachmentView } from "@/lib/soAttachments";
 import { operatorInitials } from "@/lib/stockAccess";
@@ -76,6 +77,8 @@ export type SalesOrderListItem = {
   shipDate: string | null;
   currency: string;
   total: number | null;
+  /** eBay source, channel, order id, or sales record number. */
+  ecommerce: boolean;
 };
 
 export type SalesAllocationView = {
@@ -355,7 +358,7 @@ export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promi
   let query = (await getSupabase())
     .from("sales_orders")
     .select(
-      "id, so_number, status, order_date, ship_date, currency, customer_po, reference, ebay_order_id, created_at, customers(display_name), so_lines(ext_price)",
+      "id, so_number, status, order_date, ship_date, currency, customer_po, reference, source, channel, ebay_order_id, ebay_sales_record_ref, created_at, customers(display_name), so_lines(ext_price)",
     )
     .order("order_date", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
@@ -387,6 +390,12 @@ export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promi
         shipDate: dateValue(row.ship_date),
         currency: text(row.currency) || "USD",
         total: salesOrderTotal(lines),
+        ecommerce: salesOrderIsEcommerce({
+          source: text(row.source),
+          channel: text(row.channel),
+          ebayOrderId: text(row.ebay_order_id),
+          ebaySalesRecordRef: text(row.ebay_sales_record_ref),
+        }),
       },
       access.canViewMoney,
     );
