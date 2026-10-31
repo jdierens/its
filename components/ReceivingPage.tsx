@@ -226,6 +226,7 @@ export function ReceivingPage() {
   const [created, setCreated] = useState<CreatedBin | null>(null);
   const [cleaned, setCleaned] = useState(false);
   const [wiped, setWiped] = useState(false);
+  const [damaged, setDamaged] = useState(false);
   const [qty, setQty] = useState("");
   const [unitRows, setUnitRows] = useState<UnitDraft[]>([]);
   const [unitPaste, setUnitPaste] = useState("");
@@ -896,6 +897,7 @@ export function ReceivingPage() {
         searchQuery: search,
         cleaned: flags.cleaned,
         wiped: flags.wiped,
+        damaged,
         units: units.units,
         vendorId: owner.vendorId,
         purchaseOrderId: owner.purchaseOrderId,
@@ -925,6 +927,7 @@ export function ReceivingPage() {
       setBinPrompt(null);
       setCleaned(false);
       setWiped(false);
+      setDamaged(false);
       setQty("");
       setUnitRows([]);
       setUnitPaste("");
@@ -1463,6 +1466,19 @@ export function ReceivingPage() {
                   </div>
                 </label>
               ) : null}
+              <label className="receive-prep" htmlFor="receive-damaged">
+                <span>Damaged</span>
+                <div className="receive-prep-control">
+                  <input
+                    id="receive-damaged"
+                    type="checkbox"
+                    checked={damaged}
+                    disabled={busy}
+                    title="Not for sale. The quantity stays in the bin."
+                    onChange={(event) => setDamaged(event.target.checked)}
+                  />
+                </div>
+              </label>
               <label className="receive-comment" htmlFor="receive-comment">
                 <span>Comment</span>
                 <input

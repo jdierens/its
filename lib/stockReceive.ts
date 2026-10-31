@@ -296,6 +296,8 @@ export type BinContentRow = {
   sku: string;
   name: string;
   qty: number;
+  /** Pieces in this bin that are not for sale. */
+  damagedQty: number;
   description: string;
   shortCode: string | null;
 };
@@ -490,6 +492,7 @@ export function binDetailFromJson(value: unknown): BinDetail | null {
       sku: String(row.sku ?? ""),
       name: String(row.name ?? ""),
       qty: Number(row.qty),
+      damagedQty: Number(row.damaged_qty ?? 0) || 0,
       description: textOrNull(row.description) ?? "",
       shortCode: textOrNull(row.short_code),
     })),

@@ -152,6 +152,7 @@ describe("recent receiving rows", () => {
       editedBy: null,
       cleaned: null,
       wiped: null,
+      damaged: false,
       shortCode: null,
       longCode: null,
       taxonomyName: null,

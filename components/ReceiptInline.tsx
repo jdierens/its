@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type 
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import { labelHighlightedChoice, labelSearchOutcome } from "@/lib/labelDeskSelection";
-import { editReceipt, searchReceivingScan } from "@/lib/receivingActions";
+import { editReceipt, searchReceivingScan, setReceiptDamaged } from "@/lib/receivingActions";
 import {
   planReceiptEdit,
   receiptBinReference,
@@ -13,7 +13,7 @@ import {
   type ReceiptEditBody,
   type ReceiptPatch,
 } from "@/lib/receiptInline";
-import { commentWithPrepStatus, receivePrepKind } from "@/lib/receivingLine";
+import { commentWithStockStatus, receivePrepKind } from "@/lib/receivingLine";
 import { scanSearchNote } from "@/lib/receivingScan";
 import { RECEIVING_DATE_EDITABLE, formatReceivedOn, type ReceivingEntry } from "@/lib/receivingSettings";
 import type { LabelItem } from "@/lib/types";
@@ -42,6 +42,7 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     entry.searchQuery,
     entry.cleaned,
     entry.wiped,
+    entry.damaged,
     entry.shortCode,
     entry.putaway,
   ].join("\u0001");
@@ -115,6 +116,27 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     void persist(confirm.body, true);
   }
 
+  async function toggleDamaged(next: boolean) {
+    if (lock.current || saving || next === entry.damaged) return;
+    const message = next
+      ? "Mark this receipt damaged? That quantity leaves inventory for sale."
+      : "Clear damaged on this receipt? That quantity becomes available for sale.";
+    if (!window.confirm(message)) return;
+    lock.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      await setReceiptDamaged(entry.id, next);
+      setField(null);
+      setConfirm(null);
+      onSaved();
+    } catch (cause) {
+      lock.current = false;
+      setSaving(false);
+      setError(errorText(cause));
+    }
+  }
+
   return {
     field,
     setField,
@@ -124,6 +146,7 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     saving,
     apply,
     confirmSave,
+    toggleDamaged,
     cancelConfirm() {
       setPendingItem(null);
       setConfirm(null);
@@ -412,7 +435,39 @@ function visibleComment(entry: ReceivingEntry, pending: ReceiptPatch["item"] | n
     longCode: picked ? picked.longCode : entry.longCode,
     taxonomyName: picked ? picked.taxonomyName : entry.taxonomyName,
   });
-  return commentWithPrepStatus(entry.comment, prep, picked ? false : entry.cleaned, picked ? false : entry.wiped);
+  return commentWithStockStatus(
+    entry.comment,
+    prep,
+    picked ? false : entry.cleaned,
+    picked ? false : entry.wiped,
+    picked ? false : entry.damaged,
+  );
+}
+
+function DamagedBox({
+  damaged,
+  disabled,
+  onToggle,
+}: {
+  damaged: boolean;
+  disabled: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  return (
+    <label className="receipt-dmg">
+      <input
+        type="checkbox"
+        checked={damaged}
+        disabled={disabled}
+        aria-label={damaged ? "Damaged, not for sale" : "Mark damaged"}
+        onClick={(event) => {
+          event.preventDefault();
+          onToggle(!damaged);
+        }}
+      />
+      DMG
+    </label>
+  );
 }
 
 function ConfirmBar({
@@ -597,11 +652,14 @@ export function ReceiptTableRow({
           )}
         </td>
         <td className="note" title={note || undefined}>
-          {edit.field === "comment" ? (
-            <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
-          ) : (
-            <CellButton value={note} title={note || undefined} onClick={() => open("comment")} />
-          )}
+          <div className="receipt-note">
+            <DamagedBox damaged={entry.damaged === true} disabled={edit.saving} onToggle={(next) => void edit.toggleDamaged(next)} />
+            {edit.field === "comment" ? (
+              <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
+            ) : (
+              <CellButton value={note} title={note || undefined} onClick={() => open("comment")} />
+            )}
+          </div>
         </td>
       </tr>
       {edit.confirm || edit.error ? (
@@ -773,11 +831,14 @@ export function ReceiptCard({
           )}
         </CardLine>
         <CardLine label="Comment">
-          {edit.field === "comment" ? (
-            <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
-          ) : (
-            <CellButton value={note} onClick={() => open("comment")} />
-          )}
+          <div className="receipt-note">
+            <DamagedBox damaged={entry.damaged === true} disabled={edit.saving} onToggle={(next) => void edit.toggleDamaged(next)} />
+            {edit.field === "comment" ? (
+              <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
+            ) : (
+              <CellButton value={note} onClick={() => open("comment")} />
+            )}
+          </div>
         </CardLine>
       </dl>
       <ConfirmBar
