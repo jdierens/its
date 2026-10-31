@@ -2,21 +2,28 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  INVENTORY_MATCH_CAP,
   INVENTORY_NO_BINS,
-  INVENTORY_ON_HAND_POOL,
+  INVENTORY_PAGE_SIZE,
   applyInventoryStock,
   formatInventoryBins,
   inventoryBinTotals,
   inventoryBinsSortLabel,
   inventoryHits,
+  inventoryLastPage,
   inventoryOnHand,
+  inventoryPageWindow,
+  inventoryQtyTotal,
   inventoryScanCap,
   inventoryStockMode,
+  inventoryTaxonomyLabel,
+  pageInventoryHits,
+  parseInventoryPage,
+  parseInventorySort,
   sortInventoryHits,
   toggleInventorySort,
   type InventoryHit,
 } from "./inventorySearch.ts";
-import { LABEL_RESULT_CAP } from "./labelLookup.ts";
 import { NAV_GROUPS, pageMetaFor } from "./nav.ts";
 
 test("bin totals use the receiving summary shape and include a location", () => {
@@ -78,7 +85,16 @@ test("damaged quantity is tracked and left out of on hand", () => {
 test("a match with no open quantity stays in the list", () => {
   const hits = inventoryHits(
     [
-      { id: "drive", sku: "106683", name: "Drive", description: "Kioxia 15.36TB" },
+      {
+        id: "drive",
+        sku: "106683",
+        name: "Drive",
+        description: "Kioxia 15.36TB",
+        shortCode: "SSD",
+        longCode: "DSK/SSD",
+        taxonomyName: "Solid state drive",
+        imagePath: "drive/photo.jpg",
+      },
       { id: "empty", sku: "100054", name: "Memory", description: "" },
     ],
     [
@@ -93,6 +109,13 @@ test("a match with no open quantity stays in the list", () => {
   assert.equal(hits[1]?.qty, 0);
   assert.equal(hits[1]?.locations, "");
   assert.equal(hits[1]?.empty, true);
+  assert.equal(hits[0]?.shortCode, "SSD");
+  assert.equal(hits[0]?.longCode, "DSK/SSD");
+  assert.equal(hits[0]?.taxonomyName, "Solid state drive");
+  assert.equal(hits[0]?.imagePath, "drive/photo.jpg");
+  assert.equal(hits[0]?.imageUrl, null);
+  assert.equal(hits[1]?.shortCode, null);
+  assert.equal(hits[1]?.imagePath, null);
   assert.equal(INVENTORY_NO_BINS, "no bins");
 });
 
@@ -106,6 +129,11 @@ function hit(partial: Partial<InventoryHit> & Pick<InventoryHit, "id">): Invento
     damaged: partial.damaged ?? 0,
     damagedLocations: partial.damagedLocations ?? "",
     empty: partial.empty ?? false,
+    shortCode: partial.shortCode ?? null,
+    longCode: partial.longCode ?? null,
+    taxonomyName: partial.taxonomyName ?? null,
+    imagePath: partial.imagePath ?? null,
+    imageUrl: partial.imageUrl ?? null,
     ...partial,
   };
 }
@@ -117,9 +145,9 @@ test("on hand defaults to in stock and all keeps quantity zero", () => {
   assert.equal(inventoryStockMode("in"), "in");
   assert.equal(inventoryStockMode("yes"), "in");
   assert.equal(inventoryStockMode("all"), "all");
-  assert.equal(inventoryScanCap("in"), INVENTORY_ON_HAND_POOL);
-  assert.equal(inventoryScanCap("all"), LABEL_RESULT_CAP);
-  assert.equal(INVENTORY_ON_HAND_POOL, LABEL_RESULT_CAP * 8);
+  assert.equal(inventoryScanCap("in"), INVENTORY_MATCH_CAP);
+  assert.equal(inventoryScanCap("all"), INVENTORY_MATCH_CAP);
+  assert.equal(INVENTORY_MATCH_CAP, 1000);
 
   const hits = [
     hit({ id: "zero", qty: 0, empty: true }),
@@ -131,7 +159,8 @@ test("on hand defaults to in stock and all keeps quantity zero", () => {
     stocked.hits.map((row) => row.id),
     ["one"],
   );
-  assert.equal(stocked.matched, 3);
+  assert.equal(stocked.matched, 1);
+  assert.equal(stocked.scanned, 3);
   assert.equal(stocked.truncated, false);
   const every = applyInventoryStock(hits, "all", false);
   assert.deepEqual(
@@ -140,20 +169,22 @@ test("on hand defaults to in stock and all keeps quantity zero", () => {
   );
   assert.equal(every.truncated, false);
   assert.equal(every.matched, 3);
+  assert.equal(every.scanned, 3);
 });
 
-test("in stock caps the filtered list and keeps a truncated scan", () => {
-  const hits = Array.from({ length: LABEL_RESULT_CAP + 5 }, (_, index) => hit({ id: `row-${index}`, qty: index + 1 }));
+test("in stock keeps every positive qty and a truncated scan stays truncated", () => {
+  const hits = Array.from({ length: 30 }, (_, index) => hit({ id: `row-${index}`, qty: index + 1 }));
   const applied = applyInventoryStock(hits, "in", false);
-  assert.equal(applied.hits.length, LABEL_RESULT_CAP);
-  assert.equal(applied.truncated, true);
+  assert.equal(applied.hits.length, hits.length);
+  assert.equal(applied.truncated, false);
   assert.equal(applied.matched, hits.length);
+  assert.equal(applied.scanned, hits.length);
   assert.ok(applied.hits.every((row) => row.qty > 0));
   assert.equal(applied.hits[0]?.id, "row-0");
   assert.equal(applyInventoryStock(hits.slice(0, 4), "in", true).truncated, true);
-  const all = applyInventoryStock(hits, "all", false);
+  const all = applyInventoryStock(hits, "all", true);
   assert.equal(all.hits.length, hits.length);
-  assert.equal(all.truncated, false);
+  assert.equal(all.truncated, true);
 });
 
 test("column sort starts ascending and then toggles", () => {
@@ -163,7 +194,7 @@ test("column sort starts ascending and then toggles", () => {
   assert.deepEqual(toggleInventorySort({ key: "qty", dir: "desc" }, "sku"), { key: "sku", dir: "asc" });
 });
 
-test("search results sort on the client and ties keep search order", () => {
+test("search results sort and ties keep search order", () => {
   const hits = [
     hit({ id: "exact", sku: "100", name: "Drive", description: "Same", qty: 2, locations: "(x2)20000-B" }),
     hit({ id: "later", sku: "20", name: "Adapter", description: "Other", qty: 10, locations: "(x10)10002-C\n(x1)30000-B" }),
@@ -215,6 +246,50 @@ test("search results sort on the client and ties keep search order", () => {
   );
 });
 
+test("taxonomy and photo sort, and the pager totals the filtered list", () => {
+  const hits = [
+    hit({ id: "ssd", sku: "30", shortCode: "SSD", qty: 2, damaged: 9, imagePath: "ssd/a.jpg" }),
+    hit({ id: "cpu", sku: "10", shortCode: "CPU", qty: 4, imagePath: null }),
+    hit({ id: "named", sku: "20", shortCode: null, taxonomyName: "Memory", qty: 1, imagePath: "mem/a.jpg" }),
+  ];
+  assert.equal(inventoryTaxonomyLabel(hits[2]!), "Memory");
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "taxo", dir: "asc" }).map((row) => row.id),
+    ["cpu", "named", "ssd"],
+  );
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "photo", dir: "asc" }).map((row) => row.id),
+    ["cpu", "ssd", "named"],
+  );
+  assert.deepEqual(
+    sortInventoryHits(hits, { key: "photo", dir: "desc" }).map((row) => row.id),
+    ["ssd", "named", "cpu"],
+  );
+  assert.equal(inventoryQtyTotal(hits), 7);
+  assert.equal(parseInventoryPage(null), 1);
+  assert.equal(parseInventoryPage("0"), 1);
+  assert.equal(parseInventoryPage("3"), 3);
+  assert.equal(parseInventoryPage(2.8), 2);
+  assert.deepEqual(parseInventorySort("taxo", "desc"), { key: "taxo", dir: "desc" });
+  assert.deepEqual(parseInventorySort("qty", null), { key: "qty", dir: "asc" });
+  assert.equal(parseInventorySort("nope", "asc"), null);
+  assert.equal(inventoryLastPage(0), 1);
+  assert.equal(inventoryLastPage(INVENTORY_PAGE_SIZE), 1);
+  assert.equal(inventoryLastPage(INVENTORY_PAGE_SIZE + 1), 2);
+  const paged = pageInventoryHits(hits, 2, 2);
+  assert.equal(paged.page, 2);
+  assert.equal(paged.pages, 2);
+  assert.equal(paged.from, 3);
+  assert.equal(paged.to, 3);
+  assert.deepEqual(
+    paged.hits.map((row) => row.id),
+    ["named"],
+  );
+  const past = inventoryPageWindow(3, 9, 2);
+  assert.equal(past.page, 2);
+  assert.equal(past.from, 3);
+});
+
 test("inventory search is a warehouse page and reuses receiving Find", () => {
   const warehouse = NAV_GROUPS.find((group) => group.label === "Warehouse");
   const item = warehouse?.items.find((entry) => entry.href === "/warehouse/inventory");
@@ -240,16 +315,29 @@ test("inventory search is a warehouse page and reuses receiving Find", () => {
   const page = readFileSync(new URL("../components/InventorySearchPage.tsx", import.meta.url), "utf8");
   assert.match(page, /className="inventory-bin"/);
   assert.match(page, /aria-sort=/);
-  assert.match(page, /sortInventoryHits/);
   assert.match(page, /inventory-col-sort/);
-  assert.match(page, /className="inventory-stock"/);
+  assert.match(page, /className="inventory-qty-toggle"/);
   assert.match(page, /aria-pressed=\{stock === "in"\}/);
   assert.match(page, /inventoryStockMode/);
-  assert.match(page, /searchInventory\(query, mode\)/);
+  assert.match(page, /searchInventory\(query, mode,/);
   assert.match(page, /next\.set\(INVENTORY_STOCK_PARAM, "all"\)/);
   assert.match(page, /next\.delete\(INVENTORY_STOCK_PARAM\)/);
+  assert.match(page, /aria-label="First page"/);
+  assert.match(page, /aria-label="Previous page"/);
+  assert.match(page, /aria-label="Next page"/);
+  assert.match(page, /aria-label="Last page"/);
+  assert.match(page, /total qty/);
+  assert.match(page, /for this filter, not this page/);
+  assert.match(page, /className="code-badge"/);
+  assert.match(page, /className="thumb-sm"/);
+  assert.doesNotMatch(page, /On hand/);
   assert.doesNotMatch(page, /hit\.qty > 0/);
+  assert.match(source, /sortInventoryHits/);
   assert.match(source, /applyInventoryStock/);
   assert.match(source, /inventoryScanCap/);
-  assert.match(css, /\.inventory-stock\[aria-pressed="true"\]/);
+  assert.match(source, /browseInventory/);
+  assert.match(source, /if \(!query\) return browseInventory/);
+  assert.match(source, /signedImageUrls/);
+  assert.match(source, /primaryStoragePath/);
+  assert.match(css, /\.inventory-qty-toggle\[aria-pressed="true"\]/);
 });

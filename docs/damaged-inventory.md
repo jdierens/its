@@ -8,7 +8,7 @@ Damaged goods are in the warehouse and are not for sale. A starting-inventory ro
 
 | Column | Meaning |
 | --- | --- |
-| `qty` | For sale. Inventory search On hand, pick bins, and `item_for_sale_qty` use this. |
+| `qty` | For sale. Inventory search Qty, pick bins, and `item_for_sale_qty` use this. |
 | `damaged_qty` | In the bin, not for sale. |
 
 A row remains while either quantity is above 0, so a bin that holds only damaged goods keeps its open cycle. `bin_occupied_qty` is the sum of both and is what receiving uses to decide that the bin is not empty.
@@ -27,7 +27,7 @@ Import has a `damaged` column. Blank is no. `DMG` and `damage` map to it. `yes` 
 
 ## What still counts as for sale
 
-Inventory search On hand is `qty` only. When damaged pieces exist, the cell also shows that count. It is not part of the number, and In stock does not keep a match whose for-sale quantity is 0.
+Inventory search Qty is `qty` only. When damaged pieces exist, the cell also shows that count. It is not part of the number or the total, and in stock does not keep a match whose for-sale quantity is 0.
 
 A pick bin list is `bin_contents.qty` above 0, so a damaged-only balance is not offered and a mixed bin offers only the for-sale quantity. eBay orders are picked on that same sheet. There is no push of ITS quantity to eBay. `item_for_sale_qty(item)` is the open-cycle for-sale total a later listing quantity should use.
 

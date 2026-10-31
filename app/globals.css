@@ -9226,11 +9226,20 @@ button.so-new-order svg,
   white-space: nowrap;
 }
 
-.inventory-results th.num.fit {
-  min-width: 11rem;
+.inventory-results th.photo,
+.inventory-results td.photo {
+  width: 2.4rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
 }
 
-/* On hand sorts. The mode on that heading filters quantity. */
+.inventory-results td.photo .thumb-sm,
+.inventory-cards .inventory-photo .thumb-sm {
+  width: 28px;
+  height: 28px;
+}
+
+/* Qty filters. The arrow beside it sorts. */
 .inventory-qty-head {
   display: inline-flex;
   align-items: center;
@@ -9244,39 +9253,63 @@ button.so-new-order svg,
   width: auto;
 }
 
-.inventory-stock {
+.inventory-qty-toggle {
   appearance: none;
   margin: 0;
-  padding: 0.12rem 0.45rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   background: transparent;
   background-image: none;
-  color: var(--muted);
+  color: inherit;
   font: inherit;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  line-height: 1.5;
-  text-transform: none;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-transform: inherit;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.inventory-stock[aria-pressed="true"] {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  background: color-mix(in srgb, var(--accent) 12%, white);
-}
-
-.inventory-stock:hover,
-.inventory-stock:focus-visible {
+.inventory-qty-toggle[aria-pressed="true"] {
   color: var(--accent);
 }
 
-.inventory-stock:focus-visible {
+.inventory-qty-toggle:hover,
+.inventory-qty-toggle:focus-visible {
+  color: var(--accent);
+}
+
+.inventory-qty-toggle:focus-visible,
+.inventory-qty-sort:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.inventory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.inventory-summary {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.inventory-summary .hint {
+  margin-left: 0.45rem;
+}
+
+.inventory-meta .receive-pager {
+  margin-top: 0;
+}
+
+.inventory-cards .inventory-photo {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .inventory-sort-bar .inventory-qty-head {
@@ -9323,10 +9356,23 @@ button.so-new-order svg,
     color: var(--muted);
   }
 
-  .inventory-sort-bar .inventory-stock {
+  .inventory-sort-bar .inventory-qty-toggle,
+  .inventory-sort-bar .inventory-qty-sort {
     min-height: 44px;
-    padding: 0 0.55rem;
     font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .inventory-sort-bar .inventory-qty-toggle[aria-pressed="true"] {
+    color: var(--accent);
+  }
+
+  .inventory-meta .receive-pager button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 }
 

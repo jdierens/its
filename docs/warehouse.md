@@ -38,4 +38,4 @@ Recent moves list Date/time, Initials, What, From, To, and Qty in the same packe
 
 ## Inventory search
 
-Warehouse > Inventory search (`/warehouse/inventory`) is the floor lookup for on-hand quantity and bin locations. It uses the same search as receiving Find. The write-up is in [Inventory search](inventory-search.md).
+Warehouse > Inventory search (`/warehouse/inventory`) is the floor lookup for for-sale quantity and bin locations. A blank search lists the inventory. It uses the same search as receiving Find when a query is typed. The write-up is in [Inventory search](inventory-search.md).
