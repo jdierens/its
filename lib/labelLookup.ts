@@ -3,6 +3,12 @@ import type { LabelItem } from "@/lib/types";
 
 export const LABEL_RESULT_CAP = 25;
 
+/** How many label matches to return. A missing or invalid cap stays at 25. */
+export function labelMatchLimit(cap?: number): number {
+  if (typeof cap !== "number" || !Number.isFinite(cap) || cap < 1) return LABEL_RESULT_CAP;
+  return Math.floor(cap);
+}
+
 export type LabelLookupResult = {
   exact: LabelItem | null;
   matches: LabelItem[];

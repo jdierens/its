@@ -2,10 +2,14 @@
 
 import { errorText } from "@/lib/errors";
 import {
+  applyInventoryStock,
   inventoryHits,
+  inventoryScanCap,
+  inventoryStockMode,
   type InventoryContentSource,
   type InventoryHit,
   type InventoryMatch,
+  type InventoryStock,
 } from "@/lib/inventorySearch";
 import { alnumQueryAlternatives } from "@/lib/itemAlnum";
 import { searchReceivingScan } from "@/lib/receivingActions";
@@ -15,7 +19,16 @@ import { getSupabase } from "@/lib/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type InventorySearchResult =
-  | { ok: true; query: string; note: string | null; hits: InventoryHit[]; truncated: boolean }
+  | {
+      ok: true;
+      query: string;
+      note: string | null;
+      hits: InventoryHit[];
+      truncated: boolean;
+      stock: InventoryStock;
+      /** Ranked matches before the on-hand filter. */
+      matched: number;
+    }
   | { ok: false; message: string };
 
 type ContentRow = {
@@ -26,14 +39,24 @@ type ContentRow = {
 };
 
 const CONTENT_LIMIT = 5000;
+const ITEM_CHUNK = 80;
 
 /**
  * On-hand for the items receiving Find already ranked.
  * Open bin cycles only. Quantity is `bin_contents`, not `items.quantity`.
  * Every open bin is included. Receiving's same-project suggestion is a different list.
+ * Item ids are chunked so an in-stock pool still fits a request URL.
  */
 async function openBinContents(supabase: SupabaseClient, itemIds: string[]): Promise<InventoryContentSource[]> {
-  if (itemIds.length === 0) return [];
+  const ids = [...new Set(itemIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let start = 0; start < ids.length; start += ITEM_CHUNK) chunks.push(ids.slice(start, start + ITEM_CHUNK));
+  const parts = await Promise.all(chunks.map((chunk) => openBinContentChunk(supabase, chunk)));
+  return parts.flat();
+}
+
+async function openBinContentChunk(supabase: SupabaseClient, itemIds: string[]): Promise<InventoryContentSource[]> {
   const contents = await supabase
     .from("bin_contents")
     .select("item_id, qty, bin_id, cycle_id")
@@ -96,14 +119,19 @@ async function openBinContents(supabase: SupabaseClient, itemIds: string[]): Pro
 /**
  * Receiving Find, then on-hand quantity and bin locations for each hit.
  * `|` is OR before that scan. `7060DX5|7060PX5` keeps either model.
+ * In stock (the default) keeps On hand quantity above zero. All keeps quantity 0.
+ * The filter runs here, before the list is returned, so the page count is the filtered count.
  */
-export async function searchInventory(raw: string): Promise<InventorySearchResult> {
+export async function searchInventory(raw: string, stock?: InventoryStock): Promise<InventorySearchResult> {
+  const mode = inventoryStockMode(stock);
   const query = raw.trim().slice(0, 500);
-  if (!query) return { ok: true, query: "", note: null, hits: [], truncated: false };
+  const empty = { ok: true as const, query: "", note: null, hits: [], truncated: false, stock: mode, matched: 0 };
+  if (!query) return empty;
   const terms = alnumQueryAlternatives(query);
-  if (terms.length === 0) return { ok: true, query, note: null, hits: [], truncated: false };
+  if (terms.length === 0) return { ...empty, query };
   try {
-    const scans = await Promise.all(terms.map((term) => searchReceivingScan(term)));
+    const cap = inventoryScanCap(mode);
+    const scans = await Promise.all(terms.map((term) => searchReceivingScan(term, cap)));
     const found = scans.some((result) => result.exact || result.matches.length > 0);
     const note =
       scans
@@ -116,20 +144,26 @@ export async function searchInventory(raw: string): Promise<InventorySearchResul
         )
         .filter((line): line is string => Boolean(line))
         .join(" ") || null;
-    if (!found) return { ok: true, query, note, hits: [], truncated: false };
+    if (!found) return { ok: true, query, note, hits: [], truncated: false, stock: mode, matched: 0 };
     const matches = mergeScanMatches(scans);
     const supabase = await getSupabase();
     const contents = await openBinContents(
       supabase,
       matches.map((match) => match.id),
     );
-    const hits = inventoryHits(matches, contents);
+    const applied = applyInventoryStock(
+      inventoryHits(matches, contents),
+      mode,
+      scans.some((result) => result.truncated),
+    );
     return {
       ok: true,
       query,
       note,
-      hits,
-      truncated: scans.some((result) => result.truncated),
+      hits: applied.hits,
+      truncated: applied.truncated,
+      stock: mode,
+      matched: applied.matched,
     };
   } catch (cause) {
     return { ok: false, message: errorText(cause) };

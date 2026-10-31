@@ -9192,7 +9192,60 @@ button.so-new-order svg,
 }
 
 .inventory-results th.num.fit {
-  min-width: 6.5rem;
+  min-width: 11rem;
+}
+
+/* On hand sorts. The mode on that heading filters quantity. */
+.inventory-qty-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.inventory-results th .inventory-qty-head button.inventory-col-sort,
+.inventory-sort-bar .inventory-qty-head button.inventory-col-sort {
+  width: auto;
+}
+
+.inventory-stock {
+  appearance: none;
+  margin: 0;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  background-image: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  text-transform: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.inventory-stock[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, white);
+}
+
+.inventory-stock:hover,
+.inventory-stock:focus-visible {
+  color: var(--accent);
+}
+
+.inventory-stock:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.inventory-sort-bar .inventory-qty-head {
+  width: auto;
 }
 
 .inventory-results th.sku button.inventory-col-sort,
@@ -9233,6 +9286,12 @@ button.so-new-order svg,
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--muted);
+  }
+
+  .inventory-sort-bar .inventory-stock {
+    min-height: 44px;
+    padding: 0 0.55rem;
+    font-size: 0.78rem;
   }
 }
 

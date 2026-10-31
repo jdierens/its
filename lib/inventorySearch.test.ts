@@ -3,15 +3,20 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   INVENTORY_NO_BINS,
+  INVENTORY_ON_HAND_POOL,
+  applyInventoryStock,
   formatInventoryBins,
   inventoryBinTotals,
   inventoryBinsSortLabel,
   inventoryHits,
   inventoryOnHand,
+  inventoryScanCap,
+  inventoryStockMode,
   sortInventoryHits,
   toggleInventorySort,
   type InventoryHit,
 } from "./inventorySearch.ts";
+import { LABEL_RESULT_CAP } from "./labelLookup.ts";
 import { NAV_GROUPS, pageMetaFor } from "./nav.ts";
 
 test("bin totals use the receiving summary shape and include a location", () => {
@@ -77,6 +82,52 @@ function hit(partial: Partial<InventoryHit> & Pick<InventoryHit, "id">): Invento
     ...partial,
   };
 }
+
+test("on hand defaults to in stock and all keeps quantity zero", () => {
+  assert.equal(inventoryStockMode(null), "in");
+  assert.equal(inventoryStockMode(undefined), "in");
+  assert.equal(inventoryStockMode(""), "in");
+  assert.equal(inventoryStockMode("in"), "in");
+  assert.equal(inventoryStockMode("yes"), "in");
+  assert.equal(inventoryStockMode("all"), "all");
+  assert.equal(inventoryScanCap("in"), INVENTORY_ON_HAND_POOL);
+  assert.equal(inventoryScanCap("all"), LABEL_RESULT_CAP);
+  assert.equal(INVENTORY_ON_HAND_POOL, LABEL_RESULT_CAP * 8);
+
+  const hits = [
+    hit({ id: "zero", qty: 0, empty: true }),
+    hit({ id: "one", qty: 1 }),
+    hit({ id: "none", qty: -1 }),
+  ];
+  const stocked = applyInventoryStock(hits, "in", false);
+  assert.deepEqual(
+    stocked.hits.map((row) => row.id),
+    ["one"],
+  );
+  assert.equal(stocked.matched, 3);
+  assert.equal(stocked.truncated, false);
+  const every = applyInventoryStock(hits, "all", false);
+  assert.deepEqual(
+    every.hits.map((row) => row.id),
+    ["zero", "one", "none"],
+  );
+  assert.equal(every.truncated, false);
+  assert.equal(every.matched, 3);
+});
+
+test("in stock caps the filtered list and keeps a truncated scan", () => {
+  const hits = Array.from({ length: LABEL_RESULT_CAP + 5 }, (_, index) => hit({ id: `row-${index}`, qty: index + 1 }));
+  const applied = applyInventoryStock(hits, "in", false);
+  assert.equal(applied.hits.length, LABEL_RESULT_CAP);
+  assert.equal(applied.truncated, true);
+  assert.equal(applied.matched, hits.length);
+  assert.ok(applied.hits.every((row) => row.qty > 0));
+  assert.equal(applied.hits[0]?.id, "row-0");
+  assert.equal(applyInventoryStock(hits.slice(0, 4), "in", true).truncated, true);
+  const all = applyInventoryStock(hits, "all", false);
+  assert.equal(all.hits.length, hits.length);
+  assert.equal(all.truncated, false);
+});
 
 test("column sort starts ascending and then toggles", () => {
   assert.deepEqual(toggleInventorySort(null, "qty"), { key: "qty", dir: "asc" });
@@ -164,4 +215,14 @@ test("inventory search is a warehouse page and reuses receiving Find", () => {
   assert.match(page, /aria-sort=/);
   assert.match(page, /sortInventoryHits/);
   assert.match(page, /inventory-col-sort/);
+  assert.match(page, /className="inventory-stock"/);
+  assert.match(page, /aria-pressed=\{stock === "in"\}/);
+  assert.match(page, /inventoryStockMode/);
+  assert.match(page, /searchInventory\(query, mode\)/);
+  assert.match(page, /next\.set\(INVENTORY_STOCK_PARAM, "all"\)/);
+  assert.match(page, /next\.delete\(INVENTORY_STOCK_PARAM\)/);
+  assert.doesNotMatch(page, /hit\.qty > 0/);
+  assert.match(source, /applyInventoryStock/);
+  assert.match(source, /inventoryScanCap/);
+  assert.match(css, /\.inventory-stock\[aria-pressed="true"\]/);
 });

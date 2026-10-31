@@ -3,7 +3,7 @@
 import { authRequired } from "@/lib/authRequired";
 import { readAppUser } from "@/lib/appUserRecord";
 import { errorText } from "@/lib/errors";
-import { labelTaxonomyFields } from "@/lib/labelLookup";
+import { labelMatchLimit, labelTaxonomyFields } from "@/lib/labelLookup";
 import { canViewFinancials } from "@/lib/export/access";
 import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import type { LabelItem } from "@/lib/types";
@@ -436,16 +436,17 @@ export type ReceivingScanResult = {
   truncated: boolean;
 };
 
-export async function searchReceivingScan(raw: string): Promise<ReceivingScanResult> {
+export async function searchReceivingScan(raw: string, cap?: number): Promise<ReceivingScanResult> {
   const scanRaw = raw.trim().slice(0, 500);
   const tokens = scanTokensInSearchOrder(scanRaw).slice(0, 8);
+  const limit = labelMatchLimit(cap);
   if (tokens.length === 0) {
     return { scanRaw, token: null, tried: [], exact: null, matches: [], truncated: false };
   }
   const tried: string[] = [];
   for (const token of tokens) {
     tried.push(token);
-    const result = await searchItemsForLabel(token.slice(0, 200));
+    const result = await searchItemsForLabel(token.slice(0, 200), limit);
     if (result.exact || result.matches.length > 0) {
       return { scanRaw, token, tried, exact: result.exact, matches: result.matches, truncated: result.truncated };
     }

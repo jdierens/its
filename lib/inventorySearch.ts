@@ -1,3 +1,4 @@
+import { LABEL_RESULT_CAP } from "@/lib/labelLookup";
 import { putawayLabel } from "@/lib/receivingSettings";
 
 /** Shown when a match has no open-cycle quantity. The SKU still stays in the list. */
@@ -148,6 +149,48 @@ export function sortInventoryHits(hits: readonly InventoryHit[], sort: Inventory
   if (!sort) return [...hits];
   const factor = sort.dir === "asc" ? 1 : -1;
   return [...hits].sort((left, right) => factor * compareInventoryHits(left, right, sort.key));
+}
+
+/** Query value for every match, including on-hand quantity 0. Absent means in stock only. */
+export const INVENTORY_STOCK_PARAM = "stock";
+
+export type InventoryStock = "in" | "all";
+
+/**
+ * Ranked matches scored for on-hand before the in-stock list is capped.
+ * Wide enough that a zero-quantity match does not take a slot from one with stock.
+ */
+export const INVENTORY_ON_HAND_POOL = LABEL_RESULT_CAP * 8;
+
+/** Missing, `in`, or any other value is in stock only. `all` keeps quantity 0. */
+export function inventoryStockMode(value: string | null | undefined): InventoryStock {
+  return value === "all" ? "all" : "in";
+}
+
+/** In stock scans the wider pool. All keeps the usual receiving cap. */
+export function inventoryScanCap(stock: InventoryStock): number {
+  return stock === "in" ? INVENTORY_ON_HAND_POOL : LABEL_RESULT_CAP;
+}
+
+/**
+ * In stock keeps the On hand column (`qty` > 0), then the same cap as receiving Find.
+ * All returns the matches already capped by that scan, including quantity 0.
+ * `matched` is the count before this filter. `truncated` is true when more matches
+ * may exist beyond the rows returned.
+ */
+export function applyInventoryStock(
+  hits: readonly InventoryHit[],
+  stock: InventoryStock,
+  scanTruncated: boolean,
+): { hits: InventoryHit[]; truncated: boolean; matched: number } {
+  const matched = hits.length;
+  if (stock !== "in") return { hits: [...hits], truncated: scanTruncated, matched };
+  const onHand = hits.filter((hit) => hit.qty > 0);
+  return {
+    hits: onHand.slice(0, LABEL_RESULT_CAP),
+    truncated: scanTruncated || onHand.length > LABEL_RESULT_CAP,
+    matched,
+  };
 }
 
 /** Keep the search ranking. An item with no open quantity stays, with qty 0. */
