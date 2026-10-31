@@ -1,4 +1,3 @@
-import { LABEL_RESULT_CAP } from "@/lib/labelLookup";
 import { putawayLabel } from "@/lib/receivingSettings";
 
 /** Shown when a match has no open-cycle quantity. The SKU still stays in the list. */
@@ -31,6 +30,11 @@ export type InventoryMatch = {
   sku: string;
   name: string;
   description: string;
+  shortCode?: string | null;
+  longCode?: string | null;
+  taxonomyName?: string | null;
+  /** Primary `item_images` path. Signed only for the page that is shown. */
+  imagePath?: string | null;
 };
 
 export type InventoryHit = {
@@ -40,13 +44,19 @@ export type InventoryHit = {
   description: string;
   /** For-sale quantity. Damaged pieces are not included. */
   qty: number;
-  /** Damaged pieces still in an open bin. They do not count as on hand for sale. */
+  /** Damaged pieces still in an open bin. They do not count in qty or the total. */
   damaged: number;
   /** Bins that hold the damaged quantity, in the same shape as `locations`. */
   damagedLocations: string;
   /** One bin per line, for example `(x14)10002-C · HWS.00.00.00` then `(x8)10037`. Empty when nothing is for sale. */
   locations: string;
   empty: boolean;
+  shortCode: string | null;
+  longCode: string | null;
+  taxonomyName: string | null;
+  /** Set while sorting. Cleared before the page is sent to the browser. */
+  imagePath: string | null;
+  imageUrl: string | null;
 };
 
 /** One total per bin reference. A non-positive quantity is left out. Bins sort by reference. */
@@ -112,7 +122,7 @@ export function binsByItem(rows: readonly InventoryContentSource[]): Map<string,
   return map;
 }
 
-export type InventorySortKey = "sku" | "item" | "qty" | "bins";
+export type InventorySortKey = "photo" | "sku" | "item" | "taxo" | "qty" | "bins";
 
 export type InventorySortDir = "asc" | "desc";
 
@@ -144,9 +154,16 @@ function compareInventoryText(left: string, right: string): number {
   return left.localeCompare(right, "en", INVENTORY_SORT_OPTIONS);
 }
 
+/** Short code, then long code, then the taxonomy name. A blank taxonomy sorts first. */
+export function inventoryTaxonomyLabel(hit: Pick<InventoryHit, "shortCode" | "longCode" | "taxonomyName">): string {
+  return hit.shortCode?.trim() || hit.longCode?.trim() || hit.taxonomyName?.trim() || "";
+}
+
 /** Item sorts by name, then description. A blank name stays blank (the em dash is only display). */
 export function compareInventoryHits(left: InventoryHit, right: InventoryHit, key: InventorySortKey): number {
   switch (key) {
+    case "photo":
+      return Number(Boolean(left.imagePath)) - Number(Boolean(right.imagePath));
     case "sku":
       return compareInventoryText(left.sku.trim(), right.sku.trim());
     case "item": {
@@ -154,6 +171,8 @@ export function compareInventoryHits(left: InventoryHit, right: InventoryHit, ke
       if (name !== 0) return name;
       return compareInventoryText(left.description.trim(), right.description.trim());
     }
+    case "taxo":
+      return compareInventoryText(inventoryTaxonomyLabel(left), inventoryTaxonomyLabel(right));
     case "qty":
       return left.qty - right.qty;
     case "bins":
@@ -177,40 +196,88 @@ export const INVENTORY_STOCK_PARAM = "stock";
 export type InventoryStock = "in" | "all";
 
 /**
- * Ranked matches scored for on-hand before the in-stock list is capped.
- * Wide enough that a zero-quantity match does not take a slot from one with stock.
+ * Text search loads this many ranked matches. The qty filter and the pager
+ * then run on that set. A blank search does not use this cap.
  */
-export const INVENTORY_ON_HAND_POOL = LABEL_RESULT_CAP * 8;
+export const INVENTORY_MATCH_CAP = 1000;
 
 /** Missing, `in`, or any other value is in stock only. `all` keeps quantity 0. */
 export function inventoryStockMode(value: string | null | undefined): InventoryStock {
   return value === "all" ? "all" : "in";
 }
 
-/** In stock scans the wider pool. All keeps the usual receiving cap. */
-export function inventoryScanCap(stock: InventoryStock): number {
-  return stock === "in" ? INVENTORY_ON_HAND_POOL : LABEL_RESULT_CAP;
+/** Both modes use the same text-search cap. The pager, not this cap, splits the page. */
+export function inventoryScanCap(_stock?: InventoryStock): number {
+  return INVENTORY_MATCH_CAP;
 }
 
 /**
- * In stock keeps the On hand column (`qty` > 0), then the same cap as receiving Find.
- * All returns the matches already capped by that scan, including quantity 0.
- * `matched` is the count before this filter. `truncated` is true when more matches
- * may exist beyond the rows returned.
+ * In stock keeps for-sale qty above 0. All keeps quantity 0.
+ * Neither mode slices the list: the pager does that.
+ * `matched` is the count after this filter. `scanned` is the count before it.
+ * `truncated` is true when the text search may have more matches than it returned.
  */
 export function applyInventoryStock(
   hits: readonly InventoryHit[],
   stock: InventoryStock,
   scanTruncated: boolean,
-): { hits: InventoryHit[]; truncated: boolean; matched: number } {
-  const matched = hits.length;
-  if (stock !== "in") return { hits: [...hits], truncated: scanTruncated, matched };
+): { hits: InventoryHit[]; truncated: boolean; matched: number; scanned: number } {
+  const scanned = hits.length;
+  if (stock !== "in") return { hits: [...hits], truncated: scanTruncated, matched: scanned, scanned };
   const onHand = hits.filter((hit) => hit.qty > 0);
-  return {
-    hits: onHand.slice(0, LABEL_RESULT_CAP),
-    truncated: scanTruncated || onHand.length > LABEL_RESULT_CAP,
-    matched,
-  };
+  return { hits: onHand, truncated: scanTruncated, matched: onHand.length, scanned };
+}
+
+/** Rows on one inventory search page. */
+export const INVENTORY_PAGE_SIZE = 50;
+
+export const INVENTORY_PAGE_PARAM = "page";
+
+export const INVENTORY_SORT_PARAM = "sort";
+
+export const INVENTORY_DIR_PARAM = "dir";
+
+const INVENTORY_SORT_KEYS: readonly InventorySortKey[] = ["photo", "sku", "item", "taxo", "qty", "bins"];
+
+/** Page 1 when the value is missing or not a positive integer. */
+export function parseInventoryPage(value: string | number | null | undefined): number {
+  const page = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(page) || page < 1) return 1;
+  return Math.floor(page);
+}
+
+/** A missing or unknown column leaves the list in search order. `desc` is the only descending value. */
+export function parseInventorySort(key: string | null | undefined, dir: string | null | undefined): InventorySort | null {
+  if (!key || !INVENTORY_SORT_KEYS.includes(key as InventorySortKey)) return null;
+  return { key: key as InventorySortKey, dir: dir === "desc" ? "desc" : "asc" };
+}
+
+export function inventoryLastPage(matched: number, pageSize = INVENTORY_PAGE_SIZE): number {
+  if (!Number.isFinite(matched) || matched <= 0) return 1;
+  return Math.ceil(matched / pageSize);
+}
+
+/** `from` and `to` are 1-based positions in the filtered list. Both are 0 when it is empty. */
+export function inventoryPageWindow(matched: number, page: number, pageSize = INVENTORY_PAGE_SIZE) {
+  const pages = inventoryLastPage(matched, pageSize);
+  const current = Math.min(parseInventoryPage(page), pages);
+  const start = (current - 1) * pageSize;
+  const from = matched <= 0 ? 0 : start + 1;
+  const to = matched <= 0 ? 0 : Math.min(start + pageSize, matched);
+  return { page: current, pages, from, to, start };
+}
+
+export function pageInventoryHits<T>(hits: readonly T[], page: number, pageSize = INVENTORY_PAGE_SIZE) {
+  const window = inventoryPageWindow(hits.length, page, pageSize);
+  return { ...window, hits: hits.slice(window.start, window.start + pageSize) };
+}
+
+/** Sum of for-sale qty. Damaged pieces are a different field and are not added. */
+export function inventoryQtyTotal(hits: readonly { qty: number }[]): number {
+  return hits.reduce((sum, hit) => {
+    const qty = Number(hit.qty);
+    return sum + (Number.isFinite(qty) ? qty : 0);
+  }, 0);
 }
 
 /** Keep the search ranking. An item with no open quantity stays, with qty 0. */
@@ -233,6 +300,11 @@ export function inventoryHits(
       damagedLocations: damaged.locations,
       locations: onHand.locations,
       empty: onHand.qty <= 0,
+      shortCode: match.shortCode?.trim() || null,
+      longCode: match.longCode?.trim() || null,
+      taxonomyName: match.taxonomyName?.trim() || null,
+      imagePath: match.imagePath?.trim() || null,
+      imageUrl: null,
     };
   });
 }
