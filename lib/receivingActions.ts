@@ -128,7 +128,7 @@ const RECEIPT_OWNER_COLUMNS = `${RECEIPT_SEARCH_COLUMNS}, vendor_name, ownership
 
 const RECEIPT_DAMAGE_COLUMNS = `${RECEIPT_OWNER_COLUMNS}, damaged`;
 
-export const DAMAGED_INVENTORY_MIGRATION = "supabase/migrations/20261031060000_damaged_inventory.sql";
+const DAMAGED_INVENTORY_MIGRATION = "supabase/migrations/20261031060000_damaged_inventory.sql";
 
 async function attachItemNames(detail: BinDetail): Promise<BinDetail> {
   const skus = [
