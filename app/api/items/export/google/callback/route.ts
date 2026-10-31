@@ -13,7 +13,8 @@ const NEXT_COOKIE = "its_sheets_next";
 
 export async function GET(request: NextRequest) {
   const origin = publicOrigin(request);
-  const back = new URL(safeItemsReturnPath(request.cookies.get(NEXT_COOKIE)?.value), origin);
+  const nextPath = safeItemsReturnPath(request.cookies.get(NEXT_COOKIE)?.value);
+  const back = new URL(nextPath, origin);
   const fail = (code: string) => {
     back.searchParams.set("sheets", code);
     const response = NextResponse.redirect(back);
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     if (error instanceof ExportDenied) {
       const login = new URL("/login", origin);
-      login.searchParams.set("next", "/items");
+      login.searchParams.set("next", nextPath);
       return NextResponse.redirect(login);
     }
     return fail("error");

@@ -12,7 +12,8 @@ const NEXT_COOKIE = "its_sheets_next";
 
 export async function GET(request: NextRequest) {
   const origin = publicOrigin(request);
-  const back = new URL(safeItemsReturnPath(request.nextUrl.searchParams.get("next")), origin);
+  const nextPath = safeItemsReturnPath(request.nextUrl.searchParams.get("next"));
+  const back = new URL(nextPath, origin);
   try {
     const actor = await requireExportActor();
     const config = readGoogleOAuth(process.env);
@@ -36,12 +37,12 @@ export async function GET(request: NextRequest) {
       maxAge: 600,
     };
     response.cookies.set(STATE_COOKIE, state, cookie);
-    response.cookies.set(NEXT_COOKIE, safeItemsReturnPath(request.nextUrl.searchParams.get("next")), cookie);
+    response.cookies.set(NEXT_COOKIE, nextPath, cookie);
     return response;
   } catch (error) {
     if (error instanceof ExportDenied) {
       const login = new URL("/login", origin);
-      login.searchParams.set("next", "/items");
+      login.searchParams.set("next", nextPath);
       return NextResponse.redirect(login);
     }
     back.searchParams.set("sheets", "error");

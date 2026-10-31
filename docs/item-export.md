@@ -25,6 +25,8 @@ CSV and Excel need none of this.
    - `https://its-epks.vercel.app/api/items/export/google/callback`
    - `http://localhost:3000/api/items/export/google/callback`
    - For a preview host, `https://<that-host>/api/items/export/google/callback`
+
+eBay listings uses this same callback. Do not add a second redirect URI for `/api/ebay/listings/export`. After consent, the browser returns to the items list or to `/admin/integrations/ebay/listings`, including the search and match filter that were on the page. The listings spreadsheet is named `ITS eBay listings YYYY-MM-DD HH:mm` in Pacific time.
 5. Do not add `drive.file` under Supabase Authentication → Providers → Google. Leave the sign-in scopes as they are.
 6. Set these in Vercel Production and in `.env.local`. Use the same web client id and secret already stored for Supabase Auth.
    - `GOOGLE_OAUTH_CLIENT_ID`

@@ -1,6 +1,7 @@
 import { EbayListingsBrowser } from "@/components/EbayListingsBrowser";
 import { errorText } from "@/lib/errors";
 import { listEbayListings, parseEbayListingQuery, type EbayListingsBrowserResult } from "@/lib/ebay/listingsBrowser";
+import { readGoogleOAuth } from "@/lib/google/sheets";
 import { stockSettingsWritable } from "@/lib/stockAccess";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,11 @@ export default async function EbayListingsPage({
 
   return (
     <main className="page ebay-listings-page">
-      <EbayListingsBrowser browser={browser} canMatch={canMatch} />
+      <EbayListingsBrowser
+        browser={browser}
+        canMatch={canMatch}
+        googleConfigured={Boolean(readGoogleOAuth(process.env))}
+      />
     </main>
   );
 }

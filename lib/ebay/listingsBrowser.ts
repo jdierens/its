@@ -89,6 +89,31 @@ export function matchListingDecision(input: {
   return { ok: true };
 }
 
+export type EbayListingExportLoad =
+  | { ok: true; rows: EbayListingBrowserRow[] }
+  | { ok: false; status: number; message: string };
+
+const EXPORT_PAGE_SIZE = 1000;
+const EXPORT_ROW_CAP = 100_000;
+
+/**
+ * Every active listing matching the search and match filter, in the same order as the browser.
+ * The page number is ignored so an export is not limited to the rows on screen.
+ */
+export async function loadEbayListingsForExport(
+  parsed: Pick<EbayListingQuery, "q" | "match">,
+): Promise<EbayListingExportLoad> {
+  const admin = getServiceSupabase();
+  if (!admin) return { ok: false, status: 500, message: "Set SUPABASE_SERVICE_ROLE_KEY on the server." };
+  const query: EbayListingQuery = { q: parsed.q, match: parsed.match, page: 1 };
+  const itemIds = parsed.q ? await itemIdsMatchingQuery(admin, parsed.q) : [];
+  const selected = await selectAllListingRows(admin, query, itemIds);
+  if (selected === "missing") {
+    return { ok: false, status: 400, message: "The listings table is not in the database yet." };
+  }
+  return { ok: true, rows: await hydrateListingRows(admin, selected) };
+}
+
 export async function listEbayListings(parsed: EbayListingQuery): Promise<EbayListingsBrowserResult> {
   const blank = blankResult(parsed);
   const admin = getServiceSupabase();
@@ -222,16 +247,55 @@ async function selectListingPage(
     if (!selected.error) {
       return { rows: (selected.data ?? []) as unknown as Record<string, unknown>[], total: counted.count ?? 0 };
     }
-    const before = `${omit.picture}:${omit.pack}:${omit.manual}`;
-    if (!omit.picture && listingsColumnMissing(selected.error, "picture_url")) omit.picture = true;
-    if (!omit.pack && listingsColumnMissing(selected.error, "pack_qty")) omit.pack = true;
-    if (!omit.manual && listingsColumnMissing(selected.error, "matched_manually")) omit.manual = true;
-    if (`${omit.picture}:${omit.pack}:${omit.manual}` === before) {
+    if (!relaxListingColumns(omit, selected.error)) {
       if (listingsTableMissing(selected.error)) return "missing";
       throw new Error(selected.error.message);
     }
   }
   throw new Error("eBay listings could not be read.");
+}
+
+async function selectAllListingRows(
+  admin: SupabaseClient,
+  parsed: EbayListingQuery,
+  itemIds: readonly string[],
+): Promise<Record<string, unknown>[] | "missing"> {
+  const omit = { picture: false, pack: false, manual: false };
+  const rows: Record<string, unknown>[] = [];
+  let from = 0;
+  for (;;) {
+    let batch: Record<string, unknown>[] | null = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const selected = await listingQuery(admin, parsed, itemIds, listingColumns(omit))
+        .order("item_id", { ascending: true, nullsFirst: true })
+        .order("title", { ascending: true })
+        .order("id")
+        .range(from, from + EXPORT_PAGE_SIZE - 1);
+      if (!selected.error) {
+        batch = (selected.data ?? []) as unknown as Record<string, unknown>[];
+        break;
+      }
+      if (from === 0 && relaxListingColumns(omit, selected.error)) continue;
+      if (listingsTableMissing(selected.error)) return "missing";
+      throw new Error(selected.error.message);
+    }
+    if (!batch) throw new Error("eBay listings could not be read.");
+    rows.push(...batch);
+    if (batch.length < EXPORT_PAGE_SIZE) return rows;
+    from += EXPORT_PAGE_SIZE;
+    if (from >= EXPORT_ROW_CAP) throw new Error("Too many listings to export. Narrow the search.");
+  }
+}
+
+function relaxListingColumns(
+  omit: { picture: boolean; pack: boolean; manual: boolean },
+  error: { code?: string; message?: string },
+): boolean {
+  const before = `${omit.picture}:${omit.pack}:${omit.manual}`;
+  if (!omit.picture && listingsColumnMissing(error, "picture_url")) omit.picture = true;
+  if (!omit.pack && listingsColumnMissing(error, "pack_qty")) omit.pack = true;
+  if (!omit.manual && listingsColumnMissing(error, "matched_manually")) omit.manual = true;
+  return `${omit.picture}:${omit.pack}:${omit.manual}` !== before;
 }
 
 function listingQuery(

@@ -93,7 +93,8 @@ export type ExportTable = {
 const PACIFIC = "America/Los_Angeles";
 const MONEY = new Set<string>(MONEY_FIELDS);
 
-export function exportTitle(date: Date): string {
+/** `YYYY-MM-DD HH:mm` in Pacific time, shared by spreadsheet export titles. */
+export function exportStamp(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: PACIFIC,
     year: "numeric",
@@ -106,7 +107,11 @@ export function exportTitle(date: Date): string {
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
   let hour = value("hour");
   if (hour === "24") hour = "00";
-  return `ITS items export ${value("year")}-${value("month")}-${value("day")} ${hour}:${value("minute")}`;
+  return `${value("year")}-${value("month")}-${value("day")} ${hour}:${value("minute")}`;
+}
+
+export function exportTitle(date: Date): string {
+  return `ITS items export ${exportStamp(date)}`;
 }
 
 export function moneyCell(value: unknown): string {
