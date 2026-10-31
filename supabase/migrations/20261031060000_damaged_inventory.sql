@@ -914,7 +914,9 @@ $$;
 comment on function public.set_receipt_damaged(uuid, boolean, text) is
   'Marks a receipt damaged or clears it. Posted quantity moves between for-sale qty and damaged_qty. Units from that receipt that are still in the bin follow. A later write-down is not posted here.';
 
-create or replace view public.receipt_lines
+drop view if exists public.receipt_lines;
+
+create view public.receipt_lines
 with (security_invoker = true) as
 select
   e.id,
