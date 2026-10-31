@@ -4,6 +4,10 @@ import { tradingUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
 export const TRADING_COMPATIBILITY_LEVEL = "1231";
 export const ACTIVE_LIST_PAGE_SIZE = 200;
 const MAX_TEXT = 500;
+const MAX_LIST_PAGES = 500;
+/** eBay rejects an end-time window of 120 days or more. */
+const SELLER_LIST_WINDOW_DAYS = 119;
+const EBAY_IMAGE_HOST = /^(?:[a-z0-9-]+\.)*(?:ebayimg|ebaystatic)\.com$/i;
 
 const AUTH_ERROR_CODES = new Set(["931", "17470", "21917053"]);
 
@@ -59,6 +63,36 @@ export function activeListRequestXml(page: number, entriesPerPage = ACTIVE_LIST_
 </GetMyeBaySellingRequest>`;
 }
 
+export function sellerListWindow(now: Date): { endTimeFrom: string; endTimeTo: string } {
+  const endTimeFrom = now.toISOString();
+  const endTimeTo = new Date(now.getTime() + SELLER_LIST_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  return { endTimeFrom, endTimeTo };
+}
+
+// ActiveList omits PictureURL. GetSellerList at Coarse returns PictureDetails, including PictureURL.
+export function sellerListRequestXml(
+  page: number,
+  endTimeFrom: string,
+  endTimeTo: string,
+  entriesPerPage = ACTIVE_LIST_PAGE_SIZE,
+): string {
+  const pageNumber = Math.max(1, Math.floor(page));
+  const entries = Math.max(1, Math.min(200, Math.floor(entriesPerPage)));
+  return `<?xml version="1.0" encoding="utf-8"?>
+<GetSellerListRequest xmlns="urn:ebay:apis:eBLBaseComponents">
+  <ErrorLanguage>en_US</ErrorLanguage>
+  <WarningLevel>High</WarningLevel>
+  <GranularityLevel>Coarse</GranularityLevel>
+  <IncludeVariations>false</IncludeVariations>
+  <EndTimeFrom>${utcTimestamp(endTimeFrom)}</EndTimeFrom>
+  <EndTimeTo>${utcTimestamp(endTimeTo)}</EndTimeTo>
+  <Pagination>
+    <EntriesPerPage>${entries}</EntriesPerPage>
+    <PageNumber>${pageNumber}</PageNumber>
+  </Pagination>
+</GetSellerListRequest>`;
+}
+
 export function parseActiveList(xml: string): ActiveListPage {
   const ack = tagText(xml, "Ack") ?? "";
   const errorBlock = firstBlock(xml, "Errors");
@@ -78,6 +112,66 @@ export async function fetchActiveListPage(input: {
   refresh?: () => Promise<string>;
   fetchImpl?: typeof fetch;
 }): Promise<{ page: ActiveListPage; token: string; rlogid: string | null; requestId: string | null }> {
+  return postTrading({
+    callName: "GetMyeBaySelling",
+    body: activeListRequestXml(input.page, input.entriesPerPage),
+    environment: input.environment,
+    token: input.token,
+    refresh: input.refresh,
+    fetchImpl: input.fetchImpl,
+    failure: "eBay listings request failed",
+  });
+}
+
+export async function fetchSellerListPictures(input: {
+  environment: EbayEnvironment;
+  token: string;
+  now?: Date;
+  entriesPerPage?: number;
+  refresh?: () => Promise<string>;
+  fetchImpl?: typeof fetch;
+}): Promise<{ pictures: Map<string, string>; token: string; rlogid: string | null; requestId: string | null }> {
+  const entriesPerPage = input.entriesPerPage ?? ACTIVE_LIST_PAGE_SIZE;
+  const window = sellerListWindow(input.now ?? new Date());
+  const pictures = new Map<string, string>();
+  let token = input.token;
+  let totalPages = 1;
+  let rlogid: string | null = null;
+  let requestId: string | null = null;
+
+  for (let page = 1; page <= totalPages && page <= MAX_LIST_PAGES; page += 1) {
+    const result = await postTrading({
+      callName: "GetSellerList",
+      body: sellerListRequestXml(page, window.endTimeFrom, window.endTimeTo, entriesPerPage),
+      environment: input.environment,
+      token,
+      refresh: input.refresh,
+      fetchImpl: input.fetchImpl,
+      failure: "eBay picture request failed",
+    });
+    token = result.token;
+    rlogid = result.rlogid ?? rlogid;
+    requestId = result.requestId ?? requestId;
+    for (const row of result.page.rows) {
+      if (row.pictureUrl) pictures.set(row.ebayItemId, row.pictureUrl);
+    }
+    if (result.page.totalPages > 0) totalPages = result.page.totalPages;
+    else if (result.page.rows.length >= entriesPerPage) totalPages = page + 1;
+    if (result.page.rows.length === 0) break;
+  }
+
+  return { pictures, token, rlogid, requestId };
+}
+
+async function postTrading(input: {
+  callName: string;
+  body: string;
+  environment: EbayEnvironment;
+  token: string;
+  refresh?: () => Promise<string>;
+  fetchImpl?: typeof fetch;
+  failure: string;
+}): Promise<{ page: ActiveListPage; token: string; rlogid: string | null; requestId: string | null }> {
   const fetchImpl = input.fetchImpl ?? fetch;
   let token = input.token;
   let refreshed = false;
@@ -87,14 +181,14 @@ export async function fetchActiveListPage(input: {
     const response = await fetchImpl(tradingUrl(input.environment), {
       method: "POST",
       headers: {
-        "X-EBAY-API-CALL-NAME": "GetMyeBaySelling",
+        "X-EBAY-API-CALL-NAME": input.callName,
         "X-EBAY-API-SITEID": "0",
         "X-EBAY-API-COMPATIBILITY-LEVEL": TRADING_COMPATIBILITY_LEVEL,
         "X-EBAY-API-IAF-TOKEN": token,
         "Content-Type": "text/xml",
         "X-EBAY-C-REQUEST-ID": requestId,
       },
-      body: activeListRequestXml(input.page, input.entriesPerPage),
+      body: input.body,
       signal: AbortSignal.timeout(60_000),
     });
     const ids = {
@@ -121,7 +215,7 @@ export async function fetchActiveListPage(input: {
       continue;
     }
     if (failed) {
-      throw new TradingCallError(parsed.error || `eBay listings request failed (${response.status}).`, ids);
+      throw new TradingCallError(parsed.error || `${input.failure} (${response.status}).`, ids);
     }
     return { page: parsed, token, rlogid: ids.rlogid, requestId: ids.requestId };
   }
@@ -135,7 +229,7 @@ function parseItem(itemXml: string): ActiveListing[] {
   const shell = without(itemXml, "Variations");
   const sku = clip(tagText(shell, "SKU"));
   const title = clip(tagText(shell, "Title"));
-  const pictureUrl = safeHttpsUrl(tagText(shell, "PictureURL") ?? tagText(shell, "GalleryURL"));
+  const pictureUrl = itemPictureUrl(shell);
   const listingStatus = clip(tagText(shell, "ListingStatus")) ?? "Active";
   const listingUrl = publicItemUrl(tagText(shell, "ViewItemURL"), ebayItemId);
   const variations = blocks(itemXml, "Variation");
@@ -167,8 +261,32 @@ function parseItem(itemXml: string): ActiveListing[] {
 
 export function safeHttpsUrl(value: string | null): string | null {
   const clipped = clip(value);
-  if (!clipped || !/^https:\/\/[^\s]+$/i.test(clipped)) return null;
-  return clipped;
+  if (!clipped) return null;
+  const upgraded = httpsEbayImage(clipped);
+  if (!/^https:\/\/[^\s]+$/i.test(upgraded)) return null;
+  return upgraded;
+}
+
+function itemPictureUrl(shell: string): string | null {
+  const details = firstBlock(shell, "PictureDetails");
+  if (details) {
+    const fromDetails = safeHttpsUrl(tagText(details, "PictureURL") ?? tagText(details, "GalleryURL"));
+    if (fromDetails) return fromDetails;
+  }
+  return safeHttpsUrl(tagText(shell, "PictureURL") ?? tagText(shell, "GalleryURL"));
+}
+
+function httpsEbayImage(value: string): string {
+  const http = value.match(/^http:\/\/([^/\s]+)(\/\S*)?$/i);
+  if (!http || !EBAY_IMAGE_HOST.test(http[1] ?? "")) return value;
+  return `https://${http[1]}${http[2] ?? ""}`;
+}
+
+function utcTimestamp(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
+    throw new Error("eBay time window is not a UTC timestamp.");
+  }
+  return value;
 }
 
 function publicItemUrl(value: string | null, ebayItemId: string): string {

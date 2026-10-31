@@ -6,6 +6,7 @@ import { stockSettingsWritable } from "@/lib/stockAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST() {
   if (!(await stockSettingsWritable())) {

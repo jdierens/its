@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { activeListRequestXml, fetchActiveListPage, parseActiveList } from "./trading.ts";
+import {
+  activeListRequestXml,
+  fetchActiveListPage,
+  fetchSellerListPictures,
+  parseActiveList,
+  safeHttpsUrl,
+  sellerListRequestXml,
+  sellerListWindow,
+} from "./trading.ts";
 
 const VARIATION_LISTING = `
 <Item>
@@ -127,6 +135,108 @@ test("failure ack keeps the eBay message and error code", () => {
   assert.equal(parsed.error, "Auth token is invalid.");
   assert.equal(parsed.errorCode, "931");
   assert.deepEqual(parsed.rows, []);
+});
+
+test("http ebay image hosts are stored as https and other http urls are dropped", () => {
+  assert.equal(
+    safeHttpsUrl("http://i.ebayimg.com/images/g/abc/s-l140.jpg"),
+    "https://i.ebayimg.com/images/g/abc/s-l140.jpg",
+  );
+  assert.equal(
+    safeHttpsUrl("http://thumbs.ebaystatic.com/pict/123.jpg"),
+    "https://thumbs.ebaystatic.com/pict/123.jpg",
+  );
+  assert.equal(safeHttpsUrl("https://i.ebayimg.com/images/g/abc/s-l1600.jpg"), "https://i.ebayimg.com/images/g/abc/s-l1600.jpg");
+  assert.equal(safeHttpsUrl("http://example.com/a.jpg"), null);
+  assert.equal(safeHttpsUrl("http://i.ebayimg.com.evil.com/a.jpg"), null);
+  assert.equal(safeHttpsUrl("http://notebayimg.com/a.jpg"), null);
+});
+
+test("an http gallery url on an ebay image host is kept", () => {
+  const parsed = parseActiveList(
+    page(
+      `<Item>
+        <ItemID>666666666666</ItemID>
+        <Title>Http gallery</Title>
+        <SKU>HTTP-EBAY</SKU>
+        <PictureDetails><GalleryURL>http://i.ebayimg.com/images/g/only/s-l140.jpg</GalleryURL></PictureDetails>
+      </Item>`,
+      1,
+    ),
+  );
+  assert.equal(parsed.rows[0]?.pictureUrl, "https://i.ebayimg.com/images/g/only/s-l140.jpg");
+});
+
+test("seller list request asks for pictures over the active end-time window", () => {
+  const now = new Date("2026-10-30T00:00:00.000Z");
+  const window = sellerListWindow(now);
+  const xml = sellerListRequestXml(1, window.endTimeFrom, window.endTimeTo, 200);
+  assert.match(xml, /<GetSellerListRequest/);
+  assert.match(xml, /<GranularityLevel>Coarse<\/GranularityLevel>/);
+  assert.match(xml, /<IncludeVariations>false<\/IncludeVariations>/);
+  assert.match(xml, new RegExp(`<EndTimeFrom>${window.endTimeFrom}</EndTimeFrom>`));
+  assert.match(xml, new RegExp(`<EndTimeTo>${window.endTimeTo}</EndTimeTo>`));
+  assert.equal(new Date(window.endTimeTo).getTime() - now.getTime(), 119 * 24 * 60 * 60 * 1000);
+  assert.doesNotMatch(xml, /AddItem|ReviseItem|EndItem|CurrentPrice|StartPrice|GetMyeBaySelling/);
+  assert.throws(() => sellerListRequestXml(1, "tomorrow", window.endTimeTo), /UTC timestamp/);
+});
+
+test("seller list pages supply https picture urls and skip listings with none", async () => {
+  const now = new Date("2026-10-30T00:00:00.000Z");
+  const window = sellerListWindow(now);
+  const pages = [
+    page(
+      `<Item>
+        <ItemID>333</ItemID>
+        <Title>Full</Title>
+        <PictureDetails>
+          <GalleryType>Gallery</GalleryType>
+          <GalleryURL>http://i.ebayimg.com/images/g/gal/s-l140.jpg</GalleryURL>
+          <PictureURL>https://i.ebayimg.com/images/g/full/s-l1600.jpg</PictureURL>
+        </PictureDetails>
+      </Item>
+      <Item>
+        <ItemID>444</ItemID>
+        <Title>Gallery</Title>
+        <PictureDetails><GalleryURL>http://thumbs.ebaystatic.com/pict/444.jpg</GalleryURL></PictureDetails>
+      </Item>`,
+      2,
+    ),
+    page(
+      `<Item>
+        <ItemID>555</ItemID>
+        <Title>None</Title>
+      </Item>
+      <Item>
+        <ItemID>666</ItemID>
+        <Title>Hostile</Title>
+        <PictureDetails><GalleryURL>http://example.com/a.jpg</GalleryURL></PictureDetails>
+      </Item>`,
+      2,
+    ),
+  ];
+  const bodies: string[] = [];
+  let index = 0;
+  const result = await fetchSellerListPictures({
+    environment: "production",
+    token: "token-1",
+    now,
+    fetchImpl: async (_url, init) => {
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("X-EBAY-API-CALL-NAME"), "GetSellerList");
+      bodies.push(String(init?.body ?? ""));
+      return new Response(pages[index++] ?? page("", 2), { status: 200, headers: { rlogid: "pic-rlog" } });
+    },
+  });
+  assert.equal(index, 2);
+  assert.match(bodies[0] ?? "", /<PageNumber>1<\/PageNumber>/);
+  assert.match(bodies[1] ?? "", /<PageNumber>2<\/PageNumber>/);
+  assert.match(bodies[0] ?? "", new RegExp(`<EndTimeFrom>${window.endTimeFrom}</EndTimeFrom>`));
+  assert.equal(result.pictures.get("333"), "https://i.ebayimg.com/images/g/full/s-l1600.jpg");
+  assert.equal(result.pictures.get("444"), "https://thumbs.ebaystatic.com/pict/444.jpg");
+  assert.equal(result.pictures.has("555"), false);
+  assert.equal(result.pictures.has("666"), false);
+  assert.equal(result.rlogid, "pic-rlog");
 });
 
 test("IAF header is sent and a 401 refreshes the token once", async () => {

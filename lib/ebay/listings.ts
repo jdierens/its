@@ -10,7 +10,14 @@ import {
   type KitEdge,
   type KitListingUse,
 } from "@/lib/ebay/packs";
-import { ACTIVE_LIST_PAGE_SIZE, fetchActiveListPage, TradingCallError, type ActiveListPage, type ActiveListing } from "@/lib/ebay/trading";
+import {
+  ACTIVE_LIST_PAGE_SIZE,
+  fetchActiveListPage,
+  fetchSellerListPictures,
+  TradingCallError,
+  type ActiveListPage,
+  type ActiveListing,
+} from "@/lib/ebay/trading";
 import { writeEbayLog } from "@/lib/ebay/log";
 import { forceRefreshAccessToken, validAccessToken } from "@/lib/ebay/oauth";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
@@ -110,8 +117,11 @@ export async function runListingsPull(input: {
     page: number,
     token: string,
   ) => Promise<{ page: ActiveListPage; token: string; rlogid: string | null; requestId: string | null }>;
+  fetchPictures?: (
+    token: string,
+  ) => Promise<{ pictures: ReadonlyMap<string, string>; token: string; rlogid: string | null; requestId: string | null }>;
   store: ListingsStore;
-}): Promise<ListingsPullResult & { rlogid: string | null; requestId: string | null }> {
+}): Promise<ListingsPullResult & { rlogid: string | null; requestId: string | null; withPicture: number }> {
   const entriesPerPage = input.entriesPerPage ?? ACTIVE_LIST_PAGE_SIZE;
   const seen = new Map<string, ActiveListing>();
   let token = input.token;
@@ -133,6 +143,18 @@ export async function runListingsPull(input: {
   }
 
   const listings = [...seen.values()];
+  if (input.fetchPictures && listings.some((row) => !row.pictureUrl)) {
+    const pictured = await input.fetchPictures(token);
+    token = pictured.token;
+    rlogid = pictured.rlogid ?? rlogid;
+    requestId = pictured.requestId ?? requestId;
+    for (const row of listings) {
+      if (row.pictureUrl) continue;
+      const picture = pictured.pictures.get(row.ebayItemId);
+      if (picture) row.pictureUrl = picture;
+    }
+  }
+
   const labels = listings.map((row) => listingMatchSku(row)).filter((sku): sku is string => Boolean(sku));
   const baseSkus = labels.flatMap((label) => {
     const pack = parsePackLabel(label);
@@ -160,7 +182,8 @@ export async function runListingsPull(input: {
   if (writes.length > 0) await input.store.upsert(writes);
   const ended = await input.store.endMissing(input.fetchedAt);
   const unmatched = writes.filter((row) => row.item_id === null).length;
-  return { active: writes.length, unmatched, ended, fetchedAt: input.fetchedAt, rlogid, requestId };
+  const withPicture = writes.filter((row) => row.picture_url).length;
+  return { active: writes.length, unmatched, ended, fetchedAt: input.fetchedAt, rlogid, requestId, withPicture };
 }
 
 export async function pullActiveListings(): Promise<ListingsPullResult> {
@@ -179,6 +202,12 @@ export async function pullActiveListings(): Promise<ListingsPullResult> {
           page,
           refresh: async () => (await forceRefreshAccessToken()).access_token,
         }),
+      fetchPictures: (token) =>
+        fetchSellerListPictures({
+          environment: connection.environment,
+          token,
+          refresh: async () => (await forceRefreshAccessToken()).access_token,
+        }),
       store: supabaseStore(admin),
     });
     await writeEbayLog({
@@ -190,6 +219,7 @@ export async function pullActiveListings(): Promise<ListingsPullResult> {
         active: result.active,
         unmatched: result.unmatched,
         ended: result.ended,
+        withPicture: result.withPicture,
         rlogid: result.rlogid,
         requestId: result.requestId,
       },

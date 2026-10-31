@@ -218,6 +218,154 @@ test("a missing picture or hand-match column is recognized without treating ever
   assert.equal(listingsColumnMissing(missingPicture, "pack_qty"), false);
 });
 
+test("missing active-list pictures are filled without replacing one already stored", async () => {
+  const saved = store();
+  let pictureCalls = 0;
+  await runListingsPull({
+    token: "token-1",
+    fetchedAt: "2026-10-24T17:00:00.000Z",
+    fetchPage: async () => ({
+      token: "token-1",
+      rlogid: "list-rlog",
+      requestId: null,
+      page: {
+        ack: "Success",
+        error: null,
+        errorCode: null,
+        totalPages: 1,
+        rows: [
+          {
+            ebayItemId: "777",
+            sku: "PARENT",
+            variationSku: "KIT-RED",
+            title: "Kit",
+            quantityAvailable: 2,
+            listingStatus: "Active",
+            listingUrl: "https://www.ebay.com/itm/777",
+            pictureUrl: null,
+          },
+          {
+            ebayItemId: "777",
+            sku: "PARENT",
+            variationSku: "KIT-BLUE",
+            title: "Kit",
+            quantityAvailable: 1,
+            listingStatus: "Active",
+            listingUrl: "https://www.ebay.com/itm/777",
+            pictureUrl: "https://i.ebayimg.com/images/g/keep/s-l1600.jpg",
+          },
+          {
+            ebayItemId: "888",
+            sku: "PLAIN-1",
+            variationSku: null,
+            title: "Plain",
+            quantityAvailable: 1,
+            listingStatus: "Active",
+            listingUrl: "https://www.ebay.com/itm/888",
+            pictureUrl: null,
+          },
+        ],
+      },
+    }),
+    fetchPictures: async (token) => {
+      pictureCalls += 1;
+      assert.equal(token, "token-1");
+      return {
+        token,
+        rlogid: "pic-rlog",
+        requestId: null,
+        pictures: new Map([["777", "https://i.ebayimg.com/images/g/filled/s-l1600.jpg"]]),
+      };
+    },
+    store: saved.api,
+  });
+  assert.equal(pictureCalls, 1);
+  const rows = saved.upserts[0] ?? [];
+  assert.equal(rows.find((row) => row.variation_sku === "KIT-RED")?.picture_url, "https://i.ebayimg.com/images/g/filled/s-l1600.jpg");
+  assert.equal(rows.find((row) => row.variation_sku === "KIT-BLUE")?.picture_url, "https://i.ebayimg.com/images/g/keep/s-l1600.jpg");
+  assert.equal(rows.find((row) => row.ebay_item_id === "888")?.picture_url, null);
+});
+
+test("a picture already present skips the picture fetch", async () => {
+  const saved = store();
+  let pictureCalls = 0;
+  await runListingsPull({
+    token: "token-1",
+    fetchedAt: "2026-10-24T17:00:00.000Z",
+    fetchPage: async () => ({
+      token: "token-1",
+      rlogid: null,
+      requestId: null,
+      page: {
+        ack: "Success",
+        error: null,
+        errorCode: null,
+        totalPages: 1,
+        rows: [
+          {
+            ebayItemId: "222",
+            sku: "PLAIN-1",
+            variationSku: null,
+            title: "Plain",
+            quantityAvailable: 4,
+            listingStatus: "Active",
+            listingUrl: "https://www.ebay.com/itm/222",
+            pictureUrl: "https://i.ebayimg.com/images/g/plain/s-l1600.jpg",
+          },
+        ],
+      },
+    }),
+    fetchPictures: async () => {
+      pictureCalls += 1;
+      return { token: "token-1", rlogid: null, requestId: null, pictures: new Map() };
+    },
+    store: saved.api,
+  });
+  assert.equal(pictureCalls, 0);
+  assert.equal(saved.upserts[0]?.[0]?.picture_url, "https://i.ebayimg.com/images/g/plain/s-l1600.jpg");
+});
+
+test("a failed picture fetch does not upsert or end listings", async () => {
+  const saved = store();
+  await assert.rejects(
+    () =>
+      runListingsPull({
+        token: "token-1",
+        fetchedAt: "2026-10-24T17:00:00.000Z",
+        fetchPage: async () => ({
+          token: "token-1",
+          rlogid: null,
+          requestId: null,
+          page: {
+            ack: "Success",
+            error: null,
+            errorCode: null,
+            totalPages: 1,
+            rows: [
+              {
+                ebayItemId: "222",
+                sku: "PLAIN-1",
+                variationSku: null,
+                title: "Plain",
+                quantityAvailable: 4,
+                listingStatus: "Active",
+                listingUrl: "https://www.ebay.com/itm/222",
+                pictureUrl: null,
+              },
+            ],
+          },
+        }),
+        fetchPictures: async () => {
+          throw new Error("Picture page failed.");
+        },
+        store: saved.api,
+      }),
+    /Picture page failed/,
+  );
+  assert.deepEqual(saved.upserts, []);
+  assert.deepEqual(saved.ended, []);
+});
+
 test("a hand match is kept when the label still matches no SKU", () => {
   const row = {
     ebay_item_id: "555",
