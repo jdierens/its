@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { formatDataDate } from "@/lib/formatDate";
 import { listPurchaseOrders } from "@/lib/purchaseOrders";
 import { purchasePageAccess } from "@/lib/purchaseSession";
 import { purchaseOrderStatusLabel } from "@/lib/purchaseOrderDraft";
@@ -47,8 +48,8 @@ export default async function PurchaseOrdersPage() {
                   <td>
                     <Badge tone={order.status}>{purchaseOrderStatusLabel(order.status)}</Badge>
                   </td>
-                  <td>{order.orderedOn ?? ""}</td>
-                  <td>{order.expectedOn ?? ""}</td>
+                  <td>{formatDataDate(order.orderedOn)}</td>
+                  <td>{formatDataDate(order.expectedOn)}</td>
                   {access.canViewMoney ? <td className="money">{formatMoney(order.total, "USD")}</td> : null}
                 </tr>
               ))}

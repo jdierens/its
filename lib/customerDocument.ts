@@ -1,4 +1,5 @@
 import { documentPartyName } from "@/lib/documentPartyName";
+import { formatDataDate } from "@/lib/formatDate";
 import { formatSalesOrderNumber, invoiceNumber, lineExtension, salesOrderTotal } from "@/lib/salesOrderDraft";
 import type { SoAddress } from "@/lib/salesOrderDraft";
 
@@ -36,9 +37,7 @@ export function customerDocumentBarcode(kind: CustomerDocumentKind, soNumber: nu
 }
 
 export function documentDate(iso: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso.trim());
-  if (!match) return iso.trim();
-  return `${match[2]}/${match[3]}/${match[1].slice(2)}`;
+  return formatDataDate(iso);
 }
 
 export function documentQty(value: string): string {

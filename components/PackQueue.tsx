@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatDataDate } from "@/lib/formatDate";
 import { formatPackQty, packQueueLabel, type PackQueueRow } from "@/lib/packSheet";
 
 export function PackQueue({ rows }: { rows: PackQueueRow[] }) {
@@ -32,7 +33,7 @@ export function PackQueue({ rows }: { rows: PackQueueRow[] }) {
                   </td>
                   <td>{row.customer || "—"}</td>
                   <td className="pick-code">{row.customerPo || "—"}</td>
-                  <td className="pick-code">{row.orderDate || "—"}</td>
+                  <td className="pick-code">{row.orderDate ? formatDataDate(row.orderDate) : "—"}</td>
                   <td className="pick-code">{packQueueLabel(row.status)}</td>
                   <td className="pick-code">
                     {formatPackQty(row.packed)} of {formatPackQty(row.picked)}

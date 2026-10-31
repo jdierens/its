@@ -1,3 +1,5 @@
+import { formatDataDate } from "@/lib/formatDate";
+
 /**
  * The receiving date can be edited until go-live.
  * Set this to false afterwards: the field becomes today's date and cannot be changed.
@@ -260,13 +262,5 @@ export function receiptSavedNote(input: {
 }
 
 export function formatReceivedOn(isoDate: string): string {
-  const match = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return isoDate;
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    month: "numeric",
-    day: "numeric",
-    year: "2-digit",
-  }).format(date);
+  return formatDataDate(isoDate);
 }

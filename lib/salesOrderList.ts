@@ -1,4 +1,5 @@
 import { alnumFieldContains, alnumQueryAlternatives } from "@/lib/itemAlnum";
+import { formatDataDate } from "@/lib/formatDate";
 import { formatSalesMoney, salesOrderStatusLabel } from "@/lib/salesOrderDraft";
 
 /**
@@ -152,7 +153,9 @@ export function salesOrderSearchFields(row: SalesOrderListSearchRow): string[] {
     row.status,
     salesOrderStatusLabel(row.status),
     row.orderDate ?? "",
+    formatDataDate(row.orderDate),
     row.shipDate ?? "",
+    formatDataDate(row.shipDate),
   ];
   if (row.total != null && Number.isFinite(row.total)) {
     fields.push(row.total.toFixed(2));

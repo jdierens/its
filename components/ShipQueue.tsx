@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { formatDataDate } from "@/lib/formatDate";
 import type { ShipQueueRow } from "@/lib/packSheet";
 
 function packedDate(value: string | null): string {
   if (!value) return "—";
-  return value.slice(0, 10);
+  return formatDataDate(value) || "—";
 }
 
 export function ShipQueue({ rows }: { rows: ShipQueueRow[] }) {

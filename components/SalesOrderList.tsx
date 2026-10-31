@@ -15,6 +15,7 @@ import {
   type SalesOrderListSort,
   type SalesOrderListSortKey,
 } from "@/lib/salesOrderList";
+import { formatDataDate } from "@/lib/formatDate";
 import { formatSalesMoney, SALES_ORDER_REFERENCE_LABEL, salesOrderStatusLabel } from "@/lib/salesOrderDraft";
 import type { SalesOrderListItem } from "@/lib/salesOrders";
 
@@ -231,8 +232,8 @@ export function SalesOrderList({
                         {salesOrderStatusLabel(order.status)}
                       </Badge>
                     </td>
-                    <td>{order.orderDate ?? ""}</td>
-                    <td>{order.shipDate ?? ""}</td>
+                    <td>{formatDataDate(order.orderDate)}</td>
+                    <td>{formatDataDate(order.shipDate)}</td>
                     {canViewMoney ? <td className="num">{formatSalesMoney(order.total, order.currency)}</td> : null}
                   </tr>
                 ))}
@@ -255,9 +256,9 @@ export function SalesOrderList({
                     </Badge>
                   </dd>
                   <dt>Order date</dt>
-                  <dd>{order.orderDate ?? ""}</dd>
+                  <dd>{formatDataDate(order.orderDate)}</dd>
                   <dt>Ship date</dt>
-                  <dd>{order.shipDate ?? ""}</dd>
+                  <dd>{formatDataDate(order.shipDate)}</dd>
                   {canViewMoney ? (
                     <>
                       <dt>Total</dt>

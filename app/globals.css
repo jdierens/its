@@ -7081,8 +7081,26 @@ input.num-input {
 
 .so-lines th,
 .so-lines td {
-  padding: 0.35rem 0.4rem;
+  padding: 0.05rem 0.4rem;
+  line-height: 1.05;
   text-align: left;
+}
+
+/* The field's box is part of the gap between lines of text. A fixed height keeps that gap
+   about one letter tall. Narrow screens keep the 44px field from the touch layout. */
+@media (min-width: 801px) {
+  .so-lines input:not([type="checkbox"]),
+  .so-lines select {
+    height: 1.45rem;
+    padding: 0 0.45rem;
+    line-height: 1;
+  }
+
+  .so-page .so-lines button.so-icon-remove {
+    width: 1.45rem;
+    height: 1.45rem;
+    min-height: 0;
+  }
 }
 
 .so-lines tbody td {
@@ -7118,18 +7136,18 @@ input.num-input {
 }
 
 .so-lines .so-line-extra td {
-  padding-top: 0.1rem;
-  padding-bottom: 0.2rem;
+  padding-top: 0.05rem;
+  padding-bottom: 0.1rem;
 }
 
 .so-lines tr.so-line-note-row td {
-  padding-top: 0.15rem;
-  padding-bottom: 0.7rem;
+  padding-top: 0.05rem;
+  padding-bottom: 0.05rem;
 }
 
 .so-lines tr.so-allocation-row td {
-  padding-top: 0.15rem;
-  padding-bottom: 0.35rem;
+  padding-top: 0.08rem;
+  padding-bottom: 0.18rem;
 }
 
 .so-allocation-sku {
@@ -7161,18 +7179,18 @@ input.num-input {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  min-height: 2rem;
+  min-height: 1.45rem;
   max-height: 4.5rem;
   margin: 0;
-  padding: 0.28rem 0.55rem;
-  line-height: 1.35;
+  padding: 0.08rem 0.55rem;
+  line-height: 1.15;
   resize: none;
   overflow: auto;
 }
 
 .so-line-meta {
   display: block;
-  margin: 0.25rem 0 0;
+  margin: 0.12rem 0 0;
   color: var(--ds-muted, var(--muted));
   font-size: 0.75rem;
   font-weight: 550;
@@ -7256,6 +7274,19 @@ input.num-input {
   margin: 0;
 }
 
+/* The list does not use .so-lines. Same letter-height row gap, on its own cells.
+   The status pill is shortened so it does not open the row back up. */
+.so-table-scroll th,
+.so-table-scroll td {
+  padding-top: 0.05rem;
+  padding-bottom: 0.05rem;
+  line-height: 1.05;
+}
+
+.so-table-scroll .badge {
+  height: 1.15rem;
+}
+
 .so-sort-bar {
   display: none;
 }
@@ -7298,7 +7329,7 @@ input.num-input {
 }
 
 .so-allocate {
-  padding: 16px 0 4px;
+  padding: 8px 0 2px;
 }
 
 .so-alloc-row {

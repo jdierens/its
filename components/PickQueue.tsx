@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatDataDate } from "@/lib/formatDate";
 import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
 import { formatPickQty, pickQueueLabel, stagingDisplay, type PickQueueRow } from "@/lib/pickSheet";
 
@@ -32,7 +33,7 @@ export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
                   </td>
                   <td>{row.customer || "—"}</td>
                   <td className="pick-code">{row.orderReference || "—"}</td>
-                  <td className="pick-code">{row.orderDate || "—"}</td>
+                  <td className="pick-code">{row.orderDate ? formatDataDate(row.orderDate) : "—"}</td>
                   <td className="pick-code">{pickQueueLabel(row.status, row.pickStatus)}</td>
                   <td className="pick-code">
                     {formatPickQty(row.picked)} of {formatPickQty(row.ordered)}
