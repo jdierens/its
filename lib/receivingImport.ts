@@ -174,6 +174,17 @@ export const RECEIVING_TABLE: DataTable = {
       synonyms: ["wiped", "wipe"],
     }),
     column({
+      key: "damaged",
+      required: false,
+      template: true,
+      format: "yes or no",
+      example: "no",
+      description:
+        "Damaged goods stay in the bin and are not for sale. Blank is no. A later write-down can lower the cost of quantity received this way. $0 damaged goods are left off the sheet.",
+      allowed: ["yes", "no"],
+      synonyms: ["damaged", "dmg", "damage"],
+    }),
+    column({
       key: "serial",
       required: false,
       template: true,
@@ -232,6 +243,7 @@ export type PreparedReceivingRow = {
   comment: string;
   cleaned: boolean;
   wiped: boolean;
+  damaged: boolean;
   units: ReceivingUnitInput[];
   clientRequestId: string;
   error: string | null;
@@ -256,6 +268,7 @@ export type ReceivingRpcRow = {
   comment: string;
   cleaned: boolean;
   wiped: boolean;
+  damaged: boolean;
   units: ReceivingUnitInput[];
   client_request_id: string;
 };
@@ -274,7 +287,10 @@ export function emptyReceivingDefaults(): ReceivingImportDefaults {
   };
 }
 
-export function parseReceivingFlag(value: string, label: "Cleaned" | "Wiped"): { ok: true; value: boolean } | { ok: false; message: string } {
+export function parseReceivingFlag(
+  value: string,
+  label: "Cleaned" | "Wiped" | "Damaged",
+): { ok: true; value: boolean } | { ok: false; message: string } {
   const token = value.trim().toLowerCase();
   if (NO.has(token)) return { ok: true, value: false };
   if (YES.has(token)) return { ok: true, value: true };
@@ -385,8 +401,10 @@ export function prepareReceivingImport(
 
     const cleanedFlag = parseReceivingFlag(cell(record, "cleaned"), "Cleaned");
     const wipedFlag = parseReceivingFlag(cell(record, "wiped"), "Wiped");
+    const damagedFlag = parseReceivingFlag(cell(record, "damaged"), "Damaged");
     if (!cleanedFlag.ok) error = takeError(error, cleanedFlag.message);
     if (!wipedFlag.ok) error = takeError(error, wipedFlag.message);
+    if (!damagedFlag.ok) error = takeError(error, damagedFlag.message);
 
     error = takeError(error, lengthError(comment, 500, "Comment must be 500 characters or fewer."));
     error = takeError(error, lengthError(origin, 500, "Originating system must be 500 characters or fewer."));
@@ -465,6 +483,7 @@ export function prepareReceivingImport(
       comment,
       cleaned: cleanedFlag.ok ? cleanedFlag.value : false,
       wiped: wipedFlag.ok ? wipedFlag.value : false,
+      damaged: damagedFlag.ok ? damagedFlag.value : false,
       units: error ? [] : units,
       clientRequestId: requestId,
       error,
@@ -496,6 +515,7 @@ export function receivingRpcRows(rows: readonly PreparedReceivingRow[]): Receivi
       comment: row.comment,
       cleaned: row.cleaned,
       wiped: row.wiped,
+      damaged: row.damaged,
       units: row.units,
       client_request_id: row.clientRequestId,
     }));

@@ -175,6 +175,22 @@ export function commentWithPrepStatus(
   return body ? `${status} ${body}` : status;
 }
 
+/**
+ * Recent entries comment. Damaged is a stock flag, shown in front of the prep
+ * word. It is not written into the stored comment.
+ */
+export function commentWithStockStatus(
+  comment: string | null | undefined,
+  prep: ReceivePrep | null,
+  cleaned: boolean | null,
+  wiped: boolean | null,
+  damaged: boolean,
+): string {
+  const body = commentWithPrepStatus(comment, prep, cleaned, wiped);
+  if (!damaged) return body;
+  return body ? `Damaged ${body}` : "Damaged";
+}
+
 export type ReceivingBinLookup = {
   reference: string;
   canReceive: boolean;
@@ -299,12 +315,16 @@ export function receivingBinCreateMessage(error: unknown, requestedCode: string 
   return text || "The bin was not created.";
 }
 
-/** On-hand stock with no open cycle cannot be received into. An empty bin can. */
+/** Physical stock with no open cycle cannot be received into. An empty bin can. Damaged quantity still occupies the bin. */
 export function binCanReceive(detail: {
-  contents: readonly { qty: number }[];
+  contents: readonly { qty: number; damagedQty?: number }[];
   cycles: readonly { status: string }[];
 }): boolean {
-  const onHand = detail.contents.reduce((sum, row) => sum + (Number.isFinite(row.qty) ? row.qty : 0), 0);
+  const onHand = detail.contents.reduce((sum, row) => {
+    const qty = Number.isFinite(row.qty) ? row.qty : 0;
+    const damaged = Number.isFinite(row.damagedQty) ? Number(row.damagedQty) : 0;
+    return sum + qty + damaged;
+  }, 0);
   if (onHand <= 0) return true;
   return detail.cycles.some((cycle) => cycle.status === "open");
 }

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   binCanReceive,
   commentWithPrepStatus,
+  commentWithStockStatus,
   lastPutawayBinReference,
   nextReceivingBinCode,
   prepStatusText,
@@ -51,6 +52,9 @@ describe("receive prep", () => {
     assert.equal(commentWithPrepStatus("  date code  ", "wiped", null, true), "Wiped date code");
     assert.equal(commentWithPrepStatus("dirty already", "cleaned", null, null), "dirty already");
     assert.equal(commentWithPrepStatus("keep dirty word", null, null, null), "keep dirty word");
+    assert.equal(commentWithStockStatus("pin bent", null, null, null, true), "Damaged pin bent");
+    assert.equal(commentWithStockStatus("", "cleaned", true, null, true), "Damaged cleaned");
+    assert.equal(commentWithStockStatus("ok", "wiped", null, false, false), "Pending Wipe ok");
   });
 });
 
@@ -226,6 +230,8 @@ describe("typed receiving bin", () => {
     assert.equal(binCanReceive({ contents: [{ qty: 0 }], cycles: [{ status: "closed" }] }), true);
     assert.equal(binCanReceive({ contents: [{ qty: 2 }], cycles: [{ status: "open" }] }), true);
     assert.equal(binCanReceive({ contents: [{ qty: 2 }], cycles: [{ status: "closed" }] }), false);
+    assert.equal(binCanReceive({ contents: [{ qty: 0, damagedQty: 3 }], cycles: [{ status: "open" }] }), true);
+    assert.equal(binCanReceive({ contents: [{ qty: 0, damagedQty: 3 }], cycles: [{ status: "closed" }] }), false);
   });
 
   it("suggests the shared counter's next code", () => {

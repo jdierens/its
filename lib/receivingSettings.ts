@@ -122,6 +122,8 @@ export type ReceivingEntry = {
   editedBy: string | null;
   cleaned: boolean | null;
   wiped: boolean | null;
+  /** True when this receipt is damaged and its quantity is not for sale. */
+  damaged: boolean;
   shortCode: string | null;
   longCode: string | null;
   taxonomyName: string | null;
@@ -212,6 +214,7 @@ export function receivingEntryForViewer(row: Record<string, unknown>, canViewMon
     editedBy: textOrNull(source.editor_initials),
     cleaned: booleanOrNull(source.cleaned),
     wiped: booleanOrNull(source.wiped),
+    damaged: source.damaged === true,
     shortCode: textOrNull(source.short_code) ?? textOrNull(taxonomy?.short_code),
     longCode: textOrNull(source.long_code) ?? textOrNull(taxonomy?.long_code),
     taxonomyName: textOrNull(source.taxonomy_name) ?? textOrNull(taxonomy?.name),

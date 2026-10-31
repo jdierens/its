@@ -74,6 +74,19 @@ function SortHeading({
   );
 }
 
+function OnHandQty({ hit }: { hit: InventoryHit }) {
+  if (hit.damaged <= 0) return hit.qty;
+  const where = hit.damagedLocations.split("\n").join(", ");
+  return (
+    <>
+      {hit.qty}
+      <span className="inventory-damaged" title={where || undefined}>
+        {hit.damaged} damaged
+      </span>
+    </>
+  );
+}
+
 function stockModeLabel(stock: InventoryStock): string {
   return stock === "in" ? "In stock" : "All";
 }
@@ -281,8 +294,8 @@ export function InventorySearchPage() {
   return (
     <main className="page inventory-search-page">
       <p className="page-note">
-        Same search as receiving. Each match shows the on-hand quantity and the bins that hold it. On hand
-        starts at in stock only.
+        Same search as receiving. On hand is quantity for sale. Damaged pieces stay in the bin and are not
+        included. On hand starts at in stock only.
       </p>
       <section className="card" aria-busy={searching}>
         <div className="inventory-search-field">
@@ -380,7 +393,9 @@ export function InventorySearchPage() {
                       <td className="item">
                         <ItemCell hit={hit} />
                       </td>
-                      <td className="num fit">{hit.qty}</td>
+                      <td className="num fit">
+                        <OnHandQty hit={hit} />
+                      </td>
                       <td className="locations" title={hit.locations || undefined}>
                         <BinLines text={hit.empty ? INVENTORY_NO_BINS : hit.locations} />
                       </td>
@@ -408,7 +423,9 @@ export function InventorySearchPage() {
                       <ItemCell hit={hit} />
                     </dd>
                     <dt>On hand</dt>
-                    <dd className="num">{hit.qty}</dd>
+                    <dd className="num">
+                      <OnHandQty hit={hit} />
+                    </dd>
                     <dt>Bins</dt>
                     <dd className="locations" title={hit.locations || undefined}>
                       <BinLines text={hit.empty ? INVENTORY_NO_BINS : hit.locations} />

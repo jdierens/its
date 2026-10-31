@@ -126,6 +126,10 @@ const RECEIPT_SEARCH_COLUMNS = `${RECEIPT_LINE_COLUMNS}, search_query`;
 
 const RECEIPT_OWNER_COLUMNS = `${RECEIPT_SEARCH_COLUMNS}, vendor_name, ownership, po_number`;
 
+const RECEIPT_DAMAGE_COLUMNS = `${RECEIPT_OWNER_COLUMNS}, damaged`;
+
+export const DAMAGED_INVENTORY_MIGRATION = "supabase/migrations/20261031060000_damaged_inventory.sql";
+
 async function attachItemNames(detail: BinDetail): Promise<BinDetail> {
   const skus = [
     ...new Set(
@@ -469,6 +473,7 @@ export async function receiveIntoBin(input: {
   searchQuery?: string | null;
   cleaned?: boolean | null;
   wiped?: boolean | null;
+  damaged?: boolean;
   units?: StockUnitInput[] | null;
   vendorId?: string | null;
   purchaseOrderId?: string | null;
@@ -498,11 +503,19 @@ export async function receiveIntoBin(input: {
     p_search_query: input.searchQuery?.trim().slice(0, 500) || null,
     p_cleaned: input.itemId ? (input.cleaned ?? null) : null,
     p_wiped: input.itemId ? (input.wiped ?? null) : null,
+    p_damaged: Boolean(input.damaged),
     p_vendor_id: owner.vendorId,
     p_purchase_order_id: owner.purchaseOrderId,
     ...(units.length > 0 ? { p_units: units } : {}),
   };
-  const { data, error } = await supabase.rpc("receive_into_bin", payload);
+  let { data, error } = await supabase.rpc("receive_into_bin", payload);
+  if (error && payload.p_damaged && (missingSchema(error) || missingColumn(error))) {
+    throw new Error(`Apply ${DAMAGED_INVENTORY_MIGRATION} before receiving damaged stock.`);
+  }
+  if (error && (missingSchema(error) || missingColumn(error))) {
+    const { p_damaged: _damaged, ...forSale } = payload;
+    ({ data, error } = await supabase.rpc("receive_into_bin", forSale));
+  }
   if (error && (missingSchema(error) || missingColumn(error))) {
     throw new Error(
       `Apply ${STOCK_UNITS_MIGRATION} and ${CONSIGNED_RECEIVE_MIGRATION} before receiving. A receipt without a purchase order has to name a vendor and is stored as consigned.`,
@@ -567,6 +580,20 @@ export async function editReceipt(input: {
   if (error) rpcError(error);
 }
 
+export async function setReceiptDamaged(eventId: string, damaged: boolean): Promise<void> {
+  const initials = await operatorInitials();
+  if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
+  const { error } = await (await getSupabase()).rpc("set_receipt_damaged", {
+    p_event_id: eventId,
+    p_damaged: damaged,
+    p_initials: initials,
+  });
+  if (error && (missingSchema(error) || missingColumn(error))) {
+    throw new Error(`Apply ${DAMAGED_INVENTORY_MIGRATION} before marking a receipt damaged.`);
+  }
+  if (error) rpcError(error);
+}
+
 const RECEIPT_REPORT_PAGE = 1000;
 
 async function listReceiptSlice(
@@ -589,7 +616,8 @@ async function listReceiptSlice(
       .order("id", { ascending: false })
       .range(from, to);
   };
-  let corrected = await receiptPage(RECEIPT_OWNER_COLUMNS);
+  let corrected = await receiptPage(RECEIPT_DAMAGE_COLUMNS);
+  if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_OWNER_COLUMNS);
   if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_SEARCH_COLUMNS);
   if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_LINE_COLUMNS);
   if (corrected.error && missingColumn(corrected.error)) corrected = await receiptPage(RECEIPT_COLUMNS);

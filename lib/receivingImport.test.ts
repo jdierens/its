@@ -32,7 +32,7 @@ describe("receiving template", () => {
     const csv = templateCsv(RECEIVING_TABLE);
     assert.equal(
       csv,
-      "\uFEFFsku,search,qty,bin,vendor,purchase_order,project,received_on,incoming_bin,origin,origin_qty,comment,cleaned,wiped,serial,country_of_origin\r\n94415,samsung 860,4,10059-C,Example Vendor,,Example project,2026-10-29,DOCK-1,eBay,4,sample row - replace before import,no,no,SN-1001,USA\r\n",
+      "\uFEFFsku,search,qty,bin,vendor,purchase_order,project,received_on,incoming_bin,origin,origin_qty,comment,cleaned,wiped,damaged,serial,country_of_origin\r\n94415,samsung 860,4,10059-C,Example Vendor,,Example project,2026-10-29,DOCK-1,eBay,4,sample row - replace before import,no,no,no,SN-1001,USA\r\n",
     );
     assert.equal(templateColumns(RECEIVING_TABLE).some((column) => column.required && column.key === "qty"), true);
     assert.equal(templateColumns(RECEIVING_TABLE).some((column) => column.required && column.key === "bin"), true);
@@ -47,7 +47,7 @@ describe("receiving template", () => {
     assert.match(parsed.sheets[1]?.rows.map((line) => line.join(" ")).join("\n") ?? "", /consigned/);
 
     const mapping = autoMatch(
-      ["Item Qty", "Putaway", "SKU", "Vendor", "PO", "COO", "Cleaned", "Wiped", "Date", "System", "System Qty", "Incoming bin"],
+      ["Item Qty", "Putaway", "SKU", "Vendor", "PO", "COO", "Cleaned", "Wiped", "DMG", "Date", "System", "System Qty", "Incoming bin"],
       mappingColumns(RECEIVING_TABLE),
     );
     assert.equal(mapping.qty, "Item Qty");
@@ -58,6 +58,7 @@ describe("receiving template", () => {
     assert.equal(mapping.country_of_origin, "COO");
     assert.equal(mapping.cleaned, "Cleaned");
     assert.equal(mapping.wiped, "Wiped");
+    assert.equal(mapping.damaged, "DMG");
     assert.equal(mapping.received_on, "Date");
     assert.equal(mapping.origin, "System");
     assert.equal(mapping.origin_qty, "System Qty");

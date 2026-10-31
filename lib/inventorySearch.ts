@@ -18,7 +18,9 @@ export type InventoryBinQty = {
 
 export type InventoryContentSource = {
   itemId: string;
+  /** For-sale quantity. Damaged pieces are `damagedQty`, not this number. */
   qty: number;
+  damagedQty?: number;
   binReference: string;
   locationCode: string | null;
   cycleOpen: boolean;
@@ -36,8 +38,13 @@ export type InventoryHit = {
   sku: string;
   name: string;
   description: string;
+  /** For-sale quantity. Damaged pieces are not included. */
   qty: number;
-  /** One bin per line, for example `(x14)10002-C · HWS.00.00.00` then `(x8)10037`. Empty when nothing is on hand. */
+  /** Damaged pieces still in an open bin. They do not count as on hand for sale. */
+  damaged: number;
+  /** Bins that hold the damaged quantity, in the same shape as `locations`. */
+  damagedLocations: string;
+  /** One bin per line, for example `(x14)10002-C · HWS.00.00.00` then `(x8)10037`. Empty when nothing is for sale. */
   locations: string;
   empty: boolean;
 };
@@ -78,7 +85,20 @@ export function inventoryOnHand(rows: readonly InventoryBinRow[]): { qty: number
   };
 }
 
-/** Open-cycle rows only. A closed cycle is not on-hand. */
+/** Damaged pieces on open cycles. They are tracked and are not for sale. */
+export function inventoryDamaged(rows: readonly InventoryContentSource[]): { qty: number; locations: string } {
+  return inventoryOnHand(
+    rows
+      .filter((row) => row.cycleOpen)
+      .map((row) => ({
+        reference: row.binReference,
+        qty: Number(row.damagedQty ?? 0),
+        locationCode: row.locationCode,
+      })),
+  );
+}
+
+/** Open-cycle rows only. A closed cycle is not on-hand. For-sale qty only. */
 export function binsByItem(rows: readonly InventoryContentSource[]): Map<string, InventoryBinRow[]> {
   const map = new Map<string, InventoryBinRow[]>();
   for (const row of rows) {
@@ -200,13 +220,17 @@ export function inventoryHits(
 ): InventoryHit[] {
   const byItem = binsByItem(contents);
   return matches.map((match) => {
+    const rows = contents.filter((row) => row.itemId.trim() === match.id);
     const onHand = inventoryOnHand(byItem.get(match.id) ?? []);
+    const damaged = inventoryDamaged(rows);
     return {
       id: match.id,
       sku: match.sku,
       name: match.name,
       description: match.description,
       qty: onHand.qty,
+      damaged: damaged.qty,
+      damagedLocations: damaged.locations,
       locations: onHand.locations,
       empty: onHand.qty <= 0,
     };

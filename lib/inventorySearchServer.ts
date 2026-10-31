@@ -34,17 +34,24 @@ export type InventorySearchResult =
 type ContentRow = {
   item_id?: unknown;
   qty?: unknown;
+  damaged_qty?: unknown;
   bin_id?: unknown;
   cycle_id?: unknown;
 };
+
+function missingColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "PGRST204" || error.code === "42703";
+}
 
 const CONTENT_LIMIT = 5000;
 const ITEM_CHUNK = 80;
 
 /**
  * On-hand for the items receiving Find already ranked.
- * Open bin cycles only. Quantity is `bin_contents`, not `items.quantity`.
- * Every open bin is included. Receiving's same-project suggestion is a different list.
+ * Open bin cycles only. For-sale quantity is `bin_contents.qty`. `damaged_qty` is
+ * tracked and is not added to that quantity. Every open bin is included.
+ * Receiving's same-project suggestion is a different list.
  * Item ids are chunked so an in-stock pool still fits a request URL.
  */
 async function openBinContents(supabase: SupabaseClient, itemIds: string[]): Promise<InventoryContentSource[]> {
@@ -57,12 +64,21 @@ async function openBinContents(supabase: SupabaseClient, itemIds: string[]): Pro
 }
 
 async function openBinContentChunk(supabase: SupabaseClient, itemIds: string[]): Promise<InventoryContentSource[]> {
-  const contents = await supabase
+  const withDamaged = await supabase
     .from("bin_contents")
-    .select("item_id, qty, bin_id, cycle_id")
+    .select("item_id, qty, damaged_qty, bin_id, cycle_id")
     .in("item_id", itemIds)
-    .gt("qty", 0)
+    .or("qty.gt.0,damaged_qty.gt.0")
     .limit(CONTENT_LIMIT);
+  const contents =
+    withDamaged.error && missingColumn(withDamaged.error)
+      ? await supabase
+          .from("bin_contents")
+          .select("item_id, qty, bin_id, cycle_id")
+          .in("item_id", itemIds)
+          .gt("qty", 0)
+          .limit(CONTENT_LIMIT)
+      : withDamaged;
   if (contents.error) throw new Error(errorText(contents.error));
   const rows = (contents.data ?? []) as ContentRow[];
   if (rows.length === 0) return [];
@@ -106,9 +122,11 @@ async function openBinContentChunk(supabase: SupabaseClient, itemIds: string[]):
 
   return rows.map((row) => {
     const bin = binById.get(String(row.bin_id ?? ""));
+    const damaged = Number(row.damaged_qty ?? 0);
     return {
       itemId: String(row.item_id ?? ""),
       qty: Number(row.qty),
+      damagedQty: Number.isFinite(damaged) ? damaged : 0,
       binReference: bin?.reference ?? "",
       locationCode: bin?.locationCode ?? null,
       cycleOpen: open.has(String(row.cycle_id ?? "")),

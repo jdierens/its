@@ -50,6 +50,31 @@ test("the same bin adds together and keeps a location from either row", () => {
   assert.deepEqual(bins, [{ reference: "10010-C", qty: 10, locationCode: "HWS.01.02.03" }]);
 });
 
+test("damaged quantity is tracked and left out of on hand", () => {
+  const hits = inventoryHits(
+    [{ id: "drive", sku: "106683", name: "Drive", description: "" }],
+    [
+      { itemId: "drive", qty: 4, damagedQty: 2, binReference: "10059-C", locationCode: "HWS.00.00.00", cycleOpen: true },
+      { itemId: "drive", qty: 0, damagedQty: 3, binReference: "10060-C", locationCode: null, cycleOpen: true },
+      { itemId: "drive", qty: 9, damagedQty: 8, binReference: "10061-C", locationCode: null, cycleOpen: false },
+    ],
+  );
+  assert.equal(hits[0]?.qty, 4);
+  assert.equal(hits[0]?.locations, "(x4)10059-C · HWS.00.00.00");
+  assert.equal(hits[0]?.damaged, 5);
+  assert.equal(hits[0]?.damagedLocations, "(x2)10059-C · HWS.00.00.00\n(x3)10060-C");
+  assert.equal(hits[0]?.empty, false);
+  const damagedOnly = inventoryHits(
+    [{ id: "board", sku: "10", name: "Board", description: "" }],
+    [{ itemId: "board", qty: 0, damagedQty: 1, binReference: "20000-B", locationCode: null, cycleOpen: true }],
+  );
+  assert.equal(damagedOnly[0]?.qty, 0);
+  assert.equal(damagedOnly[0]?.empty, true);
+  assert.equal(damagedOnly[0]?.damaged, 1);
+  assert.equal(applyInventoryStock(damagedOnly, "in", false).hits.length, 0);
+  assert.equal(applyInventoryStock(damagedOnly, "all", false).hits.length, 1);
+});
+
 test("a match with no open quantity stays in the list", () => {
   const hits = inventoryHits(
     [
@@ -78,6 +103,8 @@ function hit(partial: Partial<InventoryHit> & Pick<InventoryHit, "id">): Invento
     description: partial.description ?? "",
     qty: partial.qty ?? 0,
     locations: partial.locations ?? "",
+    damaged: partial.damaged ?? 0,
+    damagedLocations: partial.damagedLocations ?? "",
     empty: partial.empty ?? false,
     ...partial,
   };

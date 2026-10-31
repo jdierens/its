@@ -528,7 +528,10 @@ export function BinView({ reference }: { reference: string }) {
                             </td>
                             <td className="sku">{row.sku}</td>
                             <td>{row.name}</td>
-                            <td className="num">{row.qty}</td>
+                            <td className="num">
+                              {row.qty}
+                              {row.damagedQty > 0 ? <span className="inventory-damaged">{row.damagedQty} damaged</span> : null}
+                            </td>
                           </tr>
                         );
                       })}
