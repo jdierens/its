@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ordersUrl } from "./endpoints.ts";
+import { ordersUrl, shippingFulfillmentsUrl } from "./endpoints.ts";
 import {
   addLabelFees,
   allocateDiscount,
@@ -451,6 +451,10 @@ test("order reads stay on the eBay fulfillment host", () => {
   assert.equal(allowOrdersNext("https://api.ebay.com/sell/fulfillment/v1/order?offset=200", "production"), true);
   assert.equal(allowOrdersNext("https://evil.example/sell/fulfillment/v1/order", "production"), false);
   assert.equal(allowOrdersNext("https://api.sandbox.ebay.com/sell/fulfillment/v1/order", "production"), false);
+  assert.equal(
+    shippingFulfillmentsUrl("production", ORDER),
+    `https://api.ebay.com/sell/fulfillment/v1/order/${ORDER}/shipping_fulfillment`,
+  );
 });
 
 test("a pull creates one draft and links an order that already has the sales record", async () => {
@@ -764,4 +768,139 @@ test("the first priced pull ignores the watermark so existing drafts can be rewr
 test("seed is required before history can create drafts", () => {
   const error = new SeedRequiredError();
   assert.equal(error.message, SEED_REQUIRED_MESSAGE);
+});
+
+test("a fulfilled order is the one whose shipping fulfillments are read", async () => {
+  const fetched: string[] = [];
+  const synced: { ebayOrderId: string; fulfillments: { trackingNumber: string; carrier: string | null; shipDate: string | null }[] }[] = [];
+  let watermark: string | null = null;
+  const result = await runOrderPull({
+    now: new Date("2026-11-02T15:00:00.000Z"),
+    watermark: "2026-11-01T00:00:00.000Z",
+    customer: { id: "customer-ebay" },
+    pageUrl: (filter, offset) => `https://api.ebay.com/orders?filter=${encodeURIComponent(filter)}&offset=${offset}`,
+    allowNext: () => false,
+    fetchPage: async () => ({
+      body: {
+        orders: [
+          {
+            orderId: ORDER,
+            creationDate: "2026-10-24T00:00:00.000Z",
+            orderFulfillmentStatus: "FULFILLED",
+            fulfillmentHrefs: [`https://api.ebay.com/sell/fulfillment/v1/order/${ORDER}/shipping_fulfillment/1`],
+            lineItems: [{ sku: "SKU-1", title: "Memory", quantity: 1, lineItemCost: { value: "5.00", currency: "USD" } }],
+          },
+          {
+            orderId: "16-00001-00001",
+            creationDate: "2026-10-24T00:00:00.000Z",
+            orderFulfillmentStatus: "NOT_STARTED",
+            lineItems: [],
+          },
+        ],
+      },
+      rlogid: null,
+      requestId: null,
+    }),
+    fetchFulfillments: async (orderId) => {
+      fetched.push(orderId);
+      return {
+        fulfillments: [
+          {
+            fulfillmentId: "ful-1",
+            shipmentTrackingNumber: "1Z999",
+            shippingCarrierCode: "UPS",
+            shippedDate: "2026-10-26T18:00:00.000Z",
+            lineItems: [{ lineItemId: "line-1", quantity: 1 }],
+          },
+        ],
+      };
+    },
+    store: {
+      async existing() {
+        return [];
+      },
+      async itemsForSkus() {
+        return [{ id: "item-1", sku: "SKU-1" }];
+      },
+      async apply() {
+        return { created: 2, updated: 0, linked: 0 };
+      },
+      async syncShipments(groups) {
+        for (const group of groups) {
+          synced.push({
+            ebayOrderId: group.ebayOrderId,
+            fulfillments: group.fulfillments.map((row) => ({
+              trackingNumber: row.trackingNumber,
+              carrier: row.carrier,
+              shipDate: row.shipDate,
+            })),
+          });
+        }
+        return { shipments: 1, shipped: 1, shippedHeld: 0 };
+      },
+      async setWatermark(iso) {
+        watermark = iso;
+      },
+    },
+  });
+  assert.deepEqual(fetched, [ORDER]);
+  assert.equal(synced.length, 2);
+  assert.deepEqual(synced[0], {
+    ebayOrderId: ORDER,
+    fulfillments: [{ trackingNumber: "1Z999", carrier: "UPS", shipDate: "2026-10-26" }],
+  });
+  assert.deepEqual(synced[1], { ebayOrderId: "16-00001-00001", fulfillments: [] });
+  assert.equal(result.shipments, 1);
+  assert.equal(result.shipped, 1);
+  assert.equal(watermark, "2026-11-02T15:00:00.000Z");
+});
+
+test("a tracking read failure leaves the watermark where it was", async () => {
+  let watermark = false;
+  await assert.rejects(
+    () =>
+      runOrderPull({
+        now: new Date("2026-11-02T15:00:00.000Z"),
+        watermark: "2026-11-01T00:00:00.000Z",
+        customer: { id: "customer-ebay" },
+        pageUrl: () => "https://api.ebay.com/sell/fulfillment/v1/order",
+        allowNext: () => false,
+        fetchPage: async () => ({
+          body: {
+            orders: [
+              {
+                orderId: ORDER,
+                creationDate: "2026-10-24T00:00:00.000Z",
+                orderFulfillmentStatus: "FULFILLED",
+                lineItems: [],
+              },
+            ],
+          },
+          rlogid: null,
+          requestId: null,
+        }),
+        fetchFulfillments: async () => {
+          throw new Error("eBay tracking could not be read.");
+        },
+        store: {
+          async existing() {
+            return [];
+          },
+          async itemsForSkus() {
+            return [];
+          },
+          async apply() {
+            return { created: 1, updated: 0, linked: 0 };
+          },
+          async syncShipments() {
+            return { shipments: 0, shipped: 0, shippedHeld: 0 };
+          },
+          async setWatermark() {
+            watermark = true;
+          },
+        },
+      }),
+    /eBay tracking could not be read/,
+  );
+  assert.equal(watermark, false);
 });
