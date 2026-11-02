@@ -18,6 +18,8 @@ test("shipped sales orders save document fields and keep lines", () => {
   assert.match(sql, /contact_name = v_contact_name/);
   assert.match(sql, /if v_replace_lines then/);
   assert.match(sql, /so_sender_contact/);
+  assert.match(sql, /v_name := btrim\(btrim\(split_part\(v_text, '<', 1\)\), '"'\)/);
+  assert.equal(sql.includes("btrim(both"), false);
   assert.match(sql, /customer_has_default_contact/);
   assert.match(sql, /'Net10', 'Net 10', 'Net 10'/);
   assert.match(sql, /'Net14', 'Net 14', 'Net 14'/);

@@ -69,7 +69,7 @@ begin
   end if;
   v_text := regexp_replace(v_text, '\s+', ' ', 'g');
   if v_text ~ '<[^<>]+>' then
-    v_name := btrim(both '"' from btrim(split_part(v_text, '<', 1)));
+    v_name := btrim(btrim(split_part(v_text, '<', 1)), '"');
     v_email := btrim(split_part(split_part(v_text, '<', 2), '>', 1));
   elsif position('@' in v_text) > 0 then
     v_email := v_text;
