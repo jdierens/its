@@ -330,6 +330,14 @@ describe("customer document", () => {
     assert.ok(document);
     assert.equal(document.billTo[0], "Decker IT Lösungen");
     assert.equal(document.shipTo[0], "Decker IT Lösungen");
+    const dropShip = buildCustomerDocument({
+      ...sample("invoice"),
+      billTo: { ...emptyAddress(), company: "Decker IT Lösungen (C)", line1: "Zum Gutshof 2" },
+      shipTo: { ...emptyAddress(), company: "Equinix DC", line1: "1 Datacenter Way", city: "Ashburn", countrySubDivisionCode: "VA", postalCode: "20147", country: "US" },
+    });
+    assert.equal(dropShip?.billTo[0], "Decker IT Lösungen");
+    assert.equal(dropShip?.shipTo[0], "Equinix DC");
+    assert.equal(dropShip?.shipTo[1], "1 Datacenter Way");
     const vendor = buildCustomerDocument({ ...sample("confirmation"), customerName: "King Server (V)" });
     assert.equal(vendor?.billTo[0], "King Server");
   });

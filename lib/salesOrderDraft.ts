@@ -54,6 +54,8 @@ export const SO_NOTE_KINDS = [
 export type SoNoteKind = (typeof SO_NOTE_KINDS)[number]["id"];
 
 export type SoAddress = {
+  /** Bill-to or ship-to company. The two addresses keep their own. */
+  company: string;
   line1: string;
   line2: string;
   city: string;
@@ -164,6 +166,7 @@ export type SoDraftInput = {
 
 export function emptyAddress(): SoAddress {
   return {
+    company: "",
     line1: "",
     line2: "",
     city: "",
@@ -177,14 +180,14 @@ export function emptyAddress(): SoAddress {
 
 const ADDRESS_BLOCK = ["line1", "line2", "city", "countrySubDivisionCode", "postalCode", "country"] as const;
 
-/** Street, city, state, postal code, or country has text. Attention and phone do not count. */
+/** Street, city, state, postal code, or country has text. Company, attention, and phone do not count. */
 export function addressBlockHasContent(address: SoAddress): boolean {
   return ADDRESS_BLOCK.some((key) => address[key].trim() !== "");
 }
 
 /**
  * Copies street, city, state, postal code, and country.
- * Attention and phone on the target stay.
+ * Company, attention, and phone on the target stay, so a drop-ship company is not replaced.
  * A blank source does not replace the target.
  */
 export function copyAddressFields(source: SoAddress, target: SoAddress): SoAddress | null {
@@ -200,24 +203,44 @@ export function copyAddressFields(source: SoAddress, target: SoAddress): SoAddre
   };
 }
 
-/** Street, city, state, postal code, and country. Ship-to attention and phone stay. */
+/** Street, city, state, postal code, and country. Ship-to company, attention, and phone stay. */
 export function copyBillToShipTo(billTo: SoAddress, shipTo: SoAddress): SoAddress {
   return copyAddressFields(billTo, shipTo) ?? shipTo;
 }
 
-/** Street, city, state, postal code, and country. Bill-to attention and phone stay. */
+/** Street, city, state, postal code, and country. Bill-to company, attention, and phone stay. */
 export function copyShipToBillTo(shipTo: SoAddress, billTo: SoAddress): SoAddress {
   return copyAddressFields(shipTo, billTo) ?? billTo;
 }
 
+/** Fills a blank address company from the customer. A company already on the address stays. */
+export function withAddressCompany(address: SoAddress, company: string): SoAddress {
+  if (address.company.trim()) return address;
+  const next = company.trim();
+  if (!next) return address;
+  return { ...address, company: next };
+}
+
 /**
- * Drafts, approved orders, and orders being picked stay editable.
- * Packing, packed, cancelled, closed, and later fulfillment statuses stay locked.
+ * Cancelled and closed orders cannot be edited. Every other status can change
+ * document fields: order reference, contacts, terms, shipping, addresses, notes, and files.
  */
 export function salesOrderFormLocked(canEdit: boolean, status: string | null): boolean {
   if (!canEdit) return true;
-  if (status == null || status === "draft" || status === "approved" || status === "picking") return false;
-  return true;
+  return status === "cancelled" || status === "closed";
+}
+
+const LINE_OPEN_STATUSES = new Set(["draft", "approved", "picking"]);
+
+/**
+ * Quantity, SKU, allocation, and price stay editable on a new order, a draft,
+ * an approved order, and an order being picked. Packing and every later status
+ * keep those fields locked so stock is not rewritten.
+ */
+export function salesOrderLinesLocked(canEdit: boolean, status: string | null): boolean {
+  if (salesOrderFormLocked(canEdit, status)) return true;
+  if (status == null) return false;
+  return !LINE_OPEN_STATUSES.has(status);
 }
 
 /** Picking and packing use the open chip. Packed uses the approved chip. */
@@ -482,6 +505,7 @@ export function addressFromRecord(value: unknown): SoAddress {
   const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const text = (key: string) => (typeof row[key] === "string" ? row[key] : "");
   return {
+    company: text("company") || text("companyName") || text("company_name") || text("name"),
     line1: text("line1"),
     line2: text("line2"),
     city: text("city"),

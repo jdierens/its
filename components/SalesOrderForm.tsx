@@ -40,6 +40,7 @@ import {
   parseSalesOrderNumber,
   salesOrderBadgeTone,
   salesOrderFormLocked,
+  salesOrderLinesLocked,
   salesOrderStatusLabel,
   salesOrderTotal,
   sellerNet,
@@ -173,9 +174,11 @@ export function SalesOrderForm({
   pickStatus?: SalesOrderPickStatus;
 }) {
   const router = useRouter();
-  const locked = salesOrderFormLocked(canEdit, order?.status ?? null);
+  const headerLocked = salesOrderFormLocked(canEdit, order?.status ?? null);
+  const linesLocked = salesOrderLinesLocked(canEdit, order?.status ?? null);
+  const locked = linesLocked;
   const drafting = order == null || order.status === "draft";
-  const saveLabel = order?.status === "approved" || order?.status === "picking" ? "Save" : "Save draft";
+  const saveLabel = drafting ? "Save draft" : "Save";
   const [orderId, setOrderId] = useState(order?.id ?? null);
   const [customerId, setCustomerId] = useState(order?.customerId ?? "");
   const [customerName, setCustomerName] = useState(order?.customerName ?? "");
@@ -800,7 +803,7 @@ export function SalesOrderForm({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!locked) void onSave();
+          if (!headerLocked) void onSave();
         }}
       >
         <div className="so-sticky">
@@ -832,7 +835,7 @@ export function SalesOrderForm({
             ) : null}
           </div>
           <div className="so-sticky-actions">
-            {!locked ? (
+            {!headerLocked ? (
               <button id="so-save" className="so-icon-action" type="submit" disabled={busy} aria-label={saveLabel} title={saveLabel}>
                 <Save size={18} strokeWidth={1.75} aria-hidden />
               </button>
@@ -980,7 +983,7 @@ export function SalesOrderForm({
             {ebayCustomer ? (
               <input id="so-order-reference" aria-label="eBay order id" value={order?.ebayOrderId ?? ""} disabled />
             ) : (
-              <input id="so-order-reference" aria-label="Order reference" value={customerPo} disabled={locked} onChange={(event) => setCustomerPo(event.target.value)} />
+              <input id="so-order-reference" aria-label="Order reference" value={customerPo} disabled={headerLocked} onChange={(event) => setCustomerPo(event.target.value)} />
             )}
           </label>
           {ebayOrder ? (
@@ -994,15 +997,15 @@ export function SalesOrderForm({
             <div className="so-head-row so-contact-row">
               <label>
                 Contact person
-                <input id="so-contact-person" aria-label="Contact person" value={contactName} disabled={locked} onChange={(event) => setContactName(event.target.value)} />
+                <input id="so-contact-person" aria-label="Contact person" value={contactName} disabled={headerLocked} onChange={(event) => setContactName(event.target.value)} />
               </label>
               <label>
                 Email
-                <input id="so-contact-email" aria-label="Contact email" type="email" autoComplete="off" value={contactEmail} disabled={locked} onChange={(event) => setContactEmail(event.target.value)} />
+                <input id="so-contact-email" aria-label="Contact email" type="email" autoComplete="off" value={contactEmail} disabled={headerLocked} onChange={(event) => setContactEmail(event.target.value)} />
               </label>
               <label>
                 Phone
-                <input id="so-contact-phone" aria-label="Contact phone" value={contactPhone} disabled={locked} onChange={(event) => setContactPhone(event.target.value)} />
+                <input id="so-contact-phone" aria-label="Contact phone" value={contactPhone} disabled={headerLocked} onChange={(event) => setContactPhone(event.target.value)} />
               </label>
             </div>
           )}
@@ -1024,7 +1027,7 @@ export function SalesOrderForm({
           </label>
           <label>
             Payment terms
-            <select id="so-terms" value={terms} disabled={locked} onChange={(event) => setTerms(event.target.value)}>
+            <select id="so-terms" value={terms} disabled={headerLocked} onChange={(event) => setTerms(event.target.value)}>
               <option value="">Choose terms</option>
               {lookups.terms.map((term) => (
                 <option key={term.code} value={term.code}>
@@ -1035,7 +1038,7 @@ export function SalesOrderForm({
           </label>
           <label>
             Incoterms
-            <select id="so-incoterms" value={incoterms} disabled={locked} onChange={(event) => setIncoterms(event.target.value)}>
+            <select id="so-incoterms" value={incoterms} disabled={headerLocked} onChange={(event) => setIncoterms(event.target.value)}>
               <option value="">Choose Incoterms</option>
               {INCOTERMS.map((code) => (
                 <option key={code} value={code}>
@@ -1046,7 +1049,7 @@ export function SalesOrderForm({
           </label>
           <label>
             Ship method
-            <select value={shipMethod} disabled={locked} onChange={(event) => setShipMethod(event.target.value)}>
+            <select value={shipMethod} disabled={headerLocked} onChange={(event) => setShipMethod(event.target.value)}>
               <option value="">Choose a ship method</option>
               {lookups.shipMethods.map((method) => (
                 <option key={method.code} value={method.code}>
@@ -1061,7 +1064,7 @@ export function SalesOrderForm({
           </label>
           <label>
             Carrier account
-            <input value={carrierAccount} disabled={locked} onChange={(event) => setCarrierAccount(event.target.value)} />
+            <input value={carrierAccount} disabled={headerLocked} onChange={(event) => setCarrierAccount(event.target.value)} />
           </label>
         </div>
         <div className="so-shipments">
@@ -1170,8 +1173,8 @@ export function SalesOrderForm({
             </details>
 
         <div className="so-addresses">
-          <AddressFields legend="Ship to" address={shipTo} disabled={locked} showAttention onChange={setShipTo} />
-          {ebayOrder || locked ? null : (
+          <AddressFields legend="Ship to" address={shipTo} disabled={headerLocked} showAttention onChange={setShipTo} />
+          {ebayOrder || headerLocked ? null : (
             <div className="so-address-copy">
               <button
                 type="button"
@@ -1200,9 +1203,9 @@ export function SalesOrderForm({
               ) : null}
             </div>
           )}
-          {ebayOrder ? null : <AddressFields legend="Bill to" address={billTo} disabled={locked} onChange={setBillTo} />}
+          {ebayOrder ? null : <AddressFields legend="Bill to" address={billTo} disabled={headerLocked} onChange={setBillTo} />}
         </div>
-        {!locked ? (
+        {!headerLocked ? (
           <label className="so-check">
             <input type="checkbox" checked={saveAddress} onChange={(event) => setSaveAddress(event.target.checked)} />
             Save address to customer
@@ -1723,7 +1726,7 @@ export function SalesOrderForm({
             <div className="so-notes-col">
               <label>
                 Customer notes
-                <textarea value={exportNotes} disabled={locked} onChange={(event) => setExportNotes(event.target.value)} />
+                <textarea value={exportNotes} disabled={headerLocked} onChange={(event) => setExportNotes(event.target.value)} />
                 <span className="hint">Other details read from the customer PDF.</span>
               </label>
               {notes.map((note, index) => (
@@ -1732,7 +1735,7 @@ export function SalesOrderForm({
                     Kind
                     <select
                       value={note.kind}
-                      disabled={locked}
+                      disabled={headerLocked}
                       onChange={(event) => setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, kind: event.target.value } : row)))}
                     >
                       {SO_NOTE_KINDS.map((kind) => (
@@ -1746,7 +1749,7 @@ export function SalesOrderForm({
                     Note
                     <textarea
                       value={note.customerText}
-                      disabled={locked}
+                      disabled={headerLocked}
                       onChange={(event) =>
                         setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, customerText: event.target.value } : row)))
                       }
@@ -1756,7 +1759,7 @@ export function SalesOrderForm({
                     Response
                     <select
                       value={note.response}
-                      disabled={locked}
+                      disabled={headerLocked}
                       onChange={(event) =>
                         setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, response: event.target.value } : row)))
                       }
@@ -1773,19 +1776,19 @@ export function SalesOrderForm({
                       Counter
                       <textarea
                         value={note.counterText}
-                        disabled={locked}
+                        disabled={headerLocked}
                         onChange={(event) =>
                           setNotes((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, counterText: event.target.value } : row)))
                         }
                       />
                     </label>
                   ) : null}
-                  {!locked ? (
+                  {!headerLocked ? (
                     <RemoveButton label="Remove note" onClick={() => setNotes((current) => current.filter((_, rowIndex) => rowIndex !== index))} />
                   ) : null}
                 </div>
               ))}
-              {!locked ? (
+              {!headerLocked ? (
                 <button
                   type="button"
                   className="secondary so-icon-add"
@@ -1799,7 +1802,7 @@ export function SalesOrderForm({
               {showMoney ? (
                 <label className="so-internal-notes">
                   Internal notes
-                  <textarea value={internalNotes} disabled={locked} onChange={(event) => setInternalNotes(event.target.value)} />
+                  <textarea value={internalNotes} disabled={headerLocked} onChange={(event) => setInternalNotes(event.target.value)} />
                 </label>
               ) : null}
             </div>
@@ -1850,6 +1853,10 @@ function AddressFields({
     <fieldset>
       <legend>{legend}</legend>
       <div className="so-grid">
+        <label className="wide">
+          Company
+          <input aria-label={`${legend} company`} value={address.company} disabled={disabled} onChange={(event) => set("company", event.target.value)} />
+        </label>
         <label className="wide">
           Line 1
           <input value={address.line1} disabled={disabled} onChange={(event) => set("line1", event.target.value)} />

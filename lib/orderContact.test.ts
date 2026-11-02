@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { contactFromEmail, contactFromPoText, mergeBlankContact } from "./orderContact.ts";
+import { contactForEmailOrder, contactFromEmail, contactFromPoText, customerHasDefaultContact, mergeBlankContact } from "./orderContact.ts";
 
 describe("sales order contact", () => {
   it("reads a person, email, and phone from a customer PO", () => {
@@ -36,6 +36,30 @@ describe("sales order contact", () => {
     const local = contactFromEmail({ from: "ada.buyer@example.com" });
     assert.equal(local.person, "ada.buyer");
     assert.equal(local.email, "ada.buyer@example.com");
+  });
+
+  it("fills a blank email order from the sender unless the customer has a default contact", () => {
+    assert.equal(customerHasDefaultContact(null), false);
+    assert.equal(customerHasDefaultContact({ person: " ", email: "", phone: "" }), false);
+    assert.equal(customerHasDefaultContact({ email: "ap@example.com" }), true);
+    const filled = contactForEmailOrder({
+      current: { person: "", email: "", phone: "" },
+      from: "Ada Buyer <ada@example.com>",
+      body: "Tel: 702-555-0199",
+    });
+    assert.deepEqual(filled, { person: "Ada Buyer", email: "ada@example.com", phone: "702-555-0199" });
+    const kept = contactForEmailOrder({
+      current: { person: "Accounts", email: "ap@example.com", phone: "" },
+      from: "Ada Buyer <ada@example.com>",
+      customerDefaultContact: { person: "Accounts", email: "ap@example.com" },
+    });
+    assert.deepEqual(kept, { person: "Accounts", email: "ap@example.com", phone: "" });
+    const blankOnly = contactForEmailOrder({
+      current: { person: "Kept", email: "", phone: "" },
+      from: "Ada Buyer <ada@example.com>",
+    });
+    assert.equal(blankOnly.person, "Kept");
+    assert.equal(blankOnly.email, "ada@example.com");
   });
 
   it("does not replace a contact the order already has", () => {

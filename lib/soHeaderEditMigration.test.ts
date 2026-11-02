@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+test("shipped sales orders save document fields and keep lines", () => {
+  const sql = readFileSync(new URL("../supabase/migrations/20261102120000_sales_order_header_edit.sql", import.meta.url), "utf8");
+  assert.match(sql, /Apply by hand on project fxsbpreasbdalwthyzvk/);
+  assert.match(sql, /Deploying does not run this file/);
+  assert.match(sql, /v_status in \('cancelled', 'closed'\)/);
+  assert.match(sql, /v_status in \('draft', 'approved', 'picking'\)/);
+  assert.equal(sql.includes("v_status not in ('draft', 'approved', 'picking')"), false);
+  const deleteLines = sql.indexOf("delete from public.so_lines");
+  const guard = sql.lastIndexOf("v_replace_lines := true", deleteLines);
+  const header = sql.indexOf("v_replace_lines := false");
+  assert.ok(guard > 0 && guard < deleteLines);
+  assert.ok(header > deleteLines);
+  assert.match(sql, /customer_po = public.blank_to_null\(p_payload ->> 'customer_po'\)/);
+  assert.match(sql, /contact_name = v_contact_name/);
+  assert.match(sql, /if v_replace_lines then/);
+  assert.match(sql, /so_sender_contact/);
+  assert.match(sql, /v_name := btrim\(btrim\(split_part\(v_text, '<', 1\)\), '"'\)/);
+  assert.equal(sql.includes("btrim(both"), false);
+  assert.match(sql, /customer_has_default_contact/);
+  assert.match(sql, /'Net10', 'Net 10', 'Net 10'/);
+  assert.match(sql, /'Net14', 'Net 14', 'Net 14'/);
+  assert.match(sql, /'Net45', 'Net 45', 'Net 45'/);
+  assert.match(sql, /'Net90', 'Net 90', 'Net 90'/);
+  assert.match(sql, /on conflict \(code\) do nothing/);
+  assert.equal(sql.includes("N00-N30"), false);
+  assert.equal(sql.includes("create policy"), false);
+  assert.equal(sql.includes("to anon"), false);
+  assert.equal(sql.includes("to authenticated"), false);
+});

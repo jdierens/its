@@ -57,7 +57,8 @@ export function formatDocumentLocality(address: SoAddress): string {
 }
 
 export function documentPartyLines(name: string, address: SoAddress, tail: string[] = []): string[] {
-  return [documentPartyName(name), address.line1, address.line2, formatDocumentLocality(address), address.country, ...tail]
+  const party = address.company.trim() || name;
+  return [documentPartyName(party), address.line1, address.line2, formatDocumentLocality(address), address.country, ...tail]
     .map((line) => line.trim())
     .filter(Boolean);
 }

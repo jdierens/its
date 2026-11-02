@@ -11,6 +11,7 @@ import {
   SO_DOCUMENT_BUCKET,
   type SoAttachmentKind,
 } from "@/lib/soAttachmentKinds";
+import { salesOrderFormLocked } from "@/lib/salesOrderDraft";
 import { salesOperatorId, salesPageAccess } from "@/lib/salesSession";
 import { getSupabase } from "@/lib/supabase";
 
@@ -198,7 +199,7 @@ async function assertOpenOrder(orderId: string): Promise<void> {
     .maybeSingle();
   if (error) throw new Error(errorText(error));
   if (!data) throw new Error("Sales order not found.");
-  if (data.status === "cancelled" || data.status === "closed") {
+  if (salesOrderFormLocked(true, data.status == null ? null : String(data.status))) {
     throw new Error("That sales order can no longer be changed.");
   }
 }
