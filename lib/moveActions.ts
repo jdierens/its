@@ -215,7 +215,7 @@ export async function listBinEntries(code: string): Promise<BinEntry[]> {
   });
   if (error) {
     if (moveMigrationMissing(error)) {
-      throw new Error(`Apply ${BIN_ENTRIES_MIGRATION} before the target bin can list its entries.`);
+      throw new Error(`Apply ${BIN_ENTRIES_MIGRATION} before a bin can list its entries.`);
     }
     throw new Error(errorText(error));
   }

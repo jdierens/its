@@ -99,7 +99,7 @@ describe("move inventory", () => {
     }), "HWR.01.01.01");
   });
 
-  it("lists entries for a target bin and not for a location", () => {
+  it("lists entries for a bin and skips a location", () => {
     const bin = {
       kind: "bin" as const,
       code: "10099-C",

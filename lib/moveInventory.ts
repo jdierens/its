@@ -86,7 +86,7 @@ export function recentMovesCode(place: MovePlace | null): string | null {
   return code.length > 0 ? code : null;
 }
 
-/** Entries follow the target bin only. A location has no item lines to list. */
+/** Entries follow this bin. A location has no item lines to list. */
 export function binEntriesCode(place: MovePlace | null): string | null {
   if (!place || place.kind !== "bin") return null;
   const code = place.bin.reference.trim();
