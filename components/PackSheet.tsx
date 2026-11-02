@@ -20,7 +20,10 @@ import { errorText } from "@/lib/errors";
 import {
   formatBinSize,
   formatPackQty,
+  isShippedPackStatus,
+  packCatchUpNote,
   packagingTypeError,
+  packedAfterShipNote,
   packRoom,
   parseInches,
   parsePackQty,
@@ -50,7 +53,9 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busyRef = useRef(false);
-  const editing = canPack && sheet.status === "packing";
+  const editing = canPack && sheet.editable;
+  const catchUp = editing ? packCatchUpNote(sheet.status) : null;
+  const stayedShipped = sheet.packedAt ? packedAfterShipNote(sheet.status) : null;
   const progress = sheetPackProgress(sheet.lines);
   const title = sheet.soNumber ? `Pack SO${sheet.soNumber}` : "Pack";
   const selectedType = sheet.types.find((row) => row.id === typeId) ?? sheet.types[0] ?? null;
@@ -234,6 +239,19 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
         <p className="banner ok" role="status">
           Packed. <Link href="/warehouse/ship">Shipping</Link> is next. Carrier labels and rate shopping are not on this screen.
         </p>
+      ) : null}
+      {stayedShipped ? (
+        <p className="banner ok" role="status">
+          {stayedShipped}
+        </p>
+      ) : null}
+      {catchUp ? (
+        <p className="banner warn" role="status">
+          {catchUp}
+        </p>
+      ) : null}
+      {canPack && !editing && sheet.finishBlock && isShippedPackStatus(sheet.status) ? (
+        <p className="muted">{sheet.finishBlock}</p>
       ) : null}
       {!canPack ? <p className="muted">You can look at this sheet. Packing is turned off for this sign-in.</p> : null}
 

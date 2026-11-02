@@ -61,6 +61,13 @@ export type PackSheetModel = {
   orderId: string;
   soNumber: number | null;
   status: string;
+  /** When packing finished. Null until finish, including on a shipped order that is still being packed. */
+  packedAt: string | null;
+  /**
+   * Bins, quantities, weights, and finish are allowed.
+   * An older sheet omits this and only a packing order stays editable.
+   */
+  editable: boolean;
   customer: string;
   customerPo: string | null;
   pickStatus: "open" | "picked" | "short" | null;
@@ -236,6 +243,29 @@ export function packCompleteBlock(lines: readonly PackAllocation[], bins: readon
   return null;
 }
 
+/** Already shipped. Packing must not move this status. */
+export function isShippedPackStatus(status: string): boolean {
+  return status === "shipped" || status === "partially_shipped";
+}
+
+/** Shown while the packer is recording bins on an order that already shipped. */
+export function packCatchUpNote(status: string): string | null {
+  if (status === "shipped") {
+    return "This order already shipped. Packing records the bins and leaves the ship record in place.";
+  }
+  if (status === "partially_shipped") {
+    return "This order is partially shipped. Packing records the bins and leaves the ship record in place.";
+  }
+  return null;
+}
+
+/** Shown after finish when status was left shipped. */
+export function packedAfterShipNote(status: string): string | null {
+  if (status === "shipped") return "Packed. This order stays shipped.";
+  if (status === "partially_shipped") return "Packed. This order stays partially shipped.";
+  return null;
+}
+
 export function sheetPackProgress(lines: readonly { picked: number; packed: number }[]): { picked: number; packed: number } {
   return lines.reduce(
     (sum, line) => ({ picked: sum.picked + line.picked, packed: sum.packed + line.packed }),
@@ -336,10 +366,13 @@ export function packSheetFromJson(value: unknown): PackSheetModel {
     throw new Error("Unexpected pack sheet.");
   }
   const soNumber = row.so_number == null ? null : qty(row.so_number);
+  const status = text(row.status);
   return {
     orderId: row.order_id,
     soNumber,
-    status: text(row.status),
+    status,
+    packedAt: Object.prototype.hasOwnProperty.call(row, "packed_at") ? textOrNull(row.packed_at) : null,
+    editable: typeof row.editable === "boolean" ? row.editable : status === "packing",
     customer: text(row.customer),
     customerPo: textOrNull(row.customer_po),
     pickStatus: pickStatus(row.pick_status),
