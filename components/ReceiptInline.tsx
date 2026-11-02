@@ -652,29 +652,25 @@ function VendorSelect({
 
 function ConsignmentBox({
   consigned,
-  label,
   disabled,
   onToggle,
 }: {
   consigned: boolean;
-  label: string;
   disabled: boolean;
   onToggle: (next: boolean) => void;
 }) {
   return (
-    <label className="receipt-dmg">
-      <input
-        type="checkbox"
-        checked={consigned}
-        disabled={disabled}
-        aria-label={consigned ? "Consigned" : "Not consigned"}
-        onClick={(event) => {
-          event.preventDefault();
-          onToggle(!consigned);
-        }}
-      />
-      {label || (consigned ? "Consigned" : "Owned")}
-    </label>
+    <button
+      type="button"
+      className="receive-c"
+      aria-pressed={consigned}
+      aria-label={consigned ? "Consigned" : "Not consigned"}
+      title={consigned ? "Consigned" : "Not consigned"}
+      disabled={disabled}
+      onClick={() => onToggle(!consigned)}
+    >
+      C
+    </button>
   );
 }
 
@@ -776,7 +772,6 @@ export function ReceiptTableRow({
         <td className="fit">
           <ConsignmentBox
             consigned={entry.ownership === "consigned"}
-            label={entry.basis}
             disabled={edit.saving}
             onToggle={(next) => void edit.commitConsignment(next)}
           />
@@ -981,7 +976,6 @@ export function ReceiptCard({
         <CardLine label="Basis">
           <ConsignmentBox
             consigned={entry.ownership === "consigned"}
-            label={entry.basis}
             disabled={edit.saving}
             onToggle={(next) => void edit.commitConsignment(next)}
           />
