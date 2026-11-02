@@ -16,7 +16,10 @@ import {
   partMatches,
   partPrefix,
   salesOrderTotal,
+  salesOrderFormLocked,
+  salesOrderLinesLocked,
   toSalesOrderPayload,
+  withAddressCompany,
   withEbayShippingItem,
   type SoAddress,
   type SoDraftInput,
@@ -243,9 +246,10 @@ export async function salesCustomerDefaults(customerId: string): Promise<SalesCu
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(salesError(error));
-  const billTo = addressFromRecord(contact.billingAddress);
+  const company = contact.companyName.trim();
+  const billTo = withAddressCompany(addressFromRecord(contact.billingAddress), company);
   const shipSource = contact.shippingAddress.line1 ? contact.shippingAddress : contact.billingAddress;
-  const shipTo = addressFromRecord(shipSource);
+  const shipTo = withAddressCompany(addressFromRecord(shipSource), company);
   shipTo.phone = contact.phone;
   return {
     id: contact.id,
@@ -759,14 +763,17 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   if (!UUID.test(draft.customerId)) throw new Error("Choose a customer.");
   const rep = draft.salesRep.trim().toUpperCase();
   if (rep && !/^[A-Z]{2}$/.test(rep)) throw new Error("Sales rep initials are 2 letters.");
-  for (const line of draft.lines) {
-    const hasSku = line.allocations.some((row) => row.itemId);
-    const hasText = Boolean(line.customerPartNumber.trim() || line.customerDescription.trim());
-    if (!hasText && !hasSku) throw new Error("Enter a part number or a description.");
-    if (hasSku && line.allocations.some((row) => row.itemId && !(Number(row.qty) > 0))) {
-      throw new Error("Enter a quantity above 0.");
+  const linesLocked = salesOrderLinesLocked(true, await readOrderStatus(draft.id));
+  if (!linesLocked) {
+    for (const line of draft.lines) {
+      const hasSku = line.allocations.some((row) => row.itemId);
+      const hasText = Boolean(line.customerPartNumber.trim() || line.customerDescription.trim());
+      if (!hasText && !hasSku) throw new Error("Enter a part number or a description.");
+      if (hasSku && line.allocations.some((row) => row.itemId && !(Number(row.qty) > 0))) {
+        throw new Error("Enter a quantity above 0.");
+      }
+      if (!(Number(line.qty) > 0)) throw new Error("Enter a quantity above 0.");
     }
-    if (!(Number(line.qty) > 0)) throw new Error("Enter a quantity above 0.");
   }
   for (const note of draft.notes) {
     if (note.response === "countered" && !note.counterText.trim()) throw new Error("Enter the counter text.");
@@ -776,31 +783,35 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   }
 
   const persisted = access.canViewMoney ? draft : { ...draft, internalNotes: input.id ? await readInternalNotes(input.id) : "" };
-  const allocated = await attachEbayShipping(persisted);
+  const allocated = linesLocked ? persisted : await attachEbayShipping(persisted);
   const ebay = await salesOrderIsEbay(allocated);
   if (!ebay && allocated.paymentMethod.trim().toLowerCase() === "ebay") {
     throw new Error("eBay is only for an eBay order.");
   }
   const method = ebay ? "ebay" : allocated.paymentMethod;
-  const paypal = method.trim().toLowerCase() === "paypal";
-  const fees = syncPaypalFeeLines(allocated.lines, {
-    paymentMethod: method,
-    shipCountry: allocated.shipTo.country,
-    billCountry: allocated.billTo.country,
-    catalog: paypal ? await fetchPaypalFeeCatalog() : null,
-    createLine: (previous, item, unitPrice) => ({
-      lineKind: "fee",
-      managedFee: "paypal",
-      customerPartNumber: item.sku,
-      customerDescription: item.description.trim() || item.name || "PayPal fee",
-      lineNote: previous?.lineNote ?? "",
-      qty: "1",
-      unitPrice,
-      condition: previous?.condition ?? "",
-      allocations: [{ itemId: item.id, qty: "1", unitPrice }],
-    }),
-  });
-  if (fees.error) throw new Error(fees.error);
+  let lines = allocated.lines;
+  if (!linesLocked) {
+    const paypal = method.trim().toLowerCase() === "paypal";
+    const fees = syncPaypalFeeLines(allocated.lines, {
+      paymentMethod: method,
+      shipCountry: allocated.shipTo.country,
+      billCountry: allocated.billTo.country,
+      catalog: paypal ? await fetchPaypalFeeCatalog() : null,
+      createLine: (previous, item, unitPrice) => ({
+        lineKind: "fee",
+        managedFee: "paypal",
+        customerPartNumber: item.sku,
+        customerDescription: item.description.trim() || item.name || "PayPal fee",
+        lineNote: previous?.lineNote ?? "",
+        qty: "1",
+        unitPrice,
+        condition: previous?.condition ?? "",
+        allocations: [{ itemId: item.id, qty: "1", unitPrice }],
+      }),
+    });
+    if (fees.error) throw new Error(fees.error);
+    lines = fees.lines;
+  }
   if (method.trim()) {
     const knownMethod = await (await getSupabase()).from("so_payment_methods").select("code").eq("code", method.trim()).maybeSingle();
     if (knownMethod.error) throw new Error(salesError(knownMethod.error));
@@ -815,7 +826,7 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
     contactName: ebay ? "" : allocated.contactName.trim(),
     contactEmail: ebay ? "" : allocated.contactEmail.trim(),
     contactPhone: ebay ? "" : allocated.contactPhone.trim(),
-    lines: fees.lines,
+    lines,
   };
   const { data, error } = await (await getSupabase()).rpc("write_sales_order", {
     p_payload: toSalesOrderPayload(stored),
@@ -840,9 +851,7 @@ export type SalesSave =
   | { ok: true; id: string; addressWarning: string | null }
   | { ok: false; message: string };
 
-const CONTACT_EDITABLE = new Set(["draft", "approved", "picking"]);
-
-/** Fills a blank contact on a non-eBay order. A value already stored stays. */
+/** Fills a blank contact on a non-eBay order. A value already stored stays. Cancelled and closed orders stay as they are. */
 export async function fillBlankOrderContact(orderId: string, found: OrderContact): Promise<OrderContact> {
   const access = await salesPageAccess();
   if (!access.canEdit || !UUID.test(orderId)) return found;
@@ -869,7 +878,7 @@ export async function fillBlankOrderContact(orderId: string, found: OrderContact
     row.channel === "ebay" ||
     text(row.ebay_order_id) !== "" ||
     text(row.ebay_sales_record_ref) !== "";
-  if (ebay || !CONTACT_EDITABLE.has(String(row.status))) return found;
+  if (ebay || salesOrderFormLocked(true, row.status == null ? null : String(row.status))) return found;
   const current = { person: text(row.contact_name), email: text(row.contact_email), phone: text(row.contact_phone) };
   const merged = mergeBlankContact(current, found);
   if (merged.person === current.person && merged.email === current.email && merged.phone === current.phone) return merged;
@@ -944,6 +953,13 @@ export async function cancelSalesOrder(id: string): Promise<void> {
     p_operator_id: await salesOperatorId(),
   });
   if (error) throw new Error(salesError(error));
+}
+
+async function readOrderStatus(id: string | null): Promise<string | null> {
+  if (!id || !UUID.test(id)) return null;
+  const { data, error } = await (await getSupabase()).from("sales_orders").select("status").eq("id", id).maybeSingle();
+  if (error) throw new Error(salesError(error));
+  return data?.status == null ? null : String(data.status);
 }
 
 function meaningfulDraft(input: SoDraftInput): SoDraftInput {

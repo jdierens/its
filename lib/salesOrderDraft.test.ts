@@ -26,12 +26,15 @@ import {
   compareMappedOrder,
   emptyAddress,
   addressBlockHasContent,
+  addressFromRecord,
   copyAddressFields,
   copyBillToShipTo,
   copyShipToBillTo,
   parseSalesOrderNumber,
   salesOrderBadgeTone,
   salesOrderFormLocked,
+  salesOrderLinesLocked,
+  withAddressCompany,
   partMatches,
   partPrefix,
   salesOrderTotal,
@@ -353,6 +356,8 @@ describe("sales order draft", () => {
     const payload = toSalesOrderPayload(sampleDraft());
     assert.equal("so_number" in payload, false);
     assert.equal(payload.customer_po, "PO-100");
+    assert.equal((payload.bill_to as { company: string }).company, "Demo Buyer");
+    assert.equal((payload.ship_to as { company: string }).company, "Demo Buyer");
     const lines = payload.lines as { line_kind: string; allocations: { item_id: string }[] }[];
     assert.equal(payload.channel, "direct");
     assert.equal(payload.payment_method, "wire_ach");
@@ -457,37 +462,51 @@ describe("sales order draft", () => {
     ]);
   });
 
-  it("keeps drafts, approved orders, and picking editable and locks cancelled and closed", () => {
-    assert.equal(salesOrderFormLocked(true, null), false);
-    assert.equal(salesOrderFormLocked(true, "draft"), false);
-    assert.equal(salesOrderFormLocked(true, "approved"), false);
-    assert.equal(salesOrderFormLocked(true, "picking"), false);
-    assert.equal(salesOrderFormLocked(true, "packing"), true);
-    assert.equal(salesOrderBadgeTone("packing"), "open");
-    assert.equal(salesOrderBadgeTone("packed"), "approved");
+  it("keeps document fields editable after packing and locks lines, cancelled, and closed", () => {
+    for (const status of [null, "draft", "approved", "picking", "packing", "packed", "partially_shipped", "shipped", "invoiced"]) {
+      assert.equal(salesOrderFormLocked(true, status), false, status ?? "new");
+    }
     assert.equal(salesOrderFormLocked(true, "cancelled"), true);
     assert.equal(salesOrderFormLocked(true, "closed"), true);
-    assert.equal(salesOrderFormLocked(true, "packed"), true);
-    assert.equal(salesOrderFormLocked(true, "shipped"), true);
-    assert.equal(salesOrderFormLocked(false, "draft"), true);
-    assert.equal(salesOrderFormLocked(false, "approved"), true);
+    assert.equal(salesOrderFormLocked(false, "shipped"), true);
+    for (const status of [null, "draft", "approved", "picking"]) {
+      assert.equal(salesOrderLinesLocked(true, status), false, status ?? "new");
+    }
+    for (const status of ["packing", "packed", "partially_shipped", "shipped", "invoiced", "proforma_sent", "released"]) {
+      assert.equal(salesOrderLinesLocked(true, status), true, status);
+    }
+    assert.equal(salesOrderLinesLocked(true, "cancelled"), true);
+    assert.equal(salesOrderLinesLocked(false, "draft"), true);
+    assert.equal(salesOrderBadgeTone("packing"), "open");
+    assert.equal(salesOrderBadgeTone("packed"), "approved");
   });
 
   it("copies bill-to onto ship-to and keeps attention and phone", () => {
     const draft = sampleDraft();
     const ship = copyBillToShipTo(
       { ...draft.billTo, line1: "9 Bill St", city: "Austin", postalCode: "78701" },
-      { ...draft.shipTo, line1: "1 Ship St", attention: "Receiving", phone: "555-0100" },
+      { ...draft.shipTo, company: "Dock Co", line1: "1 Ship St", attention: "Receiving", phone: "555-0100" },
     );
     assert.equal(ship.line1, "9 Bill St");
     assert.equal(ship.city, "Austin");
     assert.equal(ship.postalCode, "78701");
     assert.equal(ship.attention, "Receiving");
     assert.equal(ship.phone, "555-0100");
+    assert.equal(ship.company, "Dock Co");
     const back = copyShipToBillTo(ship, { ...draft.billTo, line1: "Old bill", attention: "AP", phone: "555-0199" });
     assert.equal(back.line1, "9 Bill St");
     assert.equal(back.attention, "AP");
     assert.equal(back.phone, "555-0199");
+  });
+
+  it("keeps each address company and fills a blank one from the customer", () => {
+    const stored = addressFromRecord({ company_name: "Stored Co", line1: "9 Bill St", name: "Ignored" });
+    assert.equal(stored.company, "Stored Co");
+    assert.equal(addressFromRecord({ name: "Fallback Co" }).company, "Fallback Co");
+    const blank = emptyAddress();
+    assert.equal(withAddressCompany(blank, "Acme").company, "Acme");
+    assert.equal(withAddressCompany({ ...blank, company: "Dock Co" }, "Acme").company, "Dock Co");
+    assert.equal(addressBlockHasContent({ ...blank, company: "Acme" }), false);
   });
 
   it("does not copy a blank address over one that has a street", () => {
@@ -552,6 +571,7 @@ function sampleDraft(): SoDraftInput {
     orderDate: "2026-10-24",
     shipDate: "",
     billTo: {
+      company: "Demo Buyer",
       line1: "1 Demo St",
       line2: "",
       city: "Springfield",
@@ -562,6 +582,7 @@ function sampleDraft(): SoDraftInput {
       phone: "",
     },
     shipTo: {
+      company: "Demo Buyer",
       line1: "1 Demo St",
       line2: "",
       city: "Springfield",

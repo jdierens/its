@@ -88,6 +88,33 @@ export function contactFromPoText(text: string): OrderContact {
   return { person, email, phone };
 }
 
+export type CustomerDefaultContact = {
+  person?: string | null;
+  email?: string | null;
+  phone?: string | null;
+};
+
+/** A default contact is assigned only when a person, email, or phone is on that contact. */
+export function customerHasDefaultContact(contact: CustomerDefaultContact | null | undefined): boolean {
+  if (!contact) return false;
+  return Boolean((contact.person ?? "").trim() || (contact.email ?? "").trim() || (contact.phone ?? "").trim());
+}
+
+/**
+ * Contact for an order created or linked from email.
+ * A customer that already has a default contact keeps the sales-order contact as it is.
+ * Otherwise blank sales-order fields are filled from the From header. Phone is filled only when one is present.
+ */
+export function contactForEmailOrder(input: {
+  current: OrderContact;
+  from?: string | null;
+  body?: string | null;
+  customerDefaultContact?: CustomerDefaultContact | null;
+}): OrderContact {
+  if (customerHasDefaultContact(input.customerDefaultContact)) return input.current;
+  return mergeBlankContact(input.current, contactFromEmail({ from: input.from, body: input.body }));
+}
+
 /**
  * Email capture fallback. A display name wins. Otherwise the mailbox local-part
  * is the contact person. Phone and a clearer name come from the body when present.

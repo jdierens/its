@@ -34,6 +34,7 @@ function ebayOrder(overrides: Partial<ParsedEbayOrder> = {}): ParsedEbayOrder {
     salesRecordRef: "445566",
     buyer: { username: "buyer_one", name: "Ada Buyer", email: "ada@example.com", phone: "555-0100" },
     shipTo: {
+      company: "",
       line1: "1 Main",
       line2: "",
       city: "Austin",
