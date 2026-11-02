@@ -7300,12 +7300,54 @@ input.num-input {
 }
 
 /* The list does not use .so-lines. Same letter-height row gap, on its own cells.
-   The status pill is shortened so it does not open the row back up. */
+   The status pill is shortened so it does not open the row back up.
+   Reference is about two-thirds of the old auto share (~14% of the table), so
+   the status chip and the six stage icons stay on one row. */
+.so-table-scroll table {
+  table-layout: fixed;
+  min-width: 58rem;
+}
+
 .so-table-scroll th,
 .so-table-scroll td {
   padding-top: 0.05rem;
   padding-bottom: 0.05rem;
   line-height: 1.05;
+}
+
+.so-table-scroll th.so-col-number,
+.so-table-scroll td.so-col-number {
+  width: 6.75rem;
+}
+
+.so-table-scroll th.so-col-ref,
+.so-table-scroll td.so-col-ref {
+  width: 9.4%;
+}
+
+.so-table-scroll td.so-col-ref {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.so-table-scroll td.so-col-customer {
+  overflow-wrap: anywhere;
+}
+
+.so-table-scroll th.so-col-status,
+.so-table-scroll td.so-col-status {
+  width: 20rem;
+}
+
+.so-table-scroll th.so-col-date,
+.so-table-scroll td.so-col-date {
+  width: 5.75rem;
+}
+
+.so-table-scroll th.so-col-total,
+.so-table-scroll td.so-col-total {
+  width: 6.75rem;
 }
 
 .so-table-scroll .badge {
@@ -7346,6 +7388,15 @@ input.num-input {
 
 .so-page .so-table-scroll th.num button.so-col-sort {
   justify-content: flex-end;
+}
+
+/* The reference heading is narrower than its label, so the words wrap. */
+.so-page .so-table-scroll th.so-col-ref button.so-col-sort {
+  display: block;
+  min-width: 0;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.15;
 }
 
 .so-page .so-table-scroll th button.so-col-sort:hover,
@@ -7807,7 +7858,16 @@ input.num-input {
   flex-wrap: wrap;
 }
 
-/* Approved, picked, packed, shipped, invoiced, then cancelled on its own. */
+/* Status text, then the six icons, on one row in the list. Cards may still wrap. */
+.so-table-scroll .so-status-cell {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* Approved, picked, packed, shipped, invoiced, then cancelled on its own.
+   Day uses a light glyph on a dark tint. Night flips that: a dark glyph on a
+   light tint, so the color is a chip and not a thin stroke. Neutral stays
+   black and white. */
 .so-stage-icons {
   display: inline-flex;
   align-items: center;
@@ -7817,23 +7877,29 @@ input.num-input {
 
 .so-stage-icon {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  width: 1.15rem;
-  height: 1.15rem;
-  color: var(--ds-ink, #18181b);
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 5px;
+  background: #27272a;
+  color: #fafafa;
 }
 
 .so-stage-icon.so-stage-done {
-  color: #166534;
+  background: #166534;
+  color: #bbf7d0;
 }
 
 .so-stage-icon.so-stage-gap {
-  color: #a16207;
+  background: #a16207;
+  color: #fef9c3;
 }
 
 .so-stage-icon.so-stage-bad {
-  color: var(--danger-ink);
+  background: #9f1239;
+  color: #fecdd3;
 }
 
 .so-stage-cancel {
@@ -8809,16 +8875,24 @@ button.so-new-order svg,
     color: #fde68a;
   }
 
+  .ds .so-stage-icon {
+    background: #e4e4e7;
+    color: #18181b;
+  }
+
   .ds .so-stage-icon.so-stage-done {
-    color: #86efac;
+    background: #bbf7d0;
+    color: #14532d;
   }
 
   .ds .so-stage-icon.so-stage-gap {
-    color: #fde68a;
+    background: #fde68a;
+    color: #713f12;
   }
 
   .ds .so-stage-icon.so-stage-bad {
-    color: #fda4af;
+    background: #fecdd3;
+    color: #9f1239;
   }
 
   .ds .badge-neutral,

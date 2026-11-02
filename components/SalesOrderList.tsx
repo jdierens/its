@@ -20,14 +20,14 @@ import { formatDataDate } from "@/lib/formatDate";
 import { formatSalesMoney, SALES_ORDER_REFERENCE_LABEL, salesOrderStatusLabel } from "@/lib/salesOrderDraft";
 import type { SalesOrderListItem } from "@/lib/salesOrders";
 
-const COLUMNS: { key: SalesOrderListSortKey; label: string; numeric?: boolean }[] = [
-  { key: "number", label: "Number" },
-  { key: "customer", label: "Customer" },
-  { key: "reference", label: SALES_ORDER_REFERENCE_LABEL },
-  { key: "status", label: "Status" },
-  { key: "orderDate", label: "Order date" },
-  { key: "shipDate", label: "Ship date" },
-  { key: "total", label: "Total", numeric: true },
+const COLUMNS: { key: SalesOrderListSortKey; label: string; numeric?: boolean; className: string }[] = [
+  { key: "number", label: "Number", className: "so-col-number" },
+  { key: "customer", label: "Customer", className: "so-col-customer" },
+  { key: "reference", label: SALES_ORDER_REFERENCE_LABEL, className: "so-col-ref" },
+  { key: "status", label: "Status", className: "so-col-status" },
+  { key: "orderDate", label: "Order date", className: "so-col-date" },
+  { key: "shipDate", label: "Ship date", className: "so-col-date" },
+  { key: "total", label: "Total", numeric: true, className: "so-col-total" },
 ];
 
 function sortDirection(sort: SalesOrderListSort, column: SalesOrderListSortKey): SalesOrderListSort["dir"] | null {
@@ -68,19 +68,21 @@ function SortHeading({
   label,
   column,
   numeric = false,
+  className,
   sort,
   onSort,
 }: {
   label: string;
   column: SalesOrderListSortKey;
   numeric?: boolean;
+  className?: string;
   sort: SalesOrderListSort;
   onSort: (key: SalesOrderListSortKey) => void;
 }) {
   const direction = sortDirection(sort, column);
   return (
     <th
-      className={numeric ? "num" : undefined}
+      className={[className, numeric ? "num" : ""].filter(Boolean).join(" ") || undefined}
       scope="col"
       aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"}
     >
@@ -214,6 +216,7 @@ export function SalesOrderList({
                       label={column.label}
                       column={column.key}
                       numeric={column.numeric}
+                      className={column.className}
                       sort={activeSort}
                       onSort={onColumnSort}
                     />
@@ -223,12 +226,14 @@ export function SalesOrderList({
               <tbody>
                 {rows.map((order) => (
                   <tr key={order.id}>
-                    <td className="tabular">
+                    <td className="tabular so-col-number">
                       <Link href={`/sales/orders/${order.id}`}>{order.number}</Link>
                     </td>
-                    <td>{order.customerName}</td>
-                    <td>{order.orderReference}</td>
-                    <td>
+                    <td className="so-col-customer">{order.customerName}</td>
+                    <td className="so-col-ref" title={order.orderReference || undefined}>
+                      {order.orderReference}
+                    </td>
+                    <td className="so-col-status">
                       <span className="so-status-cell">
                         <Badge className="so-status" tone={order.status}>
                           {salesOrderStatusLabel(order.status)}
@@ -236,9 +241,9 @@ export function SalesOrderList({
                         <SalesOrderStageIcons stages={order.stages} />
                       </span>
                     </td>
-                    <td>{formatDataDate(order.orderDate)}</td>
-                    <td>{formatDataDate(order.shipDate)}</td>
-                    {canViewMoney ? <td className="num">{formatSalesMoney(order.total, order.currency)}</td> : null}
+                    <td className="so-col-date">{formatDataDate(order.orderDate)}</td>
+                    <td className="so-col-date">{formatDataDate(order.shipDate)}</td>
+                    {canViewMoney ? <td className="num so-col-total">{formatSalesMoney(order.total, order.currency)}</td> : null}
                   </tr>
                 ))}
               </tbody>
