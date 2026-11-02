@@ -28,13 +28,17 @@ A repeat of the same `p_client_request_id` returns the first result and does not
 
 ## The screen
 
-The source can be a bin code or a location code. The page shows the path, such as `HWR.01.03.02 > Pallet 30012-P > Crate 10099-C > Box 2345-B`, then the child bins and the items with their quantities. The operator moves the whole bin, selected child bins, one or more item quantities, or empties the bin into another bin. Each checked item starts at the full amount in the bin and its quantity can be edited. Confirm moves every checked item together. A location can take a bin. A quantity goes into a bin.
+The source can be a bin code or a location code. The search, the place description, and the actions share one row. Move this bin and Empty into target sit beside the source search. The path, such as `HWR.01.03.02 > Pallet 30012-P > Crate 10099-C > Box 2345-B`, and "Now at …" sit in that same row. A path that only repeats the place line is not shown twice.
 
-The target is checked as it is typed. A nesting problem is shown before Confirm. The summary is one line, for example `Move Crate 10099-C (3 boxes, 41 items) from Pallet 30012-P to HWR.01.01.01`. After the move, Move another from the same source keeps the source, and Undo writes the reverse move as well.
+Child bins and items are one contents table: what, boxes, items, and quantity. Check a child bin or an item in that table. The operator moves the whole bin, selected child bins, one or more item quantities, or empties the bin into another bin. Each checked item starts at the full amount in the bin and its quantity can be edited. Confirm moves every checked item together. A location can take a bin. A quantity goes into a bin.
 
-An unknown bin code uses the same prompt as receiving: "No bin with that code. Use New bin." Register this bin creates it.
+The target uses the same row: search, description, and Confirm. Its contents table is read-only, so you can see what is already there. The target is checked as it is typed. A nesting problem is shown before Confirm. The summary is one line, for example `Move Crate 10099-C (3 boxes, 41 items) from Pallet 30012-P to HWR.01.01.01`. After the move, Move another from the same source keeps the source, and Undo writes the reverse move as well.
 
-Recent moves list Date/time, Initials, What, From, To, and Qty in the same packed table as receiving. Qty is right-aligned. Below 800px the same fields are cards. Labels sit above the fields, inputs are 16px on a phone, and the choices are at least 44px tall.
+An unknown bin code uses the same prompt as receiving: "No bin with that code. Use New bin." Register this bin creates it. That button sits on the search row.
+
+Recent moves list only the bin or location in the source field. A bin includes its own moves, bins moved into or out of it, and item transfers into or out of it. A location includes bin moves that start or end there. The rest of the warehouse is not listed. Until a source is chosen, the list stays empty. The columns are Date/time, Initials, What, From, To, and Qty, in the same packed table as receiving. The region is capped at 16rem and scrolls. Qty is right-aligned. Labels sit above the fields, inputs are 16px on a phone, and the choices are at least 44px tall.
+
+Apply `supabase/migrations/20261102203000_scoped_recent_moves.sql` before that scoped list works. It is additive and has not been applied. The older warehouse-wide function is left in place.
 
 ## Inventory search
 

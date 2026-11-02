@@ -6,6 +6,8 @@ import {
   moveItemLines,
   movePlaceFromJson,
   parseMoveQty,
+  placeDescription,
+  recentMovesCode,
   setMoveItemQty,
   targetFields,
   toggleMoveItem,
@@ -65,6 +67,46 @@ describe("move inventory", () => {
 
   it("formats the warehouse clock", () => {
     assert.equal(formatMoveWhen("2026-10-24T18:05:00Z"), "24 Oct, 11:05");
+  });
+
+  it("scopes recent moves to a resolved bin or location", () => {
+    assert.equal(recentMovesCode(null), null);
+    assert.equal(recentMovesCode({ kind: "unknown", code: "NOPE", message: "No bin or location with that code." }), null);
+    assert.equal(recentMovesCode({
+      kind: "missing_bin",
+      code: "23456-B",
+      type: "B",
+      message: "No bin with that code. Use New bin.",
+    }), null);
+    assert.equal(recentMovesCode({
+      kind: "bin",
+      code: "10099-C",
+      path: "HWR.01.01.01 > Crate 10099-C",
+      place: "HWR.01.01.01",
+      bin: { id: "bin-1", reference: "10099-C", type: "C", label: "Crate 10099-C", boxes: 0, items: 1 },
+      children: [],
+      items: [],
+    }), "10099-C");
+    assert.equal(recentMovesCode({
+      kind: "location",
+      code: "HWR.01.01.01",
+      path: "HWR.01.01.01",
+      place: "HWR.01.01.01",
+      children: [],
+      items: [],
+    }), "HWR.01.01.01");
+  });
+
+  it("puts the path beside the search and skips a path that repeats the place", () => {
+    assert.deepEqual(placeDescription("HWR.01.03.02 > Pallet 30012-P", "Pallet 30012-P"), {
+      path: "HWR.01.03.02 > Pallet 30012-P",
+      here: "Now at Pallet 30012-P.",
+    });
+    assert.deepEqual(placeDescription("HWR.01.01.01", "HWR.01.01.01"), {
+      path: "",
+      here: "Now at HWR.01.01.01.",
+    });
+    assert.deepEqual(placeDescription("  ", " "), { path: "", here: "" });
   });
 
   it("reads a missing bin the same way receiving does", () => {

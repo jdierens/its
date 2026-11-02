@@ -1,14 +1,19 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import { errorText } from "@/lib/errors";
 import { commitMove, fetchMovePlace, listRecentMoves, previewMove, undoMove } from "@/lib/moveActions";
 import {
   formatMoveWhen,
+  isBinCode,
   moveItemLines,
+  placeDescription,
+  recentMovesCode,
   setMoveItemQty,
   targetFields,
   toggleMoveItem,
+  type MoveChild,
+  type MoveItem,
   type MovePlace,
   type MovePreview,
   type RecentMove,
@@ -23,23 +28,44 @@ type Choice =
   | { kind: "empty" }
   | null;
 
+type KnownPlace = Extract<MovePlace, { kind: "bin" | "location" }>;
+
 function sourceBin(place: MovePlace | null): string | null {
   if (!place || place.kind !== "bin") return null;
   return place.bin.reference;
+}
+
+function knownPlace(place: MovePlace | null): KnownPlace | null {
+  if (!place || (place.kind !== "bin" && place.kind !== "location")) return null;
+  return place;
+}
+
+function matchesCode(place: MovePlace | null, text: string): boolean {
+  if (!place) return false;
+  return place.code.trim().toUpperCase() === text.trim().toUpperCase();
+}
+
+function scopeLabel(place: KnownPlace): string {
+  if (place.kind === "bin") return place.bin.label || place.code;
+  return place.code;
 }
 
 export function MoveInventoryPage() {
   const [sourceText, setSourceText] = useState("");
   const [targetText, setTargetText] = useState("");
   const [place, setPlace] = useState<MovePlace | null>(null);
+  const [targetPlace, setTargetPlace] = useState<MovePlace | null>(null);
   const [choice, setChoice] = useState<Choice>(null);
   const [preview, setPreview] = useState<MovePreview | null>(null);
   const [result, setResult] = useState<{ summary: string; requestId: string } | null>(null);
   const [recent, setRecent] = useState<RecentMove[]>([]);
+  const [recentFor, setRecentFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [migration, setMigration] = useState(false);
   const sourceRequest = useRef(0);
+  const targetRequest = useRef(0);
+  const recentRequest = useRef(0);
 
   function fail(cause: unknown) {
     const message = errorText(cause);
@@ -50,18 +76,6 @@ export function MoveInventoryPage() {
     }
     setError(message);
   }
-
-  async function refreshRecent() {
-    try {
-      setRecent(await listRecentMoves());
-    } catch (cause) {
-      fail(cause);
-    }
-  }
-
-  useEffect(() => {
-    void refreshRecent();
-  }, []);
 
   async function loadSource(raw: string, keepResult = false) {
     const code = raw.trim();
@@ -86,12 +100,58 @@ export function MoveInventoryPage() {
 
   useEffect(() => {
     const code = sourceText.trim();
-    if (!code) return;
+    if (!code) {
+      sourceRequest.current += 1;
+      setPlace(null);
+      setChoice(null);
+      return;
+    }
     const handle = window.setTimeout(() => {
       void loadSource(code);
     }, 400);
     return () => window.clearTimeout(handle);
   }, [sourceText]);
+
+  useEffect(() => {
+    const code = targetText.trim();
+    const request = ++targetRequest.current;
+    if (!code) {
+      setTargetPlace(null);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void fetchMovePlace(code)
+        .then((next) => {
+          if (request === targetRequest.current) setTargetPlace(next);
+        })
+        .catch((cause: unknown) => {
+          if (request === targetRequest.current) fail(cause);
+        });
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [targetText]);
+
+  useEffect(() => {
+    const code = recentMovesCode(place);
+    const request = ++recentRequest.current;
+    if (!code) {
+      setRecent([]);
+      setRecentFor(null);
+      return;
+    }
+    void listRecentMoves(code)
+      .then((rows) => {
+        if (request !== recentRequest.current) return;
+        setRecent(rows);
+        setRecentFor(code);
+      })
+      .catch((cause: unknown) => {
+        if (request !== recentRequest.current) return;
+        setRecent([]);
+        setRecentFor(code);
+        fail(cause);
+      });
+  }, [place]);
 
   useEffect(() => {
     if (!place || (place.kind !== "bin" && place.kind !== "location") || !choice) {
@@ -229,7 +289,6 @@ export function MoveInventoryPage() {
       setChoice(null);
       setTargetText("");
       await loadSource(place.code, true);
-      await refreshRecent();
     } catch (cause) {
       fail(cause);
     } finally {
@@ -245,7 +304,6 @@ export function MoveInventoryPage() {
       const saved = await undoMove(result.requestId, crypto.randomUUID());
       setResult(saved);
       if (place && (place.kind === "bin" || place.kind === "location")) await loadSource(place.code, true);
-      await refreshRecent();
     } catch (cause) {
       fail(cause);
     } finally {
@@ -263,8 +321,15 @@ export function MoveInventoryPage() {
   }
 
   const missing = place?.kind === "missing_bin" ? place : null;
-  const known = place && (place.kind === "bin" || place.kind === "location") ? place : null;
-  const targetMissing = isBinCodeTarget(targetText) && preview?.message === "No bin with that code. Use New bin.";
+  const known = knownPlace(place);
+  const targetShown = matchesCode(targetPlace, targetText) ? targetPlace : null;
+  const targetKnown = knownPlace(targetShown);
+  const targetMissing =
+    targetShown?.kind === "missing_bin" ||
+    (isBinCode(targetText) && preview?.message === "No bin with that code. Use New bin.");
+  const scope = recentMovesCode(place);
+  const scopeReady = scope != null && recentFor === scope;
+  const recentName = known ? scopeLabel(known) : scope;
 
   return (
     <main className="page move-page desk-fields">
@@ -282,175 +347,134 @@ export function MoveInventoryPage() {
             void loadSource(sourceText);
           }}
         >
-          <label htmlFor="move-source-code">
-            <span>Bin or location</span>
-            <input
-              id="move-source-code"
-              value={sourceText}
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="search"
-              disabled={busy}
-              onChange={(event) => setSourceText(event.target.value)}
-            />
-          </label>
-        </form>
-        {missing ? (
-          <div className="move-register">
-            <p className="hint">{missing.message}</p>
-            <button type="button" className="secondary" disabled={busy} onClick={() => void register(missing.code, missing.type)}>
-              Register this bin
-            </button>
+          <div className="move-lookup">
+            <label className="move-lookup-field" htmlFor="move-source-code">
+              <span>Bin or location</span>
+              <input
+                id="move-source-code"
+                value={sourceText}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="search"
+                disabled={busy}
+                onChange={(event) => setSourceText(event.target.value)}
+              />
+            </label>
+            <PlaceNote place={known}>
+              {missing ? <p className="hint">{missing.message}</p> : null}
+              {place?.kind === "unknown" ? <p className="hint">{place.message}</p> : null}
+            </PlaceNote>
+            <div className="move-lookup-actions">
+              {known?.kind === "bin" ? (
+                <>
+                  <button
+                    type="button"
+                    className={choice?.kind === "bin" ? "" : "secondary"}
+                    aria-pressed={choice?.kind === "bin"}
+                    disabled={busy}
+                    onClick={() => setChoice({ kind: "bin" })}
+                  >
+                    Move this bin
+                  </button>
+                  <button
+                    type="button"
+                    className={choice?.kind === "empty" ? "" : "secondary"}
+                    aria-pressed={choice?.kind === "empty"}
+                    disabled={busy}
+                    onClick={() => setChoice({ kind: "empty" })}
+                  >
+                    Empty into target
+                  </button>
+                </>
+              ) : null}
+              {missing ? (
+                <button type="button" className="secondary" disabled={busy} onClick={() => void register(missing.code, missing.type)}>
+                  Register this bin
+                </button>
+              ) : null}
+            </div>
           </div>
-        ) : null}
-        {place?.kind === "unknown" ? <p className="hint">{place.message}</p> : null}
+        </form>
         {known ? (
-          <>
-            <p className="move-path">{known.path}</p>
-            <p className="hint">Now at {known.place}.</p>
-            {known.kind === "bin" ? (
-              <button
-                type="button"
-                className={choice?.kind === "bin" ? "" : "secondary"}
-                aria-pressed={choice?.kind === "bin"}
-                disabled={busy}
-                onClick={() => setChoice({ kind: "bin" })}
-              >
-                Move this bin
-              </button>
-            ) : null}
-            {known.children.length > 0 ? (
-              <ul className="move-tree">
-                {known.children.map((child) => {
-                  const checked = choice?.kind === "bins" && choice.refs.includes(child.reference);
-                  return (
-                    <li key={child.id}>
-                      <label className="move-choice">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={busy}
-                          onChange={() => {
-                            const current = choice?.kind === "bins" ? choice.refs : [];
-                            const refs = checked
-                              ? current.filter((ref) => ref !== child.reference)
-                              : [...current, child.reference];
-                            setChoice(refs.length > 0 ? { kind: "bins", refs } : null);
-                          }}
-                        />
-                        <span>
-                          {child.label}
-                          <span className="muted"> · {child.boxes} boxes · {child.items} items</span>
-                        </span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-            {known.items.length > 0 ? (
-              <ul className="move-items">
-                {known.items.map((row) => {
-                  const line = choice?.kind === "items" ? choice.lines.find((entry) => entry.itemId === row.itemId) : undefined;
-                  const selected = line != null;
-                  return (
-                    <li key={row.itemId}>
-                      <label className="move-choice">
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          disabled={busy}
-                          onChange={() => {
-                            setChoice((current) => {
-                              const lines = current?.kind === "items" ? current.lines : [];
-                              const next = toggleMoveItem(lines, row.itemId, row.qty);
-                              return next.length > 0 ? { kind: "items", lines: next } : null;
-                            });
-                          }}
-                        />
-                        <span>{[row.sku, row.name].filter(Boolean).join(" ")}</span>
-                      </label>
-                      <label className="move-qty" htmlFor={`move-qty-${row.itemId}`}>
-                        <span>Qty</span>
-                        <input
-                          id={`move-qty-${row.itemId}`}
-                          className="num-input"
-                          inputMode="numeric"
-                          value={selected ? line.qty : String(row.qty)}
-                          disabled={busy || !selected}
-                          onChange={(event) => {
-                            const qty = event.target.value;
-                            setChoice((current) => {
-                              if (current?.kind !== "items") return current;
-                              return { kind: "items", lines: setMoveItemQty(current.lines, row.itemId, qty) };
-                            });
-                          }}
-                        />
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-            {known.kind === "bin" ? (
-              <button
-                type="button"
-                className={choice?.kind === "empty" ? "" : "secondary"}
-                aria-pressed={choice?.kind === "empty"}
-                disabled={busy}
-                onClick={() => setChoice({ kind: "empty" })}
-              >
-                Empty into target
-              </button>
-            ) : null}
-          </>
+          <ContentsTable
+            place={known}
+            selectable
+            choice={choice}
+            busy={busy}
+            onBins={(refs) => setChoice(refs.length > 0 ? { kind: "bins", refs } : null)}
+            onToggleItem={(itemId, onHand) => {
+              setChoice((current) => {
+                const lines = current?.kind === "items" ? current.lines : [];
+                const next = toggleMoveItem(lines, itemId, onHand);
+                return next.length > 0 ? { kind: "items", lines: next } : null;
+              });
+            }}
+            onQty={(itemId, qty) => {
+              setChoice((current) => {
+                if (current?.kind !== "items") return current;
+                return { kind: "items", lines: setMoveItemQty(current.lines, itemId, qty) };
+              });
+            }}
+          />
         ) : null}
       </section>
 
       <section className="card move-card" id="move-target">
         <h2>Target</h2>
         <form onSubmit={confirm}>
-          <label htmlFor="move-target-code">
-            <span>Bin or location</span>
-            <input
-              id="move-target-code"
-              value={targetText}
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="done"
-              disabled={busy}
-              onChange={(event) => setTargetText(event.target.value)}
-            />
-          </label>
-          {targetMissing ? (
-            <div className="move-register">
-              <p className="hint">No bin with that code. Use New bin.</p>
-              <button
-                type="button"
-                className="secondary"
+          <div className="move-lookup">
+            <label className="move-lookup-field" htmlFor="move-target-code">
+              <span>Bin or location</span>
+              <input
+                id="move-target-code"
+                value={targetText}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="done"
                 disabled={busy}
-                onClick={() => void register(targetText.trim().toUpperCase(), targetText.trim().slice(-1))}
-              >
-                Register this bin
+                onChange={(event) => setTargetText(event.target.value)}
+              />
+            </label>
+            <PlaceNote place={targetKnown}>
+              {targetShown?.kind === "missing_bin" ? <p className="hint">{targetShown.message}</p> : null}
+              {targetShown?.kind === "unknown" ? <p className="hint">{targetShown.message}</p> : null}
+              {preview?.ok && preview.summary ? (
+                <p className="move-summary" id="move-summary">
+                  {preview.summary}
+                </p>
+              ) : null}
+              {preview && !preview.ok && !targetMissing ? (
+                <p className="move-inline-error" role="alert">
+                  {preview.message}
+                </p>
+              ) : null}
+            </PlaceNote>
+            <div className="move-lookup-actions">
+              {targetMissing ? (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    const code = targetShown?.kind === "missing_bin" ? targetShown.code : targetText.trim().toUpperCase();
+                    const type = targetShown?.kind === "missing_bin" ? targetShown.type : code.slice(-1);
+                    void register(code, type);
+                  }}
+                >
+                  Register this bin
+                </button>
+              ) : null}
+              <button id="move-confirm" type="submit" disabled={busy || !preview?.ok}>
+                {busy ? "Saving…" : "Confirm"}
               </button>
             </div>
-          ) : null}
-          {preview && !preview.ok && !targetMissing ? <p className="banner error">{preview.message}</p> : null}
-          {preview?.ok && preview.summary ? (
-            <p className="move-summary" id="move-summary">
-              {preview.summary}
-            </p>
-          ) : null}
-          <div className="actions">
-            <button id="move-confirm" type="submit" disabled={busy || !preview?.ok}>
-              {busy ? "Saving…" : "Confirm"}
-            </button>
           </div>
         </form>
+        {targetKnown ? <ContentsTable place={targetKnown} selectable={false} choice={null} busy={busy} /> : null}
       </section>
 
       {error && !migration ? (
@@ -476,11 +500,18 @@ export function MoveInventoryPage() {
 
       <section className="card move-card" id="move-recent">
         <h2>Recent moves</h2>
-        {recent.length === 0 ? (
-          <p className="hint">No moves yet.</p>
+        {!scope ? (
+          <p className="hint">Scan a bin or a location to see its moves.</p>
+        ) : !scopeReady ? (
+          <p className="hint">Loading moves…</p>
+        ) : recent.length === 0 ? (
+          error ? null : <p className="hint">No moves for {recentName} yet.</p>
         ) : (
           <>
-            <div className="receive-table-scroll">
+            <p className="hint" id="move-recent-scope">
+              Moves for {recentName}.
+            </p>
+            <div className="move-recent-scroll" tabIndex={0} aria-label={`Recent moves for ${recentName}`}>
               <table className="receive-table">
                 <thead>
                   <tr>
@@ -506,26 +537,6 @@ export function MoveInventoryPage() {
                 </tbody>
               </table>
             </div>
-            <ul className="receive-cards">
-              {recent.map((row) => (
-                <li key={`card-${row.id}`} className="receive-card-row">
-                  <dl>
-                    <dt>Date/time</dt>
-                    <dd>{formatMoveWhen(row.occurredAt)}</dd>
-                    <dt>Initials</dt>
-                    <dd className="initials">{row.initials}</dd>
-                    <dt>What</dt>
-                    <dd>{row.what}</dd>
-                    <dt>From</dt>
-                    <dd>{row.fromPlace}</dd>
-                    <dt>To</dt>
-                    <dd>{row.toPlace}</dd>
-                    <dt>Qty</dt>
-                    <dd className="num">{row.qty ?? ""}</dd>
-                  </dl>
-                </li>
-              ))}
-            </ul>
           </>
         )}
       </section>
@@ -533,6 +544,185 @@ export function MoveInventoryPage() {
   );
 }
 
-function isBinCodeTarget(value: string): boolean {
-  return /^\d{1,5}-[A-Z]$/.test(value.trim().toUpperCase());
+function PlaceNote({ place, children }: { place: KnownPlace | null; children?: ReactNode }) {
+  const described = place ? placeDescription(place.path, place.place) : null;
+  return (
+    <div className="move-lookup-note">
+      {described?.path ? <p className="move-path">{described.path}</p> : null}
+      {described?.here ? <p className="hint">{described.here}</p> : null}
+      {children}
+    </div>
+  );
+}
+
+function ContentsTable({
+  place,
+  selectable,
+  choice,
+  busy,
+  onBins,
+  onToggleItem,
+  onQty,
+}: {
+  place: KnownPlace;
+  selectable: boolean;
+  choice: Choice;
+  busy: boolean;
+  onBins?: (refs: string[]) => void;
+  onToggleItem?: (itemId: string, onHand: number) => void;
+  onQty?: (itemId: string, qty: string) => void;
+}) {
+  const empty = place.children.length === 0 && place.items.length === 0;
+  if (empty) {
+    return <p className="hint move-contents-empty">Nothing in this {place.kind === "bin" ? "bin" : "location"}.</p>;
+  }
+  const binRefs = choice?.kind === "bins" ? choice.refs : [];
+  return (
+    <div className="move-contents">
+      <h3 className="move-contents-title">Contents</h3>
+      <div className="move-table-scroll">
+        <table className="receive-table move-contents-table" aria-label={`Contents of ${place.code}`}>
+          <thead>
+            <tr>
+              {selectable ? (
+                <th className="pick">
+                  <span className="sr-only">Select</span>
+                </th>
+              ) : null}
+              <th>What</th>
+              <th className="num fit">Boxes</th>
+              <th className="num fit">Items</th>
+              <th className="num fit">Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {place.children.map((child) => (
+              <BinRow
+                key={child.id}
+                child={child}
+                selectable={selectable}
+                checked={binRefs.includes(child.reference)}
+                busy={busy}
+                onToggle={() => {
+                  const refs = binRefs.includes(child.reference)
+                    ? binRefs.filter((ref) => ref !== child.reference)
+                    : [...binRefs, child.reference];
+                  onBins?.(refs);
+                }}
+              />
+            ))}
+            {place.items.map((row) => {
+              const line = choice?.kind === "items" ? choice.lines.find((entry) => entry.itemId === row.itemId) : undefined;
+              return (
+                <ItemRow
+                  key={row.itemId}
+                  row={row}
+                  selectable={selectable}
+                  selected={line != null}
+                  qty={line?.qty ?? String(row.qty)}
+                  busy={busy}
+                  onToggle={() => onToggleItem?.(row.itemId, row.qty)}
+                  onQty={(qty) => onQty?.(row.itemId, qty)}
+                />
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function BinRow({
+  child,
+  selectable,
+  checked,
+  busy,
+  onToggle,
+}: {
+  child: MoveChild;
+  selectable: boolean;
+  checked: boolean;
+  busy: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <tr className={checked ? "is-selected" : undefined}>
+      {selectable ? (
+        <td className="pick">
+          <label className="move-choice">
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={busy}
+              aria-label={`Move ${child.label}`}
+              onChange={onToggle}
+            />
+          </label>
+        </td>
+      ) : null}
+      <td>{child.label}</td>
+      <td className="num fit">{child.boxes}</td>
+      <td className="num fit">{child.items}</td>
+      <td className="num fit" />
+    </tr>
+  );
+}
+
+function ItemRow({
+  row,
+  selectable,
+  selected,
+  qty,
+  busy,
+  onToggle,
+  onQty,
+}: {
+  row: MoveItem;
+  selectable: boolean;
+  selected: boolean;
+  qty: string;
+  busy: boolean;
+  onToggle: () => void;
+  onQty: (qty: string) => void;
+}) {
+  const name = [row.sku, row.name].filter(Boolean).join(" ");
+  return (
+    <tr className={selected ? "is-selected" : undefined}>
+      {selectable ? (
+        <td className="pick">
+          <label className="move-choice">
+            <input
+              type="checkbox"
+              checked={selected}
+              disabled={busy}
+              aria-label={`Move ${name}`}
+              onChange={onToggle}
+            />
+          </label>
+        </td>
+      ) : null}
+      <td>{name}</td>
+      <td className="num fit" />
+      <td className="num fit" />
+      <td className="num fit">
+        {selectable ? (
+          <label className="move-qty" htmlFor={`move-qty-${row.itemId}`}>
+            <span className="sr-only">Qty</span>
+            <input
+              id={`move-qty-${row.itemId}`}
+              className="num-input"
+              inputMode="numeric"
+              aria-label={`Qty for ${name}`}
+              value={qty}
+              disabled={busy || !selected}
+              onChange={(event) => onQty(event.target.value)}
+            />
+          </label>
+        ) : (
+          row.qty
+        )}
+      </td>
+    </tr>
+  );
 }
