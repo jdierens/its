@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { prefersFileShare } from "@/lib/export/download";
 import { errorText } from "@/lib/errors";
 import { projectReceiptSummary } from "@/lib/receivingActions";
-import { summaryItemLabel, type ReceiptSummaryRow } from "@/lib/receivingReport";
+import {
+  RECEIPT_SUMMARY_DEFAULT_SORT,
+  sortReceiptSummary,
+  summaryItemLabel,
+  toggleReceiptSummarySort,
+  type ReceiptSummaryRow,
+  type ReceiptSummarySort,
+  type ReceiptSummarySortKey,
+} from "@/lib/receivingReport";
 
 export type ReceiptListView = "detail" | "summary";
 
@@ -62,6 +70,64 @@ async function downloadExport(project: string, kind: ReportKind) {
   downloadBlob(match?.[1] || (kind === "summary" ? "receipt-summary.csv" : "receipts.csv"), csv);
 }
 
+const SUMMARY_COLUMNS: { key: ReceiptSummarySortKey; label: string; className: string }[] = [
+  { key: "sku", label: "SKU", className: "fit sku" },
+  { key: "item", label: "Item", className: "summary-item" },
+  { key: "qty", label: "Qty", className: "num fit" },
+  { key: "putaway", label: "Putaway", className: "locations" },
+  { key: "lines", label: "Lines", className: "num fit" },
+  { key: "status", label: "Status", className: "fit" },
+];
+
+function sortDirection(sort: ReceiptSummarySort, column: ReceiptSummarySortKey): ReceiptSummarySort["dir"] | null {
+  return sort.key === column ? sort.dir : null;
+}
+
+function SortButton({
+  label,
+  column,
+  sort,
+  onSort,
+}: {
+  label: string;
+  column: ReceiptSummarySortKey;
+  sort: ReceiptSummarySort;
+  onSort: (key: ReceiptSummarySortKey) => void;
+}) {
+  const direction = sortDirection(sort, column);
+  return (
+    <button type="button" className="receive-col-sort" title={`Sort by ${label}`} onClick={() => onSort(column)}>
+      {label}
+      {direction ? <span aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span> : null}
+    </button>
+  );
+}
+
+function SortHeading({
+  label,
+  column,
+  className,
+  sort,
+  onSort,
+}: {
+  label: string;
+  column: ReceiptSummarySortKey;
+  className: string;
+  sort: ReceiptSummarySort;
+  onSort: (key: ReceiptSummarySortKey) => void;
+}) {
+  const direction = sortDirection(sort, column);
+  return (
+    <th
+      className={className}
+      scope="col"
+      aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"}
+    >
+      <SortButton label={label} column={column} sort={sort} onSort={onSort} />
+    </th>
+  );
+}
+
 export function ReceiptReports({
   project,
   ready,
@@ -78,6 +144,7 @@ export function ReceiptReports({
   const [busy, setBusy] = useState<"summary" | ReportKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<ReceiptSummaryRow[] | null>(null);
+  const [sort, setSort] = useState<ReceiptSummarySort>(RECEIPT_SUMMARY_DEFAULT_SORT);
   const [shownFor, setShownFor] = useState(project);
   if (shownFor !== project) {
     setShownFor(project);
@@ -122,6 +189,11 @@ export function ReceiptReports({
   const disabled = !ready || busy !== null;
   const pending = rows?.filter((row) => row.pending).length ?? 0;
   const skus = rows ? rows.length - pending : 0;
+  const sortedRows = useMemo(() => (rows ? sortReceiptSummary(rows, sort) : null), [rows, sort]);
+
+  function onColumnSort(key: ReceiptSummarySortKey) {
+    setSort((current) => toggleReceiptSummarySort(current, key));
+  }
 
   return (
     <>
@@ -149,9 +221,10 @@ export function ReceiptReports({
       {view === "summary" ? (
         <div className="receive-summary">
           <p className="hint">
-            One row per SKU for this project, sorted by item name. Item is the item name, or the search when no SKU is
-            linked. Putaway is the quantity in each bin, for example (x14)10002-C | (x8)10037. Lines with no item are
-            grouped by the exact search and listed after the SKUs.
+            One row per SKU for this project. It opens sorted by item name, linked SKUs first and pending searches
+            after them. Click a column heading to sort by that column, and click it again to reverse. Item is the item
+            name, or the search when no SKU is linked. Putaway is the quantity in each bin, for example (x14)10002-C |
+            (x8)10037. Lines with no item are grouped by the exact search.
           </p>
           <div className="receive-actions">
             <button type="button" className="secondary" disabled={disabled || !rows} onClick={() => void exportCsv("summary")}>
@@ -162,7 +235,7 @@ export function ReceiptReports({
             <p className="hint">Loading summary…</p>
           ) : rows && rows.length === 0 ? (
             <p className="hint">No receipts for this project yet.</p>
-          ) : rows ? (
+          ) : sortedRows ? (
             <>
               <p className="hint">
                 {skus} {skus === 1 ? "SKU" : "SKUs"}
@@ -172,20 +245,24 @@ export function ReceiptReports({
                 <table className="receive-table">
                   <thead>
                     <tr>
-                      <th className="fit sku">SKU</th>
-                      <th className="summary-item">Item</th>
-                      <th className="num fit">Qty</th>
-                      <th className="locations">Putaway</th>
-                      <th className="num fit">Lines</th>
-                      <th className="fit">Status</th>
+                      {SUMMARY_COLUMNS.map((column) => (
+                        <SortHeading
+                          key={column.key}
+                          label={column.label}
+                          column={column.key}
+                          className={column.className}
+                          sort={sort}
+                          onSort={onColumnSort}
+                        />
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row, index) => {
+                    {sortedRows.map((row) => {
                       const item = summaryItemLabel(row);
                       return (
                         <tr
-                          key={row.pending ? `pending:${index}` : `item:${index}`}
+                          key={`${row.pending ? "pending" : "item"}:${row.sku}:${row.search}:${row.name}:${row.locations}:${row.qty}:${row.lines}`}
                           className={row.pending ? "receipt-line receipt-unmatched" : "receipt-line"}
                         >
                           <td className="fit sku">{row.sku}</td>
