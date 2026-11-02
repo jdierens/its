@@ -5403,7 +5403,7 @@ button.bin-label-hit:focus-visible {
 
 .receive-owner-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(12rem, auto);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) auto;
   gap: 0.55rem 0.7rem;
   align-items: end;
   margin-top: 0.7rem;
@@ -5424,16 +5424,50 @@ button.bin-label-hit:focus-visible {
   margin: 0;
 }
 
-.receive-consigned {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0 0 0.35rem;
+.receive-c-slot {
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 0.15rem;
 }
 
-.receive-owner-grid .receive-consigned input {
-  width: auto;
-  display: inline-block;
+.receive-c,
+.ds .receive-c {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--ds-line, var(--input-border));
+  border-radius: 4px;
+  background-color: var(--ds-card, var(--field));
+  background-image: none;
+  box-shadow: none;
+  color: var(--ds-ink, var(--ink));
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.receive-c[aria-pressed="true"],
+.ds .receive-c[aria-pressed="true"] {
+  background-color: var(--ds-ink, var(--ink));
+  background-image: none;
+  color: var(--ds-card, var(--card-solid));
+  border-color: var(--ds-ink, var(--ink));
+}
+
+.receive-c:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.receive-c:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
 }
 
 .receive-po-clear {

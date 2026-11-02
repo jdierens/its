@@ -16,7 +16,7 @@ The receiving screen posts a quantity into a bin. The top of the form is the rec
 
 A bin that already holds stock keeps the cycle it opened with. The receipt line still stores the header that was on the form. A receipt with no purchase order cannot be saved until a vendor is chosen, and that vendor stays on the receipt for later accounting and returns.
 
-Consigned is its own checkbox. A receipt with no purchase order starts consigned. A purchase order starts not consigned. Changing that flag asks the same project question as the vendor, and only about consignment. Changing the vendor does not change consignment, and changing consignment does not change the vendor. Yes copies the flag onto the other receipts already entered for that project. No keeps it on this line. Recent entries asks the same way when Vendor or Consigned is edited on a line.
+Consigned is a small C box. Checked, the box is filled. Empty, the receipt is not consigned. The letter is the only mark. The word is not printed under it. A receipt with no purchase order starts consigned. A purchase order starts not consigned. Changing that flag asks the same project question as the vendor, and only about consignment. Changing the vendor does not change consignment, and changing consignment does not change the vendor. Yes copies the flag onto the other receipts already entered for that project. No keeps it on this line. Recent entries asks the same way when Vendor or Consigned is edited on a line.
 
 `00000-X` and `RCV` are receiving bins for a temporary or unknown location. They are accepted on the line, on putaway, in the summary, and on import. A normal bin is still five digits, a hyphen, and B, C, or P. `20000-X` and `00000-B` are not those exceptions.
 

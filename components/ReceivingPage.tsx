@@ -1303,29 +1303,24 @@ export function ReceivingPage() {
                 ))}
               </select>
             </label>
-            <div className="receive-owner-note">
-              <label className="receive-consigned" htmlFor="receive-consigned">
-                <input
-                  id="receive-consigned"
-                  type="checkbox"
-                  checked={consigned}
-                  disabled={busy}
-                  onChange={(event) => void assignConsigned(event.target.checked)}
-                />
-                Consigned
-              </label>
-              <p>
-                {purchaseOrderId
-                  ? `Vendor comes from PO ${purchaseOrderNumber}.`
-                  : consigned
-                    ? "Consigned. This receipt stays with that vendor."
-                    : "Not consigned. This receipt is owned."}
-              </p>
+            <div className="receive-c-slot">
+              <button
+                type="button"
+                className="receive-c"
+                aria-pressed={consigned}
+                aria-label={consigned ? "Consigned" : "Not consigned"}
+                title={consigned ? "Consigned" : "Not consigned"}
+                disabled={busy}
+                onClick={() => void assignConsigned(!consigned)}
+              >
+                C
+              </button>
             </div>
           </div>
           <p className="hint">
             A bin that already has stock keeps the cycle it opened with. Each saved line stores this header, including the receiving date.
-            A receipt with no purchase order requires a vendor. Consigned is its own flag.
+            A receipt with no purchase order requires a vendor.
+            {purchaseOrderId ? ` Vendor comes from PO ${purchaseOrderNumber}.` : ""}
           </p>
           {ownerAsk ? (
             <div className="receive-bin-ask" role="region" aria-label="Apply to project receipts">
