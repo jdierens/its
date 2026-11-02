@@ -22,7 +22,7 @@ export function SalesOrderStageIcons({ stages }: { stages: SalesOrderStageIcon[]
             title={stage.title}
             aria-label={stage.title}
           >
-            <Icon size={15} strokeWidth={1.75} aria-hidden />
+            <Icon size={14} strokeWidth={2} aria-hidden />
           </span>
         );
       })}
