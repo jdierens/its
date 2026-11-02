@@ -258,6 +258,11 @@ export function receivingBinDecision(
   if (!trimmed) return { action: "empty" };
   const parsed = parseReceivingBinCode(trimmed);
   if (!parsed) return { action: "invalid", message: BIN_CODE_MESSAGE };
+  if (parsed.special) {
+    if (!found) return { action: "invalid", message: `No bin ${parsed.reference}.` };
+    if (!found.canReceive) return { action: "unusable", message: BIN_UNUSABLE_MESSAGE };
+    return { action: "accept", reference: found.reference || parsed.reference };
+  }
   if (!found) {
     if (owner && owner.type !== parsed.type) {
       const existingReference = parseReceivingBinCode(owner.reference)?.reference ?? owner.reference;

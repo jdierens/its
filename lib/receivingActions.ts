@@ -20,6 +20,7 @@ import {
   type RecentProjectRow,
 } from "@/lib/receivingProjects";
 import {
+  RECEIPT_DETAIL_ORDER,
   receiptReportFileName,
   receiptsDetailCsv,
   summarizeReceipts,
@@ -52,6 +53,7 @@ import {
 } from "@/lib/stockReceive";
 import { isBinType, type BinType } from "@/lib/bins";
 import { CONSIGNED_RECEIVE_MIGRATION, receiveConsignment } from "@/lib/consignedReceive";
+import { RECEIPT_PROJECT_OWNER_MIGRATION, type ProjectReceiptApplyField } from "@/lib/projectReceiptApply";
 import type { StockUnitInput } from "@/lib/stockUnits";
 import { lastPutawayBinReference, receivingBinCreateMessage } from "@/lib/receivingLine";
 import { RECENT_ORIGIN_SCAN, distinctRecentOrigins } from "@/lib/receivingOrigins";
@@ -124,7 +126,7 @@ const RECEIPT_LINE_COLUMNS =
 
 const RECEIPT_SEARCH_COLUMNS = `${RECEIPT_LINE_COLUMNS}, search_query`;
 
-const RECEIPT_OWNER_COLUMNS = `${RECEIPT_SEARCH_COLUMNS}, vendor_name, ownership, po_number`;
+const RECEIPT_OWNER_COLUMNS = `${RECEIPT_SEARCH_COLUMNS}, vendor_id, vendor_name, ownership, po_number`;
 
 const RECEIPT_DAMAGE_COLUMNS = `${RECEIPT_OWNER_COLUMNS}, damaged`;
 
@@ -594,6 +596,51 @@ export async function setReceiptDamaged(eventId: string, damaged: boolean): Prom
   if (error) rpcError(error);
 }
 
+/** Other receive lines already stored for this project. The current line is left out when its id is passed. */
+export async function countOtherProjectReceipts(project: string, exceptId?: string | null): Promise<number> {
+  const trimmed = project.trim();
+  if (!trimmed) return 0;
+  const supabase = await getSupabase();
+  let query = supabase.from("receipt_lines").select("id", { count: "exact", head: true }).eq("project", trimmed);
+  if (exceptId) query = query.neq("id", exceptId);
+  const { count, error } = await query;
+  if (error && (missingSchema(error) || missingColumn(error))) return 0;
+  if (error) rpcError(error);
+  return count ?? 0;
+}
+
+/**
+ * Sets the vendor or the consignment flag.
+ * `applyToProject` copies that one field onto the other receipts for the same project.
+ * With no event id, every receipt already entered for the project is updated.
+ */
+export async function applyReceiptOwner(input: {
+  eventId?: string | null;
+  project?: string | null;
+  field: ProjectReceiptApplyField;
+  vendorId?: string | null;
+  consigned?: boolean;
+  applyToProject: boolean;
+}): Promise<void> {
+  const initials = await operatorInitials();
+  if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
+  const { error } = await (await getSupabase()).rpc("apply_receipt_owner", {
+    p_initials: initials,
+    p_field: input.field,
+    p_vendor_id: input.field === "vendor" ? input.vendorId || null : null,
+    p_consigned: input.field === "consignment" ? Boolean(input.consigned) : null,
+    p_event_id: input.eventId || null,
+    p_project: input.project?.trim() || null,
+    p_apply_project: input.applyToProject,
+  });
+  if (error && (missingSchema(error) || missingColumn(error))) {
+    throw new Error(
+      `Apply ${RECEIPT_PROJECT_OWNER_MIGRATION} before updating the vendor or consignment on existing receipts.`,
+    );
+  }
+  if (error) rpcError(error);
+}
+
 const RECEIPT_REPORT_PAGE = 1000;
 
 async function listReceiptSlice(
@@ -611,9 +658,8 @@ async function listReceiptSlice(
     let viewed = supabase.from("receipt_lines").select(columns, { count: "exact" });
     viewed = trimmed ? viewed.eq("project", trimmed) : viewed.is("project", null);
     return viewed
-      .order("received_on", { ascending: false, nullsFirst: false })
-      .order("occurred_at", { ascending: false })
-      .order("id", { ascending: false })
+      .order(RECEIPT_DETAIL_ORDER.stamp, { ascending: false })
+      .order(RECEIPT_DETAIL_ORDER.tie, { ascending: false })
       .range(from, to);
   };
   let corrected = await receiptPage(RECEIPT_DAMAGE_COLUMNS);
@@ -636,9 +682,8 @@ async function listReceiptSlice(
     .eq("event_type", "receive_into_bin");
   query = trimmed ? query.eq("project", trimmed) : query.is("project", null);
   const { data, error, count } = await query
-    .order("received_on", { ascending: false, nullsFirst: false })
-    .order("occurred_at", { ascending: false })
-    .order("id", { ascending: false })
+    .order(RECEIPT_DETAIL_ORDER.stamp, { ascending: false })
+    .order(RECEIPT_DETAIL_ORDER.tie, { ascending: false })
     .range(from, to);
   if (error) rpcError(error);
   const raw = Array.isArray(data) ? data : [];

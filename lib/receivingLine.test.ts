@@ -120,6 +120,17 @@ describe("already in this bin", () => {
       null,
     );
     assert.equal(alreadyInBinNote({ currentBin: "10069-C", rows: [] }), null);
+    const special = alreadyInBinNote({
+      currentBin: "rcv",
+      rows: [
+        { reference: "00000-x", qty: 2, locationCode: "" },
+        { reference: "RCV", qty: 3, locationCode: "" },
+        { reference: "not-a-bin", qty: 8, locationCode: "" },
+      ],
+    });
+    assert.ok(special);
+    assert.match(alreadyInBinNoteText(special), /00000-X \(x2\)/);
+    assert.match(alreadyInBinNoteText(special), /3 PCS of this SKU are already in this bin/);
   });
 
   it("still states the current total when that bin has no location", () => {
@@ -196,6 +207,18 @@ describe("typed receiving bin", () => {
     assert.equal(decision.selected, "B");
     assert.notEqual(receivingBinDecision("10099-C", null, null).action, "mismatch");
     assert.equal(receivingBinDecision("10099-C", null).action, "create");
+    assert.equal(receivingBinDecision("00000-X", null).action, "invalid");
+    assert.equal(receivingBinDecision("RCV", null).action, "invalid");
+    assert.notEqual(receivingBinDecision("00000-X", null).action, "create");
+    assert.deepEqual(receivingBinDecision("00000-x", { reference: "00000-X", canReceive: true }), {
+      action: "accept",
+      reference: "00000-X",
+    });
+    assert.deepEqual(receivingBinDecision("rcv", { reference: "RCV", canReceive: true }), {
+      action: "accept",
+      reference: "RCV",
+    });
+    assert.equal(receivingBinDecision("20000-X", null).action, "invalid");
     assert.equal(
       receivingBinDecision("10042-C", null, { reference: "10042-c", type: "C" }).action,
       "invalid",
@@ -249,6 +272,9 @@ describe("receiving bin default", () => {
     assert.equal(lastPutawayBinReference({ bins: [{ reference: "20042-b" }] }), "20042-B");
     assert.equal(lastPutawayBinReference({ bin_reference: " ", bins: { reference: "20014-P" } }), "20014-P");
     assert.equal(lastPutawayBinReference({ bin_reference: "2000-B" }), null);
+    assert.equal(lastPutawayBinReference({ bin_reference: "00000-x" }), "00000-X");
+    assert.equal(lastPutawayBinReference({ bin_reference: "rcv" }), "RCV");
+    assert.equal(lastPutawayBinReference({ bin_reference: "20000-X" }), null);
   });
 
   it("stays blank unless the SKU was put away before, and never invents the next number", () => {

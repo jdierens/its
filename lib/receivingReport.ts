@@ -2,6 +2,22 @@ import { guardSpreadsheetFormula } from "@/lib/export/table";
 import type { ReceivingEntry } from "@/lib/receivingSettings";
 import { parseReceivingBinCode } from "@/lib/stockReceive";
 
+/**
+ * Recent entries Detail, newest data stamp first.
+ * The stamp is `occurred_at`, when the receipt row was written.
+ * `received_on` is the receiving date and is not this order.
+ */
+export const RECEIPT_DETAIL_ORDER = {
+  stamp: "occurred_at",
+  tie: "id",
+} as const;
+
+export function compareReceiptDetail<T extends { occurredAt: string; id: string }>(a: T, b: T): number {
+  const stamp = b.occurredAt.localeCompare(a.occurredAt);
+  if (stamp !== 0) return stamp;
+  return b.id.localeCompare(a.id);
+}
+
 export type ReceiptSummaryRow = {
   sku: string;
   name: string;

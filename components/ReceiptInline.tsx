@@ -4,7 +4,11 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type 
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import { labelHighlightedChoice, labelSearchOutcome } from "@/lib/labelDeskSelection";
-import { editReceipt, searchReceivingScan, setReceiptDamaged } from "@/lib/receivingActions";
+import {
+  projectReceiptApplyDecision,
+  projectReceiptApplySummary,
+} from "@/lib/projectReceiptApply";
+import { applyReceiptOwner, countOtherProjectReceipts, editReceipt, searchReceivingScan, setReceiptDamaged } from "@/lib/receivingActions";
 import {
   planReceiptEdit,
   receiptBinReference,
@@ -19,11 +23,19 @@ import { RECEIVING_DATE_EDITABLE, formatReceivedOn, type ReceivingEntry } from "
 import type { LabelItem } from "@/lib/types";
 
 type Confirm = { summary: string; body: ReceiptEditBody };
-type Field = "date" | "project" | "incoming" | "origin" | "originQty" | "search" | "sku" | "qty" | "putaway" | "comment";
+type OwnerConfirm = {
+  summary: string;
+  field: "vendor" | "consignment";
+  vendorId: string | null;
+  consigned: boolean;
+};
+type Field = "date" | "project" | "incoming" | "origin" | "originQty" | "search" | "sku" | "qty" | "putaway" | "comment" | "vendor";
+type VendorOption = { id: string; name: string };
 
-function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
+function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void, vendors: readonly VendorOption[]) {
   const [field, setField] = useState<Field | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [ownerConfirm, setOwnerConfirm] = useState<OwnerConfirm | null>(null);
   const [pendingItem, setPendingItem] = useState<ReceiptPatch["item"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -40,6 +52,8 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     entry.qty,
     entry.comment,
     entry.searchQuery,
+    entry.vendorId,
+    entry.ownership,
     entry.cleaned,
     entry.wiped,
     entry.damaged,
@@ -52,6 +66,7 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     setSaving(false);
     setField(null);
     setConfirm(null);
+    setOwnerConfirm(null);
     setPendingItem(null);
     setError(null);
   }, [signature]);
@@ -110,6 +125,81 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     void persist(plan.body, false);
   }
 
+  async function persistOwner(next: OwnerConfirm, applyToProject: boolean) {
+    if (lock.current || saving) return;
+    lock.current = true;
+    setSaving(true);
+    setError(null);
+    try {
+      await applyReceiptOwner({
+        eventId: entry.id,
+        project: entry.project,
+        field: next.field,
+        vendorId: next.vendorId,
+        consigned: next.consigned,
+        applyToProject,
+      });
+      setField(null);
+      setOwnerConfirm(null);
+      onSaved();
+    } catch (cause) {
+      lock.current = false;
+      setSaving(false);
+      setError(errorText(cause));
+    }
+  }
+
+  async function considerOwner(next: OwnerConfirm) {
+    if (lock.current || saving) return;
+    setError(null);
+    setField(null);
+    const project = (entry.project ?? "").trim();
+    let others = 0;
+    if (project) {
+      try {
+        others = await countOtherProjectReceipts(project, entry.id);
+      } catch (cause) {
+        setError(errorText(cause));
+        return;
+      }
+    }
+    if (projectReceiptApplyDecision({ project: entry.project, otherLineCount: others, changed: true }) === "prompt") {
+      setOwnerConfirm(next);
+      return;
+    }
+    await persistOwner(next, false);
+  }
+
+  async function commitVendor(vendorId: string) {
+    const next = vendorId.trim();
+    if (next === (entry.vendorId ?? "")) {
+      setField(null);
+      setError(null);
+      return;
+    }
+    if (!next) {
+      setError("Choose a vendor.");
+      return;
+    }
+    const name = vendors.find((vendor) => vendor.id === next)?.name || entry.vendorName || "this vendor";
+    await considerOwner({
+      summary: projectReceiptApplySummary({ field: "vendor", project: entry.project ?? "", vendorName: name }),
+      field: "vendor",
+      vendorId: next,
+      consigned: entry.ownership === "consigned",
+    });
+  }
+
+  async function commitConsignment(next: boolean) {
+    if (next === (entry.ownership === "consigned")) return;
+    await considerOwner({
+      summary: projectReceiptApplySummary({ field: "consignment", project: entry.project ?? "", consigned: next }),
+      field: "consignment",
+      vendorId: entry.vendorId,
+      consigned: next,
+    });
+  }
+
   function confirmSave() {
     if (!confirm || lock.current || saving) return;
     lock.current = true;
@@ -141,11 +231,22 @@ function useReceiptEdit(entry: ReceivingEntry, onSaved: () => void) {
     field,
     setField,
     confirm,
+    ownerConfirm,
     pendingItem,
     error,
     saving,
     apply,
     confirmSave,
+    commitVendor,
+    commitConsignment,
+    acceptOwner() {
+      if (!ownerConfirm) return;
+      void persistOwner(ownerConfirm, true);
+    },
+    declineOwner() {
+      if (!ownerConfirm) return;
+      void persistOwner(ownerConfirm, false);
+    },
     toggleDamaged,
     cancelConfirm() {
       setPendingItem(null);
@@ -505,6 +606,104 @@ function ConfirmBar({
   );
 }
 
+function VendorSelect({
+  value,
+  vendors,
+  onCommit,
+  onCancel,
+}: {
+  value: string;
+  vendors: readonly VendorOption[];
+  onCommit: (vendorId: string) => void;
+  onCancel: () => void;
+}) {
+  const lock = useRef(false);
+  const options = value && !vendors.some((vendor) => vendor.id === value) ? [...vendors, { id: value, name: "Vendor" }] : vendors;
+  function commit(next: string) {
+    if (lock.current) return;
+    lock.current = true;
+    onCommit(next);
+  }
+  return (
+    <select
+      className="cell-input receive-cell-input"
+      autoFocus
+      aria-label="Vendor"
+      defaultValue={value}
+      onChange={(event) => commit(event.target.value)}
+      onBlur={(event) => commit(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          lock.current = true;
+          onCancel();
+        }
+      }}
+    >
+      <option value="">Choose a vendor</option>
+      {options.map((vendor) => (
+        <option key={vendor.id} value={vendor.id}>
+          {vendor.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function ConsignmentBox({
+  consigned,
+  label,
+  disabled,
+  onToggle,
+}: {
+  consigned: boolean;
+  label: string;
+  disabled: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  return (
+    <label className="receipt-dmg">
+      <input
+        type="checkbox"
+        checked={consigned}
+        disabled={disabled}
+        aria-label={consigned ? "Consigned" : "Not consigned"}
+        onClick={(event) => {
+          event.preventDefault();
+          onToggle(!consigned);
+        }}
+      />
+      {label || (consigned ? "Consigned" : "Owned")}
+    </label>
+  );
+}
+
+function OwnerAskBar({
+  summary,
+  saving,
+  onApply,
+  onDecline,
+}: {
+  summary: string;
+  saving: boolean;
+  onApply: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className="receive-inline-confirm" role="alert">
+      <p>{summary}</p>
+      <div className="receive-actions">
+        <button type="button" disabled={saving} onClick={onApply}>
+          {saving ? "Saving…" : "Apply to all"}
+        </button>
+        <button type="button" className="secondary" disabled={saving} onClick={onDecline}>
+          This line only
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function itemPatch(item: LabelItem): ReceiptPatch {
   return {
     item: {
@@ -521,13 +720,15 @@ function itemPatch(item: LabelItem): ReceiptPatch {
 export function ReceiptTableRow({
   entry,
   initials,
+  vendors,
   onSaved,
 }: {
   entry: ReceivingEntry;
   initials: string;
+  vendors: readonly VendorOption[];
   onSaved: () => void;
 }) {
-  const edit = useReceiptEdit(entry, onSaved);
+  const edit = useReceiptEdit(entry, onSaved, vendors);
   const shown = receiptLineAfterPick(entry, edit.pendingItem ?? null);
   const note = visibleComment(entry, edit.pendingItem);
   function open(next: Field) {
@@ -561,9 +762,25 @@ export function ReceiptTableRow({
           )}
         </td>
         <td className="fit" title={entry.poNumber ? `PO ${entry.poNumber}` : undefined}>
-          {entry.vendorName ?? ""}
+          {edit.field === "vendor" ? (
+            <VendorSelect
+              value={entry.vendorId ?? ""}
+              vendors={vendors}
+              onCommit={(value) => void edit.commitVendor(value)}
+              onCancel={() => edit.setField(null)}
+            />
+          ) : (
+            <CellButton value={entry.vendorName ?? ""} title="Change vendor" onClick={() => open("vendor")} />
+          )}
         </td>
-        <td className="fit">{entry.basis}</td>
+        <td className="fit">
+          <ConsignmentBox
+            consigned={entry.ownership === "consigned"}
+            label={entry.basis}
+            disabled={edit.saving}
+            onToggle={(next) => void edit.commitConsignment(next)}
+          />
+        </td>
         <td className="fit">
           {edit.field === "incoming" ? (
             <TextEdit
@@ -662,9 +879,9 @@ export function ReceiptTableRow({
           </div>
         </td>
       </tr>
-      {edit.confirm || edit.error ? (
+      {edit.confirm || edit.ownerConfirm || edit.error ? (
         <tr className="receive-edit-row">
-          <td colSpan={12}>
+          <td colSpan={14}>
             <ConfirmBar
               initials={initials}
               confirm={edit.confirm}
@@ -673,6 +890,14 @@ export function ReceiptTableRow({
               onConfirm={edit.confirmSave}
               onCancel={edit.cancelConfirm}
             />
+            {edit.ownerConfirm ? (
+              <OwnerAskBar
+                summary={edit.ownerConfirm.summary}
+                saving={edit.saving}
+                onApply={edit.acceptOwner}
+                onDecline={edit.declineOwner}
+              />
+            ) : null}
           </td>
         </tr>
       ) : null}
@@ -698,13 +923,15 @@ function CardLine({
 export function ReceiptCard({
   entry,
   initials,
+  vendors,
   onSaved,
 }: {
   entry: ReceivingEntry;
   initials: string;
+  vendors: readonly VendorOption[];
   onSaved: () => void;
 }) {
-  const edit = useReceiptEdit(entry, onSaved);
+  const edit = useReceiptEdit(entry, onSaved, vendors);
   const shown = receiptLineAfterPick(entry, edit.pendingItem ?? null);
   const note = visibleComment(entry, edit.pendingItem);
   function open(next: Field) {
@@ -740,9 +967,25 @@ export function ReceiptCard({
           )}
         </CardLine>
         <CardLine label="Vendor">
-          <span title={entry.poNumber ? `PO ${entry.poNumber}` : undefined}>{entry.vendorName ?? ""}</span>
+          {edit.field === "vendor" ? (
+            <VendorSelect
+              value={entry.vendorId ?? ""}
+              vendors={vendors}
+              onCommit={(value) => void edit.commitVendor(value)}
+              onCancel={() => edit.setField(null)}
+            />
+          ) : (
+            <CellButton value={entry.vendorName ?? ""} title={entry.poNumber ? `PO ${entry.poNumber}` : "Change vendor"} onClick={() => open("vendor")} />
+          )}
         </CardLine>
-        <CardLine label="Basis">{entry.basis}</CardLine>
+        <CardLine label="Basis">
+          <ConsignmentBox
+            consigned={entry.ownership === "consigned"}
+            label={entry.basis}
+            disabled={edit.saving}
+            onToggle={(next) => void edit.commitConsignment(next)}
+          />
+        </CardLine>
         <CardLine label="Incoming bin">
           {edit.field === "incoming" ? (
             <TextEdit
@@ -849,6 +1092,14 @@ export function ReceiptCard({
         onConfirm={edit.confirmSave}
         onCancel={edit.cancelConfirm}
       />
+      {edit.ownerConfirm ? (
+        <OwnerAskBar
+          summary={edit.ownerConfirm.summary}
+          saving={edit.saving}
+          onApply={edit.acceptOwner}
+          onDecline={edit.declineOwner}
+        />
+      ) : null}
     </>
   );
 }

@@ -7,7 +7,7 @@ import {
   receiveLineQty,
   systemQtyMultipleWarning,
 } from "@/lib/receivingSettings";
-import { parseReceivingBinCode } from "@/lib/stockReceive";
+import { parseReceivingBinCode, specialReceivingBin } from "@/lib/stockReceive";
 import { SERIAL_MAX_LENGTH, cooProblem, normalizeCooCode, normalizeSerial } from "@/lib/stockUnits";
 
 export const RECEIVING_IMPORT_MIGRATION = "supabase/migrations/20261029040000_receiving_import.sql";
@@ -337,7 +337,7 @@ function lengthError(value: string, max: number, message: string): string | null
 function serialProblem(serial: string, sku: string, seen: readonly string[]): string | null {
   if (serial.length > SERIAL_MAX_LENGTH) return "A serial is at most 80 characters.";
   if (sku && serial.toUpperCase() === sku.toUpperCase()) return "That scan is the SKU, not a serial.";
-  if (SERIAL_BIN.test(serial)) return "That scan is a bin code, not a serial.";
+  if (SERIAL_BIN.test(serial) || specialReceivingBin(serial)) return "That scan is a bin code, not a serial.";
   if (seen.some((row) => row.toLowerCase() === serial.toLowerCase())) return "That serial is already in this receipt.";
   return null;
 }

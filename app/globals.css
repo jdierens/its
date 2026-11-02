@@ -5395,6 +5395,22 @@ button.bin-label-hit:focus-visible {
   padding-bottom: 0.4rem;
 }
 
+.receive-owner-note p {
+  margin: 0;
+}
+
+.receive-consigned {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.35rem;
+}
+
+.receive-owner-grid .receive-consigned input {
+  width: auto;
+  display: inline-block;
+}
+
 .receive-po-clear {
   margin-top: 0.35rem;
 }
@@ -6059,7 +6075,9 @@ button.receive-cell.is-placeholder {
 }
 
 .receive-table input.receive-cell-input,
-.receive-cards input.receive-cell-input {
+.receive-table select.receive-cell-input,
+.receive-cards input.receive-cell-input,
+.receive-cards select.receive-cell-input {
   width: 100%;
   min-width: 0;
   height: 22px;
@@ -6294,7 +6312,8 @@ button.receive-card-open {
     display: none;
   }
 
-  .receive-cards input.receive-cell-input {
+  .receive-cards input.receive-cell-input,
+  .receive-cards select.receive-cell-input {
     height: 44px;
     font-size: 16px;
   }

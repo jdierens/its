@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
+  RECEIPT_DETAIL_ORDER,
   RECEIPT_SUMMARY_DEFAULT_SORT,
+  compareReceiptDetail,
   receiptReportFileName,
   receiptsDetailCsv,
   formatPutawayQty,
@@ -89,6 +91,12 @@ describe("receipt summary", () => {
     assert.equal(rows[0]?.qty, 23);
     assert.equal(rows[0]?.locations, "(x15)10002-C | (x8)10037-B");
     assert.equal(rows[1]?.locations, "(x2)10082-C | (x4)11103-P");
+    const special = summarizeReceipts([
+      entry({ id: "s1", itemId: "a", sku: "100", itemName: "Drive", qty: 1, binReference: "00000-x" }),
+      entry({ id: "s2", itemId: "a", sku: "100", itemName: "Drive", qty: 2, putaway: "rcv · " }),
+    ]);
+    assert.match(special[0]?.locations ?? "", /00000-X/);
+    assert.match(special[0]?.locations ?? "", /RCV/);
   });
 
   it("does not merge a pending search into a matched SKU", () => {
@@ -100,6 +108,22 @@ describe("receipt summary", () => {
     assert.equal(rows[0]?.qty, 1);
     assert.equal(rows[1]?.pending, true);
     assert.equal(rows[1]?.qty, 9);
+  });
+});
+
+describe("receipt detail order", () => {
+  it("puts the newest data stamp first and does not use the receiving date", () => {
+    assert.equal(RECEIPT_DETAIL_ORDER.stamp, "occurred_at");
+    assert.notEqual(RECEIPT_DETAIL_ORDER.stamp, "received_on");
+    const sorted = [
+      { id: "b", occurredAt: "2026-11-02T18:00:00.000Z", receivedOn: "2026-01-01" },
+      { id: "a", occurredAt: "2026-11-02T18:00:00.000Z", receivedOn: "2026-12-31" },
+      { id: "old", occurredAt: "2026-11-01T00:00:00.000Z", receivedOn: "2026-11-02" },
+    ].sort(compareReceiptDetail);
+    assert.deepEqual(
+      sorted.map((row) => row.id),
+      ["b", "a", "old"],
+    );
   });
 });
 

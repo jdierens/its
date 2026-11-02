@@ -131,6 +131,7 @@ export type ReceivingEntry = {
   binReference: string;
   searchQuery: string | null;
   vendorName: string | null;
+  vendorId: string | null;
   ownership: string | null;
   poNumber: string | null;
   basis: string;
@@ -222,6 +223,7 @@ export function receivingEntryForViewer(row: Record<string, unknown>, canViewMon
     binReference: binReference ?? "",
     searchQuery: textOrNull(source.search_query),
     vendorName: textOrNull(source.vendor_name),
+    vendorId: textOrNull(source.vendor_id),
     ownership: textOrNull(source.ownership),
     poNumber: textOrNull(source.po_number),
     basis: receiptBasis(textOrNull(source.ownership), textOrNull(source.po_number)),

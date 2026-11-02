@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   RACKING_PATTERN,
@@ -43,6 +44,20 @@ describe("receiving bin codes", () => {
     assert.equal(parseReceivingBinCode("020000-P"), null);
     assert.equal(parseReceivingBinCode("20000-X"), null);
     assert.equal(parseReceivingBinCode("00000-B"), null);
+    assert.deepEqual(parseReceivingBinCode(" 00000-x "), {
+      number: 0,
+      type: "B",
+      reference: "00000-X",
+      special: true,
+    });
+    assert.deepEqual(parseReceivingBinCode("rcv"), {
+      number: 0,
+      type: "B",
+      reference: "RCV",
+      special: true,
+    });
+    assert.equal(typedBinCodeError("00000-X", "C"), null);
+    assert.equal(typedBinCodeError("20000-X", "B"), "A bin code is five digits, a hyphen, and B, C, or P.");
     assert.equal(typedBinCodeError("20014-C", "B"), "Code 20014-C is a crate, but Box is selected.");
     assert.equal(typedBinCodeError("10099-C", "B"), "Code 10099-C is a crate, but Box is selected.");
     assert.equal(typedBinCodeError("20014-B", "B"), null);
@@ -54,6 +69,17 @@ describe("receiving bin codes", () => {
     assert.equal(nextFreeBinError(99999), null);
     assert.match(nextFreeBinError(100000) ?? "", /five digits/);
     assert.match(nextFreeBinError(999) ?? "", /five digits/);
+  });
+});
+
+describe("special receiving bins", () => {
+  it("keeps the two hold codes in the database without relaxing a normal code", () => {
+    const sql = readFileSync(new URL("../supabase/migrations/20261102191000_receiving_special_bins.sql", import.meta.url), "utf8");
+    assert.match(sql, /'00000-X'/);
+    assert.match(sql, /'RCV'/);
+    assert.match(sql, /reference in \('00000-X', 'RCV'\)/);
+    assert.match(sql, /number > 0/);
+    assert.doesNotMatch(sql, /create or replace function public\.create_receiving_bin/);
   });
 });
 
