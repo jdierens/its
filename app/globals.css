@@ -509,7 +509,10 @@ a.thumb-open,
 }
 
 .badge-primary,
-.badge-edited {
+.badge-edited,
+.badge-pending,
+.badge-ready,
+.badge-failed {
   padding: 0.05rem 0.35rem;
   border-radius: 999px;
   font-size: 0.68rem;
@@ -526,6 +529,24 @@ a.thumb-open,
   background: #fff;
   color: var(--muted);
   border: 1px solid var(--line);
+}
+
+.badge-pending {
+  background: #fff7e6;
+  color: #8a5a00;
+  border: 1px solid #e6d3a3;
+}
+
+.badge-ready {
+  background: #eef8f0;
+  color: #1d6b3a;
+  border: 1px solid #b7dfc3;
+}
+
+.badge-failed {
+  background: #fdecec;
+  color: var(--danger-ink);
+  border: 1px solid #f0c2c2;
 }
 
 button.thumb-delete {

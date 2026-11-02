@@ -3,9 +3,11 @@ import { errorText } from "@/lib/errors";
 import {
   commitEditedImage,
   commitItemImageUpload,
+  completeItemImageProcessing,
   discardItemImage,
   reserveEditedImageUpload,
   reserveItemImageUpload,
+  reserveProcessedImageUpload,
   signedItemImageUrl,
 } from "@/lib/images";
 
@@ -63,6 +65,40 @@ export async function uploadItemImages(itemId: string, files: File[]): Promise<v
       await withDeadline(discardItemImage(ticket.path), SAVE_MS, SAVE_TIMEOUT).catch(() => undefined);
       throw error instanceof Error ? error : new Error(errorText(error));
     }
+  }
+}
+
+export async function uploadProcessedItemImage(input: {
+  itemId: string;
+  imageId: string;
+  startedAt: string;
+  blob: Blob;
+}): Promise<void> {
+  const ticket = await withDeadline(
+    reserveProcessedImageUpload({
+      itemId: input.itemId,
+      imageId: input.imageId,
+      startedAt: input.startedAt,
+      size: input.blob.size,
+    }),
+    SAVE_MS,
+    SAVE_TIMEOUT,
+  );
+  try {
+    await putSignedUpload(ticket.signedUrl, input.blob);
+    await withDeadline(
+      completeItemImageProcessing({
+        itemId: input.itemId,
+        imageId: input.imageId,
+        startedAt: input.startedAt,
+        path: ticket.path,
+      }),
+      SAVE_MS,
+      SAVE_TIMEOUT,
+    );
+  } catch (error) {
+    await withDeadline(discardItemImage(ticket.path), SAVE_MS, SAVE_TIMEOUT).catch(() => undefined);
+    throw error instanceof Error ? error : new Error(errorText(error));
   }
 }
 

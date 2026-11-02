@@ -6,6 +6,7 @@ import { errorText } from "@/lib/errors";
 import { labelTaxonomyFields } from "@/lib/labelLookup";
 import { itemIdsMatchingListQuery } from "@/lib/itemListSearch";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
+import { imageProcessingColumnMissing, storagePathsForImage } from "@/lib/imagePipeline";
 import { ITEM_DOCUMENT_BUCKET, itemAttachmentsUnavailable } from "@/lib/itemAttachmentKinds";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { signedImageUrls } from "@/lib/images";
@@ -830,12 +831,25 @@ export async function createItem(input: ItemInput): Promise<string> {
 
 export async function deleteItem(id: string): Promise<void> {
   const supabase = await getSupabase();
-  const images = await supabase.from("item_images").select("storage_path").eq("item_id", id);
-  if (images.error) throw new Error(errorText(images.error));
+  const images = await supabase.from("item_images").select("storage_path, original_storage_path").eq("item_id", id);
+  let imageRows: { storage_path?: unknown; original_storage_path?: unknown }[] | null = images.data;
+  if (images.error) {
+    if (!imageProcessingColumnMissing(images.error)) throw new Error(errorText(images.error));
+    const legacy = await supabase.from("item_images").select("storage_path").eq("item_id", id);
+    if (legacy.error) throw new Error(errorText(legacy.error));
+    imageRows = legacy.data;
+  }
 
-  const paths = (images.data ?? [])
-    .map((row) => row.storage_path)
-    .filter((path): path is string => typeof path === "string" && path.length > 0);
+  const paths = [
+    ...new Set(
+      (imageRows ?? []).flatMap((row) =>
+        storagePathsForImage({
+          storagePath: typeof row.storage_path === "string" ? row.storage_path : null,
+          originalStoragePath: typeof row.original_storage_path === "string" ? row.original_storage_path : null,
+        }),
+      ),
+    ),
+  ];
   if (paths.length > 0) {
     const removed = await supabase.storage.from(ITEM_IMAGE_BUCKET).remove(paths);
     if (removed.error) throw new Error(errorText(removed.error));

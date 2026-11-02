@@ -119,6 +119,8 @@ export type ItemDetail = {
   attributeLinks: { id: string; name: string; value: string }[];
 };
 
+export type ImageProcessingStatus = "pending" | "processing" | "ready" | "failed";
+
 export type ItemImage = {
   id: string;
   itemId: string;
@@ -126,6 +128,12 @@ export type ItemImage = {
   sortOrder: number;
   sourceImageId: string | null;
   url: string | null;
+  /** Pending and processing still show the upload. Ready with processedAt is the processed JPEG. */
+  processingStatus: ImageProcessingStatus;
+  processingStartedAt: string | null;
+  processedAt: string | null;
+  processingError: string | null;
+  originalStoragePath: string | null;
 };
 
 export type LabelItem = {

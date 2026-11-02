@@ -312,6 +312,12 @@ function scaleCanvas(source: HTMLCanvasElement, scale: number): HTMLCanvasElemen
   return next;
 }
 
+export function limitLongSide(source: HTMLCanvasElement, maxEdge: number): HTMLCanvasElement {
+  const edge = Math.max(source.width, source.height);
+  if (!Number.isFinite(maxEdge) || maxEdge < 1 || edge <= maxEdge) return source;
+  return scaleCanvas(source, maxEdge / edge);
+}
+
 export function canvasHasTransparency(canvas: HTMLCanvasElement): boolean {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return false;
