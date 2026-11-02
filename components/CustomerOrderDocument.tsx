@@ -10,7 +10,7 @@ import { orderConfirmationShowsTerms } from "@/lib/orderConfirmationTerms";
 export function CustomerOrderDocument({ document, orderId }: { document: CustomerDocument; orderId: string }) {
   const company = CUSTOMER_DOCUMENT_COMPANY;
   return (
-    <main className="cust-doc-page">
+    <main className="cust-doc-page ds">
       <LetterPrint
         orientation={CUSTOMER_DOCUMENT_PRINT.orientation}
         rootSelector={CUSTOMER_DOCUMENT_PRINT.rootSelector}

@@ -93,9 +93,17 @@ Tailwind utilities are available and live in a cascade layer under the hand-writ
 
 Shell, item list, item detail, purchase orders, login, admin users, and Lens should pick up these tokens without a local palette. A new page uses `main.page`, `card` or `form`, `Button`, and `Badge` instead of new colors.
 
+## Day and night
+
+Night follows `prefers-color-scheme: dark`. There is no second switcher. The same tokens drive both themes: `--bg`, `--card`, `--ink`, `--muted`, `--line`, `--field`, `--surface`, status chips, and the sales-order stage chips.
+
+Day stage chips are a light glyph on a dark tint. Night flips that to a dark glyph on a light tint. Status chips stay a dark imprint on a light chip by day and a light imprint on a dark chip at night. Shared controls (fields, secondary buttons, icon buttons, menus, tables, cards, the top bar) read those tokens, so a hardcoded light fill does not stay white when the rest of the page is dark.
+
+Glass pages keep the violet mesh in day. At night the mesh turns off and the glass tokens use the same zinc night palette as `.ds`. Printing forces the day palette back so pick tickets and customer documents stay dark ink on white paper.
+
 ## Zinc surface (opt in)
 
-Sales orders use a second surface. Add the class `ds` next to `page` (`main.page.so-page.ds`). Other pages can follow the same way. Do not copy these hexes into a one-off screen, and do not replace the `:root` glass tokens. The sidebar stays the app sidebar.
+Sales orders, pick, pack, ship, the invoice and confirmation page around the paper, the sales-order kit line, receiving, and inventory search use a second surface. Add the class `ds` next to `page` (`main.page.so-page.ds`). Other pages can follow the same way. Do not copy these hexes into a one-off screen, and do not replace the `:root` glass tokens. The sidebar stays the app sidebar. The paper invoice and order confirmation stay white in both themes.
 
 | Token | Light | Dark |
 |---|---|---|
@@ -108,6 +116,6 @@ Dark follows `prefers-color-scheme: dark`. While that matches, `.shell-body:has(
 
 Cards, the order banner, and drawers use `--ds-card` and a soft shadow. They do not use a heavy border or the glass blur. Page padding is 24px, and 16px below 800px. Fields use a 10px radius, a hairline zinc border, and a 200ms transition into a soft indigo ring (`box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.28)`).
 
-Status chips inside `.ds` use a desaturated background and a rich foreground: draft and pending are warm amber (`#f5f0e6` / `#92400e`), not neon yellow. Cancelled is a quiet rose, not neon red. The chips in the glass section above stay as they are, so purchase orders do not change.
+Status chips inside `.ds` use a desaturated background and a rich foreground: draft and pending are warm amber (`#f5f0e6` / `#92400e`), not neon yellow. Cancelled is a quiet rose, not neon red. Purchase-order chips keep the glass colors in day. At night every status chip uses the zinc night pair.
 
 On a sales order, a sticky header holds the order identity, the sales order number, and icon actions for save, approve, and cancel. The banner under it is the first field row. Terms and shipping sit in a drawer that starts open. Those fields are not required to approve. Addresses sit in the narrow column, ship-to above bill-to. An eBay order shows ship-to only. The line table, eBay amounts, and payment use the wide column. Customer notes, internal notes, and attachments are one row under payment. Below 960px that split stacks in the same field order.

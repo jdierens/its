@@ -4,7 +4,7 @@ import { formatPackQty, packQueueLabel, type PackQueueRow } from "@/lib/packShee
 
 export function PackQueue({ rows }: { rows: PackQueueRow[] }) {
   return (
-    <main className="page pick-page">
+    <main className="page pick-page ds">
       <p className="page-note">
         Picked orders. Put each picked quantity into a box or a pallet. Freight and service lines stay off this list.
         Shipping labels are not on this screen.

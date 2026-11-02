@@ -9,7 +9,7 @@ function packedDate(value: string | null): string {
 
 export function ShipQueue({ rows }: { rows: ShipQueueRow[] }) {
   return (
-    <main className="page pick-page">
+    <main className="page pick-page ds">
       <p className="page-note">
         Packed orders wait here for shipping. Carrier labels and rate shopping are not built yet.
       </p>
