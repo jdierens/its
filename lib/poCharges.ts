@@ -14,13 +14,25 @@ export type NormalizedShipment = {
 
 const CARRIERS = new Set<string>(SHIPMENT_CARRIERS);
 
+/** UPS, FedEx, USPS, or DHL, including a service written after the name. */
+function parcelCarrier(carrier: string): "UPS" | "FedEx" | "USPS" | "DHL" | null {
+  const key = carrier.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (!key) return null;
+  if (key === "usps" || key.startsWith("usps ")) return "USPS";
+  if (key === "ups" || key.startsWith("ups ")) return "UPS";
+  if (key === "fedex" || key === "federal express" || key.startsWith("fedex ") || key.startsWith("federal express ")) return "FedEx";
+  if (key === "dhl" || key.startsWith("dhl ")) return "DHL";
+  return null;
+}
+
 export function trackingUrl(carrier: string, trackingNumber: string): string | null {
   const number = encodeURIComponent(trackingNumber.trim());
   if (!number) return null;
-  if (carrier === "UPS") return `https://www.ups.com/track?tracknum=${number}`;
-  if (carrier === "FedEx") return `https://www.fedex.com/fedextrack/?trknbr=${number}`;
-  if (carrier === "USPS") return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${number}`;
-  if (carrier === "DHL") return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${number}`;
+  const parcel = parcelCarrier(carrier);
+  if (parcel === "UPS") return `https://www.ups.com/track?tracknum=${number}`;
+  if (parcel === "FedEx") return `https://www.fedex.com/fedextrack/?trknbr=${number}`;
+  if (parcel === "USPS") return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${number}`;
+  if (parcel === "DHL") return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${number}`;
   return null;
 }
 

@@ -36,6 +36,8 @@ import {
   partPrefix,
   salesOrderTotal,
   sellerNet,
+  mapSoShipments,
+  normalizeSoShipments,
   toSalesOrderPayload,
   type SoDraftInput,
 } from "./salesOrderDraft.ts";
@@ -502,6 +504,25 @@ describe("sales order draft", () => {
     assert.equal(copyShipToBillTo({ ...blank, phone: "555-0100" }, draft.billTo).line1, draft.billTo.line1);
   });
 
+  it("keeps the header ship date on the order payload and leaves shipments off it", () => {
+    const draft = sampleDraft();
+    draft.shipDate = "2026-03-23";
+    draft.shipments = [
+      {
+        id: "a4914aba-dab2-46d9-9d48-c9c3ef6c1ab6",
+        carrier: "FedEx",
+        method: "Delivered",
+        carrierAccount: "DDS",
+        awb: "889691117820",
+        shipDate: "2026-03-23",
+        cost: "",
+      },
+    ];
+    const payload = toSalesOrderPayload(draft);
+    assert.equal(payload.ship_date, "2026-03-23");
+    assert.equal("shipments" in payload, false);
+  });
+
   it("leaves an eBay bill-to blank and keeps ship-to", () => {
     const draft = sampleDraft();
     const payload = toSalesOrderPayload({ ...draft, channel: "ebay" });
@@ -511,6 +532,119 @@ describe("sales order draft", () => {
     assert.equal(ship.line1, draft.shipTo.line1);
     const direct = toSalesOrderPayload(draft);
     assert.equal((direct.bill_to as { line1: string }).line1, "1 Demo St");
+  });
+});
+
+describe("sales order shipments", () => {
+  it("maps a FedEx AWB and keeps freight carriers as typed", () => {
+    const rows = mapSoShipments([
+      {
+        id: "a4914aba-dab2-46d9-9d48-c9c3ef6c1ab6",
+        carrier: "FedEx",
+        method: "Delivered",
+        carrier_account: "DDS",
+        awb: "889691117820",
+        ship_date: "2026-03-23",
+        cost: null,
+        created_at: "2026-10-31T01:16:39.630496+00:00",
+      },
+      {
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        carrier: "unishippers",
+        method: "LTL",
+        carrier_account: "ACC",
+        awb: "PRO1",
+        ship_date: "2026-03-01",
+        cost: "12.5",
+        created_at: "2026-03-01T00:00:00.000Z",
+      },
+    ]);
+    assert.equal(rows[0].carrier, "unishippers");
+    assert.equal(rows[0].cost, "12.50");
+    assert.equal(rows[1].carrier, "FedEx");
+    assert.equal(rows[1].awb, "889691117820");
+    assert.equal(rows[1].method, "Delivered");
+    assert.equal(rows[1].carrierAccount, "DDS");
+    assert.equal(rows[1].shipDate, "2026-03-23");
+    assert.equal(rows[1].cost, "");
+  });
+
+  it("normalizes shipment rows and drops a blank one", () => {
+    const saved = normalizeSoShipments([
+      {
+        id: "",
+        carrier: " fedex ",
+        method: "FedEx 2Day",
+        carrierAccount: " DDS ",
+        awb: "8896 9111 7820",
+        shipDate: "2026-03-23",
+        cost: "",
+      },
+      { id: "", carrier: "", method: "", carrierAccount: "", awb: "", shipDate: "", cost: "" },
+    ]);
+    assert.equal(saved.ok, true);
+    if (!saved.ok) return;
+    assert.equal(saved.value.length, 1);
+    assert.equal(saved.value[0].carrier, "FedEx");
+    assert.equal(saved.value[0].awb, "889691117820");
+    assert.equal(saved.value[0].method, "FedEx 2Day");
+    assert.equal(saved.value[0].carrierAccount, "DDS");
+    assert.equal(saved.value[0].shipDate, "2026-03-23");
+    assert.equal(saved.value[0].cost, null);
+    assert.equal(saved.value[0].id, null);
+
+    assert.equal(normalizeSoShipments([{ id: "", carrier: "UPS", method: "", carrierAccount: "", awb: "", shipDate: "", cost: "" }]).ok, false);
+    assert.equal(
+      normalizeSoShipments([{ id: "", carrier: "", method: "LTL", carrierAccount: "", awb: "1", shipDate: "", cost: "" }]).ok,
+      false,
+    );
+    assert.equal(
+      normalizeSoShipments([
+        { id: "", carrier: "UPS", method: "", carrierAccount: "", awb: "1Z1", shipDate: "", cost: "" },
+        { id: "", carrier: "ups", method: "", carrierAccount: "", awb: "1z1", shipDate: "", cost: "" },
+      ]).ok,
+      false,
+    );
+    assert.equal(
+      normalizeSoShipments([{ id: "", carrier: "UPS", method: "", carrierAccount: "", awb: "1Z1", shipDate: "2026-13-40", cost: "" }]).ok,
+      false,
+    );
+    assert.equal(
+      normalizeSoShipments([{ id: "", carrier: "UPS", method: "", carrierAccount: "", awb: "1Z1", shipDate: "", cost: "-1" }]).ok,
+      false,
+    );
+    const kept = normalizeSoShipments([
+      {
+        id: "a4914aba-dab2-46d9-9d48-c9c3ef6c1ab6",
+        carrier: "Unishippers",
+        method: "LTL",
+        carrierAccount: "",
+        awb: "PRO1",
+        shipDate: "",
+        cost: "18.40",
+      },
+    ]);
+    assert.equal(kept.ok, true);
+    if (!kept.ok) return;
+    assert.equal(kept.value[0].id, "a4914aba-dab2-46d9-9d48-c9c3ef6c1ab6");
+    assert.equal(kept.value[0].carrier, "Unishippers");
+    assert.equal(kept.value[0].cost, 18.4);
+
+    const storedWithoutCarrier = normalizeSoShipments([
+      {
+        id: "a4914aba-dab2-46d9-9d48-c9c3ef6c1ab6",
+        carrier: "",
+        method: "LTL",
+        carrierAccount: "",
+        awb: "106507118",
+        shipDate: "",
+        cost: "",
+      },
+    ]);
+    assert.equal(storedWithoutCarrier.ok, true);
+    if (!storedWithoutCarrier.ok) return;
+    assert.equal(storedWithoutCarrier.value[0].carrier, null);
+    assert.equal(storedWithoutCarrier.value[0].awb, "106507118");
   });
 });
 
@@ -606,6 +740,7 @@ function sampleDraft(): SoDraftInput {
       },
     ],
     notes: [],
+    shipments: [],
     saveAddressToCustomer: false,
   };
 }

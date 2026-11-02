@@ -8458,6 +8458,37 @@ button.so-new-order svg,
   align-content: start;
 }
 
+.so-shipments {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.so-ship-heading {
+  margin: 0;
+  color: var(--ds-ink);
+  font-weight: 600;
+}
+
+.so-shipment {
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ds-line);
+}
+
+.so-shipment-actions {
+  display: flex;
+  align-items: center;
+}
+
+.so-shipment a.so-track-link {
+  display: block;
+  width: fit-content;
+  margin-top: -0.15rem;
+  font-size: 0.8rem;
+}
+
 .ds-drawer {
   padding: 0 20px 4px;
 }

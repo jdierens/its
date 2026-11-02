@@ -18,6 +18,7 @@ import { errorText } from "@/lib/errors";
 import { type OrderContact } from "@/lib/orderContact";
 import { isManagedPaypalFee, syncPaypalFeeLines, type PaypalFeeCatalog } from "@/lib/paypalFee";
 import { fetchPaypalFeeCatalog } from "@/lib/paypalFeeSettings";
+import { SHIPMENT_CARRIERS, trackingUrl } from "@/lib/poCharges";
 import { paymentMethodChoices } from "@/lib/salesPaymentMethods";
 import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
 import type { SalesOrderPickStatus } from "@/lib/salesOrderStages";
@@ -47,6 +48,7 @@ import {
   type MappedLineCompare,
   type SoAddress,
   type SoDraftInput,
+  type SoShipmentInput,
 } from "@/lib/salesOrderDraft";
 import {
   approveSalesOrderFromDraft,
@@ -198,6 +200,7 @@ export function SalesOrderForm({
   );
   const [shipMethod, setShipMethod] = useState(order?.shipMethod ?? "");
   const [carrierAccount, setCarrierAccount] = useState(order?.carrierAccount ?? "");
+  const [shipments, setShipments] = useState<SoShipmentInput[]>(order?.shipments ?? []);
   const [currency, setCurrency] = useState(order?.currency || "USD");
   const [salesRep, setSalesRep] = useState(
     initialSalesRep({
@@ -258,6 +261,10 @@ export function SalesOrderForm({
     return () => window.clearTimeout(timer);
   }, [customerQuery, customerName]);
 
+  function updateShipment(index: number, patch: Partial<SoShipmentInput>) {
+    setShipments((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
+  }
+
   function draft(): SoDraftInput {
     return {
       id: orderId,
@@ -312,6 +319,7 @@ export function SalesOrderForm({
         })),
       })),
       notes,
+      shipments,
       saveAddressToCustomer: saveAddress,
     };
   }
@@ -1047,10 +1055,117 @@ export function SalesOrderForm({
               ))}
             </select>
           </label>
+          <label className="so-field-date">
+            Order ship date
+            <input type="date" aria-label="Order ship date" value={shipDate} disabled={locked} onChange={(event) => setShipDate(event.target.value)} />
+          </label>
           <label>
             Carrier account
             <input value={carrierAccount} disabled={locked} onChange={(event) => setCarrierAccount(event.target.value)} />
           </label>
+        </div>
+        <div className="so-shipments">
+          <p className="so-ship-heading">Shipments</p>
+          {shipments.length === 0 ? <p className="muted">No shipments yet.</p> : null}
+          <datalist id="so-shipment-carriers">
+            {SHIPMENT_CARRIERS.map((carrier) => (
+              <option key={carrier} value={carrier} />
+            ))}
+          </datalist>
+          {shipments.map((shipment, index) => {
+            const href = trackingUrl(shipment.carrier, shipment.awb.replace(/\s+/g, ""));
+            return (
+              <div className="so-shipment" key={shipment.id || `new-${index}`}>
+                <label>
+                  Carrier
+                  <input
+                    aria-label="Carrier"
+                    list="so-shipment-carriers"
+                    value={shipment.carrier}
+                    disabled={locked}
+                    onChange={(event) => updateShipment(index, { carrier: event.target.value })}
+                  />
+                </label>
+                <label>
+                  AWB / tracking
+                  <input
+                    aria-label="AWB / tracking"
+                    value={shipment.awb}
+                    disabled={locked}
+                    autoComplete="off"
+                    onChange={(event) => updateShipment(index, { awb: event.target.value })}
+                  />
+                </label>
+                {href ? (
+                  <a className="so-track-link" href={href} target="_blank" rel="noopener noreferrer">
+                    Open tracking
+                  </a>
+                ) : null}
+                <label>
+                  Method
+                  <input
+                    aria-label="Shipment method"
+                    value={shipment.method}
+                    disabled={locked}
+                    onChange={(event) => updateShipment(index, { method: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Ship date
+                  <input
+                    type="date"
+                    aria-label="Shipment ship date"
+                    value={shipment.shipDate}
+                    disabled={locked}
+                    onChange={(event) => updateShipment(index, { shipDate: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Carrier account
+                  <input
+                    aria-label="Shipment carrier account"
+                    value={shipment.carrierAccount}
+                    disabled={locked}
+                    onChange={(event) => updateShipment(index, { carrierAccount: event.target.value })}
+                  />
+                </label>
+                {showMoney && (!locked || shipment.cost.trim()) ? (
+                  <label>
+                    Cost
+                    <MoneyField
+                      aria-label="Shipment cost"
+                      value={shipment.cost}
+                      currency={currency}
+                      readOnly={locked}
+                      disabled={locked}
+                      onChange={(event) => updateShipment(index, { cost: event.target.value })}
+                    />
+                  </label>
+                ) : null}
+                {locked ? null : (
+                  <div className="so-shipment-actions">
+                    <RemoveButton label="Remove shipment" onClick={() => setShipments((current) => current.filter((_, rowIndex) => rowIndex !== index))} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {locked ? null : (
+            <button
+              type="button"
+              className="secondary so-icon-add"
+              aria-label="Add shipment"
+              title="Add shipment"
+              onClick={() =>
+                setShipments((current) => [
+                  ...current,
+                  { id: "", carrier: "", method: "", carrierAccount: "", awb: "", shipDate: "", cost: "" },
+                ])
+              }
+            >
+              <Plus size={16} strokeWidth={1.75} aria-hidden />
+            </button>
+          )}
         </div>
             </details>
 

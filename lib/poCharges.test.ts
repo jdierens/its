@@ -22,10 +22,18 @@ test("freight-in is a non-negative USD amount or empty", () => {
 test("tracking links are built for parcel carriers", () => {
   assert.equal(trackingUrl("UPS", "1Z999"), "https://www.ups.com/track?tracknum=1Z999");
   assert.match(trackingUrl("FedEx", "123") ?? "", /fedex\.com/);
+  assert.equal(
+    trackingUrl("FedEx", "889691117820"),
+    "https://www.fedex.com/fedextrack/?trknbr=889691117820",
+  );
+  assert.equal(trackingUrl("fedex", "889691117820"), trackingUrl("FedEx", "889691117820"));
+  assert.match(trackingUrl("FedEx IP", "889691117820") ?? "", /trknbr=889691117820/);
   assert.match(trackingUrl("USPS", "9400") ?? "", /usps\.com/);
   assert.match(trackingUrl("DHL", "ABC") ?? "", /dhl\.com/);
   assert.equal(trackingUrl("Freight", "BOL1"), null);
   assert.equal(trackingUrl("Other", "X"), null);
+  assert.equal(trackingUrl("Unishippers", "PRO1"), null);
+  assert.equal(trackingUrl("UPS", "  "), null);
 });
 
 test("shipments need a known carrier and a tracking number", () => {
