@@ -1,6 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readEbayDraftDefaults } from "@/lib/ebayOrderDefaults";
-import { apiBase, apizBase, financesTransactionsUrl, ordersUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
+import { apiBase, apizBase, financesTransactionsUrl, ordersUrl, shippingFulfillmentsUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
+import {
+  ebayOrderShipDate,
+  ebayStatusAfterShipments,
+  EBAY_SHIPPABLE_STATUSES,
+  orderNeedsShippingFulfillment,
+  parseShippingFulfillments,
+  planEbayShipmentWrites,
+  trackingKey,
+  type ParsedEbayShipment,
+  type StoredShipment,
+} from "@/lib/ebay/fulfillments";
 import { ebayRead } from "@/lib/ebay/http";
 import { writeEbayLog } from "@/lib/ebay/log";
 import {
@@ -66,6 +77,12 @@ export type OrderPullResult = {
   history: boolean;
   /** Orders with a shipping-label debit. Null when the finances read did not finish. */
   labels: number | null;
+  /** New so_shipments rows written from eBay tracking. */
+  shipments: number;
+  /** Sales orders whose status moved to shipped. */
+  shipped: number;
+  /** Tracking was stored, and a kit component blocked the status change. */
+  shippedHeld: number;
 };
 
 export type OrderPullSummary = {
@@ -92,6 +109,10 @@ type OrderStore = {
     customer: { id: string },
   ): Promise<{ created: number; updated: number; linked: number }>;
   syncLabelFees?(fees: ReadonlyMap<string, number>): Promise<void>;
+  syncShipments?(
+    groups: readonly { ebayOrderId: string; fulfillments: ParsedEbayShipment[] }[],
+    pulledAt: string,
+  ): Promise<{ shipments: number; shipped: number; shippedHeld: number }>;
   setWatermark(iso: string): Promise<void>;
 };
 
@@ -195,6 +216,7 @@ export async function runOrderPull(input: {
   pageUrl: (filter: string, offset: number) => string;
   allowNext: (url: string) => boolean;
   loadLabelFees?: () => Promise<Map<string, number> | null>;
+  fetchFulfillments?: (orderId: string) => Promise<unknown>;
   store: OrderStore;
 }): Promise<OrderPullResult & { rlogid: string | null; requestId: string | null }> {
   let labelFees: Map<string, number> | null = null;
@@ -210,6 +232,9 @@ export async function runOrderPull(input: {
   let updated = 0;
   let linked = 0;
   let skipped = 0;
+  let shipments = 0;
+  let shipped = 0;
+  let shippedHeld = 0;
   let truncated = false;
   let rlogid: string | null = null;
   let requestId: string | null = null;
@@ -258,6 +283,12 @@ export async function runOrderPull(input: {
     updated += applied.updated;
     linked += applied.linked;
     skipped += actions.filter((action) => action.kind === "skip").length;
+    if (input.fetchFulfillments && input.store.syncShipments) {
+      const synced = await input.store.syncShipments(await loadShipmentGroups(orders, input.fetchFulfillments), input.now.toISOString());
+      shipments += synced.shipments;
+      shipped += synced.shipped;
+      shippedHeld += synced.shippedHeld;
+    }
   }
 
   if (truncated) {
@@ -275,9 +306,58 @@ export async function runOrderPull(input: {
     fetchedAt: input.now.toISOString(),
     history: windows.some((window) => window.history),
     labels: labelFees ? positiveLabelFees(labelFees).size : null,
+    shipments,
+    shipped,
+    shippedHeld,
     rlogid,
     requestId,
   };
+}
+
+async function mapPool<T>(items: readonly T[], limit: number, run: (item: T) => Promise<void>): Promise<void> {
+  if (items.length === 0) return;
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      await run(items[index]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+async function loadShipmentGroups(
+  orders: readonly { ebayOrderId: string; fulfillmentStatus?: string | null; hasFulfillmentHrefs?: boolean; lineItemShipped?: boolean }[],
+  fetchFulfillments: (orderId: string) => Promise<unknown>,
+): Promise<{ ebayOrderId: string; fulfillments: ParsedEbayShipment[] }[]> {
+  const byId = new Map<string, ParsedEbayShipment[]>();
+  await mapPool(
+    orders.filter(orderNeedsShippingFulfillment),
+    4,
+    async (order) => {
+      byId.set(order.ebayOrderId, parseShippingFulfillments(await fetchFulfillments(order.ebayOrderId)));
+    },
+  );
+  return orders.map((order) => ({
+    ebayOrderId: order.ebayOrderId,
+    fulfillments: byId.get(order.ebayOrderId) ?? [],
+  }));
+}
+
+function datePrefix(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+  return match ? match[1] : null;
+}
+
+function shipmentNote(fulfillments: readonly ParsedEbayShipment[]): string {
+  const tracked = fulfillments.filter((row) => trackingKey(row.trackingNumber) !== "");
+  const first = tracked[0];
+  if (!first) return "Tracking pulled from eBay.";
+  const carrier = first.carrier ? `${first.carrier} ` : "";
+  const extra = tracked.length > 1 ? ` and ${tracked.length - 1} more` : "";
+  return `Tracking pulled from eBay: ${carrier}${first.trackingNumber}${extra}`.slice(0, 300);
 }
 
 /** A refresh keeps payment terms and Incoterms that are already set. */
@@ -633,11 +713,174 @@ function supabaseStore(
         }
       }
     },
+    async syncShipments(groups, pulledAt) {
+      return syncEbayShipments(admin, groups, pulledAt);
+    },
     async setWatermark(iso) {
       const { error } = await admin.from("ebay_order_seed").update({ orders_watermark: iso }).eq("id", 1);
       if (error) throw new Error(error.message);
     },
   };
+}
+
+async function syncEbayShipments(
+  admin: SupabaseClient,
+  groups: readonly { ebayOrderId: string; fulfillments: ParsedEbayShipment[] }[],
+  pulledAt: string,
+): Promise<{ shipments: number; shipped: number; shippedHeld: number }> {
+  let shipments = 0;
+  let shipped = 0;
+  let shippedHeld = 0;
+  for (const chunk of chunks(groups, 100)) {
+    if (chunk.length === 0) continue;
+    const ids = [...new Set(chunk.map((group) => group.ebayOrderId))];
+    const { data, error } = await admin.from("sales_orders").select("id, status, ship_date, ebay_order_id").in("ebay_order_id", ids);
+    if (error) throw new Error(error.message);
+    const orders = new Map<string, { id: string; status: string; shipDate: string | null }>();
+    for (const row of data ?? []) {
+      const ebayOrderId = row.ebay_order_id == null ? "" : String(row.ebay_order_id);
+      if (!ebayOrderId) continue;
+      orders.set(ebayOrderId, {
+        id: String(row.id),
+        status: String(row.status ?? ""),
+        shipDate: datePrefix(row.ship_date),
+      });
+    }
+    const orderIds = [...orders.values()].map((order) => order.id);
+    const stored = new Map<string, StoredShipment[]>();
+    for (const id of orderIds) stored.set(id, []);
+    for (const idChunk of chunks(orderIds, 100)) {
+      if (idChunk.length === 0) continue;
+      const rows = await admin.from("so_shipments").select("id, sales_order_id, awb, carrier, ship_date, ebay_tracking_pushed_at").in("sales_order_id", idChunk);
+      if (rows.error) throw new Error(rows.error.message);
+      for (const row of rows.data ?? []) {
+        const salesOrderId = String(row.sales_order_id);
+        const list = stored.get(salesOrderId) ?? [];
+        list.push({
+          id: String(row.id),
+          awb: row.awb == null ? null : String(row.awb),
+          carrier: row.carrier == null ? null : String(row.carrier),
+          shipDate: datePrefix(row.ship_date),
+          ebayTrackingPushedAt: row.ebay_tracking_pushed_at == null ? null : String(row.ebay_tracking_pushed_at),
+        });
+        stored.set(salesOrderId, list);
+      }
+    }
+    for (const group of chunk) {
+      const order = orders.get(group.ebayOrderId);
+      if (!order) continue;
+      const existing = stored.get(order.id) ?? [];
+      const writes = planEbayShipmentWrites(existing, group.fulfillments, pulledAt);
+      let inserted = 0;
+      for (const write of writes) {
+        if (write.kind === "insert") {
+          const saved = await admin
+            .from("so_shipments")
+            .insert({
+              sales_order_id: order.id,
+              carrier: write.carrier,
+              awb: write.trackingNumber,
+              ship_date: write.shipDate,
+              ebay_tracking_pushed_at: write.ebayTrackingPushedAt,
+              operator_id: null,
+              operator_label: EBAY_PULL_OPERATOR_LABEL,
+            })
+            .select("id")
+            .single();
+          if (saved.error?.code === "23505") continue;
+          if (saved.error || !saved.data) throw new Error("eBay tracking could not be saved.");
+          existing.push({
+            id: String(saved.data.id),
+            awb: write.trackingNumber,
+            carrier: write.carrier,
+            shipDate: write.shipDate,
+            ebayTrackingPushedAt: write.ebayTrackingPushedAt,
+          });
+          inserted += 1;
+          continue;
+        }
+        const patch: { carrier?: string; ship_date?: string; ebay_tracking_pushed_at?: string } = {};
+        if (write.carrier) patch.carrier = write.carrier;
+        if (write.shipDate) patch.ship_date = write.shipDate;
+        if (write.ebayTrackingPushedAt) patch.ebay_tracking_pushed_at = write.ebayTrackingPushedAt;
+        const saved = await admin.from("so_shipments").update(patch).eq("id", write.id);
+        if (saved.error) throw new Error("eBay tracking could not be saved.");
+        const row = existing.find((item) => item.id === write.id);
+        if (row) {
+          if (write.carrier) row.carrier = write.carrier;
+          if (write.shipDate) row.shipDate = write.shipDate;
+          if (write.ebayTrackingPushedAt) row.ebayTrackingPushedAt = write.ebayTrackingPushedAt;
+        }
+      }
+      stored.set(order.id, existing);
+      shipments += inserted;
+      const wantedDate = ebayOrderShipDate(
+        order.shipDate,
+        [...existing.map((row) => row.shipDate), ...group.fulfillments.map((row) => row.shipDate)],
+      );
+      if (wantedDate) {
+        const dated = await admin
+          .from("sales_orders")
+          .update({ ship_date: wantedDate, updated_at: new Date().toISOString() })
+          .eq("id", order.id)
+          .is("ship_date", null)
+          .select("id");
+        if (dated.error) throw new Error("A ship date could not be saved.");
+        if ((dated.data?.length ?? 0) > 0) order.shipDate = wantedDate;
+      }
+      const hasTracking = existing.some((row) => row.awb != null && trackingKey(row.awb) !== "");
+      const next = ebayStatusAfterShipments({ status: order.status, shipDate: order.shipDate, hasTracking });
+      if (!next) {
+        if (inserted > 0) await insertEvent(admin, order.id, "shipment", null, null, shipmentNote(group.fulfillments));
+        continue;
+      }
+      const moved = await writeShippedStatus(admin, order.id, order.status, shipmentNote(group.fulfillments));
+      if (moved === "shipped") {
+        order.status = "shipped";
+        shipped += 1;
+      } else {
+        if (moved === "held") shippedHeld += 1;
+        if (inserted > 0) await insertEvent(admin, order.id, "shipment", null, null, shipmentNote(group.fulfillments));
+      }
+    }
+  }
+  return { shipments, shipped, shippedHeld };
+}
+
+async function writeShippedStatus(
+  admin: SupabaseClient,
+  id: string,
+  fromStatus: string,
+  note: string,
+): Promise<"shipped" | "held" | "unchanged"> {
+  const updated = await admin
+    .from("sales_orders")
+    .update({ status: "shipped", updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .in("status", [...EBAY_SHIPPABLE_STATUSES])
+    .select("id");
+  if (updated.error) {
+    if (/physical part|generic component/i.test(updated.error.message ?? "")) return "held";
+    throw new Error("A sales order could not be marked shipped.");
+  }
+  if (!updated.data?.length) return "unchanged";
+  await insertEvent(admin, id, "shipped", fromStatus, "shipped", note);
+  return "shipped";
+}
+
+/** A draft that already has a ship date and tracking must not stay approved after it receives an SO number. */
+async function markEbayOrderShippedIfTracked(admin: SupabaseClient, id: string): Promise<boolean> {
+  const order = await admin.from("sales_orders").select("status, ship_date").eq("id", id).maybeSingle();
+  if (order.error) throw new Error(order.error.message);
+  if (!order.data) return false;
+  const shipments = await admin.from("so_shipments").select("awb").eq("sales_order_id", id);
+  if (shipments.error) throw new Error(shipments.error.message);
+  const hasTracking = (shipments.data ?? []).some((row) => row.awb != null && trackingKey(String(row.awb)) !== "");
+  const status = String(order.data.status ?? "");
+  const next = ebayStatusAfterShipments({ status, shipDate: datePrefix(order.data.ship_date), hasTracking });
+  if (!next) return false;
+  const moved = await writeShippedStatus(admin, id, status, "Tracking pulled from eBay.");
+  return moved === "shipped";
 }
 
 const LABEL_PAGE_SIZE = 200;
@@ -790,12 +1033,22 @@ export async function orderPullSummary(): Promise<OrderPullSummary> {
   };
 }
 
-export function orderPullMessage(result: Pick<OrderPullResult, "created" | "updated" | "linked" | "labels">): string {
+export function orderPullMessage(
+  result: Pick<OrderPullResult, "created" | "updated" | "linked" | "labels"> & Partial<Pick<OrderPullResult, "shipments" | "shipped" | "shippedHeld">>,
+): string {
   const labels =
     result.labels == null
       ? "Shipping label fees were not read. Reconnect eBay, then pull orders again."
       : `Found shipping label fees for ${result.labels} ${result.labels === 1 ? "order" : "orders"}.`;
-  return `Created ${result.created} draft sales orders. Updated ${result.updated}. Linked ${result.linked}. ${labels}`;
+  const parts = [`Created ${result.created} draft sales orders. Updated ${result.updated}. Linked ${result.linked}. ${labels}`];
+  if (result.shipments) parts.push(`Saved ${result.shipments} tracking ${result.shipments === 1 ? "number" : "numbers"}.`);
+  if (result.shipped) parts.push(`Marked ${result.shipped} ${result.shipped === 1 ? "order" : "orders"} shipped.`);
+  if (result.shippedHeld) {
+    parts.push(
+      `Left ${result.shippedHeld} ${result.shippedHeld === 1 ? "order" : "orders"} unchanged because a kit component is still generic.`,
+    );
+  }
+  return parts.join(" ");
 }
 
 export async function pullEbayOrders(): Promise<OrderPullResult> {
@@ -853,6 +1106,25 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
             return { ok: true, body: response.body };
           },
         }),
+      fetchFulfillments: async (orderId) => {
+        const response = await ebayRead<unknown>({
+          url: shippingFulfillmentsUrl(connection.environment, orderId),
+          token,
+          marketplace: true,
+          refresh: async () => {
+            token = (await forceRefreshAccessToken()).access_token;
+            return token;
+          },
+        });
+        if (!response.ok) {
+          if (response.status === 404) return { fulfillments: [] };
+          if (response.status === 403) {
+            throw new Error("eBay has not granted order access. Reconnect eBay, then pull orders again.");
+          }
+          throw new Error(`eBay tracking could not be read. Order drafts were still saved. Pull orders again to finish tracking. ${response.message}`);
+        }
+        return response.body;
+      },
       store: supabaseStore(admin, ebayDefaults),
     });
     await writeEbayLog({
@@ -866,6 +1138,9 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
         linked: result.linked,
         skipped: result.skipped,
         labels: result.labels,
+        shipments: result.shipments,
+        shipped: result.shipped,
+        shippedHeld: result.shippedHeld,
         history: result.history ? 1 : 0,
         priceRevision: ORDER_PRICE_REVISION,
         rlogid: result.rlogid,
@@ -880,6 +1155,9 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
       fetchedAt: result.fetchedAt,
       history: result.history,
       labels: result.labels,
+      shipments: result.shipments,
+      shipped: result.shipped,
+      shippedHeld: result.shippedHeld,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "eBay order pull failed.";
@@ -941,7 +1219,8 @@ export async function applyLegacyLogSeed(csv: string): Promise<SeedPlan & { mess
     }
     await insertEvent(admin, update.id, "linked", null, null);
   }
-  const assigned = await assignLegacyNumbers(admin, plan.assignments);
+  const numbered = await assignLegacyNumbers(admin, plan.assignments);
+  const assigned = numbered.assigned;
   await advanceSoCounter(admin, plan.assignments.map((row) => row.soNumber));
   const current = await admin.from("ebay_order_seed").select("orders_watermark").eq("id", 1).maybeSingle();
   if (current.error) throw new Error(current.error.message);
@@ -960,13 +1239,16 @@ export async function applyLegacyLogSeed(csv: string): Promise<SeedPlan & { mess
     throw new Error(saved.error.message);
   }
   const conflicts = plan.conflicts + (plan.assigned - assigned);
-  const message = `Linked ${plan.linked} existing sales ${plan.linked === 1 ? "order" : "orders"}. Assigned ${assigned} legacy SO ${assigned === 1 ? "number" : "numbers"} to drafts. ${plan.missing} eBay ${plan.missing === 1 ? "order had" : "orders had"} no sales order to update. ${conflicts} ${conflicts === 1 ? "conflict was" : "conflicts were"} left unchanged.`;
+  const shippedNote = numbered.shipped
+    ? ` Marked ${numbered.shipped} ${numbered.shipped === 1 ? "order" : "orders"} shipped.`
+    : "";
+  const message = `Linked ${plan.linked} existing sales ${plan.linked === 1 ? "order" : "orders"}. Assigned ${assigned} legacy SO ${assigned === 1 ? "number" : "numbers"} to drafts. ${plan.missing} eBay ${plan.missing === 1 ? "order had" : "orders had"} no sales order to update. ${conflicts} ${conflicts === 1 ? "conflict was" : "conflicts were"} left unchanged.${shippedNote}`;
   await writeEbayLog({
     entity: "orders",
     direction: "read",
     status: "ok",
     message,
-    detail: { linked: plan.linked, assigned, skipped: plan.skipped, conflicts, missing: plan.missing },
+    detail: { linked: plan.linked, assigned, shipped: numbered.shipped, skipped: plan.skipped, conflicts, missing: plan.missing },
   });
   return { ...plan, assigned, conflicts, message };
 }
@@ -1018,16 +1300,20 @@ export async function backfillLegacySoNumbers(): Promise<{ assigned: number; con
     existing,
     drafts,
   );
-  const assigned = await assignLegacyNumbers(admin, plan.assignments);
+  const numbered = await assignLegacyNumbers(admin, plan.assignments);
+  const assigned = numbered.assigned;
   await advanceSoCounter(admin, plan.assignments.map((row) => row.soNumber));
   const conflicts = plan.conflicts + (plan.assigned - assigned);
-  const message = `Assigned ${assigned} legacy SO ${assigned === 1 ? "number" : "numbers"} from the stored log map. ${conflicts} ${conflicts === 1 ? "conflict was" : "conflicts were"} left unchanged.`;
+  const shippedNote = numbered.shipped
+    ? ` Marked ${numbered.shipped} ${numbered.shipped === 1 ? "order" : "orders"} shipped.`
+    : "";
+  const message = `Assigned ${assigned} legacy SO ${assigned === 1 ? "number" : "numbers"} from the stored log map. ${conflicts} ${conflicts === 1 ? "conflict was" : "conflicts were"} left unchanged.${shippedNote}`;
   await writeEbayLog({
     entity: "orders",
     direction: "read",
     status: "ok",
     message,
-    detail: { assigned, conflicts, missing: plan.missing },
+    detail: { assigned, shipped: numbered.shipped, conflicts, missing: plan.missing },
   });
   return { assigned, conflicts, message };
 }
@@ -1086,8 +1372,12 @@ async function replaceLegacyMap(admin: SupabaseClient, map: LegacyMapEntry[]): P
   }
 }
 
-async function assignLegacyNumbers(admin: SupabaseClient, assignments: SoNumberAssignment[]): Promise<number> {
+async function assignLegacyNumbers(
+  admin: SupabaseClient,
+  assignments: SoNumberAssignment[],
+): Promise<{ assigned: number; shipped: number }> {
   let assigned = 0;
+  let shipped = 0;
   for (const assignment of assignments) {
     const now = new Date().toISOString();
     const updated = await admin
@@ -1110,9 +1400,10 @@ async function assignLegacyNumbers(admin: SupabaseClient, assignments: SoNumberA
         .is("ebay_sales_record_ref", null);
     }
     await insertEvent(admin, assignment.id, "approved", "draft", "approved", `SO${assignment.soNumber}`);
+    if (await markEbayOrderShippedIfTracked(admin, assignment.id)) shipped += 1;
     assigned += 1;
   }
-  return assigned;
+  return { assigned, shipped };
 }
 
 async function advanceSoCounter(admin: SupabaseClient, numbers: number[]): Promise<void> {

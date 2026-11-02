@@ -44,6 +44,10 @@ export function tradingUrl(environment: EbayEnvironment): string {
   return `${apiBase(environment)}/ws/api.dll`;
 }
 
+export function shippingFulfillmentsUrl(environment: EbayEnvironment, orderId: string): string {
+  return `${apiBase(environment)}/sell/fulfillment/v1/order/${encodeURIComponent(orderId)}/shipping_fulfillment`;
+}
+
 export function ordersUrl(environment: EbayEnvironment, filter: string, limit = 200, offset = 0): string {
   const url = new URL(`${apiBase(environment)}/sell/fulfillment/v1/order`);
   url.searchParams.set("filter", filter);

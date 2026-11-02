@@ -1,5 +1,6 @@
 import { ebayIncotermsFromSetting, ebayPaymentTermsFromSetting } from "@/lib/ebayOrderDefaults";
 import { ebaySalesRepFromSetting } from "@/lib/ebaySalesRep";
+import { readOrderFulfillmentSignal, type OrderFulfillmentSignal } from "@/lib/ebay/fulfillments";
 import { allocationQtyForLine, assignListingSku } from "@/lib/ebay/packs";
 import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
 
@@ -108,6 +109,10 @@ export type ParsedEbayOrder = {
    */
   labelFee?: number | null;
   lines: ParsedEbayLine[];
+  /** Present when the order payload was parsed. A hand-built order can omit it. */
+  fulfillmentStatus?: OrderFulfillmentSignal["fulfillmentStatus"];
+  hasFulfillmentHrefs?: boolean;
+  lineItemShipped?: boolean;
 };
 
 /**
@@ -591,6 +596,7 @@ export function parseFulfillmentOrders(body: unknown): ParsedEbayOrder[] {
       earnings: earnings.amount,
       shippingAmount,
       lines,
+      ...readOrderFulfillmentSignal(order),
     });
   }
   return out;
