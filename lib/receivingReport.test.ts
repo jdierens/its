@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
+  RECEIPT_SUMMARY_DEFAULT_SORT,
   receiptReportFileName,
   receiptsDetailCsv,
   formatPutawayQty,
+  sortReceiptSummary,
   summarizeReceipts,
   summaryCsv,
   summaryItemLabel,
+  summaryPutawaySortLabel,
+  toggleReceiptSummarySort,
   type ReceiptSummaryRow,
 } from "@/lib/receivingReport";
 import type { ReceivingEntry } from "@/lib/receivingSettings";
@@ -146,5 +151,107 @@ describe("receipt csv", () => {
   it("names the file from the project", () => {
     assert.equal(receiptReportFileName("summary", " Rack 4 / West ", "2026-10-26"), "receipt-summary-rack-4-west-2026-10-26.csv");
     assert.equal(receiptReportFileName("receipts", "  ", "2026-10-26"), "receipts-no-project-2026-10-26.csv");
+  });
+});
+
+describe("receipt summary sort", () => {
+  const rows: ReceiptSummaryRow[] = [
+    { sku: "200", name: "Zebra", search: "", qty: 2, lines: 1, locations: "(x2)20000-B", pending: false },
+    { sku: "20", name: "apple", search: "", qty: 10, lines: 3, locations: "(x99)10002-C | (x1)10010-C", pending: false },
+    { sku: "100", name: "Drive", search: "", qty: 4, lines: 2, locations: "(x1)10037-B", pending: false },
+    { sku: "", name: "", search: "samsung 860", qty: 8, lines: 2, locations: "(x8)10082-C", pending: true },
+    { sku: "", name: "", search: "", qty: 1, lines: 1, locations: "", pending: true },
+  ];
+
+  function labels(sorted: readonly ReceiptSummaryRow[]): string[] {
+    return sorted.map((row) => summaryItemLabel(row) || row.sku || "(blank)");
+  }
+
+  it("opens on item name, linked SKUs first, which is the order summarizeReceipts already returns", () => {
+    const summarized = summarizeReceipts([
+      entry({ id: "1", itemId: "b", sku: "200", itemName: "Zebra", qty: 2 }),
+      entry({ id: "2", itemId: "a", sku: "100", itemName: "apple", qty: 4 }),
+      entry({ id: "3", qty: 3, searchQuery: "samsung 860" }),
+      entry({ id: "4", qty: 1, searchQuery: "  " }),
+    ]);
+    assert.deepEqual(RECEIPT_SUMMARY_DEFAULT_SORT, { key: "item", dir: "asc" });
+    assert.deepEqual(sortReceiptSummary(summarized, RECEIPT_SUMMARY_DEFAULT_SORT), summarized);
+    assert.deepEqual(
+      labels(sortReceiptSummary([...summarized].reverse(), RECEIPT_SUMMARY_DEFAULT_SORT)),
+      labels(summarized),
+    );
+  });
+
+  it("toggles direction and starts a new column ascending", () => {
+    assert.deepEqual(toggleReceiptSummarySort(RECEIPT_SUMMARY_DEFAULT_SORT, "item"), { key: "item", dir: "desc" });
+    assert.deepEqual(toggleReceiptSummarySort({ key: "item", dir: "desc" }, "item"), { key: "item", dir: "asc" });
+    assert.deepEqual(toggleReceiptSummarySort(RECEIPT_SUMMARY_DEFAULT_SORT, "qty"), { key: "qty", dir: "asc" });
+  });
+
+  it("sorts every summary column", () => {
+    assert.deepEqual(labels(sortReceiptSummary(rows, { key: "item", dir: "asc" })), ["apple", "Drive", "Zebra", "samsung 860", "(blank)"]);
+    assert.deepEqual(labels(sortReceiptSummary(rows, { key: "item", dir: "desc" })), ["(blank)", "samsung 860", "Zebra", "Drive", "apple"]);
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "sku", dir: "asc" }).map((row) => row.sku || summaryItemLabel(row) || "(blank)"),
+      ["20", "100", "200", "samsung 860", "(blank)"],
+    );
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "sku", dir: "desc" }).map((row) => row.sku || summaryItemLabel(row) || "(blank)"),
+      ["200", "100", "20", "samsung 860", "(blank)"],
+    );
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "qty", dir: "asc" }).map((row) => row.qty),
+      [1, 2, 4, 8, 10],
+    );
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "qty", dir: "desc" }).map((row) => row.qty),
+      [10, 8, 4, 2, 1],
+    );
+    assert.deepEqual(summaryPutawaySortLabel("(x99)10002-C | (x1)10010-C"), "10002-C | 10010-C");
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "putaway", dir: "asc" }).map((row) => summaryItemLabel(row) || "(blank)"),
+      ["apple", "Drive", "samsung 860", "Zebra", "(blank)"],
+    );
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "putaway", dir: "desc" }).map((row) => summaryItemLabel(row) || "(blank)"),
+      ["Zebra", "samsung 860", "Drive", "apple", "(blank)"],
+    );
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "lines", dir: "asc" }).map((row) => summaryItemLabel(row) || "(blank)"),
+      ["Zebra", "(blank)", "Drive", "samsung 860", "apple"],
+    );
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "status", dir: "asc" }).map((row) => row.pending),
+      [false, false, false, true, true],
+    );
+    assert.deepEqual(
+      sortReceiptSummary(rows, { key: "status", dir: "desc" }).map((row) => row.pending),
+      [true, true, false, false, false],
+    );
+  });
+
+  it("breaks an item-name tie by SKU and otherwise keeps arrival order", () => {
+    const tied: ReceiptSummaryRow[] = [
+      { sku: "2", name: "Same", search: "", qty: 1, lines: 1, locations: "(x1)10002-C", pending: false },
+      { sku: "1", name: "Same", search: "", qty: 1, lines: 1, locations: "(x4)10002-C", pending: false },
+    ];
+    assert.deepEqual(
+      sortReceiptSummary(tied, { key: "item", dir: "asc" }).map((row) => row.sku),
+      ["1", "2"],
+    );
+    assert.deepEqual(
+      sortReceiptSummary(tied, { key: "qty", dir: "desc" }).map((row) => row.sku),
+      ["2", "1"],
+    );
+  });
+
+  it("sorts the summary from the same heading control as the other tables", () => {
+    const page = readFileSync(new URL("../components/ReceiptReports.tsx", import.meta.url), "utf8");
+    const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    assert.match(page, /aria-sort=/);
+    assert.match(page, /receive-col-sort/);
+    assert.match(page, /sortReceiptSummary/);
+    assert.match(page, /RECEIPT_SUMMARY_DEFAULT_SORT/);
+    assert.match(css, /\.receive-col-sort/);
   });
 });
