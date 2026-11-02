@@ -20,6 +20,12 @@ import {
   receivingVendorStorageKey,
   writeStoredVendor,
 } from "@/lib/consignedReceive";
+import {
+  consignmentFollowsReceipt,
+  projectReceiptApplyDecision,
+  projectReceiptApplySummary,
+} from "@/lib/projectReceiptApply";
+import { receiptListRefreshDelay } from "@/lib/receiptExport";
 import { errorText } from "@/lib/errors";
 import { descriptionSnippet } from "@/lib/labelLookup";
 import {
@@ -31,6 +37,8 @@ import { fetchBinLabelTemplates, fetchLabelTemplate } from "@/lib/labelActions";
 import type { BinLabelTemplates, LabelTemplateId } from "@/lib/labelTemplates";
 import { emptyBinLabelTemplates, qrLabelPayload } from "@/lib/labelTemplates";
 import {
+  applyReceiptOwner,
+  countOtherProjectReceipts,
   createReceivingBin,
   fetchBinDetail,
   fetchReceivingBinNumber,
@@ -108,6 +116,12 @@ type BinPrompt =
       message: string;
       resumeSave: boolean;
     };
+
+type OwnerAsk = {
+  field: "vendor" | "consignment";
+  summary: string;
+  apply: () => Promise<void>;
+};
 
 function ReceiptPager({
   page,
@@ -203,6 +217,13 @@ export function ReceivingPage() {
   const [originQty, setOriginQty] = useState("");
   const [vendors, setVendors] = useState<ReceivingVendor[]>([]);
   const [vendorId, setVendorId] = useState("");
+  const [consigned, setConsigned] = useState(true);
+  const [ownerAsk, setOwnerAsk] = useState<OwnerAsk | null>(null);
+  const ownerAskRef = useRef<OwnerAsk | null>(null);
+  const ownerQueue = useRef<OwnerAsk[]>([]);
+  const vendorTicket = useRef(0);
+  const consignmentTicket = useRef(0);
+  const projectDelayKey = useRef<string | null>(null);
   const [poQuery, setPoQuery] = useState("");
   const [poHits, setPoHits] = useState<ReceivingPurchaseOrder[]>([]);
   const [purchaseOrderId, setPurchaseOrderId] = useState<string | null>(null);
@@ -418,6 +439,8 @@ export function ReceivingPage() {
     }
     listedProject.current = project;
     let cancelled = false;
+    const projectChanged = projectDelayKey.current !== project;
+    projectDelayKey.current = project;
     const handle = window.setTimeout(() => {
       setEntriesLoading(true);
       void listReceivingEntries(project, receivingPageOffset(entryPage))
@@ -437,7 +460,7 @@ export function ReceivingPage() {
         .finally(() => {
           if (!cancelled) setEntriesLoading(false);
         });
-    }, 300);
+    }, receiptListRefreshDelay(projectChanged));
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
@@ -615,16 +638,16 @@ export function ReceivingPage() {
   }
 
   async function lookupBin(raw: string, resumeSave: boolean): Promise<string | null> {
-    const preliminary = receivingBinDecision(raw, null);
-    if (preliminary.action === "empty") return null;
-    if (preliminary.action === "invalid") {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const parsed = parseReceivingBinCode(trimmed);
+    if (!parsed) {
       setConfirmed(null);
       setBinPrompt(null);
-      setError(preliminary.message);
+      setError("A bin code is five digits, a hyphen, and B, C, or P.");
       return null;
     }
-    const parsed = parseReceivingBinCode(raw);
-    if (parsed && confirmed?.reference === parsed.reference && binCanReceive(confirmed)) {
+    if (confirmed?.reference === parsed.reference && binCanReceive(confirmed)) {
       setBinPrompt(null);
       return confirmed.reference;
     }
@@ -633,7 +656,7 @@ export function ReceivingPage() {
     try {
       const detail = parsed ? await fetchBinDetail(parsed.reference) : null;
       let owner: { reference: string; type: BinType } | null = null;
-      if (parsed && !detail) {
+      if (!parsed.special && !detail) {
         const looked = await fetchReceivingBinNumber(parsed.number);
         if (!looked.ok) {
           setConfirmed(null);
@@ -902,6 +925,15 @@ export function ReceivingPage() {
         vendorId: owner.vendorId,
         purchaseOrderId: owner.purchaseOrderId,
       });
+      if (!consignmentFollowsReceipt(consigned, owner.purchaseOrderId)) {
+        if (!result.eventId) throw new Error("The receipt was saved, but its consignment flag could not be stored.");
+        await applyReceiptOwner({
+          eventId: result.eventId,
+          field: "consignment",
+          consigned,
+          applyToProject: false,
+        });
+      }
       const printedOn = todayLabel(new Date());
       setReceipt({ result, item: lineItem, search, qty: parsed.qty, printedOn, qtyWarning });
       typed.current = "";
@@ -953,6 +985,7 @@ export function ReceivingPage() {
       setEntries(page.rows);
       setEntryTotal(page.total);
       setEntryPage(1);
+      setListStamp((current) => current + 1);
       void recentReceivingProjects()
         .then((recent) => {
           setRecentProjects((current) =>
@@ -1062,13 +1095,99 @@ export function ReceivingPage() {
   const labelSheet = previewBinLabelSheet(shownBinType, printingItem);
   const labelPage = binLabelAtPageMm(labelSheet);
 
+  function enqueueOwnerAsk(ask: OwnerAsk) {
+    const current = ownerAskRef.current;
+    if (current?.field === ask.field) {
+      ownerAskRef.current = ask;
+      setOwnerAsk(ask);
+      return;
+    }
+    const queued = ownerQueue.current.findIndex((item) => item.field === ask.field);
+    if (queued >= 0) {
+      ownerQueue.current[queued] = ask;
+      return;
+    }
+    if (current) {
+      ownerQueue.current.push(ask);
+      return;
+    }
+    ownerAskRef.current = ask;
+    setOwnerAsk(ask);
+  }
+
+  function dismissOwnerAsk() {
+    const next = ownerQueue.current.shift() ?? null;
+    ownerAskRef.current = next;
+    setOwnerAsk(next);
+  }
+
+  async function acceptOwnerAsk() {
+    const ask = ownerAskRef.current;
+    if (!ask || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await ask.apply();
+      setListStamp((current) => current + 1);
+      dismissOwnerAsk();
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function assignVendor(nextId: string, name?: string) {
+    if (nextId === vendorId) return;
+    setVendorId(nextId);
+    const vendor = nextId.trim();
+    const projectName = project.trim();
+    if (!vendor || !projectName) return;
+    const ticket = ++vendorTicket.current;
+    try {
+      const others = await countOtherProjectReceipts(projectName);
+      if (ticket !== vendorTicket.current) return;
+      if (projectReceiptApplyDecision({ project: projectName, otherLineCount: others, changed: true }) !== "prompt") return;
+      const vendorName = name || vendorOptions.find((row) => row.id === vendor)?.name || "this vendor";
+      enqueueOwnerAsk({
+        field: "vendor",
+        summary: projectReceiptApplySummary({ field: "vendor", project: projectName, vendorName }),
+        apply: () => applyReceiptOwner({ project: projectName, field: "vendor", vendorId: vendor, applyToProject: true }),
+      });
+    } catch (cause) {
+      if (ticket === vendorTicket.current) setError(errorText(cause));
+    }
+  }
+
+  async function assignConsigned(next: boolean) {
+    if (next === consigned) return;
+    setConsigned(next);
+    const projectName = project.trim();
+    if (!projectName) return;
+    const ticket = ++consignmentTicket.current;
+    try {
+      const others = await countOtherProjectReceipts(projectName);
+      if (ticket !== consignmentTicket.current) return;
+      if (projectReceiptApplyDecision({ project: projectName, otherLineCount: others, changed: true }) !== "prompt") return;
+      enqueueOwnerAsk({
+        field: "consignment",
+        summary: projectReceiptApplySummary({ field: "consignment", project: projectName, consigned: next }),
+        apply: () =>
+          applyReceiptOwner({ project: projectName, field: "consignment", consigned: next, applyToProject: true }),
+      });
+    } catch (cause) {
+      if (ticket === consignmentTicket.current) setError(errorText(cause));
+    }
+  }
+
   function choosePurchaseOrder(hit: ReceivingPurchaseOrder) {
     setPurchaseOrderId(hit.id);
     setPurchaseOrderNumber(hit.number);
     setPoQuery(hit.number);
     setPoVendorName(hit.vendorName);
-    setVendorId(hit.vendorId);
     setPoHits([]);
+    void assignVendor(hit.vendorId, hit.vendorName);
+    void assignConsigned(false);
   }
 
   function clearPurchaseOrder() {
@@ -1076,6 +1195,7 @@ export function ReceivingPage() {
     setPurchaseOrderNumber("");
     setPoQuery("");
     setPoVendorName("");
+    void assignConsigned(true);
   }
 
   return (
@@ -1173,7 +1293,7 @@ export function ReceivingPage() {
                 value={vendorId}
                 required={!purchaseOrderId}
                 disabled={busy || Boolean(purchaseOrderId)}
-                onChange={(event) => setVendorId(event.target.value)}
+                onChange={(event) => void assignVendor(event.target.value)}
               >
                 <option value="">Choose a vendor</option>
                 {vendorOptions.map((vendor) => (
@@ -1183,16 +1303,43 @@ export function ReceivingPage() {
                 ))}
               </select>
             </label>
-            <p className="receive-owner-note">
-              {purchaseOrderId
-                ? `Vendor comes from PO ${purchaseOrderNumber}.`
-                : "Consigned. This receipt stays with that vendor."}
-            </p>
+            <div className="receive-owner-note">
+              <label className="receive-consigned" htmlFor="receive-consigned">
+                <input
+                  id="receive-consigned"
+                  type="checkbox"
+                  checked={consigned}
+                  disabled={busy}
+                  onChange={(event) => void assignConsigned(event.target.checked)}
+                />
+                Consigned
+              </label>
+              <p>
+                {purchaseOrderId
+                  ? `Vendor comes from PO ${purchaseOrderNumber}.`
+                  : consigned
+                    ? "Consigned. This receipt stays with that vendor."
+                    : "Not consigned. This receipt is owned."}
+              </p>
+            </div>
           </div>
           <p className="hint">
             A bin that already has stock keeps the cycle it opened with. Each saved line stores this header, including the receiving date.
-            A receipt with no purchase order is consigned and requires a vendor.
+            A receipt with no purchase order requires a vendor. Consigned is its own flag.
           </p>
+          {ownerAsk ? (
+            <div className="receive-bin-ask" role="region" aria-label="Apply to project receipts">
+              <p>{ownerAsk.summary}</p>
+              <div className="receive-actions">
+                <button type="button" disabled={busy} onClick={() => void acceptOwnerAsk()}>
+                  Apply to all
+                </button>
+                <button type="button" className="secondary" disabled={busy} onClick={dismissOwnerAsk}>
+                  This line only
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <ReceivingImport
@@ -1750,6 +1897,7 @@ export function ReceivingPage() {
                         key={entry.id}
                         entry={entry}
                         initials={editorInitials}
+                        vendors={vendorOptions}
                         onSaved={() => setListStamp((current) => current + 1)}
                       />
                     ))}
@@ -1762,6 +1910,7 @@ export function ReceivingPage() {
                     <ReceiptCard
                       entry={entry}
                       initials={editorInitials}
+                      vendors={vendorOptions}
                       onSaved={() => setListStamp((current) => current + 1)}
                     />
                   </li>

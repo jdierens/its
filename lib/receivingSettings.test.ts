@@ -160,6 +160,7 @@ describe("recent receiving rows", () => {
       binReference: "",
       searchQuery: null,
       vendorName: null,
+      vendorId: null,
       ownership: null,
       poNumber: null,
       basis: "",
@@ -208,6 +209,10 @@ describe("recent receiving rows", () => {
     assert.equal(
       receivingEntryForViewer({ ...row, vendor_name: "Acme", ownership: "consigned", po_number: null }, true).basis,
       "Consigned",
+    );
+    assert.equal(
+      receivingEntryForViewer({ ...row, vendor_id: "vendor-1", vendor_name: "Acme" }, true).vendorId,
+      "vendor-1",
     );
     assert.equal(putawayLabel("20042-B", null), "20042-B");
     assert.equal(putawayLabel(null, "HWS.03.01.02"), "HWS.03.01.02");

@@ -5,6 +5,17 @@ export const RACKING_PATTERN = String.raw`^HWR\.\d{2}\.\d{2}\.\d{2}(\.[NSEWC])?$
 
 const RECEIVING_BIN = /^(\d{5})-([BCP])$/;
 
+/** Temporary receiving locations. They are not a numbered box, crate, or pallet. */
+export const SPECIAL_RECEIVING_BINS = ["00000-X", "RCV"] as const;
+
+export type SpecialReceivingBin = (typeof SPECIAL_RECEIVING_BINS)[number];
+
+export function specialReceivingBin(value: string): SpecialReceivingBin | null {
+  const text = value.trim().toUpperCase();
+  if (text === "00000-X" || text === "RCV") return text;
+  return null;
+}
+
 export type LocationTypeRule = {
   prefix: string;
   pattern: string;
@@ -20,9 +31,17 @@ export type ConsolidationRow = {
   status: CycleStatus;
 };
 
-export function parseReceivingBinCode(
-  value: string,
-): { number: number; type: BinType; reference: string } | null {
+export type ParsedReceivingBin = {
+  number: number;
+  type: BinType;
+  reference: string;
+  /** `00000-X` or `RCV`. Not created from the bin counter. */
+  special?: true;
+};
+
+export function parseReceivingBinCode(value: string): ParsedReceivingBin | null {
+  const special = specialReceivingBin(value);
+  if (special) return { number: 0, type: "B", reference: special, special: true };
   const match = value.trim().toUpperCase().match(RECEIVING_BIN);
   if (!match) return null;
   const digits = match[1];
@@ -38,6 +57,7 @@ const BIN_KIND: Record<BinType, string> = { B: "box", C: "crate", P: "pallet" };
 export function typedBinCodeError(value: string, suffix: BinType): string | null {
   const parsed = parseReceivingBinCode(value);
   if (!parsed) return "A bin code is five digits, a hyphen, and B, C, or P.";
+  if (parsed.special) return null;
   if (parsed.type !== suffix) {
     return `Code ${parsed.reference} is a ${BIN_KIND[parsed.type]}, but ${binTypeLabel(suffix)} is selected.`;
   }
@@ -220,6 +240,8 @@ export type ReceiptResult = {
   qty: number;
   /** True when the line was stored without an item and stock was not moved. */
   pending: boolean;
+  /** Ledger id of the receipt row. Blank when an older function did not return one. */
+  eventId: string;
 };
 
 export type MoveResult = {
@@ -371,6 +393,7 @@ export function receiptFromJson(value: unknown): ReceiptResult {
     locationCode: textOrNull(value.location_code),
     qty: Number(value.qty),
     pending: value.pending === true,
+    eventId: textOrNull(value.event_id) ?? "",
   };
 }
 

@@ -4,6 +4,8 @@
  * A blank serial with a country still counts. A blank row does not.
  */
 
+import { specialReceivingBin } from "@/lib/stockReceive";
+
 export const RECEIVE_UNIT_ROW_CAP = 8;
 export const SERIAL_MAX_LENGTH = 80;
 
@@ -99,7 +101,7 @@ function unitProblem(draft: UnitDraft, sku: string, seen: readonly string[]): st
   if (!serial) return null;
   if (serial.length > SERIAL_MAX_LENGTH) return "A serial is at most 80 characters.";
   if (sku.trim() && serial.toUpperCase() === sku.trim().toUpperCase()) return "That scan is the SKU, not a serial.";
-  if (BIN_CODE.test(serial)) return "That scan is a bin code, not a serial.";
+  if (BIN_CODE.test(serial) || specialReceivingBin(serial)) return "That scan is a bin code, not a serial.";
   if (seen.some((row) => row.toLowerCase() === serial.toLowerCase())) {
     return "That serial is already in this receipt.";
   }

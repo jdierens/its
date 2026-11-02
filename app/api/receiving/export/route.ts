@@ -3,7 +3,17 @@ import { errorText } from "@/lib/errors";
 import { projectReceiptFile } from "@/lib/receivingActions";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
+
+const NO_STORE = {
+  "cache-control": "private, no-store, no-cache, max-age=0, must-revalidate",
+  pragma: "no-cache",
+  expires: "0",
+  "cdn-cache-control": "no-store",
+  "vercel-cdn-cache-control": "no-store",
+};
 
 function htmlEscape(value: string): string {
   return value
@@ -42,10 +52,10 @@ function errorResponse(request: NextRequest, message: string, status: number) {
       `<p>${htmlEscape(message)}</p><p><a href="/warehouse/receiving">Back to receiving</a></p>`;
     return new NextResponse(html, {
       status,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+      headers: { "content-type": "text/html; charset=utf-8", ...NO_STORE },
     });
   }
-  return NextResponse.json({ error: message }, { status, headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ error: message }, { status, headers: NO_STORE });
 }
 
 function statusFor(message: string): number {
@@ -70,7 +80,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "content-type": "text/csv; charset=utf-8",
         "content-disposition": `attachment; filename="${file.filename}"`,
-        "cache-control": "no-store",
+        ...NO_STORE,
       },
     });
   } catch (error) {

@@ -194,6 +194,29 @@ describe("receiving import rows", () => {
   });
 });
 
+describe("special receiving bins", () => {
+  it("accepts 00000-X and RCV and still rejects a normal bin that does not match the template", () => {
+    const defaults = { ...emptyReceivingDefaults(), vendorId: "vendor-1", vendorName: "Acme" };
+    const rows = prepareReceivingImport(
+      [
+        row({ sku: "10", qty: "1", bin: "00000-x" }),
+        row({ sku: "10", qty: "1", bin: "rcv" }),
+        row({ sku: "10", qty: "1", bin: "20000-X" }),
+        row({ sku: "10", qty: "1", bin: "10059-C", serial: "RCV" }),
+      ],
+      defaults,
+      ["a", "b", "c", "d"],
+      TODAY,
+    );
+    assert.equal(rows[0]?.error, null);
+    assert.equal(rows[0]?.bin, "00000-X");
+    assert.equal(rows[1]?.error, null);
+    assert.equal(rows[1]?.bin, "RCV");
+    assert.equal(rows[2]?.error, "A bin code is five digits, a hyphen, and B, C, or P.");
+    assert.equal(rows[3]?.error, "That scan is a bin code, not a serial.");
+  });
+});
+
 describe("receiving import migration", () => {
   it("posts the batch through receive_into_bin and writes nothing when a row fails", () => {
     assert.match(sql, /Not applied here/);

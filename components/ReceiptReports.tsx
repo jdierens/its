@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { prefersFileShare } from "@/lib/export/download";
 import { errorText } from "@/lib/errors";
+import { receiptExportRequest } from "@/lib/receiptExport";
 import { projectReceiptSummary } from "@/lib/receivingActions";
 import { summaryItemLabel, type ReceiptSummaryRow } from "@/lib/receivingReport";
 
@@ -24,6 +25,7 @@ function downloadBlob(filename: string, csv: string) {
 }
 
 function postExport(project: string, kind: ReportKind) {
+  const request = receiptExportRequest(project, kind, Date.now());
   const form = document.createElement("form");
   form.method = "POST";
   form.action = "/api/receiving/export";
@@ -31,7 +33,7 @@ function postExport(project: string, kind: ReportKind) {
   const input = document.createElement("input");
   input.type = "hidden";
   input.name = "payload";
-  input.value = JSON.stringify({ project, kind });
+  input.value = request.body;
   form.append(input);
   document.body.append(form);
   form.submit();
@@ -48,10 +50,12 @@ async function downloadExport(project: string, kind: ReportKind) {
     postExport(project, kind);
     return;
   }
+  const request = receiptExportRequest(project, kind, Date.now());
   const response = await fetch("/api/receiving/export", {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ project, kind }),
+    cache: request.cache,
+    headers: request.headers,
+    body: request.body,
   });
   if (!response.ok) {
     const result = (await response.json().catch(() => null)) as { error?: string } | null;
