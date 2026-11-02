@@ -5312,6 +5312,44 @@ button.bin-label-hit:focus-visible {
   max-height: 24rem;
 }
 
+/* Same heading treatment as inventory search and the sales order list: the active column shows ↑ or ↓. */
+.receive-summary th button.receive-col-sort {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 0;
+  white-space: nowrap;
+}
+
+.receive-summary th.num button.receive-col-sort,
+.receive-summary th.sku button.receive-col-sort {
+  justify-content: flex-end;
+}
+
+.receive-summary th button.receive-col-sort:hover {
+  color: var(--accent);
+}
+
+.receive-summary th button.receive-col-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .receive-header-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 9.5rem) minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 7.5rem);

@@ -69,6 +69,95 @@ function bySearch(a: ReceiptSummaryRow, b: ReceiptSummaryRow): number {
   return a.sku.localeCompare(b.sku, undefined, { sensitivity: "base", numeric: true });
 }
 
+export type ReceiptSummarySortKey = "sku" | "item" | "qty" | "putaway" | "lines" | "status";
+
+export type ReceiptSummarySortDir = "asc" | "desc";
+
+export type ReceiptSummarySort = {
+  key: ReceiptSummarySortKey;
+  dir: ReceiptSummarySortDir;
+};
+
+/**
+ * The summary opens on this sort, which is the order `summarizeReceipts` already returns:
+ * linked SKUs by item name (A to Z, blank names last), then pending rows by search.
+ * The Item heading shows the up arrow for it.
+ */
+export const RECEIPT_SUMMARY_DEFAULT_SORT: ReceiptSummarySort = { key: "item", dir: "asc" };
+
+/** First click on a different heading sorts ascending. Another click on it swaps direction. */
+export function toggleReceiptSummarySort(current: ReceiptSummarySort, key: ReceiptSummarySortKey): ReceiptSummarySort {
+  if (current.key === key) return { key, dir: current.dir === "asc" ? "desc" : "asc" };
+  return { key, dir: "asc" };
+}
+
+const SUMMARY_TEXT: Intl.CollatorOptions = { numeric: true, sensitivity: "base" };
+
+function compareSummaryText(left: string, right: string): number {
+  return left.localeCompare(right, undefined, SUMMARY_TEXT);
+}
+
+/** Blank values stay at the bottom in either direction, the same as the sales-order list. */
+function directed(leftEmpty: boolean, rightEmpty: boolean, ascending: number, dir: ReceiptSummarySortDir): number {
+  if (leftEmpty || rightEmpty) {
+    if (leftEmpty && rightEmpty) return 0;
+    return leftEmpty ? 1 : -1;
+  }
+  return dir === "asc" ? ascending : -ascending;
+}
+
+/** Drop the `(xqty)` prefix so Putaway sorts by bin code, the same way inventory Bins does. */
+export function summaryPutawaySortLabel(locations: string): string {
+  return locations.replace(/\(x\d+(?:\.\d+)?\)/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Item order matches the opening summary: linked SKUs by name, then pending searches.
+ * Descending reverses that whole order.
+ */
+function compareSummaryItem(left: ReceiptSummaryRow, right: ReceiptSummaryRow): number {
+  if (left.pending !== right.pending) return left.pending ? 1 : -1;
+  return left.pending ? bySearch(left, right) : byItemName(left, right);
+}
+
+function compareReceiptSummary(left: ReceiptSummaryRow, right: ReceiptSummaryRow, sort: ReceiptSummarySort): number {
+  switch (sort.key) {
+    case "sku":
+      return directed(!left.sku.trim(), !right.sku.trim(), compareSummaryText(left.sku.trim(), right.sku.trim()), sort.dir);
+    case "item":
+      return sort.dir === "asc" ? compareSummaryItem(left, right) : -compareSummaryItem(left, right);
+    case "qty":
+      return sort.dir === "asc" ? left.qty - right.qty : right.qty - left.qty;
+    case "putaway":
+      return directed(
+        !summaryPutawaySortLabel(left.locations),
+        !summaryPutawaySortLabel(right.locations),
+        compareSummaryText(summaryPutawaySortLabel(left.locations), summaryPutawaySortLabel(right.locations)),
+        sort.dir,
+      );
+    case "lines":
+      return sort.dir === "asc" ? left.lines - right.lines : right.lines - left.lines;
+    case "status": {
+      const leftLabel = left.pending ? "Pending item" : "";
+      const rightLabel = right.pending ? "Pending item" : "";
+      const ascending = compareSummaryText(leftLabel, rightLabel);
+      return sort.dir === "asc" ? ascending : -ascending;
+    }
+  }
+}
+
+/** Equal values keep the order they arrived in. */
+export function sortReceiptSummary(rows: readonly ReceiptSummaryRow[], sort: ReceiptSummarySort): ReceiptSummaryRow[] {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const compared = compareReceiptSummary(left.row, right.row, sort);
+      if (compared !== 0) return compared;
+      return left.index - right.index;
+    })
+    .map((item) => item.row);
+}
+
 /** Bin code for a summary cell. A putaway label keeps the code before the location dot. */
 export function summaryBinReference(entry: { binReference?: string | null; putaway?: string | null }): string {
   const direct = (entry.binReference ?? "").trim();
@@ -117,6 +206,7 @@ function finishBucket(bucket: SummaryBucket): ReceiptSummaryRow {
 /**
  * One row per item, quantity summed, sorted by item name.
  * Lines with no item are grouped by the exact trimmed search and listed after the SKUs.
+ * That order is `RECEIPT_SUMMARY_DEFAULT_SORT`. The summary table can sort again from its headings.
  * Locations are the quantity in each putaway bin.
  */
 export function summarizeReceipts(entries: readonly ReceivingEntry[]): ReceiptSummaryRow[] {
