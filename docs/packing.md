@@ -6,10 +6,12 @@ Shipping bins come from a packaging list. A box has a fixed length, width, and h
 
 Plus on a packaging type adds a shipping bin. A line can be split across bins. Plus on a picked line adds the typed quantity to the chosen bin. The trash icon takes that quantity back out. A weight can be typed on a bin at any time. Finish packing stays off until every picked quantity is in a bin and every bin has a weight. A pallet also needs its height.
 
-Finish packing sets the order to packed and stores `packed_at`. Warehouse → Shipping lists those orders. Carrier labels and rate shopping are not on that screen.
+Finish packing sets an order that is still packing to packed and stores `packed_at`. Warehouse → Shipping lists those orders. Carrier labels and rate shopping are not on that screen.
+
+An order that already shipped without this step stays shipped. That includes a historic eBay order whose status is shipped, whose ship date and shipment rows are already stored, and whose `packed_at` is still empty. The pack sheet can add bins, assign the picked quantity, and store weights. Finish stores `packed_at` and leaves the status, the ship date, and the shipment rows as they are. Cancelled, invoiced, and closed orders stay closed. The order is not listed on Warehouse → Packing; open it from the sales order. The pack stage icon stays yellow until a package exists or `packed_at` is set. That rule is unchanged.
 
 The fulfilled SKU is the one that was picked. A replacement shows that SKU, with the planned SKU under it.
 
 The header beside the sales order number is the same stage control as the sales order and the pick sheet. It goes back to those pages. Packing in that control stays off until the pick is finished.
 
-Apply `supabase/migrations/20261028233000_sales_order_packing.sql` by hand on project `fxsbpreasbdalwthyzvk` after `supabase/migrations/20261028222000_so_shipping_label.sql` and the picking migrations. Deploying does not run it.
+Apply `supabase/migrations/20261028233000_sales_order_packing.sql` by hand on project `fxsbpreasbdalwthyzvk` after `supabase/migrations/20261028222000_so_shipping_label.sql` and the picking migrations. Apply `supabase/migrations/20261102143000_pack_shipped_orders.sql` after that. Deploying does not run either file.

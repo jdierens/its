@@ -6,9 +6,12 @@ import { packAccessForRole } from "./packAccess.ts";
 import {
   formatBinSize,
   isPackLine,
+  isShippedPackStatus,
+  packCatchUpNote,
   packCompleteBlock,
   packagingTypeError,
   packagingTypeMeasures,
+  packedAfterShipNote,
   packQtyError,
   packQueueFromJson,
   packRoom,
@@ -21,6 +24,7 @@ import {
 } from "./packSheet.ts";
 
 const sql = readFileSync(new URL("../supabase/migrations/20261028233000_sales_order_packing.sql", import.meta.url), "utf8");
+const shippedSql = readFileSync(new URL("../supabase/migrations/20261102143000_pack_shipped_orders.sql", import.meta.url), "utf8");
 
 describe("what gets packed", () => {
   it("packs picked product and kit lines and leaves services, freight, and unpicked lines out", () => {
@@ -171,6 +175,8 @@ describe("pack sheet json", () => {
     assert.equal(sheet.lines[0]?.replaced, true);
     assert.equal(sheet.bins[0]?.weightLb, null);
     assert.equal(sheet.finishBlock, "Line 1 106683 still has 3 to pack.");
+    assert.equal(sheet.packedAt, null);
+    assert.equal(sheet.editable, true);
     assert.equal(JSON.stringify(sheet).includes("price"), false);
 
     const queue = packQueueFromJson([
@@ -221,6 +227,95 @@ describe("pack access and navigation", () => {
   });
 });
 
+describe("shipped orders that still need a pack", () => {
+  const base = {
+    order_id: "5e5006b2-cc24-4a64-96fb-b9056c528133",
+    so_number: 27674,
+    customer: "eBay Customer",
+    customer_po: null,
+    pick_status: "picked",
+    handoff: null,
+    types: [],
+    bins: [],
+    lines: [
+      {
+        allocation_id: "alloc-1",
+        line_no: 1,
+        sku: "106614",
+        name: "Drive",
+        planned_sku: "106614",
+        replaced: false,
+        picked: 1,
+        packed: 0,
+        assignments: [],
+      },
+    ],
+  };
+
+  it("keeps an older shipped sheet locked until the database says packing is open", () => {
+    const legacy = packSheetFromJson({
+      ...base,
+      status: "shipped",
+      finish_block: null,
+    });
+    assert.equal(legacy.editable, false);
+    assert.equal(legacy.packedAt, null);
+    assert.equal(isShippedPackStatus(legacy.status), true);
+    assert.equal(packCatchUpNote("packing"), null);
+  });
+
+  it("opens bins on a shipped order that has no packed_at and closes them after finish", () => {
+    const open = packSheetFromJson({
+      ...base,
+      status: "shipped",
+      packed_at: null,
+      editable: true,
+      finish_block: "Add a shipping bin before packing can be finished.",
+    });
+    assert.equal(open.editable, true);
+    assert.equal(open.packedAt, null);
+    assert.equal(packCatchUpNote(open.status), "This order already shipped. Packing records the bins and leaves the ship record in place.");
+    assert.equal(packedAfterShipNote(open.status), "Packed. This order stays shipped.");
+
+    const done = packSheetFromJson({
+      ...base,
+      status: "shipped",
+      packed_at: "2026-11-02T16:00:00Z",
+      editable: false,
+      finish_block: null,
+    });
+    assert.equal(done.status, "shipped");
+    assert.equal(done.editable, false);
+    assert.equal(done.packedAt, "2026-11-02T16:00:00Z");
+
+    const partial = packSheetFromJson({
+      ...base,
+      status: "partially_shipped",
+      packed_at: null,
+      editable: true,
+      finish_block: "Line 1 106614 still has 1 to pack.",
+    });
+    assert.equal(partial.editable, true);
+    assert.match(packCatchUpNote(partial.status) ?? "", /partially shipped/);
+    assert.equal(packedAfterShipNote(partial.status), "Packed. This order stays partially shipped.");
+  });
+
+  it("does not treat cancelled, invoiced, or closed as an open pack", () => {
+    for (const status of ["cancelled", "invoiced", "closed", "packed"]) {
+      const sheet = packSheetFromJson({
+        ...base,
+        status,
+        packed_at: null,
+        editable: false,
+        finish_block: null,
+      });
+      assert.equal(sheet.editable, false, status);
+      assert.equal(packCatchUpNote(status), null, status);
+      assert.equal(isShippedPackStatus(status), false, status);
+    }
+  });
+});
+
 describe("packing migration", () => {
   it("adds the packaging list, shipping bins, and the pack-complete gate", () => {
     assert.match(sql, /Apply by hand/);
@@ -246,5 +341,34 @@ describe("packing migration", () => {
     assert.match(sql, /grant execute on function public\.finish_sales_order_pack\(uuid, text, uuid\) to service_role/);
     assert.match(sql, /grant execute on function public\.list_ship_queue\(\) to service_role/);
     assert.doesNotMatch(sql, /grant .+ to anon/);
+  });
+});
+
+describe("pack shipped orders migration", () => {
+  it("lets a shipped order record bins and packed_at without leaving shipped", () => {
+    assert.match(shippedSql, /Apply by hand/);
+    assert.match(shippedSql, /Deploying does not run this file/);
+    assert.match(shippedSql, /p_status = 'packing'/);
+    assert.match(shippedSql, /p_status in \('shipped', 'partially_shipped'\)/);
+    assert.match(shippedSql, /p_packed_at is null/);
+    assert.match(shippedSql, /Packing is closed on this sales order/);
+    assert.match(shippedSql, /so_pack_open_block/);
+    assert.match(shippedSql, /'editable', v_editable/);
+    assert.match(shippedSql, /'packed_at', v_order\.packed_at/);
+    assert.match(shippedSql, /when v_order\.status in \('cancelled', 'closed', 'invoiced'\) then null/);
+
+    const shippedStart = shippedSql.indexOf("if v_status in ('shipped', 'partially_shipped') then");
+    const shippedBranch = shippedSql.slice(shippedStart, shippedSql.indexOf("else", shippedStart));
+    assert.match(shippedBranch, /packed_at = now\(\)/);
+    assert.match(shippedBranch, /v_status,\s*v_status/);
+    assert.doesNotMatch(shippedBranch, /status =/);
+    assert.doesNotMatch(shippedBranch, /ship_date/);
+    assert.doesNotMatch(shippedSql, /(?:update|insert|delete)\s+(?:from\s+)?public\.so_shipments/i);
+    assert.doesNotMatch(shippedSql, /ship_date\s*=/);
+    assert.match(shippedSql, /status = 'packed'/);
+    assert.match(shippedSql, /'packing',\s*'packed'/);
+    assert.match(shippedSql, /grant execute on function public\.finish_sales_order_pack\(uuid, text, uuid\) to service_role/);
+    assert.doesNotMatch(shippedSql, /grant .+ to anon/);
+    assert.doesNotMatch(shippedSql, /grant execute on function public\.so_packing_writable/);
   });
 });
