@@ -11,6 +11,7 @@ import { qtyForSkuPick } from "@/lib/salesItemSearch";
 import { useRouter } from "next/navigation";
 import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import { SalesOrderAttachments } from "@/components/SalesOrderAttachments";
+import { SalesOrderStageIcons } from "@/components/SalesOrderStageIcons";
 import { SalesOrderStageNav } from "@/components/SalesOrderStageNav";
 import { Badge } from "@/components/ui/badge";
 import { lineComplianceDisplay } from "@/lib/customerDocument";
@@ -21,6 +22,7 @@ import { fetchPaypalFeeCatalog } from "@/lib/paypalFeeSettings";
 import { SHIPMENT_CARRIERS, trackingUrl } from "@/lib/poCharges";
 import { paymentMethodChoices } from "@/lib/salesPaymentMethods";
 import { salesOrderErrorMessage } from "@/lib/salesOrderErrors";
+import type { SalesOrderStageIcon } from "@/lib/salesOrderStageIcons";
 import type { SalesOrderPickStatus } from "@/lib/salesOrderStages";
 import {
   compareMappedLine,
@@ -161,6 +163,7 @@ export function SalesOrderForm({
   defaultEbayPaymentTerms,
   defaultEbayIncoterms,
   pickStatus = null,
+  stages,
 }: {
   order: SalesOrderView | null;
   lookups: SalesLookups;
@@ -172,6 +175,7 @@ export function SalesOrderForm({
   defaultEbayPaymentTerms: string;
   defaultEbayIncoterms: string;
   pickStatus?: SalesOrderPickStatus;
+  stages: SalesOrderStageIcon[];
 }) {
   const router = useRouter();
   const headerLocked = salesOrderFormLocked(canEdit, order?.status ?? null);
@@ -820,6 +824,7 @@ export function SalesOrderForm({
                 />
               ) : null}
               <Badge tone={salesOrderBadgeTone(status)}>{salesOrderStatusLabel(status)}</Badge>
+              <SalesOrderStageIcons stages={stages} />
             </div>
             {!locked && drafting ? (
               <label className="so-number-field">

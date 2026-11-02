@@ -29,6 +29,8 @@ import {
   type SoShipmentInput,
 } from "@/lib/salesOrderDraft";
 import { salesOrderIsEcommerce } from "@/lib/salesOrderList";
+import { emptySalesOrderStageInput, salesOrderStageIcons, type SalesOrderStageIcon } from "@/lib/salesOrderStageIcons";
+import { loadSalesOrderStageInputs } from "@/lib/salesOrderStageFacts";
 import { salesOperatorId, salesPageAccess } from "@/lib/salesSession";
 import { loadSoAttachments, type SoAttachmentView } from "@/lib/soAttachments";
 import { operatorInitials } from "@/lib/stockAccess";
@@ -94,6 +96,8 @@ export type SalesOrderListItem = {
   total: number | null;
   /** eBay source, channel, order id, or sales record number. */
   ecommerce: boolean;
+  /** Approved, picked, packed, shipped, invoiced, and cancelled. */
+  stages: SalesOrderStageIcon[];
 };
 
 export type SalesAllocationView = {
@@ -386,7 +390,9 @@ export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promi
   if (scope === "drafts") query = query.eq("status", "draft");
   const { data, error } = await query;
   if (error) throw new Error(salesError(error));
-  const rows = [...(data ?? [])].sort((left, right) =>
+  const loaded = data ?? [];
+  const stageInputs = await loadSalesOrderStageInputs(loaded.map((row) => String(row.id)));
+  const rows = [...loaded].sort((left, right) =>
     compareSalesOrderList(
       { orderDate: dateValue(left.order_date), createdAt: String(left.created_at ?? "") },
       { orderDate: dateValue(right.order_date), createdAt: String(right.created_at ?? "") },
@@ -420,7 +426,8 @@ export async function listSalesOrders(scope: "drafts" | "all" = "drafts"): Promi
       },
       access.canViewMoney,
     );
-    return item;
+    const stageInput = stageInputs.get(String(row.id)) ?? emptySalesOrderStageInput(String(row.status));
+    return { ...item, stages: salesOrderStageIcons(stageInput) };
   });
 }
 
