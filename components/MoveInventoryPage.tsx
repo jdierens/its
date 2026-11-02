@@ -2,8 +2,9 @@
 
 import { FormEvent, useEffect, useRef, useState, type ReactNode } from "react";
 import { errorText } from "@/lib/errors";
-import { commitMove, fetchMovePlace, listRecentMoves, previewMove, undoMove } from "@/lib/moveActions";
+import { commitMove, fetchMovePlace, listBinEntries, listRecentMoves, previewMove, undoMove } from "@/lib/moveActions";
 import {
+  binEntriesCode,
   formatMoveWhen,
   isBinCode,
   moveItemLines,
@@ -12,6 +13,7 @@ import {
   setMoveItemQty,
   targetFields,
   toggleMoveItem,
+  type BinEntry,
   type MoveChild,
   type MoveItem,
   type MovePlace,
@@ -60,12 +62,17 @@ export function MoveInventoryPage() {
   const [result, setResult] = useState<{ summary: string; requestId: string } | null>(null);
   const [recent, setRecent] = useState<RecentMove[]>([]);
   const [recentFor, setRecentFor] = useState<string | null>(null);
+  const [entries, setEntries] = useState<BinEntry[]>([]);
+  const [entriesFor, setEntriesFor] = useState<string | null>(null);
+  const [entriesError, setEntriesError] = useState<string | null>(null);
+  const [entriesRefresh, setEntriesRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [migration, setMigration] = useState(false);
   const sourceRequest = useRef(0);
   const targetRequest = useRef(0);
   const recentRequest = useRef(0);
+  const entriesRequest = useRef(0);
 
   function fail(cause: unknown) {
     const message = errorText(cause);
@@ -112,21 +119,30 @@ export function MoveInventoryPage() {
     return () => window.clearTimeout(handle);
   }, [sourceText]);
 
-  useEffect(() => {
-    const code = targetText.trim();
+  async function refreshTargetNow(raw: string) {
+    const code = raw.trim();
     const request = ++targetRequest.current;
     if (!code) {
       setTargetPlace(null);
       return;
     }
+    try {
+      const next = await fetchMovePlace(code);
+      if (request === targetRequest.current) setTargetPlace(next);
+    } catch (cause) {
+      if (request === targetRequest.current) fail(cause);
+    }
+  }
+
+  useEffect(() => {
+    const code = targetText.trim();
+    if (!code) {
+      targetRequest.current += 1;
+      setTargetPlace(null);
+      return;
+    }
     const handle = window.setTimeout(() => {
-      void fetchMovePlace(code)
-        .then((next) => {
-          if (request === targetRequest.current) setTargetPlace(next);
-        })
-        .catch((cause: unknown) => {
-          if (request === targetRequest.current) fail(cause);
-        });
+      void refreshTargetNow(code);
     }, 400);
     return () => window.clearTimeout(handle);
   }, [targetText]);
@@ -152,6 +168,31 @@ export function MoveInventoryPage() {
         fail(cause);
       });
   }, [place]);
+
+  useEffect(() => {
+    const shown = matchesCode(targetPlace, targetText) ? targetPlace : null;
+    const code = binEntriesCode(shown);
+    const request = ++entriesRequest.current;
+    if (!code) {
+      setEntries([]);
+      setEntriesFor(null);
+      setEntriesError(null);
+      return;
+    }
+    void listBinEntries(code)
+      .then((rows) => {
+        if (request !== entriesRequest.current) return;
+        setEntries(rows);
+        setEntriesFor(code);
+        setEntriesError(null);
+      })
+      .catch((cause: unknown) => {
+        if (request !== entriesRequest.current) return;
+        setEntries([]);
+        setEntriesFor(code);
+        setEntriesError(errorText(cause));
+      });
+  }, [targetPlace, targetText, entriesRefresh]);
 
   useEffect(() => {
     if (!place || (place.kind !== "bin" && place.kind !== "location") || !choice) {
@@ -287,8 +328,9 @@ export function MoveInventoryPage() {
       setResult(saved);
       setPreview(null);
       setChoice(null);
-      setTargetText("");
+      setEntriesRefresh((current) => current + 1);
       await loadSource(place.code, true);
+      await refreshTargetNow(targetText);
     } catch (cause) {
       fail(cause);
     } finally {
@@ -303,7 +345,9 @@ export function MoveInventoryPage() {
     try {
       const saved = await undoMove(result.requestId, crypto.randomUUID());
       setResult(saved);
+      setEntriesRefresh((current) => current + 1);
       if (place && (place.kind === "bin" || place.kind === "location")) await loadSource(place.code, true);
+      await refreshTargetNow(targetText);
     } catch (cause) {
       fail(cause);
     } finally {
@@ -330,6 +374,10 @@ export function MoveInventoryPage() {
   const scope = recentMovesCode(place);
   const scopeReady = scope != null && recentFor === scope;
   const recentName = known ? scopeLabel(known) : scope;
+  const targetTyped = targetText.trim();
+  const entriesCode = binEntriesCode(targetKnown);
+  const entriesReady = entriesCode != null && entriesFor === entriesCode;
+  const entriesName = targetKnown ? scopeLabel(targetKnown) : entriesCode;
 
   return (
     <main className="page move-page desk-fields">
@@ -498,48 +546,103 @@ export function MoveInventoryPage() {
         </section>
       ) : null}
 
-      <section className="card move-card" id="move-recent">
-        <h2>Recent moves</h2>
-        {!scope ? (
-          <p className="hint">Scan a bin or a location to see its moves.</p>
-        ) : !scopeReady ? (
-          <p className="hint">Loading moves…</p>
-        ) : recent.length === 0 ? (
-          error ? null : <p className="hint">No moves for {recentName} yet.</p>
-        ) : (
-          <>
-            <p className="hint" id="move-recent-scope">
-              Moves for {recentName}.
-            </p>
-            <div className="move-recent-scroll" tabIndex={0} aria-label={`Recent moves for ${recentName}`}>
-              <table className="receive-table">
-                <thead>
-                  <tr>
-                    <th className="fit">Date/time</th>
-                    <th className="fit">Init.</th>
-                    <th>What</th>
-                    <th>From</th>
-                    <th>To</th>
-                    <th className="num fit">Qty</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.map((row) => (
-                    <tr key={row.id}>
-                      <td className="fit">{formatMoveWhen(row.occurredAt)}</td>
-                      <td className="fit initials">{row.initials}</td>
-                      <td>{row.what}</td>
-                      <td>{row.fromPlace}</td>
-                      <td>{row.toPlace}</td>
-                      <td className="num fit">{row.qty ?? ""}</td>
+      <div className="move-lists">
+        <section className="card move-card" id="move-recent">
+          <h2>Recent moves</h2>
+          {!scope ? (
+            <p className="hint">Scan a bin or a location to see its moves.</p>
+          ) : !scopeReady ? (
+            <p className="hint">Loading moves…</p>
+          ) : recent.length === 0 ? (
+            error ? null : <p className="hint">No moves for {recentName} yet.</p>
+          ) : (
+            <>
+              <p className="hint" id="move-recent-scope">
+                Moves for {recentName}.
+              </p>
+              <div className="move-recent-scroll" tabIndex={0} aria-label={`Recent moves for ${recentName}`}>
+                <table className="receive-table">
+                  <thead>
+                    <tr>
+                      <th className="fit">Date/time</th>
+                      <th className="fit">Init.</th>
+                      <th>What</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th className="num fit">Qty</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </section>
+                  </thead>
+                  <tbody>
+                    {recent.map((row) => (
+                      <tr key={row.id}>
+                        <td className="fit">{formatMoveWhen(row.occurredAt)}</td>
+                        <td className="fit initials">{row.initials}</td>
+                        <td>{row.what}</td>
+                        <td>{row.fromPlace}</td>
+                        <td>{row.toPlace}</td>
+                        <td className="num fit">{row.qty ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="card move-card" id="move-entries">
+          <h2>Recent entries</h2>
+          {!targetTyped ? (
+            <p className="hint">Scan a target bin to see what's in it.</p>
+          ) : !isBinCode(targetTyped) ? (
+            <p className="hint">Entries follow a target bin.</p>
+          ) : !entriesCode ? (
+            targetShown?.kind === "missing_bin" || targetShown?.kind === "unknown" ? (
+              <p className="hint">{targetShown.message}</p>
+            ) : (
+              <p className="hint">Loading entries…</p>
+            )
+          ) : !entriesReady ? (
+            <p className="hint">Loading entries…</p>
+          ) : entriesError ? (
+            <p className="move-inline-error" role="alert">
+              {entriesError}
+            </p>
+          ) : entries.length === 0 ? (
+            <p className="hint">Nothing in {entriesName} yet.</p>
+          ) : (
+            <>
+              <p className="hint" id="move-entries-scope">
+                In {entriesName}, newest arrival first.
+              </p>
+              <div className="move-recent-scroll" tabIndex={0} aria-label={`Recent entries in ${entriesName}`}>
+                <table className="receive-table">
+                  <thead>
+                    <tr>
+                      <th className="fit">Date/time</th>
+                      <th className="fit">Init.</th>
+                      <th>What</th>
+                      <th>From</th>
+                      <th className="num fit">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((row) => (
+                      <tr key={row.id}>
+                        <td className="fit">{formatMoveWhen(row.occurredAt)}</td>
+                        <td className="fit initials">{row.initials}</td>
+                        <td>{row.what}</td>
+                        <td>{row.fromPlace}</td>
+                        <td className="num fit">{row.qty ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
     </main>
   );
 }

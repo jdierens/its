@@ -6896,6 +6896,23 @@ input.num-input {
   font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
+.move-lists {
+  display: grid;
+  gap: 0.85rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.move-lists > .move-card {
+  min-width: 0;
+}
+
+@media (min-width: 1100px) {
+  .move-lists {
+    grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+  }
+}
+
 .move-page .page-note {
   margin: 0;
 }

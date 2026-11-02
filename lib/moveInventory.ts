@@ -51,6 +51,16 @@ export type RecentMove = {
   qty: number | null;
 };
 
+/** One line currently in the target bin. Qty is for-sale stock; a nested bin has no qty. */
+export type BinEntry = {
+  id: string;
+  occurredAt: string;
+  initials: string;
+  what: string;
+  fromPlace: string;
+  qty: number | null;
+};
+
 export type MoveResult = {
   summary: string;
   requestId: string;
@@ -73,6 +83,13 @@ export function targetFields(code: string): { targetBin: string | null; targetLo
 export function recentMovesCode(place: MovePlace | null): string | null {
   if (!place || (place.kind !== "bin" && place.kind !== "location")) return null;
   const code = place.code.trim();
+  return code.length > 0 ? code : null;
+}
+
+/** Entries follow the target bin only. A location has no item lines to list. */
+export function binEntriesCode(place: MovePlace | null): string | null {
+  if (!place || place.kind !== "bin") return null;
+  const code = place.bin.reference.trim();
   return code.length > 0 ? code : null;
 }
 
@@ -243,6 +260,23 @@ export function recentMovesFromJson(value: unknown): RecentMove[] {
       what: text(row.what),
       fromPlace: text(row.from_place),
       toPlace: text(row.to_place),
+      qty: qty != null && Number.isFinite(qty) ? qty : null,
+    }];
+  });
+}
+
+export function binEntriesFromJson(value: unknown): BinEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const row = record(entry);
+    if (!row) return [];
+    const qty = row.qty == null ? null : Number(row.qty);
+    return [{
+      id: text(row.id),
+      occurredAt: text(row.occurred_at),
+      initials: text(row.initials),
+      what: text(row.what),
+      fromPlace: text(row.from_place),
       qty: qty != null && Number.isFinite(qty) ? qty : null,
     }];
   });

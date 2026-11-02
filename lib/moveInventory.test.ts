@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  binEntriesCode,
+  binEntriesFromJson,
   formatMoveWhen,
   isBinCode,
   moveItemLines,
@@ -95,6 +97,59 @@ describe("move inventory", () => {
       children: [],
       items: [],
     }), "HWR.01.01.01");
+  });
+
+  it("lists entries for a target bin and not for a location", () => {
+    const bin = {
+      kind: "bin" as const,
+      code: "10099-C",
+      path: "HWR.01.01.01 > Crate 10099-C",
+      place: "HWR.01.01.01",
+      bin: { id: "bin-1", reference: "10099-C", type: "C", label: "Crate 10099-C", boxes: 0, items: 1 },
+      children: [],
+      items: [],
+    };
+    assert.equal(binEntriesCode(null), null);
+    assert.equal(binEntriesCode({ kind: "unknown", code: "NOPE", message: "No bin or location with that code." }), null);
+    assert.equal(binEntriesCode({
+      kind: "location",
+      code: "HWR.01.01.01",
+      path: "HWR.01.01.01",
+      place: "HWR.01.01.01",
+      children: [],
+      items: [],
+    }), null);
+    assert.equal(binEntriesCode(bin), "10099-C");
+    assert.deepEqual(binEntriesFromJson([
+      {
+        id: "item:1",
+        occurred_at: "2026-10-24T18:05:00Z",
+        initials: "JD",
+        what: "SKU94415 Samsung",
+        from_place: "Received",
+        qty: 4,
+      },
+      { id: "bin:2", occurred_at: "2026-10-24T18:00:00Z", initials: "JD", what: "Box 2345-B", from_place: "Crate 10099-C", qty: null },
+      "skip",
+    ]), [
+      {
+        id: "item:1",
+        occurredAt: "2026-10-24T18:05:00Z",
+        initials: "JD",
+        what: "SKU94415 Samsung",
+        fromPlace: "Received",
+        qty: 4,
+      },
+      {
+        id: "bin:2",
+        occurredAt: "2026-10-24T18:00:00Z",
+        initials: "JD",
+        what: "Box 2345-B",
+        fromPlace: "Crate 10099-C",
+        qty: null,
+      },
+    ]);
+    assert.deepEqual(binEntriesFromJson({}), []);
   });
 
   it("puts the path beside the search and skips a path that repeats the place", () => {
