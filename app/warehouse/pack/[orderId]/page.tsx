@@ -35,7 +35,7 @@ export default async function PackSheetPage({ params }: { params: Promise<{ orde
   const { orderId } = await params;
   if (!ORDER_ID.test(orderId)) {
     return (
-      <main className="page pick-page">
+      <main className="page pick-page ds">
         <p>Sales order not found.</p>
         <p>
           <Link href="/warehouse/pack">Back to packing</Link>
@@ -50,7 +50,7 @@ export default async function PackSheetPage({ params }: { params: Promise<{ orde
     return <PackSheet initial={sheet} canPack={access.canPack} />;
   } catch (error) {
     return (
-      <main className="page pick-page">
+      <main className="page pick-page ds">
         <p className="banner error" role="alert">
           {errorText(error)}
         </p>

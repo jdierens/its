@@ -393,7 +393,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const ticketLines = sheet.lines.filter((line) => !omitPickTicketSku(line.sku));
 
   return (
-    <main className="page pick-page">
+    <main className="page pick-page ds">
       <LetterPrint orientation={PICK_TICKET_PRINT.orientation} rootSelector={PICK_TICKET_PRINT.rootSelector} />
       <header className="pick-head">
         <div>

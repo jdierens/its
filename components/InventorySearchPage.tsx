@@ -466,7 +466,7 @@ export function InventorySearchPage() {
   const showFrame = ready || searching || hits.length > 0;
 
   return (
-    <main className="page inventory-search-page">
+    <main className="page inventory-search-page ds">
       <p className="page-note">
         Same search as receiving. Leave the box blank to list the inventory. Qty is for sale and starts at in
         stock only; click Qty to include zeros. Damaged pieces stay in the bin and are not included.

@@ -209,7 +209,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
   }
 
   return (
-    <main className="page pick-page">
+    <main className="page pick-page ds">
       <header className="pick-head">
         <div>
           <div className="pick-title">

@@ -5,7 +5,7 @@ import { formatPickQty, pickQueueLabel, stagingDisplay, type PickQueueRow } from
 
 export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
   return (
-    <main className="page pick-page">
+    <main className="page pick-page ds">
       <p className="page-note">
         Approved orders with a product or a kit. Freight and service lines stay off this list. Finish a pick, then open packing.
       </p>

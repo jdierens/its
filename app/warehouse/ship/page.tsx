@@ -10,7 +10,7 @@ export default async function ShipQueuePage() {
     return <ShipQueue rows={rows} />;
   } catch (error) {
     return (
-      <main className="page pick-page">
+      <main className="page pick-page ds">
         <p className="banner error" role="alert">
           {errorText(error)}
         </p>

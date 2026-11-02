@@ -36,7 +36,7 @@ export default async function PickSheetPage({ params }: { params: Promise<{ orde
   const { orderId } = await params;
   if (!ORDER_ID.test(orderId)) {
     return (
-      <main className="page pick-page">
+      <main className="page pick-page ds">
         <p>Sales order not found.</p>
         <p>
           <Link href="/warehouse/pick">Back to picking</Link>
@@ -51,7 +51,7 @@ export default async function PickSheetPage({ params }: { params: Promise<{ orde
     return <PickSheet initial={sheet} canPick={access.canPick} />;
   } catch (error) {
     return (
-      <main className="page pick-page">
+      <main className="page pick-page ds">
         <p className="banner error" role="alert">
           {errorText(error)}
         </p>
