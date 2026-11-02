@@ -65,7 +65,6 @@ export function MoveInventoryPage() {
   const [entries, setEntries] = useState<BinEntry[]>([]);
   const [entriesFor, setEntriesFor] = useState<string | null>(null);
   const [entriesError, setEntriesError] = useState<string | null>(null);
-  const [entriesRefresh, setEntriesRefresh] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [migration, setMigration] = useState(false);
@@ -170,7 +169,7 @@ export function MoveInventoryPage() {
   }, [place]);
 
   useEffect(() => {
-    const shown = matchesCode(targetPlace, targetText) ? targetPlace : null;
+    const shown = matchesCode(place, sourceText) ? place : null;
     const code = binEntriesCode(shown);
     const request = ++entriesRequest.current;
     if (!code) {
@@ -192,7 +191,7 @@ export function MoveInventoryPage() {
         setEntriesFor(code);
         setEntriesError(errorText(cause));
       });
-  }, [targetPlace, targetText, entriesRefresh]);
+  }, [place, sourceText]);
 
   useEffect(() => {
     if (!place || (place.kind !== "bin" && place.kind !== "location") || !choice) {
@@ -328,7 +327,6 @@ export function MoveInventoryPage() {
       setResult(saved);
       setPreview(null);
       setChoice(null);
-      setEntriesRefresh((current) => current + 1);
       await loadSource(place.code, true);
       await refreshTargetNow(targetText);
     } catch (cause) {
@@ -345,7 +343,6 @@ export function MoveInventoryPage() {
     try {
       const saved = await undoMove(result.requestId, crypto.randomUUID());
       setResult(saved);
-      setEntriesRefresh((current) => current + 1);
       if (place && (place.kind === "bin" || place.kind === "location")) await loadSource(place.code, true);
       await refreshTargetNow(targetText);
     } catch (cause) {
@@ -374,10 +371,11 @@ export function MoveInventoryPage() {
   const scope = recentMovesCode(place);
   const scopeReady = scope != null && recentFor === scope;
   const recentName = known ? scopeLabel(known) : scope;
-  const targetTyped = targetText.trim();
-  const entriesCode = binEntriesCode(targetKnown);
+  const sourceTyped = sourceText.trim();
+  const sourceShown = matchesCode(place, sourceText) ? place : null;
+  const entriesCode = binEntriesCode(sourceShown);
   const entriesReady = entriesCode != null && entriesFor === entriesCode;
-  const entriesName = targetKnown ? scopeLabel(targetKnown) : entriesCode;
+  const entriesName = sourceShown && sourceShown.kind === "bin" ? scopeLabel(sourceShown) : entriesCode;
 
   return (
     <main className="page move-page desk-fields">
@@ -592,13 +590,13 @@ export function MoveInventoryPage() {
 
         <section className="card move-card" id="move-entries">
           <h2>Recent entries</h2>
-          {!targetTyped ? (
-            <p className="hint">Scan a target bin to see what's in it.</p>
-          ) : !isBinCode(targetTyped) ? (
-            <p className="hint">Entries follow a target bin.</p>
+          {!sourceTyped ? (
+            <p className="hint">Scan a source bin to see what's in it.</p>
+          ) : !isBinCode(sourceTyped) ? (
+            <p className="hint">Entries follow the source bin.</p>
           ) : !entriesCode ? (
-            targetShown?.kind === "missing_bin" || targetShown?.kind === "unknown" ? (
-              <p className="hint">{targetShown.message}</p>
+            sourceShown?.kind === "missing_bin" || sourceShown?.kind === "unknown" ? (
+              <p className="hint">{sourceShown.message}</p>
             ) : (
               <p className="hint">Loading entries…</p>
             )
