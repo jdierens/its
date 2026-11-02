@@ -18,6 +18,7 @@ import { getSupabase } from "@/lib/supabase";
 
 const MOVE_BIN_ITEMS_MIGRATION = "supabase/migrations/20261026220253_move_bin_items.sql";
 const MOVE_BIN_ITEM_LINES_MIGRATION = "supabase/migrations/20261026233415_move_bin_item_lines.sql";
+const SCOPED_RECENT_MOVES_MIGRATION = "supabase/migrations/20261102203000_scoped_recent_moves.sql";
 
 function raiseRpc(error: { code?: string; message?: string } | null): never {
   if (moveMigrationMissing(error)) {
@@ -182,8 +183,18 @@ export async function undoMove(originalRequestId: string, requestId: string): Pr
   return { summary: moveSummaryFromJson(data), requestId };
 }
 
-export async function listRecentMoves(): Promise<RecentMove[]> {
-  const { data, error } = await (await getSupabase()).rpc("list_recent_moves", { p_limit: 20 });
-  if (error) raiseRpc(error);
+export async function listRecentMoves(code: string): Promise<RecentMove[]> {
+  const scope = code.trim();
+  if (!scope) return [];
+  const { data, error } = await (await getSupabase()).rpc("list_recent_moves", {
+    p_code: scope,
+    p_limit: 50,
+  });
+  if (error) {
+    if (moveMigrationMissing(error)) {
+      throw new Error(`Apply ${SCOPED_RECENT_MOVES_MIGRATION} before recent moves can follow one bin or location.`);
+    }
+    raiseRpc(error);
+  }
   return recentMovesFromJson(data);
 }

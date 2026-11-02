@@ -69,6 +69,23 @@ export function targetFields(code: string): { targetBin: string | null; targetLo
   return { targetBin: null, targetLocation: trimmed };
 }
 
+/** Recent moves follow this bin or location. Anything else is not a place to list. */
+export function recentMovesCode(place: MovePlace | null): string | null {
+  if (!place || (place.kind !== "bin" && place.kind !== "location")) return null;
+  const code = place.code.trim();
+  return code.length > 0 ? code : null;
+}
+
+/** The path sits beside the search. Hide it when it only repeats the place line. */
+export function placeDescription(path: string, place: string): { path: string; here: string } {
+  const trail = path.trim();
+  const here = place.trim();
+  return {
+    path: trail && trail !== here ? trail : "",
+    here: here ? `Now at ${here}.` : "",
+  };
+}
+
 export function parseMoveQty(value: string, onHand: number): number | null {
   if (!/^\d+$/.test(value.trim())) return null;
   const qty = Number(value);
