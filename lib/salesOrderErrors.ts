@@ -16,6 +16,8 @@ export function salesOrderErrorMessage(error: unknown): string {
   }
   const match = textValue.match(KNOWN_SALES_ERROR);
   if (match) return match[0];
+  if (textValue.includes("so_shipments_cost_check")) return "Shipment cost must be a USD amount, zero or more.";
+  if (/so_packages_shipment_id_fkey/i.test(textValue)) return "That shipment is already packed and cannot be removed.";
   if (textValue.includes("so_lines_text_check")) return "Enter a part number or a description.";
   if (textValue.includes("so_customer_notes_counter_check")) return "Enter the counter text.";
   if (textValue.includes("so_line_allocations_item_id_fkey")) return "Choose a SKU from the suggestions.";

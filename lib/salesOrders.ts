@@ -15,11 +15,15 @@ import {
   salesOrderListReference,
   partMatches,
   partPrefix,
+  mapSoShipments,
+  normalizeSoShipments,
   salesOrderTotal,
   toSalesOrderPayload,
   withEbayShippingItem,
+  type NormalizedSoShipment,
   type SoAddress,
   type SoDraftInput,
+  type SoShipmentInput,
 } from "@/lib/salesOrderDraft";
 import { salesOrderIsEcommerce } from "@/lib/salesOrderList";
 import { salesOperatorId, salesPageAccess } from "@/lib/salesSession";
@@ -183,6 +187,7 @@ export type SalesOrderView = {
   buyerUsername: string;
   lines: SalesLineView[];
   notes: SalesNoteView[];
+  shipments: SoShipmentInput[];
   attachments: SoAttachmentView[];
   events: SalesEventView[];
   total: number | null;
@@ -617,6 +622,12 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     access.canViewMoney,
   );
 
+  const [shipmentRows, attachments] = await Promise.all([
+    loadSoShipmentRows(String(data.id)),
+    loadSoAttachments(String(data.id)),
+  ]);
+  const shipments = mapSoShipments(shipmentRows).map((row) => (access.canViewMoney ? row : { ...row, cost: "" }));
+
   return {
     id: String(data.id),
     number: formatSalesOrderNumber(data.so_number),
@@ -656,7 +667,8 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
     buyerUsername: buyerNames(data.buyer).username,
     lines,
     notes,
-    attachments: await loadSoAttachments(String(data.id)),
+    shipments,
+    attachments,
     events,
     total: shown.total,
   };
@@ -774,6 +786,8 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   for (const amount of [draft.ebayTransactionFee, draft.ebayLabelFee, draft.ebayAdFee, draft.ebayOrderEarnings, draft.paymentAmount]) {
     if (amount.trim() && !/^-?[0-9]+(\.[0-9]+)?$/.test(amount.trim())) throw new Error("Enter a valid amount.");
   }
+  const shipments = normalizeSoShipments(draft.shipments);
+  if (!shipments.ok) throw new Error(shipments.error);
 
   const persisted = access.canViewMoney ? draft : { ...draft, internalNotes: input.id ? await readInternalNotes(input.id) : "" };
   const allocated = await attachEbayShipping(persisted);
@@ -824,6 +838,7 @@ export async function saveSalesOrder(input: SoDraftInput): Promise<{ id: string;
   });
   if (error) throw new Error(salesError(error));
   const id = rpcId(data);
+  await persistSoShipments(id, shipments.value, access.canViewMoney);
   const addressWarning = input.saveAddressToCustomer ? await saveAddressToCustomer(stored, ebay) : null;
   return { id, addressWarning };
 }
@@ -994,6 +1009,78 @@ function postalFrom(address: SoAddress, attentionIntoLine2: boolean): PostalAddr
     postalCode: address.postalCode.trim() || null,
     country: address.country.trim() || null,
   };
+}
+
+async function loadSoShipmentRows(orderId: string): Promise<unknown[]> {
+  const { data, error } = await (await getSupabase())
+    .from("so_shipments")
+    .select("id, carrier, method, carrier_account, awb, ship_date, cost, created_at")
+    .eq("sales_order_id", orderId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(salesError(error));
+  return data ?? [];
+}
+
+/**
+ * Replaces so_shipments for an order the sheet is allowed to save.
+ * write_sales_order does not touch this table. Ids that stay keep their row,
+ * so packages and shipment lines still point at them. No tracking URL is stored;
+ * the sheet builds one from carrier and AWB.
+ */
+async function persistSoShipments(orderId: string, rows: NormalizedSoShipment[], canViewMoney: boolean): Promise<void> {
+  const supabase = await getSupabase();
+  const existing = await supabase.from("so_shipments").select("id, cost").eq("sales_order_id", orderId);
+  if (existing.error) throw new Error(salesError(existing.error));
+  const known = new Map((existing.data ?? []).map((row) => [String(row.id), row.cost]));
+  const operatorId = await salesOperatorId();
+  const label = await operatorInitials();
+  const kept = new Set<string>();
+
+  for (const row of rows) {
+    const id = row.id && known.has(row.id) ? row.id : null;
+    const cost = canViewMoney ? row.cost : id ? knownCost(known.get(id)) : null;
+    const payload = {
+      carrier: row.carrier,
+      method: row.method,
+      carrier_account: row.carrierAccount,
+      awb: row.awb,
+      ship_date: row.shipDate,
+      cost,
+    };
+    if (id) {
+      kept.add(id);
+      const updated = await supabase.from("so_shipments").update(payload).eq("id", id).eq("sales_order_id", orderId);
+      if (updated.error) throw new Error(salesError(updated.error));
+      continue;
+    }
+    const inserted = await supabase
+      .from("so_shipments")
+      .insert({ ...payload, sales_order_id: orderId, operator_id: operatorId, operator_label: label })
+      .select("id")
+      .maybeSingle();
+    if (inserted.error) throw new Error(salesError(inserted.error));
+    if (inserted.data?.id) kept.add(String(inserted.data.id));
+  }
+
+  const remove = [...known.keys()].filter((id) => !kept.has(id));
+  if (remove.length === 0) return;
+  const [lines, packages] = await Promise.all([
+    supabase.from("so_shipment_lines").select("id").in("shipment_id", remove).limit(1),
+    supabase.from("so_packages").select("id").in("shipment_id", remove).limit(1),
+  ]);
+  if (lines.error) throw new Error(salesError(lines.error));
+  if (packages.error) throw new Error(salesError(packages.error));
+  if ((lines.data ?? []).length > 0 || (packages.data ?? []).length > 0) {
+    throw new Error("That shipment is already packed and cannot be removed.");
+  }
+  const deleted = await supabase.from("so_shipments").delete().in("id", remove).eq("sales_order_id", orderId);
+  if (deleted.error) throw new Error(salesError(deleted.error));
+}
+
+function knownCost(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
 }
 
 async function readInternalNotes(id: string): Promise<string> {

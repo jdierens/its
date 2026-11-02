@@ -1,3 +1,4 @@
+import { parseFreightIn } from "@/lib/poCharges";
 import {
   extensionFromUnit,
   formatExtension,
@@ -103,6 +104,27 @@ export type SoNoteInput = {
   counterText: string;
 };
 
+/** One so_shipments row as the sales order sheet edits it. */
+export type SoShipmentInput = {
+  id: string;
+  carrier: string;
+  method: string;
+  carrierAccount: string;
+  awb: string;
+  shipDate: string;
+  cost: string;
+};
+
+export type NormalizedSoShipment = {
+  id: string | null;
+  carrier: string | null;
+  method: string | null;
+  carrierAccount: string | null;
+  awb: string;
+  shipDate: string | null;
+  cost: number | null;
+};
+
 export type SoDraftInput = {
   id: string | null;
   customerId: string;
@@ -136,6 +158,7 @@ export type SoDraftInput = {
   ebayOrderEarnings: string;
   lines: SoLineInput[];
   notes: SoNoteInput[];
+  shipments: SoShipmentInput[];
   saveAddressToCustomer: boolean;
 };
 
@@ -692,7 +715,117 @@ export function lineKindForCredit(input: {
   return kind;
 }
 
-/** JSON body for write_sales_order. The number is not sent; approval assigns it. */
+const SHIPMENT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** FedEx, fedex, and FEDEX store as FedEx. Other carrier names stay as typed. */
+function canonicalShipmentCarrier(carrier: string): string {
+  const key = carrier.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (key === "fedex") return "FedEx";
+  if (key === "ups") return "UPS";
+  if (key === "usps") return "USPS";
+  if (key === "dhl") return "DHL";
+  if (key === "freight") return "Freight";
+  if (key === "other") return "Other";
+  return carrier.trim();
+}
+
+function parseShipmentDate(value: string): string | null | "invalid" {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "invalid";
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return "invalid";
+  return value;
+}
+
+/**
+ * Rows for so_shipments. A blank row is dropped.
+ * Carrier is free text because freight names such as Unishippers are stored there.
+ * The tracking link is derived later from carrier plus AWB. There is no URL column.
+ */
+export function normalizeSoShipments(
+  rows: SoShipmentInput[],
+): { ok: true; value: NormalizedSoShipment[] } | { ok: false; error: string } {
+  const shipments: NormalizedSoShipment[] = [];
+  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  for (const row of rows) {
+    const carrier = canonicalShipmentCarrier(row.carrier);
+    const method = row.method.trim();
+    const carrierAccount = row.carrierAccount.trim();
+    const awb = row.awb.trim().replace(/\s+/g, "");
+    const shipDate = row.shipDate.trim();
+    const cost = row.cost.trim();
+    if (!carrier && !method && !carrierAccount && !awb && !shipDate && !cost) continue;
+    const id = SHIPMENT_UUID.test(row.id) ? row.id : null;
+    // A stored row may have no carrier. A new row needs one.
+    if (!carrier && !id) return { ok: false, error: "Enter a carrier." };
+    if (carrier.length > 40) return { ok: false, error: "A carrier name is too long." };
+    if (!awb) return { ok: false, error: "Each shipment needs a tracking number." };
+    if (awb.length > 40) return { ok: false, error: "A tracking number is too long." };
+    if (method.length > 80) return { ok: false, error: "A ship method is too long." };
+    if (carrierAccount.length > 40) return { ok: false, error: "A carrier account is too long." };
+    const date = parseShipmentDate(shipDate);
+    if (date === "invalid") return { ok: false, error: "Enter a ship date." };
+    const amount = parseFreightIn(cost);
+    if (amount === "invalid") return { ok: false, error: "Shipment cost must be a USD amount, zero or more." };
+    const key = `${carrier.toUpperCase()}:${awb.toUpperCase()}`;
+    if (seen.has(key)) return { ok: false, error: "That tracking number is already on this order." };
+    seen.add(key);
+    if (id) {
+      if (seenIds.has(id)) return { ok: false, error: "That shipment is already listed." };
+      seenIds.add(id);
+    }
+    shipments.push({
+      id,
+      carrier: carrier || null,
+      method: method || null,
+      carrierAccount: carrierAccount || null,
+      awb,
+      shipDate: date,
+      cost: amount,
+    });
+  }
+  if (shipments.length > 20) return { ok: false, error: "A sales order can have at most 20 shipments." };
+  return { ok: true, value: shipments };
+}
+
+/** so_shipments rows for the sheet, oldest first. */
+export function mapSoShipments(rows: unknown): SoShipmentInput[] {
+  if (!Array.isArray(rows)) return [];
+  const mapped = rows.map((row) => {
+    const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const cost = record.cost;
+    let costText = "";
+    if (cost != null && cost !== "") {
+      const amount = Number(cost);
+      if (Number.isFinite(amount)) costText = amount.toFixed(2);
+    }
+    const shipDate = typeof record.ship_date === "string" ? record.ship_date.slice(0, 10) : "";
+    return {
+      id: typeof record.id === "string" ? record.id : "",
+      carrier: canonicalShipmentCarrier(typeof record.carrier === "string" ? record.carrier : ""),
+      method: typeof record.method === "string" ? record.method : "",
+      carrierAccount: typeof record.carrier_account === "string" ? record.carrier_account : "",
+      awb: typeof record.awb === "string" ? record.awb : "",
+      shipDate,
+      cost: costText,
+      createdAt: typeof record.created_at === "string" ? record.created_at : "",
+    };
+  });
+  mapped.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  return mapped.map(({ id, carrier, method, carrierAccount, awb, shipDate, cost }) => ({
+    id,
+    carrier,
+    method,
+    carrierAccount,
+    awb,
+    shipDate,
+    cost,
+  }));
+}
+
+/** JSON body for write_sales_order. The number is not sent; approval assigns it. Shipments are written separately. */
 export function toSalesOrderPayload(input: SoDraftInput): Record<string, unknown> {
   return {
     id: input.id,
