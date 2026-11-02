@@ -3,11 +3,13 @@
 import { itemMoveIds, itemMoveTargetBin, itemMoveTargetError } from "@/lib/binItemMove";
 import { errorText } from "@/lib/errors";
 import {
+  binEntriesFromJson,
   moveMigrationMissing,
   movePlaceFromJson,
   movePreviewFromJson,
   moveSummaryFromJson,
   recentMovesFromJson,
+  type BinEntry,
   type MovePlace,
   type MovePreview,
   type MoveResult,
@@ -20,6 +22,7 @@ import { getSupabase } from "@/lib/supabase";
 const MOVE_BIN_ITEMS_MIGRATION = "supabase/migrations/20261026220253_move_bin_items.sql";
 const MOVE_BIN_ITEM_LINES_MIGRATION = "supabase/migrations/20261026233415_move_bin_item_lines.sql";
 const SCOPED_RECENT_MOVES_MIGRATION = "supabase/migrations/20261102203000_scoped_recent_moves.sql";
+const BIN_ENTRIES_MIGRATION = "supabase/migrations/20261102210000_bin_entries.sql";
 
 function raiseRpc(error: { code?: string; message?: string } | null): never {
   if (moveMigrationMissing(error)) {
@@ -201,4 +204,20 @@ export async function listRecentMoves(code: string): Promise<RecentMove[]> {
     raiseRpc(error);
   }
   return recentMovesFromJson(data);
+}
+
+export async function listBinEntries(code: string): Promise<BinEntry[]> {
+  const scope = code.trim();
+  if (!scope) return [];
+  const { data, error } = await (await getSupabase()).rpc("list_bin_entries", {
+    p_code: scope,
+    p_limit: 50,
+  });
+  if (error) {
+    if (moveMigrationMissing(error)) {
+      throw new Error(`Apply ${BIN_ENTRIES_MIGRATION} before the target bin can list its entries.`);
+    }
+    throw new Error(errorText(error));
+  }
+  return binEntriesFromJson(data);
 }
