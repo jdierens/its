@@ -2,16 +2,17 @@
 
 import { Plus, X } from "lucide-react";
 import Link from "next/link";
-import { memo, useEffect, useState, type DragEvent, type KeyboardEvent } from "react";
+import { memo, useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { compressImage } from "@/lib/compressImage";
 import { errorText } from "@/lib/errors";
+import { processingClaimIsStale } from "@/lib/imagePipeline";
 import { moveItem } from "@/lib/imageOrder";
 import { imageFileError } from "@/lib/imageFiles";
 import { deleteItemImage, fetchItemImages, reorderItemImages } from "@/lib/images";
 import { uploadItemImages } from "@/lib/imageUpload";
-import type { ItemImage } from "@/lib/types";
+import type { ImageProcessingStatus, ItemImage } from "@/lib/types";
 
 /** The item toolbar and the gallery button both use this camera input. */
 export const ITEM_CAMERA_INPUT_ID = "item-take-photo";
@@ -34,6 +35,9 @@ type Tile = {
   name: string;
   edited: boolean;
   editHref: string | null;
+  processing: ImageProcessingStatus | null;
+  processed: boolean;
+  processingError: string | null;
 };
 
 export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendingChange }: ItemGalleryProps) {
@@ -45,6 +49,8 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [editorHref, setEditorHref] = useState<string | null>(null);
+  const started = useRef(new Set<string>());
+  const seenItem = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!itemId) return;
@@ -61,6 +67,51 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
     };
   }, [itemId]);
 
+  const processing = images.some(
+    (image) => image.processingStatus === "pending" || image.processingStatus === "processing",
+  );
+
+  useEffect(() => {
+    if (!itemId || !processing) return;
+    const timer = setInterval(() => {
+      void fetchItemImages(itemId)
+        .then(setImages)
+        .catch(() => undefined);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [itemId, processing]);
+
+  useEffect(() => {
+    if (!itemId) return;
+    if (seenItem.current !== itemId) {
+      seenItem.current = itemId;
+      started.current.clear();
+    }
+    let cancelled = false;
+    const now = Date.now();
+    for (const image of images) {
+      if (!processingClaimIsStale(image.processingStatus, image.processingStartedAt, now)) continue;
+      if (started.current.has(image.id)) continue;
+      started.current.add(image.id);
+      void import("@/lib/photoProcess")
+        .then(({ enqueueItemImageProcessing }) => enqueueItemImageProcessing(image))
+        .catch((err: unknown) => {
+          if (!cancelled) setError(errorText(err));
+        })
+        .finally(() => {
+          if (cancelled) return;
+          void fetchItemImages(itemId)
+            .then((rows) => {
+              if (!cancelled) setImages(rows);
+            })
+            .catch(() => undefined);
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId, images]);
+
   useEffect(() => {
     if (!focusKey) return;
     document.getElementById(`photo-${focusKey}`)?.focus();
@@ -73,6 +124,9 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
         name: "Item photo",
         edited: Boolean(image.sourceImageId),
         editHref: `/items/${itemId}/photos/${image.id}`,
+        processing: image.processingStatus,
+        processed: Boolean(image.processedAt),
+        processingError: image.processingError,
       }))
     : pending.map((image) => ({
         key: image.key,
@@ -80,6 +134,9 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
         name: image.file.name,
         edited: false,
         editHref: null,
+        processing: null,
+        processed: false,
+        processingError: null,
       }));
 
   async function addFiles(fileList: FileList | null, fromCamera = false) {
@@ -228,6 +285,13 @@ export const ItemGallery = memo(function ItemGallery({ itemId, pending, onPendin
         Take photo opens the phone camera. Add images opens the file picker. The first photo is the primary image. Drag to reorder, or focus a photo and press the left or right arrow.
         {itemId ? " Enter opens the editor." : ""}
       </p>
+      {itemId ? (
+        <p className="hint">
+          New photos process after the upload. Pending and Processing still show the original. Ready means the processed photo is the one search and listings use.
+        </p>
+      ) : (
+        <p className="hint">Photos process after the item is saved.</p>
+      )}
       {error ? <p className="hint error-text">{error}</p> : null}
       {tiles.length === 0 ? <p className="hint">No photos yet.</p> : null}
       {tiles.length > 0 ? (
@@ -341,13 +405,40 @@ function CameraCapture({ busy, onPick }: { busy: boolean; onPick: (files: FileLi
   );
 }
 
+function statusBadge(tile: Tile): { className: string; label: string; title: string } | null {
+  if (tile.processing === "pending") {
+    return { className: "badge-pending", label: "Pending", title: "Processing has not finished. This is the original photo." };
+  }
+  if (tile.processing === "processing") {
+    return {
+      className: "badge-pending",
+      label: "Processing",
+      title: "Blurring identifiers, improving the photo, and removing the background.",
+    };
+  }
+  if (tile.processing === "failed") {
+    const detail = tile.processingError ? `${tile.processingError} ` : "";
+    return { className: "badge-failed", label: "Failed", title: `${detail}Reload the item to try again.` };
+  }
+  if (tile.processed) {
+    return { className: "badge-ready", label: "Ready", title: "Processed photo. Search and listings use this version." };
+  }
+  return null;
+}
+
 function Thumb({ tile, primary }: { tile: Tile; primary: boolean }) {
+  const status = statusBadge(tile);
   return (
     <>
       {tile.url ? <img src={tile.url} alt={tile.name} /> : <span className="thumb-missing">No preview</span>}
-      {primary || tile.edited ? (
+      {primary || tile.edited || status ? (
         <span className="thumb-badges">
           {primary ? <span className="badge-primary">Primary</span> : null}
+          {status ? (
+            <span className={status.className} title={status.title}>
+              {status.label}
+            </span>
+          ) : null}
           {tile.edited ? <span className="badge-edited">Edited</span> : null}
         </span>
       ) : null}
