@@ -4,6 +4,7 @@ import { Plus, Printer, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from "react";
 import { usePageMeta } from "@/components/AppShell";
+import { LetterPrint } from "@/components/LetterPrint";
 import { SalesOrderStageNav } from "@/components/SalesOrderStageNav";
 import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import {
@@ -20,6 +21,7 @@ import {
   undoPick,
 } from "@/lib/pickActions";
 import { errorText } from "@/lib/errors";
+import { PICK_TICKET_PRINT, prepareLetterPrint } from "@/lib/letterPrint";
 import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
 import {
   declineUnknownSerials,
@@ -392,6 +394,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
 
   return (
     <main className="page pick-page">
+      <LetterPrint orientation={PICK_TICKET_PRINT.orientation} rootSelector={PICK_TICKET_PRINT.rootSelector} />
       <header className="pick-head">
         <div>
           <div className="pick-title">
@@ -414,7 +417,14 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
             {formatPickQty(progress.picked)} of {formatPickQty(progress.ordered)} picked
           </p>
           <p>{sheet.stagingBin ? `Staging bin ${sheet.stagingBin}` : stagingLabel(sheet.soNumber)}</p>
-          <button type="button" className="secondary no-print" onClick={() => window.print()}>
+          <button
+            type="button"
+            className="secondary no-print"
+            onClick={() => {
+              prepareLetterPrint();
+              window.print();
+            }}
+          >
             <Printer size={16} strokeWidth={1.75} aria-hidden />
             Print ticket
           </button>

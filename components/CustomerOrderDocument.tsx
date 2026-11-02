@@ -1,14 +1,21 @@
 import Link from "next/link";
 import { DocumentBarcode } from "@/components/DocumentBarcode";
+import { LetterPrint } from "@/components/LetterPrint";
 import { PrintDocumentButton } from "@/components/PrintDocumentButton";
 import { OrderConfirmationTerms } from "@/components/OrderConfirmationTerms";
 import { CUSTOMER_DOCUMENT_COMPANY, CUSTOMER_DOCUMENT_LOGO, type CustomerDocument } from "@/lib/customerDocument";
+import { CUSTOMER_DOCUMENT_PRINT } from "@/lib/letterPrint";
 import { orderConfirmationShowsTerms } from "@/lib/orderConfirmationTerms";
 
 export function CustomerOrderDocument({ document, orderId }: { document: CustomerDocument; orderId: string }) {
   const company = CUSTOMER_DOCUMENT_COMPANY;
   return (
     <main className="cust-doc-page">
+      <LetterPrint
+        orientation={CUSTOMER_DOCUMENT_PRINT.orientation}
+        rootSelector={CUSTOMER_DOCUMENT_PRINT.rootSelector}
+        fragmentSelector={CUSTOMER_DOCUMENT_PRINT.fragmentSelector}
+      />
       <div className="cust-doc-tools no-print">
         <Link href={`/sales/orders/${orderId}`}>Back to sales order</Link>
         <PrintDocumentButton />
