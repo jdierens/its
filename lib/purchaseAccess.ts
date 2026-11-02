@@ -1,17 +1,24 @@
+import { capabilitiesFor } from "@/lib/capabilities";
+
 export type PurchaseAccess = {
   canEdit: boolean;
   canViewMoney: boolean;
 };
 
 /**
- * Admin and staff create, edit, and send purchase orders and see costs.
- * read_only can see costs and cannot change the order.
- * Any other role, including a future warehouse role, sees quantities only.
- * While sign-in is off there is no role, and the open app can edit.
+ * Creating, entering, and sending a purchase order is can_edit_financials.
+ * Seeing costs is can_view_financials. A pricing officer can see costs and
+ * cannot send the order. Warehouse roles see quantities only.
  */
-export function purchaseAccessForRole(role: string | null, authOn: boolean): PurchaseAccess {
-  if (!authOn) return { canEdit: true, canViewMoney: true };
-  if (role === "admin" || role === "staff") return { canEdit: true, canViewMoney: true };
-  if (role === "read_only") return { canEdit: false, canViewMoney: true };
-  return { canEdit: false, canViewMoney: false };
+export function purchaseAccessForRole(
+  role: string | null,
+  authOn: boolean,
+  pricingOfficer = false,
+): PurchaseAccess {
+  const caps = capabilitiesFor({ role, status: "approved", pricingOfficer, authOn });
+  if (authOn && !role) return { canEdit: false, canViewMoney: false };
+  return {
+    canEdit: caps.has("can_edit_financials"),
+    canViewMoney: caps.has("can_view_financials"),
+  };
 }

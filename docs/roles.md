@@ -1,6 +1,8 @@
 # Roles and capabilities
 
-Design only. The app still has `admin`, `staff`, and `read_only`, and `read_only` can still write. This note is the plan for two warehouse roles that cannot see money, and for making `read_only` view-only. Jan has asked for `warehouse_manager` and a lower `warehouse_clerk`. The clerk's exact capabilities are proposals.
+Shipped in `lib/capabilities.ts`. Roles are `admin`, `staff`, `warehouse_manager`, `warehouse_clerk`, and `read_only`. `read_only` can see money and cannot write. Both warehouse roles have no `can_view_financials` and no `can_edit_financials`. The clerk proposals in the matrix are confirmed for this ship. Pricing officer stays an assignment on `app_users.pricing_officer`, not a sixth role. Guesses that were not confirmed are called out at the bottom; this ship used the recommended reading.
+
+The sections below are the plan that was implemented. Jan asked for `warehouse_manager` and a lower `warehouse_clerk`.
 
 ## Model
 
@@ -31,7 +33,7 @@ Suggested capabilities:
 
 ## Role matrix
 
-Yes means the role has the capability. **Guess** means Jan should confirm it. **Proposal** is the suggested clerk split. Jan asked for the clerk role; he has not confirmed these cells yet.
+Yes means the role has the capability. Clerk **proposal** cells are confirmed for this ship. **Guess** cells used the recommended reading and stay open questions.
 
 | Capability | admin | staff | warehouse_manager | warehouse_clerk | read_only |
 |---|---|---|---|---|---|

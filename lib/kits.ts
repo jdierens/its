@@ -1,5 +1,6 @@
 "use server";
 
+import { requireCapability } from "@/lib/actorAccess";
 import { errorText } from "@/lib/errors";
 import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
 import { salesTableMissing } from "@/lib/kitRules";
@@ -96,6 +97,7 @@ export async function saveKitRecipe(
   itemId: string,
   rows: { componentItemId: string; qtyPerKit: number; notes: string }[],
 ): Promise<void> {
+  await requireCapability("can_edit_items");
   const supabase = await getSupabase();
   const { error } = await supabase.rpc("save_kit_components", {
     p_kit_id: itemId,
@@ -219,6 +221,7 @@ export async function searchParts(
 }
 
 export async function setItemGeneric(itemId: string, generic: boolean): Promise<void> {
+  await requireCapability("can_edit_items");
   const supabase = await getSupabase();
   const { error } = await supabase.from("items").update({ is_generic: generic }).eq("id", itemId);
   if (error) throw new Error(errorText(error));
@@ -293,6 +296,7 @@ export async function loadSoKitLine(lineId: string): Promise<SoKitLineLoad> {
 }
 
 export async function swapSoComponent(componentId: string, actualItemId: string, reason: string): Promise<void> {
+  await requireCapability("can_edit_financials");
   const supabase = await getSupabase();
   const { error } = await supabase.rpc("swap_so_line_component", {
     p_component_id: componentId,

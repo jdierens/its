@@ -13,6 +13,7 @@ import {
   type ImageProcessClaim,
 } from "@/lib/imagePipeline";
 import { appendSortStart, shiftedSortOrders, sortOrderAfterSource } from "@/lib/imageOrder";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 import type { ItemImage } from "@/lib/types";
 
@@ -148,6 +149,7 @@ export async function reserveItemImageUpload(
   itemId: string,
   file: { name: string; type: string; size: number },
 ): Promise<ImageUploadTicket> {
+  await requireCapability("can_add_photos");
   if (!UUID_PATTERN.test(itemId)) throw new Error("Unknown item.");
   return reserveUpload(itemId, file, await nextSortOrder(itemId));
 }
@@ -174,6 +176,7 @@ export async function commitItemImageUpload(input: {
   path: string;
   sortOrder: number;
 }): Promise<void> {
+  await requireCapability("can_add_photos");
   assertOwnedPath(input.itemId, input.id, input.path);
   if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0) throw new Error("Could not save the photo.");
   if (!(await objectIsStored(input.path))) throw new Error(STORAGE_MISSING);
@@ -194,11 +197,13 @@ export async function commitItemImageUpload(input: {
 }
 
 export async function discardItemImage(path: string): Promise<void> {
+  await requireCapability("can_add_photos");
   if (!path || path.includes("..") || path.startsWith("/")) return;
   await (await getSupabase()).storage.from(ITEM_IMAGE_BUCKET).remove([path]);
 }
 
 export async function reorderItemImages(itemId: string, orderedIds: string[]): Promise<void> {
+  await requireCapability("can_edit_items");
   const supabase = await getSupabase();
   const results = await Promise.all(
     orderedIds.map((id, sortOrder) =>
@@ -210,6 +215,7 @@ export async function reorderItemImages(itemId: string, orderedIds: string[]): P
 }
 
 export async function deleteItemImage(image: ItemImage): Promise<void> {
+  await requireCapability("can_edit_items");
   assertOwnedPath(image.itemId, image.id, image.storagePath);
   const paths = storagePathsForImage({
     storagePath: image.storagePath,
@@ -229,6 +235,7 @@ export async function reserveEditedImageUpload(input: {
   type: string;
   size: number;
 }): Promise<ImageUploadTicket> {
+  await requireCapability("can_edit_items");
   assertIds(input.itemId, input.sourceImageId);
   const type = input.type === "image/png" ? "image/png" : "image/jpeg";
   const name = type === "image/png" ? "edit.png" : "edit.jpg";
@@ -241,6 +248,7 @@ export async function commitEditedImage(input: {
   id: string;
   path: string;
 }): Promise<void> {
+  await requireCapability("can_edit_items");
   assertOwnedPath(input.itemId, input.id, input.path);
   assertIds(input.itemId, input.sourceImageId);
   if (!(await objectIsStored(input.path))) throw new Error(STORAGE_MISSING);
@@ -279,6 +287,7 @@ export async function commitEditedImage(input: {
 }
 
 export async function claimItemImageProcessing(imageId: string): Promise<ImageProcessClaim | null> {
+  await requireCapability("can_add_photos");
   if (!UUID_PATTERN.test(imageId)) throw new Error("Unknown photo.");
   const supabase = await getSupabase();
   const existing = await supabase
@@ -336,6 +345,7 @@ export async function reserveProcessedImageUpload(input: {
   startedAt: string;
   size: number;
 }): Promise<ImageUploadTicket> {
+  await requireCapability("can_add_photos");
   assertIds(input.itemId, input.imageId);
   assertStartedAt(input.startedAt);
   const problem = imageFileError({ name: "processed.jpg", type: "image/jpeg", size: input.size });
@@ -366,6 +376,7 @@ export async function completeItemImageProcessing(input: {
   startedAt: string;
   path: string;
 }): Promise<void> {
+  await requireCapability("can_add_photos");
   assertOwnedPath(input.itemId, input.imageId, input.path);
   assertStartedAt(input.startedAt);
   if (!isProcessedImagePath(input.itemId, input.imageId, input.path)) throw new Error("Could not save the photo.");
@@ -408,6 +419,7 @@ export async function failItemImageProcessing(input: {
   startedAt: string;
   message: string;
 }): Promise<boolean> {
+  await requireCapability("can_add_photos");
   if (!UUID_PATTERN.test(input.imageId) || !/^[0-9TZ.: +-]{10,40}$/.test(input.startedAt)) return false;
   const message = input.message.replace(/\s+/g, " ").trim().slice(0, 280) || "Photo processing failed.";
   const supabase = await getSupabase();

@@ -3,12 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { EBAY_STATE_COOKIE } from "@/lib/ebay/endpoints";
 import { writeEbayLog } from "@/lib/ebay/log";
 import { CSRF_MESSAGE } from "@/lib/ebay/messages";
+import { integrationDenied } from "@/lib/integrationAccess";
 import { exchangeCode } from "@/lib/ebay/oauth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   const params = request.nextUrl.searchParams;
   const oauthError = params.get("error");
   if (oauthError) {

@@ -20,6 +20,8 @@ import {
   type ItemType,
 } from "@/lib/itemFields";
 import { ITEM_PAGE_SIZE, itemSortRequest, parseItemPage, parseItemSort } from "@/lib/itemSort";
+import { actorCan, requireCapability } from "@/lib/actorAccess";
+import { isFinancialItemField } from "@/lib/capabilities";
 import { getSupabase } from "@/lib/supabase";
 import type {
   Attribute,
@@ -439,8 +441,13 @@ export async function fetchItemList(input: {
   if (resolved.unknownTax) return { rows: [], total, matched: 0, page: 1, columns: [], pricing: false, unknownTax: true };
   if (resolved.empty) return { rows: [], total, matched: 0, page: 1, columns: resolved.columns, pricing: false, unknownTax: false };
 
-  const pricing = await pricingAvailable(supabase);
-  const sort = parseItemSort(input.sort ?? null, input.dir ?? null);
+  const canViewPrices = await actorCan("can_view_financials");
+  const pricing = canViewPrices && (await pricingAvailable(supabase));
+  const requestedSort = parseItemSort(input.sort ?? null, input.dir ?? null);
+  const sort =
+    !canViewPrices && isFinancialItemField(requestedSort.column)
+      ? { column: "sku", ascending: true }
+      : requestedSort;
   const attribute = sort.column.startsWith("attr:")
     ? resolved.columns.find((column) => column.name === sort.column.slice(5))
     : undefined;
@@ -605,7 +612,7 @@ function toListRow(item: ListRow, imageUrl: string | null): ItemListRow {
 
 export async function fetchListedItem(id: string): Promise<ItemListRow | null> {
   const supabase = await getSupabase();
-  const pricing = await pricingAvailable(supabase);
+  const pricing = (await actorCan("can_view_financials")) && (await pricingAvailable(supabase));
   const listed = await supabase.from("items").select(listColumns(pricing)).eq("id", id).maybeSingle();
   if (listed.error) throw new Error(errorText(listed.error));
   if (!listed.data) return null;
@@ -637,6 +644,7 @@ export async function saveItemCell(input: {
   value: string;
   expectedUpdatedAt: string;
 }): Promise<CellSave> {
+  await requireCapability(isFinancialItemField(input.field) ? "can_edit_financials" : "can_edit_items");
   const { data, error } = await (await getSupabase()).rpc("update_item_cell", {
     p_id: input.id,
     p_field: input.field,
@@ -811,6 +819,7 @@ function coreArgs(input: ItemInput) {
 }
 
 export async function createItem(input: ItemInput): Promise<string> {
+  await requireCapability("can_edit_items");
   const { data, error } = await (await getSupabase()).rpc("create_item", {
     p_name: input.name,
     p_taxonomy: input.taxonomyName,
@@ -830,6 +839,7 @@ export async function createItem(input: ItemInput): Promise<string> {
 }
 
 export async function deleteItem(id: string): Promise<void> {
+  await requireCapability("can_edit_items");
   const supabase = await getSupabase();
   const images = await supabase.from("item_images").select("storage_path, original_storage_path").eq("item_id", id);
   let imageRows: { storage_path?: unknown; original_storage_path?: unknown }[] | null = images.data;
@@ -876,6 +886,7 @@ export async function deleteItem(id: string): Promise<void> {
 }
 
 export async function updateItem(id: string, input: ItemInput): Promise<void> {
+  await requireCapability("can_edit_items");
   const { error } = await (await getSupabase()).rpc("update_item", {
     p_id: id,
     p_name: input.name,
@@ -893,6 +904,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
 }
 
 export async function saveItemNotes(id: string, notes: string): Promise<void> {
+  await requireCapability("can_edit_items");
   const { error } = await (await getSupabase()).from("items").update({ notes: notes.trim() || null }).eq("id", id);
   if (error) throw new Error(errorText(error));
 }
@@ -909,6 +921,7 @@ export async function changeItemTaxonomy(input: {
   copyNotes: boolean;
   regenerateSku: boolean;
 }): Promise<TaxonomyChangeResult> {
+  await requireCapability("can_edit_items");
   const { data, error } = await (await getSupabase()).rpc("change_item_taxonomy", {
     p_id: input.id,
     p_taxonomy_id: input.taxonomyId,
@@ -939,6 +952,7 @@ function friendlyTaxonomyError(error: unknown): string {
 }
 
 export async function createTaxonomy(input: TaxonomyInput): Promise<string> {
+  await requireCapability("can_manage_catalog");
   const { data, error } = await (await getSupabase())
     .from("taxonomies")
     .insert({
@@ -962,6 +976,7 @@ export async function countTaxonomyItems(id: string): Promise<number> {
 }
 
 export async function deleteTaxonomy(id: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const count = await countTaxonomyItems(id);
   if (count > 0) {
     throw new Error(
@@ -976,6 +991,7 @@ export async function deleteTaxonomy(id: string): Promise<void> {
 }
 
 export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase())
     .from("taxonomies")
     .update({
@@ -989,6 +1005,7 @@ export async function updateTaxonomy(id: string, input: TaxonomyInput): Promise<
 }
 
 export async function saveTaxonomyOrder(ids: string[]): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const supabase = await getSupabase();
   const results = await Promise.all(
     ids.map((id, index) =>

@@ -1,17 +1,19 @@
+import { capabilitiesFor } from "@/lib/capabilities";
+
 export type SalesAccess = {
   canEdit: boolean;
   canViewMoney: boolean;
 };
 
 /**
- * Admin and staff create and approve sales orders and see prices.
- * read_only can see prices and cannot change the order.
- * Any other role sees parts and quantities only.
- * While sign-in is off there is no role, and the open app can edit.
+ * Creating and approving a sales order is can_edit_financials.
+ * Seeing prices is can_view_financials. Warehouse roles see parts and quantities.
  */
-export function salesAccessForRole(role: string | null, authOn: boolean): SalesAccess {
-  if (!authOn) return { canEdit: true, canViewMoney: true };
-  if (role === "admin" || role === "staff") return { canEdit: true, canViewMoney: true };
-  if (role === "read_only") return { canEdit: false, canViewMoney: true };
-  return { canEdit: false, canViewMoney: false };
+export function salesAccessForRole(role: string | null, authOn: boolean, pricingOfficer = false): SalesAccess {
+  const caps = capabilitiesFor({ role, status: "approved", pricingOfficer, authOn });
+  if (authOn && !role) return { canEdit: false, canViewMoney: false };
+  return {
+    canEdit: caps.has("can_edit_financials"),
+    canViewMoney: caps.has("can_view_financials"),
+  };
 }

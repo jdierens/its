@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { applyLegacyLogSeed } from "@/lib/ebay/orders";
-import { stockSettingsWritable } from "@/lib/stockAccess";
+import { actorCan } from "@/lib/actorAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 const MAX_BYTES = 8_000_000;
 
 export async function POST(request: Request) {
-  if (!(await stockSettingsWritable())) {
+  if (!(await actorCan("can_manage_integrations"))) {
     return NextResponse.json({ ok: false, message: "Only an admin can seed eBay orders." }, { status: 403 });
   }
   const csv = await request.text();

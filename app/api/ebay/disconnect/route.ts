@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { integrationDenied } from "@/lib/integrationAccess";
 import { disconnectEbay } from "@/lib/ebay/oauth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST() {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   try {
     await disconnectEbay();
     return NextResponse.json({ ok: true });

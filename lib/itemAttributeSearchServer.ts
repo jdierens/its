@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readAppUser } from "@/lib/appUserRecord";
 import { authRequired } from "@/lib/authRequired";
-import { canViewFinancials } from "@/lib/export/access";
+import { capabilitiesFor } from "@/lib/capabilities";
 import { errorText } from "@/lib/errors";
 import {
   ITEM_SEARCH_PAGE_SIZE,
@@ -65,12 +65,26 @@ export async function itemSearchAccess(): Promise<ItemSearchAccess> {
     if (!session) throw new ItemSearchDenied("Sign in required.", 401);
     const user = await readAppUser(session.id);
     if (!user || user.status !== "approved") throw new ItemSearchDenied("An approved account is required.", 403);
-    return { canViewFinancials: canViewFinancials(user.role) };
+    return {
+      canViewFinancials: capabilitiesFor({
+        role: user.role,
+        status: user.status,
+        pricingOfficer: user.pricing_officer,
+        authOn: true,
+      }).has("can_view_financials"),
+    };
   }
   if (!session) return { canViewFinancials: true };
   const user = await readAppUser(session.id);
   if (!user || user.status !== "approved") return { canViewFinancials: true };
-  return { canViewFinancials: canViewFinancials(user.role) };
+  return {
+    canViewFinancials: capabilitiesFor({
+      role: user.role,
+      status: user.status,
+      pricingOfficer: user.pricing_officer,
+      authOn: false,
+    }).has("can_view_financials"),
+  };
 }
 
 export async function runAttributeSearch(parsed: ParsedAttributeSearch): Promise<AttributeSearchResponse> {

@@ -10,6 +10,7 @@ import {
   type PaypalFeeCatalog,
   type PaypalFeeItem,
 } from "@/lib/paypalFee";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 export type PaypalFeeSetting = {
@@ -45,6 +46,7 @@ export async function savePaypalFeeSkus(domestic: string, international: string)
   domestic: PaypalFeeSetting;
   international: PaypalFeeSetting;
 }> {
+  await requireCapability("can_edit_financials");
   const domesticItem = await itemForSku(domestic);
   const internationalItem = await itemForSku(international);
   if (!domesticItem) throw new Error("Choose the PayPal domestic fee item.");

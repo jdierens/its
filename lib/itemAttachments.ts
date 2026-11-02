@@ -1,5 +1,6 @@
 "use server";
 
+import { requireCapability } from "@/lib/actorAccess";
 import { authRequired } from "@/lib/authRequired";
 import { withDeadline } from "@/lib/deadline";
 import { errorText } from "@/lib/errors";
@@ -69,6 +70,7 @@ export async function reserveItemAttachmentUpload(
   itemId: string,
   file: { name: string; type: string; size: number; kind: string },
 ): Promise<ItemAttachmentTicket> {
+  await requireCapability("can_add_photos");
   const kind = parseItemAttachmentKind(file.kind);
   if (!kind) throw new Error("Choose a file type.");
   const problem = itemPdfFileError(file);
@@ -92,6 +94,7 @@ export async function commitItemAttachmentUpload(input: {
   fileName: string;
   byteSize: number;
 }): Promise<void> {
+  await requireCapability("can_add_photos");
   const kind = parseItemAttachmentKind(input.kind);
   if (!kind) throw new Error("Choose a file type.");
   if (input.path !== attachmentPath(input.itemId, input.id)) throw new Error("Unknown file.");
@@ -115,11 +118,13 @@ export async function commitItemAttachmentUpload(input: {
 }
 
 export async function discardItemAttachmentUpload(path: string): Promise<void> {
+  await requireCapability("can_add_photos");
   if (!/^[0-9a-f-]{36}\/[0-9a-f-]{36}\.pdf$/i.test(path)) return;
   await (await getSupabase()).storage.from(ITEM_DOCUMENT_BUCKET).remove([path]);
 }
 
 export async function deleteItemAttachment(itemId: string, attachmentId: string): Promise<void> {
+  await requireCapability("can_edit_items");
   if (!UUID.test(itemId) || !UUID.test(attachmentId)) throw new Error("Unknown file.");
   await assertItem(itemId);
   const supabase = await getSupabase();

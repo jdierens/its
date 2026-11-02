@@ -44,10 +44,24 @@ import { ScanListener } from "@/components/ScanListener";
 import { SignedInUser } from "@/components/SignedInUser";
 import { fetchCurrentAppUser, type AppUser } from "@/lib/appUsers";
 import { authRequired } from "@/lib/authRequired";
+import { routeAllowed } from "@/lib/capabilities";
 import { isNavActive, NAV_GROUPS, pageMetaFor, type PageMeta } from "@/lib/nav";
 import { isPublicPath } from "@/lib/publicPaths";
 
 const STORAGE_KEY = "its.sidebar.collapsed";
+
+function navAllowed(href: string, account: AppUser | null): boolean {
+  if (!authRequired()) return true;
+  const gated =
+    href.startsWith("/admin/") || href === "/pricing" || href.startsWith("/pricing/");
+  if (!account) return !gated;
+  return routeAllowed(href, {
+    role: account.role,
+    status: account.status,
+    pricingOfficer: account.pricingOfficer,
+    authOn: true,
+  });
+}
 
 function SidebarToggleGlyph() {
   return (
@@ -186,11 +200,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const groups = NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => {
-      if (item.href === "/admin/users") return account?.role === "admin";
-      if (item.href === "/admin/data") return !authRequired() || account?.role === "admin";
-      return true;
-    }),
+    items: group.items
+      .filter((item) => navAllowed(item.href, account))
+      .map((item) => ({
+        ...item,
+        children: item.children?.filter((child) => navAllowed(child.href, account)),
+      })),
   })).filter((group) => group.items.length > 0);
 
   const shellClass = [

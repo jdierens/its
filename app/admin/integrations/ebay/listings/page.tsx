@@ -2,7 +2,7 @@ import { EbayListingsBrowser } from "@/components/EbayListingsBrowser";
 import { errorText } from "@/lib/errors";
 import { listEbayListings, parseEbayListingQuery, type EbayListingsBrowserResult } from "@/lib/ebay/listingsBrowser";
 import { readGoogleOAuth } from "@/lib/google/sheets";
-import { stockSettingsWritable } from "@/lib/stockAccess";
+import { actorCan } from "@/lib/actorAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export default async function EbayListingsPage({
   searchParams: Promise<{ q?: string; match?: string; page?: string }>;
 }) {
   const parsed = parseEbayListingQuery(await searchParams);
-  const canMatch = await stockSettingsWritable();
+  const canMatch = await actorCan("can_manage_integrations");
   let browser: EbayListingsBrowserResult;
   try {
     browser = await listEbayListings(parsed);

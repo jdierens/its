@@ -3,12 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { QBO_STATE_COOKIE } from "@/lib/qbo/config";
 import { writeSyncLog } from "@/lib/qbo/log";
 import { CSRF_MESSAGE } from "@/lib/qbo/messages";
+import { integrationDenied } from "@/lib/integrationAccess";
 import { exchangeCode } from "@/lib/qbo/oauth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   const params = request.nextUrl.searchParams;
   const oauthError = params.get("error");
   if (oauthError) {

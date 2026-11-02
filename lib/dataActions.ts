@@ -18,10 +18,7 @@ import {
   type DataTable,
 } from "@/lib/data/registry";
 import { errorText } from "@/lib/errors";
-import { canViewFinancials } from "@/lib/export/access";
-import { readAppUser } from "@/lib/appUserRecord";
-import { authRequired } from "@/lib/authRequired";
-import { sessionUser } from "@/lib/sessionUser";
+import { actorCan } from "@/lib/actorAccess";
 import { operatorInitials, stockSettingsWritable } from "@/lib/stockAccess";
 import { getSupabase } from "@/lib/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -66,11 +63,7 @@ async function assertDataAdmin(): Promise<string> {
 }
 
 async function canViewMoney(): Promise<boolean> {
-  if (!authRequired()) return true;
-  const session = await sessionUser();
-  if (!session) return false;
-  const user = await readAppUser(session.id);
-  return Boolean(user && canViewFinancials(user.role));
+  return actorCan("can_view_financials");
 }
 
 function preparedRows(inputs: MappedBinInput[]) {

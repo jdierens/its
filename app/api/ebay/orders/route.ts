@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ReconnectError } from "@/lib/ebay/auth";
 import { RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { orderPullMessage, pullEbayOrders, SeedRequiredError } from "@/lib/ebay/orders";
-import { stockSettingsWritable } from "@/lib/stockAccess";
+import { actorCan } from "@/lib/actorAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST() {
-  if (!(await stockSettingsWritable())) {
+  if (!(await actorCan("can_manage_integrations"))) {
     return NextResponse.json({ ok: false, message: "Only an admin can pull eBay orders." }, { status: 403 });
   }
   try {

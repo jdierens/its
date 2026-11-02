@@ -2,6 +2,7 @@
 
 import { binFromRow, type BinRecord, type BinType } from "@/lib/bins";
 import { errorText } from "@/lib/errors";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 const BIN_COLUMNS =
@@ -56,6 +57,7 @@ export async function fetchRecentBins(limit = 20): Promise<BinRecord[]> {
 }
 
 export async function saveBinNextNumber(nextNumber: number): Promise<number> {
+  await requireCapability("can_edit_settings");
   const { data, error } = await (await getSupabase()).rpc("set_bin_next_number", { p_next: nextNumber });
   if (error) throw new Error(errorText(error));
   const saved = Number(data);
@@ -64,12 +66,14 @@ export async function saveBinNextNumber(nextNumber: number): Promise<number> {
 }
 
 export async function reserveBins(type: BinType, count: number): Promise<BinRecord[]> {
+  await requireCapability("can_move_bins");
   const { data, error } = await (await getSupabase()).rpc("reserve_bins", { p_type: type, p_count: count });
   if (error) throw new Error(errorText(error));
   return asRows(data).map(binFromRow);
 }
 
 export async function printBinRange(type: BinType, from: number, to: number): Promise<BinRecord[]> {
+  await requireCapability("can_move_bins");
   const { data, error } = await (await getSupabase()).rpc("print_bin_range", {
     p_type: type,
     p_from: from,
@@ -80,6 +84,7 @@ export async function printBinRange(type: BinType, from: number, to: number): Pr
 }
 
 export async function reprintBin(reference: string, copies: number): Promise<BinRecord> {
+  await requireCapability("can_move_bins");
   const { data, error } = await (await getSupabase()).rpc("reprint_bin", {
     p_reference: reference,
     p_copies: copies,

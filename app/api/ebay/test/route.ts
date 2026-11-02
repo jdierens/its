@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { ReconnectError } from "@/lib/ebay/auth";
 import { RECONNECT_MESSAGE } from "@/lib/ebay/messages";
+import { integrationDenied } from "@/lib/integrationAccess";
 import { testConnection } from "@/lib/ebay/oauth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST() {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   try {
     const result = await testConnection();
     return NextResponse.json(result, { status: result.ok ? 200 : 400 });

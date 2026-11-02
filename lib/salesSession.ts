@@ -9,7 +9,7 @@ export async function salesPageAccess(): Promise<SalesAccess> {
   if (!session) return salesAccessForRole(null, true);
   const user = await readAppUser(session.id);
   if (!user || user.status !== "approved") return salesAccessForRole(null, true);
-  return salesAccessForRole(user.role, true);
+  return salesAccessForRole(user.role, true, user.pricing_officer);
 }
 
 export async function salesOperatorId(): Promise<string | null> {

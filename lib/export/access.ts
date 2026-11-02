@@ -1,4 +1,5 @@
 import { readAppUser } from "@/lib/appUserRecord";
+import { capabilitiesFor } from "@/lib/capabilities";
 import { sessionUser } from "@/lib/sessionUser";
 
 export class ExportDenied extends Error {
@@ -17,9 +18,9 @@ export type ExportActor = {
   canViewFinancials: boolean;
 };
 
-/** Admin, staff, and read_only can see prices. A future warehouse role cannot. */
-export function canViewFinancials(role: string): boolean {
-  return role === "admin" || role === "staff" || role === "read_only";
+/** Admin, staff, and read_only can see prices. Warehouse roles cannot, unless they are a pricing officer. */
+export function canViewFinancials(role: string, pricingOfficer = false): boolean {
+  return capabilitiesFor({ role, status: "approved", pricingOfficer, authOn: true }).has("can_view_financials");
 }
 
 export async function requireExportActor(): Promise<ExportActor> {
@@ -33,6 +34,6 @@ export async function requireExportActor(): Promise<ExportActor> {
     id: user.id,
     email: user.email,
     role: user.role,
-    canViewFinancials: canViewFinancials(user.role),
+    canViewFinancials: canViewFinancials(user.role, user.pricing_officer),
   };
 }

@@ -1,8 +1,9 @@
+import { routeAllowed } from "@/lib/capabilities";
 import { isPublicPath } from "@/lib/publicPaths";
 
 export const COMPANY_DOMAIN = "deepdiscountservers.com";
 
-export type AppRole = "admin" | "staff" | "read_only";
+export type AppRole = "admin" | "staff" | "warehouse_manager" | "warehouse_clerk" | "read_only";
 export type AppStatus = "pending" | "approved" | "disabled";
 
 export function isCompanyEmail(email: string | null | undefined): boolean {
@@ -42,6 +43,7 @@ export function gateRequest(input: {
   domain: string | null;
   status: AppStatus | null;
   role: AppRole | null;
+  pricingOfficer?: boolean;
 }): Gate {
   const path = input.pathname;
   if (isPublicPath(path) || path === "/auth/callback") return { type: "allow" };
@@ -62,6 +64,15 @@ export function gateRequest(input: {
   }
 
   if (path === "/login" || path === "/waiting") return { type: "redirect", path: "/items" };
-  if (path === "/admin/users" && input.role !== "admin") return { type: "redirect", path: "/items" };
+  if (
+    !routeAllowed(path, {
+      role: input.role,
+      status: input.status,
+      pricingOfficer: input.pricingOfficer,
+      authOn: true,
+    })
+  ) {
+    return { type: "redirect", path: "/items" };
+  }
   return { type: "allow" };
 }

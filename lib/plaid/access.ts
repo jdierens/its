@@ -1,7 +1,7 @@
-import type { AppRole } from "@/lib/authDomain";
+import { capabilitiesFor } from "@/lib/capabilities";
 
-/** Bank feeds follow the other money screens: admin and staff when sign-in is on. */
-export function bankFeedAllowed(role: AppRole | null, authOn: boolean): boolean {
-  if (!authOn) return true;
-  return role === "admin" || role === "staff";
+/** Bank feeds are an integration. The recommended gate is admin only. */
+export function bankFeedAllowed(role: string | null, authOn: boolean): boolean {
+  if (authOn && !role) return false;
+  return capabilitiesFor({ role, status: "approved", authOn }).has("can_manage_integrations");
 }

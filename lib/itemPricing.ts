@@ -10,6 +10,7 @@ import {
   type TransactionSource,
   type TransactionType,
 } from "@/lib/pricing/quotes";
+import { actorCan, requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 export type ItemPrices = {
@@ -64,6 +65,7 @@ const PRICE_COLUMNS =
   "ecommerce_price, ecommerce_price_updated_at, market_price, market_price_updated_at, msrp, msrp_updated_at, pricing_checked_at, part_number, model";
 
 export async function fetchItemPrices(itemId: string): Promise<ItemPrices | null> {
+  if (!(await actorCan("can_view_financials"))) return null;
   const { data, error } = await (await getSupabase()).from("items").select(PRICE_COLUMNS).eq("id", itemId).maybeSingle();
   if (error) throw new Error(errorText(error));
   if (!data) return null;
@@ -84,6 +86,7 @@ export async function saveItemPrices(
   itemId: string,
   prices: { ecommercePrice: number | null; marketPrice: number | null; msrp: number | null },
 ): Promise<void> {
+  await requireCapability("can_edit_financials");
   const { error } = await (await getSupabase())
     .from("items")
     .update({
@@ -100,6 +103,7 @@ type QuoteRow = PriceQuoteRow & {
 };
 
 export async function fetchPriceQuotes(itemId: string): Promise<PriceQuote[]> {
+  if (!(await actorCan("can_view_financials"))) return [];
   const { data, error } = await (await getSupabase())
     .from("price_quotes")
     .select("id, source, price, currency, qty, condition, vendor_id, seller_name, url, notes, captured_at, captured_by, outlier, vendors(display_name)")
@@ -138,6 +142,7 @@ export type QuoteInput = {
 };
 
 export async function addPriceQuote(itemId: string, input: QuoteInput): Promise<void> {
+  await requireCapability("can_edit_financials");
   const { error } = await (await getSupabase()).from("price_quotes").insert({
     item_id: itemId,
     source: input.source,
@@ -172,6 +177,7 @@ type TxnRow = {
 };
 
 export async function fetchItemTransactions(itemId: string): Promise<ItemTransaction[]> {
+  if (!(await actorCan("can_view_financials"))) return [];
   const { data, error } = await (await getSupabase())
     .from("item_transactions")
     .select(
@@ -212,6 +218,7 @@ export type TransactionInput = {
 };
 
 export async function addItemTransaction(itemId: string, input: TransactionInput): Promise<void> {
+  await requireCapability("can_edit_financials");
   const { error } = await (await getSupabase()).from("item_transactions").insert({
     item_id: itemId,
     type: input.type,
@@ -234,6 +241,7 @@ export async function fetchPartyChoices(table: "customers" | "vendors"): Promise
 }
 
 export async function fetchSalesWindowDays(): Promise<number> {
+  if (!(await actorCan("can_view_financials"))) throw new Error("You cannot view prices.");
   const { data, error } = await (await getSupabase())
     .from("app_settings")
     .select("value")
@@ -245,6 +253,7 @@ export async function fetchSalesWindowDays(): Promise<number> {
 }
 
 export async function saveSalesWindowDays(days: number): Promise<void> {
+  await requireCapability("can_edit_financials");
   const { error } = await (await getSupabase()).from("app_settings").upsert({
     key: SALES_WINDOW_KEY,
     value: String(days),

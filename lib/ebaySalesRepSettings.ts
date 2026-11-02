@@ -7,6 +7,7 @@ import {
   normalizeSalesRep,
   readEbayDefaultSalesRep,
 } from "@/lib/ebaySalesRep";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 export async function fetchEbayDefaultSalesRep(): Promise<string> {
@@ -15,6 +16,7 @@ export async function fetchEbayDefaultSalesRep(): Promise<string> {
 
 /** Empty is stored as MT. Anything else must be two letters. */
 export async function saveEbayDefaultSalesRep(value: string): Promise<string> {
+  await requireCapability("can_edit_settings");
   const rep = value.trim() === "" ? ebaySalesRepFromSetting("") : normalizeSalesRep(value);
   if (!rep) throw new Error("eBay sales rep is 2 letters.");
   const { error } = await (await getSupabase()).from("app_settings").upsert({
