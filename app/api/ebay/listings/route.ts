@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { ReconnectError } from "@/lib/ebay/auth";
 import { pullActiveListings } from "@/lib/ebay/listings";
 import { RECONNECT_MESSAGE } from "@/lib/ebay/messages";
-import { stockSettingsWritable } from "@/lib/stockAccess";
+import { actorCan } from "@/lib/actorAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST() {
-  if (!(await stockSettingsWritable())) {
+  if (!(await actorCan("can_manage_integrations"))) {
     return NextResponse.json({ ok: false, message: "Only an admin can refresh eBay listings." }, { status: 403 });
   }
   try {

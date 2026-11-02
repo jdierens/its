@@ -4,7 +4,8 @@ import { listingsSummary } from "@/lib/ebay/listings";
 import { orderPullSummary } from "@/lib/ebay/orders";
 import { publicOrigin } from "@/lib/ebay/origin";
 import { connectionStatus } from "@/lib/ebay/oauth";
-import { stockSettingsWritable } from "@/lib/stockAccess";
+import { actorCan } from "@/lib/actorAccess";
+import { integrationDenied } from "@/lib/integrationAccess";
 import { getSupabase } from "@/lib/supabase";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
 
@@ -22,6 +23,8 @@ type LogRow = {
 };
 
 export async function GET(request: NextRequest) {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   const config = readEbayConfig();
   const serviceRole = Boolean(getServiceSupabase());
   const origin = publicOrigin(request);
@@ -68,7 +71,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  canRefreshListings = await stockSettingsWritable();
+  canRefreshListings = await actorCan("can_manage_integrations");
 
   return NextResponse.json(
     {

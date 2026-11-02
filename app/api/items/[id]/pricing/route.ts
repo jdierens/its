@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { collapseLabel } from "@/lib/itemFields";
 import { collectPriceQuotes } from "@/lib/pricing/providers";
 import { flagOutliers } from "@/lib/pricing/quotes";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,14 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   const { id } = await context.params;
   if (!UUID_PATTERN.test(id)) {
     return NextResponse.json({ message: "That item was not found." }, { status: 404 });
+  }
+
+  try {
+    await requireCapability("can_edit_financials");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "You cannot change prices or orders.";
+    const status = message === "Sign in required." ? 401 : 403;
+    return NextResponse.json({ message }, { status });
   }
 
   const supabase = await getSupabase();

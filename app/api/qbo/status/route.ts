@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { integrationDenied } from "@/lib/integrationAccess";
 import { readQboConfig } from "@/lib/qbo/config";
 import { chunkPhaseUnavailable } from "@/lib/qbo/logShape";
 import { connectionStatus } from "@/lib/qbo/oauth";
@@ -20,6 +21,8 @@ type LogRow = {
 };
 
 export async function GET() {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   const config = readQboConfig();
   const serviceRole = Boolean(getServiceSupabase());
   let connected = false;

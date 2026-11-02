@@ -1,14 +1,11 @@
+import { capabilitiesFor } from "@/lib/capabilities";
+
 export type PickAccess = {
   canPick: boolean;
 };
 
-/**
- * Recording a pick is for staff, admin, and a future warehouse role.
- * read_only can open the sheet and cannot move stock.
- * While sign-in is off there is no role, and the open app can pick.
- */
+/** Logging a pick is can_log_picks. read_only can open the sheet and cannot move stock. */
 export function pickAccessForRole(role: string | null, authOn: boolean): PickAccess {
-  if (!authOn) return { canPick: true };
-  if (!role || role === "read_only") return { canPick: false };
-  return { canPick: true };
+  if (authOn && !role) return { canPick: false };
+  return { canPick: capabilitiesFor({ role, status: "approved", authOn }).has("can_log_picks") };
 }

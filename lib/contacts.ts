@@ -1,5 +1,6 @@
 "use server";
 
+import { actorCan, requireCapability } from "@/lib/actorAccess";
 import { errorText } from "@/lib/errors";
 import type { ContactKind, PostalAddress, SyncStatus } from "@/lib/qbo/map";
 import { tableFor } from "@/lib/qbo/map";
@@ -74,7 +75,7 @@ export async function fetchContactList(kind: ContactKind, q: string): Promise<Co
         .select(LIST_COLUMNS)
         .in("id", ids.slice(index, index + 200));
       if (error) throw new Error(errorText(error));
-      rows.push(...(data ?? []).map((row) => toContact(row as ContactRow)));
+      rows.push(...(data ?? []).map((row) => toContact(row as ContactRow, false)));
     }
   } else {
     const pageSize = 1000;
@@ -85,7 +86,7 @@ export async function fetchContactList(kind: ContactKind, q: string): Promise<Co
         .order("display_name")
         .range(from, from + pageSize - 1);
       if (error) throw new Error(errorText(error));
-      const page = (data ?? []).map((row) => toContact(row as ContactRow));
+      const page = (data ?? []).map((row) => toContact(row as ContactRow, false));
       rows.push(...page);
       if (page.length < pageSize) break;
     }
@@ -103,10 +104,11 @@ export async function fetchContact(kind: ContactKind, id: string): Promise<Conta
     .maybeSingle();
   if (error) throw new Error(errorText(error));
   if (!data) return null;
-  return toContact(data as ContactRow);
+  return toContact(data as ContactRow, await actorCan("can_view_financials"));
 }
 
 export async function createContact(kind: ContactKind, input: ContactInput): Promise<string> {
+  await requireCapability("can_edit_financials");
   const { data, error } = await (await getSupabase())
     .from(tableFor(kind))
     .insert({ ...toRow(input), sync_status: "local" })
@@ -122,6 +124,7 @@ export async function updateContact(
   input: ContactInput,
   qboId: string | null,
 ): Promise<void> {
+  await requireCapability("can_edit_financials");
   const { error } = await (await getSupabase())
     .from(tableFor(kind))
     .update({ ...toRow(input), sync_status: qboId ? "pending" : "local" })
@@ -147,7 +150,7 @@ type ContactRow = {
   qbo_last_updated: string | null;
 };
 
-function toContact(row: ContactRow): Contact {
+function toContact(row: ContactRow, includeTaxId: boolean): Contact {
   return {
     id: row.id,
     displayName: row.display_name,
@@ -158,7 +161,7 @@ function toContact(row: ContactRow): Contact {
     phone: row.phone ?? "",
     billingAddress: addressOrEmpty(row.billing_address),
     shippingAddress: addressOrEmpty(row.shipping_address),
-    taxId: row.tax_id ?? "",
+    taxId: includeTaxId ? (row.tax_id ?? "") : "",
     notes: row.notes ?? "",
     active: row.active,
     qboId: row.qbo_id,

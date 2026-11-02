@@ -1,7 +1,9 @@
+import { capabilitiesFor } from "@/lib/capabilities";
+
 /** Admin, staff, and read_only can see prices. While sign-in is off, the open app can too. */
-export function canViewFinancials(role: string | null, authOn: boolean): boolean {
-  if (!authOn) return true;
-  return role === "admin" || role === "staff" || role === "read_only";
+export function canViewFinancials(role: string | null, authOn: boolean, pricingOfficer = false): boolean {
+  if (authOn && !role) return false;
+  return capabilitiesFor({ role, status: "approved", pricingOfficer, authOn }).has("can_view_financials");
 }
 
 export function sameItemName(left: string, right: string): boolean {

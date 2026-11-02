@@ -1,13 +1,11 @@
 "use server";
 
-import { readAppUser } from "@/lib/appUserRecord";
-import { authRequired } from "@/lib/authRequired";
-import { canViewFinancials, sameItemName, skuReusesSource } from "@/lib/duplicateItem";
+import { actorCan } from "@/lib/actorAccess";
+import { sameItemName, skuReusesSource } from "@/lib/duplicateItem";
 import { errorText } from "@/lib/errors";
 import { fetchItem } from "@/lib/items";
 import { saveItemPrices } from "@/lib/itemPricing";
 import { asMoney, parseMoney } from "@/lib/pricing/quotes";
-import { sessionUser } from "@/lib/sessionUser";
 import { getSupabase } from "@/lib/supabase";
 import type { ItemType } from "@/lib/itemFields";
 
@@ -53,12 +51,7 @@ function moneyField(value: unknown): string {
 }
 
 async function viewerCanSeeMoney(): Promise<boolean> {
-  if (!authRequired()) return true;
-  const session = await sessionUser();
-  if (!session) return false;
-  const user = await readAppUser(session.id);
-  if (!user || user.status !== "approved") return false;
-  return canViewFinancials(user.role, true);
+  return actorCan("can_view_financials");
 }
 
 async function readPrices(id: string): Promise<DuplicatePrices | null> {

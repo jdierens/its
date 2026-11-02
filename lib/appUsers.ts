@@ -1,5 +1,6 @@
 "use server";
 
+import { requireCapability } from "@/lib/actorAccess";
 import { authRequired } from "@/lib/authRequired";
 import { ensureAppUser, listAppUsers, readAppUser, updateAppUser, updateAppUserInitials, type StoredAppUser } from "@/lib/appUserRecord";
 import type { AppRole, AppStatus } from "@/lib/authDomain";
@@ -12,12 +13,21 @@ export type AppUser = {
   initials: string;
   role: AppRole;
   status: AppStatus;
+  pricingOfficer: boolean;
   createdAt: string;
   approvedBy: string | null;
 };
 
 function asRole(value: string): AppRole {
-  if (value === "admin" || value === "staff" || value === "read_only") return value;
+  if (
+    value === "admin" ||
+    value === "staff" ||
+    value === "read_only" ||
+    value === "warehouse_manager" ||
+    value === "warehouse_clerk"
+  ) {
+    return value;
+  }
   return "read_only";
 }
 
@@ -34,6 +44,7 @@ function toUser(row: StoredAppUser): AppUser {
     initials: row.initials,
     role: asRole(row.role),
     status: asStatus(row.status),
+    pricingOfficer: row.pricing_officer,
     createdAt: row.created_at,
     approvedBy: row.approved_by,
   };
@@ -50,23 +61,25 @@ export async function fetchCurrentAppUser(): Promise<AppUser | null> {
 
 export async function fetchAppUsers(): Promise<AppUser[]> {
   if (!authRequired()) return [];
-  const session = await sessionUser();
-  if (!session) throw new Error("Sign in required.");
-  const actor = await readAppUser(session.id);
-  if (!actor || actor.status !== "approved") throw new Error("This account cannot change data.");
+  await requireCapability("can_manage_users");
   return (await listAppUsers()).map(toUser);
 }
 
 export async function setAppUserInitials(id: string, initials: string): Promise<void> {
   if (!authRequired()) throw new Error("Sign-in is turned off.");
-  const session = await sessionUser();
-  if (!session) throw new Error("Sign in required.");
-  await updateAppUserInitials({ actorId: session.id, id, initials });
+  const actor = await requireCapability("can_manage_users");
+  if (!actor.id) throw new Error("Sign in required.");
+  await updateAppUserInitials({ actorId: actor.id, id, initials });
 }
 
-export async function setAppUser(id: string, role: AppRole, status: AppStatus): Promise<void> {
+export async function setAppUser(
+  id: string,
+  role: AppRole,
+  status: AppStatus,
+  pricingOfficer: boolean,
+): Promise<void> {
   if (!authRequired()) throw new Error("Sign-in is turned off.");
-  const session = await sessionUser();
-  if (!session) throw new Error("Sign in required.");
-  await updateAppUser({ actorId: session.id, id, role, status });
+  const actor = await requireCapability("can_manage_users");
+  if (!actor.id) throw new Error("Sign in required.");
+  await updateAppUser({ actorId: actor.id, id, role, status, pricingOfficer });
 }

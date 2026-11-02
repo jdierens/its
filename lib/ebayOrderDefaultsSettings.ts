@@ -10,6 +10,7 @@ import {
   readEbayDraftDefaults,
   type EbayDraftDefaults,
 } from "@/lib/ebayOrderDefaults";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 export async function fetchEbayDraftDefaults(): Promise<EbayDraftDefaults> {
@@ -27,6 +28,7 @@ export async function fetchSalesPaymentTerms(): Promise<{ code: string; label: s
 
 /** Empty is stored as PIA. The code has to exist on so_payment_terms. */
 export async function saveEbayDefaultPaymentTerms(value: string): Promise<string> {
+  await requireCapability("can_edit_settings");
   const code = value.trim() === "" ? DEFAULT_EBAY_PAYMENT_TERMS : value.trim();
   const supabase = await getSupabase();
   const found = await supabase.from("so_payment_terms").select("code").eq("code", code).maybeSingle();
@@ -43,6 +45,7 @@ export async function saveEbayDefaultPaymentTerms(value: string): Promise<string
 
 /** Empty is stored as FOB. Anything else must be a sales-order Incoterms code. */
 export async function saveEbayDefaultIncoterms(value: string): Promise<string> {
+  await requireCapability("can_edit_settings");
   const code = ebayIncotermsFromSetting(value);
   if (value.trim() !== "" && code !== value.trim().toUpperCase()) throw new Error("Choose Incoterms.");
   const { error } = await (await getSupabase()).from("app_settings").upsert({

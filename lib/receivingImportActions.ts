@@ -12,6 +12,7 @@ import {
   type ReceivingImportDefaults,
 } from "@/lib/receivingImport";
 import { warehouseToday } from "@/lib/receivingSettings";
+import { requireCapability } from "@/lib/actorAccess";
 import { operatorInitials } from "@/lib/stockAccess";
 import { getSupabase } from "@/lib/supabase";
 
@@ -162,6 +163,7 @@ export async function commitReceivingImport(input: {
   defaults: ReceivingImportDefaults;
   requestIds: string[];
 }): Promise<ReceivingImportResult> {
+  await requireCapability("can_receive");
   const checked = await classify(input.rows ?? [], input.defaults, input.requestIds, false);
   return { committed: checked.committed, rows: checked.rows };
 }

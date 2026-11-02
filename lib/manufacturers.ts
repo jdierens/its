@@ -1,6 +1,7 @@
 "use server";
 
 import { errorText } from "@/lib/errors";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 export type ManufacturerAlias = {
@@ -89,6 +90,7 @@ export async function suggestManufacturers(query: string): Promise<ManufacturerS
 }
 
 export async function createManufacturer(name: string): Promise<{ id: string; name: string }> {
+  await requireCapability("can_manage_catalog");
   const supabase = await getSupabase();
   const created = await supabase.rpc("create_manufacturer", { p_name: name });
   if (created.error) throw new Error(errorText(created.error));
@@ -99,11 +101,13 @@ export async function createManufacturer(name: string): Promise<{ id: string; na
 }
 
 export async function renameManufacturer(id: string, name: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase()).rpc("rename_manufacturer", { p_id: id, p_name: name });
   if (error) throw new Error(errorText(error));
 }
 
 export async function addManufacturerAlias(manufacturerId: string, alias: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase()).rpc("add_manufacturer_alias", {
     p_manufacturer_id: manufacturerId,
     p_alias: alias,
@@ -112,11 +116,13 @@ export async function addManufacturerAlias(manufacturerId: string, alias: string
 }
 
 export async function removeManufacturerAlias(id: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase()).rpc("remove_manufacturer_alias", { p_id: id });
   if (error) throw new Error(errorText(error));
 }
 
 export async function mergeManufacturers(keepId: string, dropId: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase()).rpc("merge_manufacturers", { p_keep: keepId, p_drop: dropId });
   if (error) throw new Error(errorText(error));
 }

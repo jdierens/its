@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { searchItemsToMatch } from "@/lib/ebay/listingsBrowser";
-import { stockSettingsWritable } from "@/lib/stockAccess";
+import { actorCan } from "@/lib/actorAccess";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  if (!(await stockSettingsWritable())) {
+  if (!(await actorCan("can_manage_integrations"))) {
     return NextResponse.json({ ok: false, message: "Only an admin can match an eBay listing." }, { status: 403 });
   }
   const query = new URL(request.url).searchParams.get("q") ?? "";

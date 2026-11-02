@@ -9,6 +9,8 @@ import { errorText } from "@/lib/errors";
 const ROLES: { value: AppRole; label: string }[] = [
   { value: "admin", label: "Admin" },
   { value: "staff", label: "Staff" },
+  { value: "warehouse_manager", label: "Warehouse manager" },
+  { value: "warehouse_clerk", label: "Warehouse clerk" },
   { value: "read_only", label: "Read only" },
 ];
 
@@ -72,11 +74,11 @@ export function UsersAdmin() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function save(row: AppUser, role: AppRole, status: AppStatus) {
+  async function save(row: AppUser, role: AppRole, status: AppStatus, pricingOfficer = row.pricingOfficer) {
     setBusyId(row.id);
     setMessage(null);
     try {
-      await setAppUser(row.id, role, status);
+      await setAppUser(row.id, role, status, pricingOfficer);
       await load();
     } catch (error) {
       setMessage(errorText(error));
@@ -103,7 +105,8 @@ export function UsersAdmin() {
     <main className="page users-page desk-fields">
       <p className="hint">
         Approve a Google account, change its role, or disable it. A new sign-in from @{COMPANY_DOMAIN} starts
-        as pending. Read only does not block edits until database policies are turned on. Initials are two letters.
+        as pending. Read only can see prices and cannot change data. Warehouse manager and warehouse clerk
+        cannot see prices. Pricing officer is an assignment, not a role. Initials are two letters.
       </p>
       {message ? <p className="error">{message}</p> : null}
       {loading ? <p className="hint">Loading users…</p> : null}
@@ -125,6 +128,7 @@ export function UsersAdmin() {
                   <th>Name</th>
                   <th>Initials</th>
                   <th>Role</th>
+                  <th>Pricing officer</th>
                   <th>Status</th>
                   <th>Access</th>
                 </tr>
@@ -161,6 +165,18 @@ export function UsersAdmin() {
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td>
+                        <label className="kit-check">
+                          <input
+                            type="checkbox"
+                            aria-label={`Pricing officer for ${row.email}`}
+                            checked={row.pricingOfficer}
+                            disabled={busy}
+                            onChange={(event) => void save(row, row.role, row.status, event.target.checked)}
+                          />
+                          <span>Pricing officer</span>
+                        </label>
                       </td>
                       <td>
                         <Badge tone={row.status}>{statusLabel(row.status)}</Badge>
@@ -213,6 +229,16 @@ export function UsersAdmin() {
                         </option>
                       ))}
                     </select>
+                  </label>
+                  <label className="kit-check">
+                    <input
+                      type="checkbox"
+                      aria-label={`Pricing officer for ${row.email}`}
+                      checked={row.pricingOfficer}
+                      disabled={busy}
+                      onChange={(event) => void save(row, row.role, row.status, event.target.checked)}
+                    />
+                    <span>Pricing officer</span>
                   </label>
                   <p>
                     <Badge tone={row.status}>{statusLabel(row.status)}</Badge>

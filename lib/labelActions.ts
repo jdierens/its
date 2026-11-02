@@ -11,6 +11,7 @@ import {
   type BinLabelTemplates,
   type LabelTemplateId,
 } from "@/lib/labelTemplates";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 export async function fetchLabelTemplate(): Promise<LabelTemplateId> {
@@ -29,6 +30,7 @@ export async function fetchLabelTemplate(): Promise<LabelTemplateId> {
 }
 
 export async function saveLabelTemplate(id: LabelTemplateId): Promise<void> {
+  await requireCapability("can_edit_settings");
   const updated_at = new Date().toISOString();
   const { error } = await (await getSupabase())
     .from("app_settings")
@@ -53,6 +55,7 @@ export async function fetchBinLabelTemplates(): Promise<BinLabelTemplates> {
 }
 
 export async function saveBinLabelTemplates(templates: BinLabelTemplates): Promise<void> {
+  await requireCapability("can_edit_settings");
   const updatedAt = new Date().toISOString();
   const { error } = await (await getSupabase())
     .from("app_settings")

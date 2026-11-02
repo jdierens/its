@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { integrationDenied } from "@/lib/integrationAccess";
 import { runSync } from "@/lib/qbo/sync";
 import { parseSyncRequest } from "@/lib/qbo/syncOptions";
 
@@ -7,6 +8,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await request.json();

@@ -6,6 +6,7 @@ import {
   replacementPickAllowed,
   replacementSettingValue,
 } from "@/lib/skuReplacement";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 
 export async function fetchReplacementPickAllowed(): Promise<boolean> {
@@ -20,6 +21,7 @@ export async function fetchReplacementPickAllowed(): Promise<boolean> {
 
 /** Admin setting. A missing row is off. Stored text is true or false, not a credential. */
 export async function saveReplacementPickAllowed(on: boolean): Promise<boolean> {
+  await requireCapability("can_edit_settings");
   const value = replacementSettingValue(on);
   const { error } = await (await getSupabase()).from("app_settings").upsert({
     key: REPLACEMENT_PICK_SETTING_KEY,

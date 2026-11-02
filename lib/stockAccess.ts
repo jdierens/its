@@ -1,14 +1,12 @@
+import { actorCan } from "@/lib/actorAccess";
 import { readAppUser } from "@/lib/appUserRecord";
 import { authRequired } from "@/lib/authRequired";
 import { sessionUser } from "@/lib/sessionUser";
 import { initialsFromPerson } from "@/lib/stockReceive";
 
+/** Put-away defaults and the data-import screen stay with can_manage_users (admin). */
 export async function stockSettingsWritable(): Promise<boolean> {
-  if (!authRequired()) return true;
-  const session = await sessionUser();
-  if (!session) return false;
-  const user = await readAppUser(session.id);
-  return Boolean(user && user.status === "approved" && user.role === "admin");
+  return actorCan("can_manage_users");
 }
 
 export async function assertStockAdmin(): Promise<void> {

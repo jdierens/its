@@ -3,6 +3,7 @@ import { loadEbayListingsForExport, parseEbayListingQuery } from "@/lib/ebay/lis
 import { ebayListingsExportTable, ebayListingsExportTitle } from "@/lib/ebay/listingsExport";
 import { publicOrigin } from "@/lib/ebay/origin";
 import { ExportDenied, requireExportActor } from "@/lib/export/access";
+import { integrationDenied } from "@/lib/integrationAccess";
 import { toCsv } from "@/lib/export/table";
 import { readGoogleRefreshToken } from "@/lib/google/grants";
 import { createUserSpreadsheet, readGoogleOAuth, refreshGoogleAccess } from "@/lib/google/sheets";
@@ -62,6 +63,8 @@ function errorResponse(request: NextRequest, message: string, status: number) {
 }
 
 export async function GET() {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   return NextResponse.json(
     { google: Boolean(readGoogleOAuth(process.env)) },
     { headers: { "cache-control": "no-store" } },
@@ -69,6 +72,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await integrationDenied();
+  if (denied) return denied;
   const record = await readBody(request);
   if (!record) return errorResponse(request, "Export request was empty.", 400);
 

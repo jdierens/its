@@ -2,7 +2,6 @@ import { readAppUser } from "@/lib/appUserRecord";
 import { authRequired } from "@/lib/authRequired";
 import { bankFeedAllowed } from "@/lib/plaid/access";
 import { sessionUser } from "@/lib/sessionUser";
-import type { AppRole } from "@/lib/authDomain";
 
 export type PlaidActor =
   | { ok: true; email: string | null }
@@ -16,9 +15,8 @@ export async function plaidActor(): Promise<PlaidActor> {
   if (!user || user.status !== "approved") {
     return { ok: false, status: 403, message: "This account cannot change data." };
   }
-  const role = user.role === "admin" || user.role === "staff" || user.role === "read_only" ? user.role : null;
-  if (!bankFeedAllowed(role as AppRole | null, true)) {
-    return { ok: false, status: 403, message: "Bank feeds are limited to admin and staff." };
+  if (!bankFeedAllowed(user.role, true)) {
+    return { ok: false, status: 403, message: "Bank feeds are limited to an admin." };
   }
   return { ok: true, email: session.email };
 }

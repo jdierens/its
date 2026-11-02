@@ -4,7 +4,7 @@ export type PackAccess = {
   canPack: boolean;
 };
 
-/** Packing uses the same roles as picking. read_only can look and cannot change bins. */
+/** Packing uses can_log_picks, the same capability as picking. */
 export function packAccessForRole(role: string | null, authOn: boolean): PackAccess {
   return { canPack: pickAccessForRole(role, authOn).canPick };
 }

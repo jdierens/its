@@ -13,6 +13,7 @@ import {
   type MoveResult,
   type RecentMove,
 } from "@/lib/moveInventory";
+import { requireCapability } from "@/lib/actorAccess";
 import { operatorInitials } from "@/lib/stockAccess";
 import { getSupabase } from "@/lib/supabase";
 
@@ -81,6 +82,7 @@ export async function commitMove(input: {
   comment: string;
   requestId: string;
 }): Promise<MoveResult> {
+  await requireCapability("can_move_bins");
   const initials = await operatorInitials();
   const supabase = await getSupabase();
   let data: unknown;
@@ -155,6 +157,7 @@ export async function moveBinItems(input: {
   if (itemIds.length > 200) throw new Error("Move at most 200 items at once.");
   const targetError = itemMoveTargetError(input.toBin);
   if (targetError) throw new Error(targetError);
+  await requireCapability("can_move_bins");
   const initials = await operatorInitials();
   const { data, error } = await (await getSupabase()).rpc("move_bin_items", {
     p_from_bin_ref: input.fromBin,
@@ -173,6 +176,7 @@ export async function moveBinItems(input: {
 }
 
 export async function undoMove(originalRequestId: string, requestId: string): Promise<MoveResult> {
+  await requireCapability("can_move_bins");
   const initials = await operatorInitials();
   const { data, error } = await (await getSupabase()).rpc("undo_move", {
     p_original_request_id: originalRequestId,

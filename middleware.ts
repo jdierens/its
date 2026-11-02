@@ -10,7 +10,13 @@ function asStatus(value: unknown): AppStatus | null {
 }
 
 function asRole(value: unknown): AppRole | null {
-  return value === "admin" || value === "staff" || value === "read_only" ? value : null;
+  return value === "admin" ||
+    value === "staff" ||
+    value === "read_only" ||
+    value === "warehouse_manager" ||
+    value === "warehouse_clerk"
+    ? value
+    : null;
 }
 
 function redirectTo(request: NextRequest, path: string): NextResponse {
@@ -58,12 +64,14 @@ export async function middleware(request: NextRequest) {
   const userId = typeof claims?.sub === "string" ? claims.sub : null;
   let status: AppStatus | null = null;
   let role: AppRole | null = null;
+  let pricingOfficer = false;
 
   if (email && userId && isCompanyEmail(email)) {
     let profile = await readAppUser(userId);
     if (!profile) profile = await ensureAppUser({ id: userId, email, name: null });
     status = asStatus(profile.status);
     role = asRole(profile.role);
+    pricingOfficer = profile.pricing_officer;
   }
 
   const decision = gateRequest({
@@ -72,6 +80,7 @@ export async function middleware(request: NextRequest) {
     domain: null,
     status,
     role,
+    pricingOfficer,
   });
 
   if (decision.type === "redirect" && decision.path.startsWith("/login?error=domain") && email) {

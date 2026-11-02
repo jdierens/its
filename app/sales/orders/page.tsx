@@ -6,7 +6,7 @@ import { errorText } from "@/lib/errors";
 import { salesOrderListScope } from "@/lib/salesOrderDraft";
 import { listSalesOrders } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
-import { stockSettingsWritable } from "@/lib/stockAccess";
+import { actorCan } from "@/lib/actorAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export default async function SalesOrdersPage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const access = await salesPageAccess();
-  const canPullEbay = await stockSettingsWritable();
+  const canPullEbay = await actorCan("can_manage_integrations");
   const scope = salesOrderListScope((await searchParams).view);
   let orders: Awaited<ReturnType<typeof listSalesOrders>> = [];
   let problem: string | null = null;

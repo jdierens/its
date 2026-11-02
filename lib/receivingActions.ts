@@ -1,10 +1,9 @@
 "use server";
 
 import { authRequired } from "@/lib/authRequired";
-import { readAppUser } from "@/lib/appUserRecord";
 import { errorText } from "@/lib/errors";
 import { labelMatchLimit, labelTaxonomyFields } from "@/lib/labelLookup";
-import { canViewFinancials } from "@/lib/export/access";
+import { actorCan, requireCapability } from "@/lib/actorAccess";
 import { searchItemsForLabel } from "@/lib/labelLookupServer";
 import type { LabelItem } from "@/lib/types";
 import { scanTokensInSearchOrder } from "@/lib/receivingScan";
@@ -320,6 +319,7 @@ export type ReceivingBinCreate =
  */
 export async function createReceivingBin(type: BinType, code: string | null): Promise<ReceivingBinCreate> {
   try {
+    await requireCapability("can_receive");
     const initials = await operatorInitials();
     const { data, error } = await (await getSupabase()).rpc("create_receiving_bin", {
       p_type: type,
@@ -334,11 +334,7 @@ export async function createReceivingBin(type: BinType, code: string | null): Pr
 }
 
 async function viewerCanSeeMoney(): Promise<boolean> {
-  if (!authRequired()) return true;
-  const session = await sessionUser();
-  if (!session) return false;
-  const user = await readAppUser(session.id);
-  return Boolean(user && canViewFinancials(user.role));
+  return actorCan("can_view_financials");
 }
 
 export async function receivingClerkInitials(): Promise<string> {
@@ -485,6 +481,7 @@ export async function receiveIntoBin(input: {
     vendorId: input.vendorId,
   });
   if (!owner.ok) throw new Error(owner.message);
+  await requireCapability("can_receive");
   const initials = await operatorInitials();
   const receivedOn = receivingDateToStore(input.receivedOn);
   const supabase = await getSupabase();
@@ -543,6 +540,7 @@ export async function editReceipt(input: {
   searchQuery?: string | null;
   binReference?: string | null;
 }): Promise<void> {
+  await requireCapability("can_receive");
   const initials = await operatorInitials();
   if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
   const receivedOn = parseReceiptDate(input.receivedOn);
@@ -583,6 +581,7 @@ export async function editReceipt(input: {
 }
 
 export async function setReceiptDamaged(eventId: string, damaged: boolean): Promise<void> {
+  await requireCapability("can_receive");
   const initials = await operatorInitials();
   if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
   const { error } = await (await getSupabase()).rpc("set_receipt_damaged", {
@@ -622,6 +621,7 @@ export async function applyReceiptOwner(input: {
   consigned?: boolean;
   applyToProject: boolean;
 }): Promise<void> {
+  await requireCapability("can_receive");
   const initials = await operatorInitials();
   if (!/^[A-Z]{2}$/.test(initials)) throw new Error("Operator initials must be 2 letters.");
   const { error } = await (await getSupabase()).rpc("apply_receipt_owner", {
@@ -734,6 +734,7 @@ export async function projectReceiptFile(
 }
 
 export async function moveBinToLocation(reference: string, locationCode: string): Promise<MoveResult> {
+  await requireCapability("can_move_bins");
   const initials = await operatorInitials();
   const { data, error } = await (await getSupabase()).rpc("move_bin_to_location", {
     p_reference: reference,

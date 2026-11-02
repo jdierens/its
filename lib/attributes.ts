@@ -1,6 +1,7 @@
 "use server";
 
 import { errorText } from "@/lib/errors";
+import { requireCapability } from "@/lib/actorAccess";
 import { getSupabase } from "@/lib/supabase";
 import type { DataType } from "@/lib/types";
 
@@ -185,6 +186,7 @@ export async function fetchTaxonomyAttributeUsage(
 }
 
 export async function createAttribute(taxonomyId: string, input: AttributeInput): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase()).rpc("create_field", {
     p_taxonomy_id: taxonomyId,
     p_name: input.name.trim(),
@@ -197,6 +199,7 @@ export async function createAttribute(taxonomyId: string, input: AttributeInput)
 }
 
 export async function updateAttribute(id: string, input: AttributeInput): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const patch: {
     name: string;
     data_type: DataType;
@@ -216,6 +219,7 @@ export async function updateAttribute(id: string, input: AttributeInput): Promis
 }
 
 export async function linkAttributes(taxonomyId: string, attributeIds: string[]): Promise<number> {
+  await requireCapability("can_manage_catalog");
   const { data, error } = await (await getSupabase()).rpc("link_taxonomy_attributes", {
     p_taxonomy_id: taxonomyId,
     p_attribute_ids: attributeIds,
@@ -225,6 +229,7 @@ export async function linkAttributes(taxonomyId: string, attributeIds: string[])
 }
 
 export async function unlinkAttribute(taxonomyId: string, attributeId: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase()).rpc("unlink_taxonomy_attribute", {
     p_taxonomy_id: taxonomyId,
     p_attribute_id: attributeId,
@@ -233,11 +238,13 @@ export async function unlinkAttribute(taxonomyId: string, attributeId: string): 
 }
 
 export async function deleteField(id: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase()).rpc("delete_field", { p_attribute_id: id });
   if (error) throw new Error(friendlyAttributeError(error));
 }
 
 export async function mergeFields(keepId: string, dropId: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase()).rpc("merge_attributes", {
     p_keep: keepId,
     p_drop: dropId,
@@ -246,6 +253,7 @@ export async function mergeFields(keepId: string, dropId: string): Promise<void>
 }
 
 export async function setFieldRequired(taxonomyId: string, attributeId: string, required: boolean): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const { error } = await (await getSupabase())
     .from("taxonomy_attributes")
     .update({ required })
@@ -255,6 +263,7 @@ export async function setFieldRequired(taxonomyId: string, attributeId: string, 
 }
 
 export async function saveFieldOrder(taxonomyId: string, attributeIds: string[]): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const supabase = await getSupabase();
   const results = await Promise.all(
     attributeIds.map((attributeId, index) =>
@@ -270,6 +279,7 @@ export async function saveFieldOrder(taxonomyId: string, attributeIds: string[])
 }
 
 export async function addAttributeValue(attributeId: string, value: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const supabase = await getSupabase();
   const existing = await supabase
     .from("attribute_values")
@@ -289,6 +299,7 @@ export async function addAttributeValue(attributeId: string, value: string): Pro
 }
 
 export async function deleteAttributeValue(id: string): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const supabase = await getSupabase();
   const row = await supabase
     .from("attribute_values")
@@ -321,6 +332,7 @@ export async function deleteAttributeValue(id: string): Promise<void> {
 }
 
 export async function saveAttributeValueOrder(ids: string[]): Promise<void> {
+  await requireCapability("can_manage_catalog");
   const supabase = await getSupabase();
   const results = await Promise.all(
     ids.map((id, index) =>
