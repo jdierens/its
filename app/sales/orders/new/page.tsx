@@ -3,6 +3,7 @@ import { SalesOrderForm } from "@/components/SalesOrderForm";
 import { errorText } from "@/lib/errors";
 import { fetchEbayDraftDefaults } from "@/lib/ebayOrderDefaultsSettings";
 import { pacificToday } from "@/lib/salesOrderDraft";
+import { emptySalesOrderStageInput, salesOrderStageIcons } from "@/lib/salesOrderStageIcons";
 import { listSalesLookups, suggestSalesOrderNumber } from "@/lib/salesOrders";
 import { salesPageAccess } from "@/lib/salesSession";
 
@@ -38,6 +39,7 @@ export default async function NewSalesOrderPage() {
         defaultEbaySalesRep={ebayDefaults.salesRep}
         defaultEbayPaymentTerms={ebayDefaults.paymentTerms}
         defaultEbayIncoterms={ebayDefaults.incoterms}
+        stages={salesOrderStageIcons(emptySalesOrderStageInput("draft"))}
       />
     );
   } catch (error) {

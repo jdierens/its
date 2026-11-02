@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { QueryField } from "@/components/QueryField";
 import { SalesOrderListSwitch } from "@/components/SalesOrderListSwitch";
+import { SalesOrderStageIcons } from "@/components/SalesOrderStageIcons";
 import { Badge } from "@/components/ui/badge";
 import {
   SALES_ORDER_LIST_DEFAULT_SORT,
@@ -228,9 +229,12 @@ export function SalesOrderList({
                     <td>{order.customerName}</td>
                     <td>{order.orderReference}</td>
                     <td>
-                      <Badge className="so-status" tone={order.status}>
-                        {salesOrderStatusLabel(order.status)}
-                      </Badge>
+                      <span className="so-status-cell">
+                        <Badge className="so-status" tone={order.status}>
+                          {salesOrderStatusLabel(order.status)}
+                        </Badge>
+                        <SalesOrderStageIcons stages={order.stages} />
+                      </span>
                     </td>
                     <td>{formatDataDate(order.orderDate)}</td>
                     <td>{formatDataDate(order.shipDate)}</td>
@@ -251,9 +255,12 @@ export function SalesOrderList({
                   <dd>{order.orderReference}</dd>
                   <dt>Status</dt>
                   <dd>
-                    <Badge className="so-status" tone={order.status}>
-                      {salesOrderStatusLabel(order.status)}
-                    </Badge>
+                    <span className="so-status-cell">
+                      <Badge className="so-status" tone={order.status}>
+                        {salesOrderStatusLabel(order.status)}
+                      </Badge>
+                      <SalesOrderStageIcons stages={order.stages} />
+                    </span>
                   </dd>
                   <dt>Order date</dt>
                   <dd>{formatDataDate(order.orderDate)}</dd>
