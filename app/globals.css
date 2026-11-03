@@ -8671,9 +8671,10 @@ input.num-input {
 /*
   Glyphs on the dark primary fill. Do not inherit page text here: --ink and
   --ds-ink are dark in the light theme, and that paints the icon on the fill.
-  .ds a is more specific than a bare anchor, so the sales-order links are named
-  again below. Secondary chips and .icon-button stay dark-on-light.
-  .so-icon-action.secondary keeps --ds-ink from the secondary rule.
+  .ds a is more specific than .button, so primary text labels are set again on
+  .ds a.button. Icon links are named again below, and again after that label
+  rule, so --icon-on-dark still wins. Secondary chips and .icon-button stay
+  dark-on-light. .so-icon-action.secondary keeps --ds-ink from the secondary rule.
 */
 button.so-icon-action:not(.secondary),
 .ds.so-page a.so-icon-action,
@@ -9064,6 +9065,24 @@ button.so-new-order svg,
 
 .ds a {
   color: var(--ds-link);
+}
+
+/*
+  Text links use --ds-link. A filled primary action does not.
+  .ds a (one class, one element) beats .button (one class), so an
+  <a class="button"> — including Next <Link className="button"> — would
+  otherwise paint --ds-link (#4338ca by day, #a5b4fc at night) on the
+  blue-indigo-violet fill. The label stays --accent-ink in both themes.
+  Secondary keeps ink on the light fill. Icon-only primary links are
+  named again below so they keep --icon-on-dark.
+*/
+.ds a.button:not(.secondary) {
+  color: var(--accent-ink);
+}
+
+.ds a.button.so-icon-action,
+.ds a.button.so-new-order {
+  color: var(--icon-on-dark);
 }
 
 .ds .combo-menu {
