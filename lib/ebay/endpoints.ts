@@ -56,6 +56,16 @@ export function ordersUrl(environment: EbayEnvironment, filter: string, limit = 
   return url.toString();
 }
 
+/**
+ * getOrders by id. `orderIds` is its own query parameter, not a filter, and
+ * eBay rejects the call when a filter is also set. Commas stay literal so the
+ * list is not collapsed into one encoded value.
+ */
+export function ordersByIdsUrl(environment: EbayEnvironment, orderIds: readonly string[]): string {
+  const ids = orderIds.map((id) => encodeURIComponent(id)).join(",");
+  return `${apiBase(environment)}/sell/fulfillment/v1/order?orderIds=${ids}&limit=${orderIds.length}`;
+}
+
 /** Finances transactions, including SHIPPING_LABEL debits. Host is apiz, not the sell host. */
 export function financesTransactionsUrl(environment: EbayEnvironment, filter: string, limit = 200, offset = 0): string {
   const url = new URL(`${apizBase(environment)}/sell/finances/v1/transaction`);
