@@ -88,7 +88,7 @@ Pages and client calls:
 
 - Items list columns and inline edit: ecommerce price, market price, MSRP (`components/ItemsTable.tsx`, `lib/inlineEdit.ts`, `lib/itemSort.ts`).
 - Item page pricing panel: the three prices, price references, transactions, and **Update pricing** (`components/ItemPricingPanel.tsx`, `lib/itemPricing.ts`).
-- `/pricing` is a placeholder page. The nav item is still there.
+- `/pricing` is the pricing-office placeholder. `/pricing/quotes` is quote reviews: one event for a whole vendor or customer list. Viewing uses `can_view_financials`. Creating and editing uses `can_edit_financials` (admin and staff). `read_only` and a pricing officer can view and cannot edit. Warehouse roles do not open the page. See `docs/quote-reviews.md`.
 - `/sales/orders`, `/purchasing/orders`, `/warehouse/pick`, and `/warehouse/receiving` are placeholders. Creating, entering, and sending a purchase order is `can_edit_financials` (admin and staff). `read_only` can see prices on that order and cannot send it. Warehouse roles do not get the form. Receiving returns quantities only.
 - Admin settings: the pricing window.
 - Item export (CSV, Excel, and Google Sheets): `ecommerce_price`, `market_price`, and `msrp`, and only when the caller has `can_view_financials` (admin, staff, and `read_only`). Any other role gets those columns omitted on the server. `read_only` can export. The route always requires an approved signed-in user (`lib/export/table.ts`, `lib/export/load.ts`, `lib/export/access.ts`, `app/api/items/export/route.ts`). See `docs/item-export.md`.
@@ -98,6 +98,7 @@ Server paths that return or write money:
 
 - `lib/items.ts` list and item fetch select the three prices. `item_list_page` sorts and returns them. `saveItemCell` calls `update_item_cell`, which accepts `ecommerce_price`, `market_price`, and `msrp`.
 - `lib/itemPricing.ts` reads and writes the three prices, `price_quotes`, and `item_transactions`.
+- `lib/quoteReviewsServer.ts` reads and writes quote events, lines, competing bids, and related-quote links. Reading requires `can_view_financials`. Writing requires `can_edit_financials`.
 - `POST /api/items/[id]/pricing` looks up eBay and BrokerBin and inserts `price_quotes`, then sets `pricing_checked_at`.
 - Settings read and write the pricing window in `app_settings`.
 - QuickBooks sync copies customers and vendors, including tax ids. Transaction import is described as a later insert into `item_transactions` and does not run yet.

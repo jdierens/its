@@ -7,7 +7,7 @@ const OTHER_GROUPS: Record<string, string[]> = {
   Contacts: ["/customers", "/vendors"],
   Sales: ["/sales/orders"],
   Purchasing: ["/purchasing/orders"],
-  Pricing: ["/pricing"],
+  Pricing: ["/pricing", "/pricing/quotes"],
   Admin: [
     "/admin/manufacturers",
     "/admin/data",

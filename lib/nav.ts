@@ -124,6 +124,11 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/pricing",
         description: "Set and review selling prices.",
       },
+      {
+        label: "Quote reviews",
+        href: "/pricing/quotes",
+        description: "Review a vendor or customer quote list as one event.",
+      },
     ],
   },
   {
@@ -342,6 +347,28 @@ export function pageMetaFor(pathname: string): PageMeta {
         { label: "Sales" },
         { label: "Sales orders", href: "/sales/orders" },
         { label: "Sales order" },
+      ],
+    };
+  }
+
+  if (pathname === "/pricing/quotes/new") {
+    return {
+      title: "New quote review",
+      crumbs: [
+        { label: "Pricing" },
+        { label: "Quote reviews", href: "/pricing/quotes" },
+        { label: "New quote review" },
+      ],
+    };
+  }
+
+  if (/^\/pricing\/quotes\/[^/]+$/.test(pathname)) {
+    return {
+      title: "Quote review",
+      crumbs: [
+        { label: "Pricing" },
+        { label: "Quote reviews", href: "/pricing/quotes" },
+        { label: "Quote review" },
       ],
     };
   }
