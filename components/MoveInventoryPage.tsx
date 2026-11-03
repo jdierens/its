@@ -685,9 +685,8 @@ function ContentsTable({
                   <span className="sr-only">Select</span>
                 </th>
               ) : null}
-              <th>What</th>
+              <th className="what">What</th>
               <th className="num fit">Boxes</th>
-              <th className="num fit">Items</th>
               <th className="num fit">Qty</th>
             </tr>
           </thead>
@@ -757,9 +756,12 @@ function BinRow({
           </label>
         </td>
       ) : null}
-      <td>{child.label}</td>
+      <td className="what">
+        <span className="move-what" title={child.label}>
+          {child.label}
+        </span>
+      </td>
       <td className="num fit">{child.boxes}</td>
-      <td className="num fit">{child.items}</td>
       <td className="num fit" />
     </tr>
   );
@@ -798,8 +800,11 @@ function ItemRow({
           </label>
         </td>
       ) : null}
-      <td>{name}</td>
-      <td className="num fit" />
+      <td className="what">
+        <span className="move-what" title={name}>
+          {name}
+        </span>
+      </td>
       <td className="num fit" />
       <td className="num fit">
         {selectable ? (
