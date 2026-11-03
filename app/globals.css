@@ -6070,33 +6070,29 @@ button.receive-bin-note {
   max-width: 24ch;
 }
 
+.receive-table th.dmg,
+.receive-table td.dmg {
+  width: 1%;
+  text-align: center;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
 .receive-table td.note {
   min-width: 16ch;
+  vertical-align: top;
 }
 
-.receipt-note {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
+.receive-table td.note > .receive-cell,
+.receive-table td.note > .receive-cell-input {
+  vertical-align: top;
 }
 
-.receipt-note .receive-cell {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.receipt-dmg {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+.receive-card-row dt.dmg,
+.receive-card-row dd.dmg,
+.receive-card-row dt.note,
+.receive-card-row dd.note {
+  align-self: start;
 }
 
 .receive-table td.initials,

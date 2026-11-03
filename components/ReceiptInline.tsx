@@ -555,19 +555,15 @@ function DamagedBox({
   onToggle: (next: boolean) => void;
 }) {
   return (
-    <label className="receipt-dmg">
-      <input
-        type="checkbox"
-        checked={damaged}
-        disabled={disabled}
-        aria-label={damaged ? "Damaged, not for sale" : "Mark damaged"}
-        onClick={(event) => {
-          event.preventDefault();
-          onToggle(!damaged);
-        }}
-      />
-      DMG
-    </label>
+    <button
+      type="button"
+      className="receive-c"
+      aria-pressed={damaged}
+      aria-label={damaged ? "Damaged, not for sale" : "Mark damaged"}
+      title={damaged ? "Damaged, not for sale" : "Mark damaged"}
+      disabled={disabled}
+      onClick={() => onToggle(!damaged)}
+    />
   );
 }
 
@@ -863,20 +859,20 @@ export function ReceiptTableRow({
             <CellButton value={entry.putaway} title="Change the putaway bin" onClick={() => open("putaway")} />
           )}
         </td>
+        <td className="fit dmg">
+          <DamagedBox damaged={entry.damaged === true} disabled={edit.saving} onToggle={(next) => void edit.toggleDamaged(next)} />
+        </td>
         <td className="note" title={note || undefined}>
-          <div className="receipt-note">
-            <DamagedBox damaged={entry.damaged === true} disabled={edit.saving} onToggle={(next) => void edit.toggleDamaged(next)} />
-            {edit.field === "comment" ? (
-              <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
-            ) : (
-              <CellButton value={note} title={note || undefined} onClick={() => open("comment")} />
-            )}
-          </div>
+          {edit.field === "comment" ? (
+            <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
+          ) : (
+            <CellButton value={note} title={note || undefined} onClick={() => open("comment")} />
+          )}
         </td>
       </tr>
       {edit.confirm || edit.ownerConfirm || edit.error ? (
         <tr className="receive-edit-row">
-          <td colSpan={14}>
+          <td colSpan={15}>
             <ConfirmBar
               initials={initials}
               confirm={edit.confirm}
@@ -903,14 +899,16 @@ export function ReceiptTableRow({
 function CardLine({
   label,
   children,
+  className,
 }: {
   label: string;
   children: ReactNode;
+  className?: string;
 }) {
   return (
     <>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
+      <dt className={className}>{label}</dt>
+      <dd className={className}>{children}</dd>
     </>
   );
 }
@@ -1067,15 +1065,15 @@ export function ReceiptCard({
             <CellButton value={entry.putaway} title="Change the putaway bin" onClick={() => open("putaway")} />
           )}
         </CardLine>
-        <CardLine label="Comment">
-          <div className="receipt-note">
-            <DamagedBox damaged={entry.damaged === true} disabled={edit.saving} onToggle={(next) => void edit.toggleDamaged(next)} />
-            {edit.field === "comment" ? (
-              <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
-            ) : (
-              <CellButton value={note} onClick={() => open("comment")} />
-            )}
-          </div>
+        <CardLine label="DMG" className="dmg">
+          <DamagedBox damaged={entry.damaged === true} disabled={edit.saving} onToggle={(next) => void edit.toggleDamaged(next)} />
+        </CardLine>
+        <CardLine label="Comment" className="note">
+          {edit.field === "comment" ? (
+            <TextEdit value={entry.comment ?? ""} onCommit={(value) => edit.apply({ comment: value })} onCancel={() => edit.setField(null)} kind="text" />
+          ) : (
+            <CellButton value={note} onClick={() => open("comment")} />
+          )}
         </CardLine>
       </dl>
       <ConfirmBar
