@@ -1883,6 +1883,7 @@ export function ReceivingPage() {
                       <th className="item">Item name</th>
                       <th className="num fit">Item Qty</th>
                       <th className="putaway">Putaway</th>
+                      <th className="fit dmg">DMG</th>
                       <th className="note">Comment</th>
                     </tr>
                   </thead>

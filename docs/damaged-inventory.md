@@ -21,7 +21,7 @@ A row remains while either quantity is above 0, so a bin that holds only damaged
 
 The line has a Damaged checkbox, unchecked. Save posts through `receive_into_bin` with `p_damaged`. The quantity is added to for-sale `qty` and then moved onto `damaged_qty` in the same transaction. Serials and country of origin on that line are damaged units.
 
-Recent entries shows the word Damaged in front of the note. The DMG box calls `set_receipt_damaged`. Marking a posted line moves its quantity from `qty` to `damaged_qty`, and the units from that receipt that are still in the bin follow. Clearing it moves them back. The move is refused when the source balance is short, or when the bin would then have more identified pieces than the quantity they belong to.
+Recent entries puts DMG in the column header only. The cell is a 22px box, filled or empty, with no label under it. The comment column is only the note, lined up with the top of the other cells, and still shows the word Damaged in front of that note. The box calls `set_receipt_damaged`. Marking a posted line moves its quantity from `qty` to `damaged_qty`, and the units from that receipt that are still in the bin follow. Clearing it moves them back. The move is refused when the source balance is short, or when the bin would then have more identified pieces than the quantity they belong to.
 
 Import has a `damaged` column. Blank is no. `DMG` and `damage` map to it. `yes` posts the row as damaged.
 
