@@ -1,5 +1,6 @@
 import { ebayIncotermsFromSetting, ebayPaymentTermsFromSetting } from "@/lib/ebayOrderDefaults";
 import { ebaySalesRepFromSetting } from "@/lib/ebaySalesRep";
+import { ebayCancelDecision, readEbayCancelSignal } from "@/lib/ebay/cancellations";
 import { readOrderFulfillmentSignal, type OrderFulfillmentSignal } from "@/lib/ebay/fulfillments";
 import { allocationQtyForLine, assignListingSku } from "@/lib/ebay/packs";
 import { addressFromRecord, type SoAddress } from "@/lib/salesOrderDraft";
@@ -16,6 +17,10 @@ export const ORDER_PAGE_SIZE = 200;
 export const ORDER_PAGE_LIMIT = 40;
 
 const ORDER_ID = /^\d{2}-\d{4,6}-\d{4,6}$/;
+
+export function isEbayOrderId(value: string): boolean {
+  return ORDER_ID.test(value);
+}
 const SALES_RECORD = /^\d{1,12}$/;
 const SO_REF = /^SO#?(\d{1,12})(?:\b|-|$)/i;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -113,6 +118,12 @@ export type ParsedEbayOrder = {
   fulfillmentStatus?: OrderFulfillmentSignal["fulfillmentStatus"];
   hasFulfillmentHrefs?: boolean;
   lineItemShipped?: boolean;
+  /**
+   * True when eBay has cancelled the order. A hand-built order can omit it.
+   * A new order is still created (and auto-approved when it has an SO number).
+   * Cancellation is applied after that create, or onto an open sales order.
+   */
+  cancelled?: boolean;
 };
 
 /**
@@ -164,7 +175,16 @@ export type PullAction =
   | { kind: "create"; order: ParsedEbayOrder; itemIds: (string | null)[]; allocationQtys: (number | null)[]; shippingItemId: string | null; soNumber: number | null }
   | { kind: "update"; id: string; order: ParsedEbayOrder; itemIds: (string | null)[]; allocationQtys: (number | null)[]; shippingItemId: string | null; soNumber: number | null }
   | { kind: "link"; id: string; ebayOrderId: string; salesRecordRef: string | null }
-  | { kind: "skip"; ebayOrderId: string; reason: "ambiguous" | "unchanged" | "before-cutoff" };
+  | {
+      kind: "cancel";
+      id: string;
+      ebayOrderId: string;
+      fromStatus: string;
+      /** Fill a blank eBay id or sales record before cancelling. */
+      link: boolean;
+      salesRecordRef: string | null;
+    }
+  | { kind: "skip"; ebayOrderId: string; reason: "ambiguous" | "unchanged" | "before-cutoff" | "shipped" };
 
 export type DraftLine = {
   line_no: number;
@@ -578,6 +598,7 @@ export function parseFulfillmentOrders(body: unknown): ParsedEbayOrder[] {
     const shippingAmount = shippingKnown
       ? netCharge(money(pricing.deliveryCost).amount, money(pricing.deliveryDiscount).amount)
       : lineShipping(order);
+    const cancel = readEbayCancelSignal(order);
     out.push({
       ebayOrderId,
       salesRecordRef: SALES_RECORD.test(salesRaw) ? salesRaw : null,
@@ -597,6 +618,7 @@ export function parseFulfillmentOrders(body: unknown): ParsedEbayOrder[] {
       shippingAmount,
       lines,
       ...readOrderFulfillmentSignal(order),
+      cancelled: cancel.cancelled,
     });
   }
   return out;
@@ -670,10 +692,6 @@ export function planOrderPull(
       continue;
     }
     seen.add(order.ebayOrderId);
-    if (!orderInPullWindow(order.orderDate)) {
-      actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "before-cutoff" });
-      continue;
-    }
     const idHits = byOrderId.get(order.ebayOrderId) ?? [];
     if (idHits.length > 1) {
       actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "ambiguous" });
@@ -687,6 +705,32 @@ export function planOrderPull(
         continue;
       }
       match = recordHits[0] ?? null;
+    }
+    if (order.cancelled && match && !match.id.startsWith("new:")) {
+      const decision = ebayCancelDecision(match.status);
+      if (decision === "cancel") {
+        const needsOrderId = match.ebayOrderId == null;
+        const needsRecord = order.salesRecordRef != null && match.ebaySalesRecordRef == null;
+        actions.push({
+          kind: "cancel",
+          id: match.id,
+          ebayOrderId: order.ebayOrderId,
+          fromStatus: match.status,
+          link: needsOrderId || needsRecord,
+          salesRecordRef: needsRecord ? order.salesRecordRef : null,
+        });
+        continue;
+      }
+      if (decision === "skip-shipped") {
+        actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "shipped" });
+        continue;
+      }
+      actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "unchanged" });
+      continue;
+    }
+    if (!orderInPullWindow(order.orderDate)) {
+      actions.push({ kind: "skip", ebayOrderId: order.ebayOrderId, reason: "before-cutoff" });
+      continue;
     }
     const prepared = orderForItems(order, items);
     const shippingItemId = ebayShippingItemId(items);

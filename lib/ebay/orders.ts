@@ -1,6 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readEbayDraftDefaults } from "@/lib/ebayOrderDefaults";
-import { apiBase, apizBase, financesTransactionsUrl, ordersUrl, shippingFulfillmentsUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
+import { apiBase, apizBase, financesTransactionsUrl, ordersByIdsUrl, ordersUrl, shippingFulfillmentsUrl, type EbayEnvironment } from "@/lib/ebay/endpoints";
+import {
+  EBAY_CANCEL_NOTE,
+  EBAY_CANCELLABLE_STATUSES,
+  EBAY_ORDER_ID_BATCH,
+  ebayCancelDecision,
+} from "@/lib/ebay/cancellations";
 import {
   ebayOrderShipDate,
   ebayStatusAfterShipments,
@@ -25,6 +31,7 @@ import {
   EBAY_ORDER_CUSTOMER_QBO_ID,
   EBAY_PULL_OPERATOR_LABEL,
   labelFeeFilter,
+  isEbayOrderId,
   ORDER_PAGE_LIMIT,
   ORDER_PAGE_SIZE,
   orderPullWindows,
@@ -83,6 +90,10 @@ export type OrderPullResult = {
   shipped: number;
   /** Tracking was stored, and a kit component blocked the status change. */
   shippedHeld: number;
+  /** Open sales orders cancelled because eBay cancelled the order. */
+  cancelled: number;
+  /** eBay cancelled the order, and the sales order was already shipped or invoiced. */
+  cancelSkipped: number;
 };
 
 export type OrderPullSummary = {
@@ -107,7 +118,9 @@ type OrderStore = {
   apply(
     actions: PullAction[],
     customer: { id: string },
-  ): Promise<{ created: number; updated: number; linked: number }>;
+  ): Promise<{ created: number; updated: number; linked: number; cancelled: number; cancelSkipped: number }>;
+  /** Open eBay sales orders, so a cancel outside the modified window is still seen. */
+  listOpenEbayOrders?: () => Promise<{ id: string; ebayOrderId: string; status: string }[]>;
   syncLabelFees?(fees: ReadonlyMap<string, number>): Promise<void>;
   syncShipments?(
     groups: readonly { ebayOrderId: string; fulfillments: ParsedEbayShipment[] }[],
@@ -217,6 +230,8 @@ export async function runOrderPull(input: {
   allowNext: (url: string) => boolean;
   loadLabelFees?: () => Promise<Map<string, number> | null>;
   fetchFulfillments?: (orderId: string) => Promise<unknown>;
+  /** getOrders by id, for open sales orders the modified window did not return. */
+  fetchOrdersByIds?: (orderIds: string[]) => Promise<{ body: unknown; rlogid: string | null; requestId: string | null }>;
   store: OrderStore;
 }): Promise<OrderPullResult & { rlogid: string | null; requestId: string | null }> {
   let labelFees: Map<string, number> | null = null;
@@ -235,9 +250,12 @@ export async function runOrderPull(input: {
   let shipments = 0;
   let shipped = 0;
   let shippedHeld = 0;
+  let cancelled = 0;
+  let cancelSkipped = 0;
   let truncated = false;
   let rlogid: string | null = null;
   let requestId: string | null = null;
+  const seenOrderIds = new Set<string>();
 
   for (const window of windows) {
     const seen = new Map<string, ReturnType<typeof parseFulfillmentOrders>[number]>();
@@ -264,6 +282,7 @@ export async function runOrderPull(input: {
       url = input.pageUrl(window.filter, offset);
     }
     const orders = [...seen.values()];
+    for (const order of orders) seenOrderIds.add(order.ebayOrderId);
     if (labelFees) applyLabelFees(orders, labelFees);
     if (orders.length === 0) continue;
     const existing = await input.store.existing(
@@ -282,7 +301,10 @@ export async function runOrderPull(input: {
     created += applied.created;
     updated += applied.updated;
     linked += applied.linked;
+    cancelled += applied.cancelled ?? 0;
+    cancelSkipped += applied.cancelSkipped ?? 0;
     skipped += actions.filter((action) => action.kind === "skip").length;
+    cancelSkipped += actions.filter((action) => action.kind === "skip" && action.reason === "shipped").length;
     if (input.fetchFulfillments && input.store.syncShipments) {
       const synced = await input.store.syncShipments(await loadShipmentGroups(orders, input.fetchFulfillments), input.now.toISOString());
       shipments += synced.shipments;
@@ -297,6 +319,19 @@ export async function runOrderPull(input: {
   if (labelFees && input.store.syncLabelFees) {
     await input.store.syncLabelFees(labelFees);
   }
+  if (input.fetchOrdersByIds && input.store.listOpenEbayOrders) {
+    const rechecked = await recheckOpenEbayCancels({
+      seen: seenOrderIds,
+      customer: input.customer,
+      fetchOrdersByIds: input.fetchOrdersByIds,
+      listOpenEbayOrders: input.store.listOpenEbayOrders.bind(input.store),
+      apply: input.store.apply.bind(input.store),
+    });
+    cancelled += rechecked.cancelled;
+    cancelSkipped += rechecked.cancelSkipped;
+    rlogid = rechecked.rlogid ?? rlogid;
+    requestId = rechecked.requestId ?? requestId;
+  }
   await input.store.setWatermark(input.now.toISOString());
   return {
     created,
@@ -309,6 +344,94 @@ export async function runOrderPull(input: {
     shipments,
     shipped,
     shippedHeld,
+    cancelled,
+    cancelSkipped,
+    rlogid,
+    requestId,
+  };
+}
+
+/**
+ * Same status change as cancel_sales_order: the order becomes cancelled and
+ * an so_events row is appended. That function refuses only cancelled and
+ * closed, and it requires two-letter initials, so it cannot label the row
+ * "eBay" or store a note. Shipped, partially shipped, and invoiced orders
+ * are left as they are. The function would cancel those too.
+ */
+export async function cancelMatchingEbayOrder(
+  admin: SupabaseClient,
+  id: string,
+): Promise<"cancelled" | "skipped" | "left"> {
+  const row = await admin.from("sales_orders").select("status").eq("id", id).maybeSingle();
+  if (row.error) throw new Error(row.error.message);
+  if (!row.data) return "left";
+  const status = String(row.data.status ?? "");
+  const decision = ebayCancelDecision(status);
+  if (decision === "skip-shipped") return "skipped";
+  if (decision !== "cancel") return "left";
+  const updated = await admin
+    .from("sales_orders")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .in("status", [...EBAY_CANCELLABLE_STATUSES])
+    .select("id");
+  if (updated.error) throw new Error("A sales order could not be cancelled.");
+  if (!updated.data?.length) return "left";
+  await insertEvent(admin, id, "cancelled", status, "cancelled", EBAY_CANCEL_NOTE);
+  return "cancelled";
+}
+
+async function recheckOpenEbayCancels(input: {
+  seen: ReadonlySet<string>;
+  customer: { id: string };
+  fetchOrdersByIds: (orderIds: string[]) => Promise<{ body: unknown; rlogid: string | null; requestId: string | null }>;
+  listOpenEbayOrders: () => Promise<{ id: string; ebayOrderId: string; status: string }[]>;
+  apply: OrderStore["apply"];
+}): Promise<{ cancelled: number; cancelSkipped: number; rlogid: string | null; requestId: string | null }> {
+  const open = await input.listOpenEbayOrders();
+  const pending = new Map<string, { id: string; ebayOrderId: string; status: string }>();
+  for (const row of open) {
+    const ebayOrderId = row.ebayOrderId.trim();
+    if (!isEbayOrderId(ebayOrderId) || input.seen.has(ebayOrderId) || pending.has(ebayOrderId)) continue;
+    pending.set(ebayOrderId, { id: row.id, ebayOrderId, status: row.status });
+  }
+  let rlogid: string | null = null;
+  let requestId: string | null = null;
+  const parsed: ReturnType<typeof parseFulfillmentOrders> = [];
+  await mapPool(chunks([...pending.keys()], EBAY_ORDER_ID_BATCH), 4, async (chunk) => {
+    const result = await input.fetchOrdersByIds(chunk);
+    rlogid = result.rlogid ?? rlogid;
+    requestId = result.requestId ?? requestId;
+    for (const order of parseFulfillmentOrders(result.body)) {
+      if (order.cancelled) parsed.push(order);
+    }
+  });
+  if (parsed.length === 0) return { cancelled: 0, cancelSkipped: 0, rlogid, requestId };
+  const existing: ExistingPullOrder[] = [];
+  for (const order of parsed) {
+    const row = pending.get(order.ebayOrderId);
+    if (!row) continue;
+    existing.push({
+      id: row.id,
+      status: row.status,
+      ebayOrderId: row.ebayOrderId,
+      ebaySalesRecordRef: order.salesRecordRef,
+      personEdited: true,
+    });
+  }
+  const actions = planOrderPull(parsed, existing, []).filter((action) => action.kind === "cancel" || (action.kind === "skip" && action.reason === "shipped"));
+  if (!actions.some((action) => action.kind === "cancel")) {
+    return {
+      cancelled: 0,
+      cancelSkipped: actions.filter((action) => action.kind === "skip" && action.reason === "shipped").length,
+      rlogid,
+      requestId,
+    };
+  }
+  const applied = await input.apply(actions, input.customer);
+  return {
+    cancelled: applied.cancelled ?? 0,
+    cancelSkipped: (applied.cancelSkipped ?? 0) + actions.filter((action) => action.kind === "skip" && action.reason === "shipped").length,
     rlogid,
     requestId,
   };
@@ -560,8 +683,20 @@ function supabaseStore(
       let created = 0;
       let updated = 0;
       let linked = 0;
+      let cancelled = 0;
+      let cancelSkipped = 0;
+      const countCancel = async (id: string) => {
+        const result = await cancelMatchingEbayOrder(admin, id);
+        if (result === "cancelled") cancelled += 1;
+        else if (result === "skipped") cancelSkipped += 1;
+      };
       for (const action of actions) {
         if (action.kind === "skip") continue;
+        if (action.kind === "cancel") {
+          if (action.link) await linkOrder(admin, action.id, action.ebayOrderId, action.salesRecordRef);
+          await countCancel(action.id);
+          continue;
+        }
         if (action.kind === "link") {
           await linkOrder(admin, action.id, action.ebayOrderId, action.salesRecordRef);
           linked += 1;
@@ -570,6 +705,9 @@ function supabaseStore(
         if (action.order.shippingAmount != null && action.order.shippingAmount > 0 && !action.shippingItemId) {
           throw new Error("eBay shipping could not be allocated to item 4343.");
         }
+        const afterCreate = async (id: string) => {
+          if (action.order.cancelled) await countCancel(id);
+        };
         if (action.kind === "update") {
           const patch = draftOrderRow({
             order: action.order,
@@ -665,6 +803,7 @@ function supabaseStore(
             await insertLines(admin, id, action);
             await insertEvent(admin, id, "created", null, "draft");
             created += 1;
+            await afterCreate(id);
             continue;
           }
         }
@@ -675,8 +814,10 @@ function supabaseStore(
             .eq("ebay_order_id", action.order.ebayOrderId)
             .maybeSingle();
           if (found.data?.id) {
-            await linkOrder(admin, String(found.data.id), action.order.ebayOrderId, action.order.salesRecordRef);
+            const id = String(found.data.id);
+            await linkOrder(admin, id, action.order.ebayOrderId, action.order.salesRecordRef);
             linked += 1;
+            await afterCreate(id);
             continue;
           }
         }
@@ -689,8 +830,9 @@ function supabaseStore(
           await insertEvent(admin, id, "approved", "draft", "approved", `SO${action.soNumber}`);
         }
         created += 1;
+        await afterCreate(id);
       }
-      return { created, updated, linked };
+      return { created, updated, linked, cancelled, cancelSkipped };
     },
     async syncLabelFees(fees) {
       const ids = [...fees.keys()];
@@ -715,6 +857,31 @@ function supabaseStore(
     },
     async syncShipments(groups, pulledAt) {
       return syncEbayShipments(admin, groups, pulledAt);
+    },
+    async listOpenEbayOrders() {
+      const rows: { id: string; ebayOrderId: string; status: string }[] = [];
+      const pageSize = 1000;
+      for (let from = 0; from < 20000; from += pageSize) {
+        const { data, error } = await admin
+          .from("sales_orders")
+          .select("id, status, ebay_order_id")
+          .not("ebay_order_id", "is", null)
+          .in("status", [...EBAY_CANCELLABLE_STATUSES])
+          .order("id", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw new Error(error.message);
+        const batch = data ?? [];
+        for (const row of batch) {
+          const ebayOrderId = row.ebay_order_id == null ? "" : String(row.ebay_order_id).trim();
+          if (!ebayOrderId) continue;
+          rows.push({ id: String(row.id), ebayOrderId, status: String(row.status ?? "") });
+        }
+        if (batch.length < pageSize) break;
+        if (from + pageSize >= 20000) {
+          throw new Error("Too many open eBay orders to recheck in one pull.");
+        }
+      }
+      return rows;
     },
     async setWatermark(iso) {
       const { error } = await admin.from("ebay_order_seed").update({ orders_watermark: iso }).eq("id", 1);
@@ -1034,7 +1201,8 @@ export async function orderPullSummary(): Promise<OrderPullSummary> {
 }
 
 export function orderPullMessage(
-  result: Pick<OrderPullResult, "created" | "updated" | "linked" | "labels"> & Partial<Pick<OrderPullResult, "shipments" | "shipped" | "shippedHeld">>,
+  result: Pick<OrderPullResult, "created" | "updated" | "linked" | "labels"> &
+    Partial<Pick<OrderPullResult, "shipments" | "shipped" | "shippedHeld" | "cancelled" | "cancelSkipped">>,
 ): string {
   const labels =
     result.labels == null
@@ -1046,6 +1214,14 @@ export function orderPullMessage(
   if (result.shippedHeld) {
     parts.push(
       `Left ${result.shippedHeld} ${result.shippedHeld === 1 ? "order" : "orders"} unchanged because a kit component is still generic.`,
+    );
+  }
+  if (result.cancelled) {
+    parts.push(`Cancelled ${result.cancelled} ${result.cancelled === 1 ? "order" : "orders"} that eBay cancelled.`);
+  }
+  if (result.cancelSkipped) {
+    parts.push(
+      `Left ${result.cancelSkipped} already shipped or invoiced ${result.cancelSkipped === 1 ? "order" : "orders"} unchanged.`,
     );
   }
   return parts.join(" ");
@@ -1125,6 +1301,24 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
         }
         return response.body;
       },
+      fetchOrdersByIds: async (orderIds) => {
+        const response = await ebayRead<unknown>({
+          url: ordersByIdsUrl(connection.environment, orderIds),
+          token,
+          marketplace: true,
+          refresh: async () => {
+            token = (await forceRefreshAccessToken()).access_token;
+            return token;
+          },
+        });
+        if (!response.ok) {
+          if (response.status === 403) {
+            throw new Error("eBay has not granted order access. Reconnect eBay, then pull orders again.");
+          }
+          throw new Error(`eBay order cancellations could not be read. ${response.message}`);
+        }
+        return { body: response.body, rlogid: response.rlogid, requestId: response.requestId };
+      },
       store: supabaseStore(admin, ebayDefaults),
     });
     await writeEbayLog({
@@ -1141,6 +1335,8 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
         shipments: result.shipments,
         shipped: result.shipped,
         shippedHeld: result.shippedHeld,
+        cancelled: result.cancelled,
+        cancelSkipped: result.cancelSkipped,
         history: result.history ? 1 : 0,
         priceRevision: ORDER_PRICE_REVISION,
         rlogid: result.rlogid,
@@ -1158,6 +1354,8 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
       shipments: result.shipments,
       shipped: result.shipped,
       shippedHeld: result.shippedHeld,
+      cancelled: result.cancelled,
+      cancelSkipped: result.cancelSkipped,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "eBay order pull failed.";

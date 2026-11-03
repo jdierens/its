@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ordersUrl, shippingFulfillmentsUrl } from "./endpoints.ts";
+import { ordersUrl, ordersByIdsUrl, shippingFulfillmentsUrl } from "./endpoints.ts";
 import {
   addLabelFees,
   allocateDiscount,
@@ -21,8 +21,9 @@ import {
   type ExistingPullOrder,
   type ExistingSeedOrder,
   type ParsedEbayOrder,
+  type PullAction,
 } from "./orderMap.ts";
-import { allowFinancesNext, allowOrdersNext, readShippingLabelFees, runOrderPull, SeedRequiredError, watermarkForPriceRevision } from "./orders.ts";
+import { allowFinancesNext, allowOrdersNext, cancelMatchingEbayOrder, orderPullMessage, readShippingLabelFees, runOrderPull, SeedRequiredError, watermarkForPriceRevision } from "./orders.ts";
 import { financesTransactionsUrl } from "./endpoints.ts";
 import { SEED_REQUIRED_MESSAGE } from "./orderMap.ts";
 
@@ -280,6 +281,7 @@ test("fulfillment orders drop tax identifiers and keep the buyer on the order", 
   assert.equal(parsed[0].buyer.name, "Ada Buyer");
   assert.equal(parsed[0].shipTo.line1, "1 Main");
   assert.equal(parsed[0].paymentStatus, "paid");
+  assert.equal(parsed[0].cancelled, false);
   assert.equal(parsed[0].lines[0].unitPrice, 5);
   const row = draftOrderRow({ order: parsed[0], customerId: "customer-ebay" });
   assert.equal(row.status, "draft");
@@ -904,4 +906,312 @@ test("a tracking read failure leaves the watermark where it was", async () => {
     /eBay tracking could not be read/,
   );
   assert.equal(watermark, false);
+});
+
+function openOrder(status: string, id = "so-1"): ExistingPullOrder {
+  return { id, status, ebayOrderId: ORDER, ebaySalesRecordRef: "445566", personEdited: true, soNumber: 27190 };
+}
+
+test("an eBay cancel cancels an open sales order and leaves a shipped one", () => {
+  const items = [{ id: "item-1", sku: "SKU-1" }];
+  const cancelled = ebayOrder({ cancelled: true });
+  for (const status of ["draft", "approved", "picking", "packing", "packed"]) {
+    const [action] = planOrderPull([cancelled], [openOrder(status)], items);
+    assert.equal(action.kind, "cancel", status);
+    if (action.kind === "cancel") {
+      assert.equal(action.id, "so-1");
+      assert.equal(action.fromStatus, status);
+      assert.equal(action.link, false);
+    }
+  }
+  for (const status of ["shipped", "partially_shipped", "invoiced"]) {
+    const [action] = planOrderPull([cancelled], [openOrder(status)], items);
+    assert.equal(action.kind, "skip", status);
+    if (action.kind === "skip") assert.equal(action.reason, "shipped");
+  }
+  assert.equal(planOrderPull([cancelled], [openOrder("cancelled")], items)[0].kind, "skip");
+  assert.equal(planOrderPull([cancelled], [openOrder("closed")], items)[0].kind, "skip");
+  const [created] = planOrderPull([cancelled], [], items);
+  assert.equal(created.kind, "create");
+  if (created.kind === "create") assert.equal(created.order.cancelled, true);
+  const [numbered] = planOrderPull([cancelled], [], items, [{ ebayOrderId: ORDER, soNumber: 27190 }]);
+  assert.equal(numbered.kind, "create");
+  if (numbered.kind === "create") assert.equal(numbered.soNumber, 27190);
+  const pending = ebayOrder();
+  assert.equal(planOrderPull([pending], [openOrder("approved")], items)[0].kind, "skip");
+  const old = ebayOrder({ cancelled: true, orderDate: "2025-12-01" });
+  const [kept] = planOrderPull([old], [openOrder("approved", "so-old")], items);
+  assert.equal(kept.kind, "cancel");
+  if (kept.kind === "cancel") assert.equal(kept.id, "so-old");
+  const [notImported] = planOrderPull([old], [], items);
+  assert.equal(notImported.kind, "skip");
+  if (notImported.kind === "skip") assert.equal(notImported.reason, "before-cutoff");
+  const [byRecord] = planOrderPull(
+    [ebayOrder({ cancelled: true })],
+    [{ id: "so-record", status: "picking", ebayOrderId: null, ebaySalesRecordRef: "445566", personEdited: false }],
+    items,
+  );
+  assert.equal(byRecord.kind, "cancel");
+  if (byRecord.kind === "cancel") {
+    assert.equal(byRecord.link, true);
+    assert.equal(byRecord.salesRecordRef, null);
+  }
+});
+
+test("parseFulfillmentOrders reads cancelStatus and an unshipped full refund", () => {
+  const [canceled] = parseFulfillmentOrders({
+    orders: [
+      {
+        orderId: ORDER,
+        creationDate: "2026-10-20T00:00:00.000Z",
+        cancelStatus: { cancelState: "CANCELED", cancelRequests: [] },
+        orderFulfillmentStatus: "NOT_STARTED",
+        orderPaymentStatus: "FULLY_REFUNDED",
+        lineItems: [{ sku: "SKU-1", quantity: 1, lineItemCost: { value: "5.00", currency: "USD" } }],
+      },
+    ],
+  });
+  assert.equal(canceled.cancelled, true);
+  const [refunded] = parseFulfillmentOrders({
+    orders: [
+      {
+        orderId: "16-00001-00001",
+        creationDate: "2026-10-20T00:00:00.000Z",
+        cancelStatus: { cancelState: "NONE_REQUESTED", cancelRequests: [] },
+        orderFulfillmentStatus: "NOT_STARTED",
+        orderPaymentStatus: "FULLY_REFUNDED",
+        lineItems: [],
+      },
+    ],
+  });
+  assert.equal(refunded.cancelled, true);
+  const [returned] = parseFulfillmentOrders({
+    orders: [
+      {
+        orderId: "16-00001-00002",
+        creationDate: "2026-10-20T00:00:00.000Z",
+        cancelStatus: { cancelState: "NONE_REQUESTED" },
+        orderFulfillmentStatus: "FULFILLED",
+        orderPaymentStatus: "FULLY_REFUNDED",
+        lineItems: [{ lineItemFulfillmentStatus: "FULFILLED", quantity: 1 }],
+      },
+    ],
+  });
+  assert.equal(returned.cancelled, false);
+});
+
+test("order ids are requested without a filter", () => {
+  assert.equal(
+    ordersByIdsUrl("production", [ORDER, "13-00001-00002"]),
+    "https://api.ebay.com/sell/fulfillment/v1/order?orderIds=12-03456-78901,13-00001-00002&limit=2",
+  );
+});
+
+test("applying a cancel writes cancelled and the eBay note, and a shipped order is skipped", async () => {
+  const rows = [{ id: "so-1", status: "approved" }];
+  const events: Record<string, unknown>[] = [];
+  const updates: { id: string; values: Record<string, unknown>; allowed: string[] }[] = [];
+  const admin = {
+    from(table: string) {
+      if (table === "so_events") {
+        return {
+          insert: async (values: Record<string, unknown>) => {
+            events.push(values);
+            return { error: null };
+          },
+        };
+      }
+      let id = "";
+      let allowed: string[] = [];
+      let values: Record<string, unknown> | null = null;
+      const api = {
+        select() {
+          return api;
+        },
+        update(next: Record<string, unknown>) {
+          values = next;
+          return api;
+        },
+        eq(column: string, value: string) {
+          if (column === "id") id = value;
+          return api;
+        },
+        in(_column: string, next: string[]) {
+          allowed = next;
+          return api;
+        },
+        maybeSingle: async () => ({ data: rows.find((row) => row.id === id) ?? null, error: null }),
+        then(resolve: (value: { data: { id: string }[]; error: null }) => void) {
+          const row = rows.find((item) => item.id === id);
+          if (!row || !values || !allowed.includes(row.status)) {
+            resolve({ data: [], error: null });
+            return;
+          }
+          updates.push({ id, values, allowed });
+          row.status = String(values.status);
+          resolve({ data: [{ id }], error: null });
+        },
+      };
+      return api;
+    },
+  };
+  const result = await cancelMatchingEbayOrder(admin as never, "so-1");
+  assert.equal(result, "cancelled");
+  assert.equal(rows[0].status, "cancelled");
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].values.status, "cancelled");
+  assert.equal("operator_id" in updates[0].values, false);
+  assert.equal(updates[0].allowed.includes("approved"), true);
+  assert.equal(updates[0].allowed.includes("picking"), true);
+  assert.equal(updates[0].allowed.includes("packing"), true);
+  assert.equal(updates[0].allowed.includes("shipped"), false);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].event, "cancelled");
+  assert.equal(events[0].from_status, "approved");
+  assert.equal(events[0].to_status, "cancelled");
+  assert.equal(events[0].note, "Cancelled on eBay");
+  assert.equal(events[0].operator_label, "eBay");
+  assert.equal(events[0].operator_id, null);
+  rows[0].status = "shipped";
+  events.length = 0;
+  updates.length = 0;
+  assert.equal(await cancelMatchingEbayOrder(admin as never, "so-1"), "skipped");
+  assert.equal(updates.length, 0);
+  assert.equal(events.length, 0);
+  rows[0].status = "cancelled";
+  assert.equal(await cancelMatchingEbayOrder(admin as never, "so-1"), "left");
+  assert.equal(updates.length, 0);
+});
+
+test("open eBay orders outside the modified window are rechecked and cancelled", async () => {
+  const fetched: string[][] = [];
+  const applied: PullAction[][] = [];
+  let watermark: string | null = null;
+  const outside = "16-00001-00009";
+  const result = await runOrderPull({
+    now: new Date("2026-11-02T15:00:00.000Z"),
+    watermark: "2026-11-01T00:00:00.000Z",
+    customer: { id: "customer-ebay" },
+    pageUrl: (filter, offset) => `https://api.ebay.com/orders?filter=${encodeURIComponent(filter)}&offset=${offset}`,
+    allowNext: () => false,
+    fetchPage: async () => ({
+      body: {
+        orders: [
+          {
+            orderId: ORDER,
+            creationDate: "2026-10-24T00:00:00.000Z",
+            orderFulfillmentStatus: "NOT_STARTED",
+            cancelStatus: { cancelState: "NONE_REQUESTED" },
+            lineItems: [],
+          },
+        ],
+      },
+      rlogid: null,
+      requestId: null,
+    }),
+    fetchOrdersByIds: async (ids) => {
+      fetched.push(ids);
+      return {
+        body: {
+          orders: [
+            {
+              orderId: outside,
+              creationDate: "2026-02-01T00:00:00.000Z",
+              orderFulfillmentStatus: "NOT_STARTED",
+              cancelStatus: { cancelState: "CANCELED", cancelRequests: [] },
+              lineItems: [],
+            },
+          ],
+        },
+        rlogid: "rlog",
+        requestId: "req",
+      };
+    },
+    store: {
+      async existing() {
+        return [openOrder("approved")];
+      },
+      async itemsForSkus() {
+        return [];
+      },
+      async apply(actions) {
+        applied.push(actions);
+        return {
+          created: 0,
+          updated: 0,
+          linked: 0,
+          cancelled: actions.filter((action) => action.kind === "cancel").length,
+          cancelSkipped: 0,
+        };
+      },
+      async listOpenEbayOrders() {
+        return [
+          { id: "so-1", ebayOrderId: ORDER, status: "approved" },
+          { id: "so-2", ebayOrderId: outside, status: "approved" },
+        ];
+      },
+      async setWatermark(iso) {
+        watermark = iso;
+      },
+    },
+  });
+  assert.deepEqual(fetched, [[outside]]);
+  const cancel = applied.flat().find((action) => action.kind === "cancel");
+  assert.equal(cancel?.kind, "cancel");
+  if (cancel?.kind === "cancel") {
+    assert.equal(cancel.id, "so-2");
+    assert.equal(cancel.fromStatus, "approved");
+    assert.equal(cancel.ebayOrderId, outside);
+  }
+  assert.equal(result.cancelled, 1);
+  assert.equal(watermark, "2026-11-02T15:00:00.000Z");
+  assert.match(orderPullMessage({ ...result, labels: 0 }), /Cancelled 1 order that eBay cancelled/);
+});
+
+test("a cancellation read failure leaves the watermark where it was", async () => {
+  let watermark = false;
+  await assert.rejects(
+    () =>
+      runOrderPull({
+        now: new Date("2026-11-02T15:00:00.000Z"),
+        watermark: "2026-11-01T00:00:00.000Z",
+        customer: { id: "customer-ebay" },
+        pageUrl: () => "https://api.ebay.com/sell/fulfillment/v1/order",
+        allowNext: () => false,
+        fetchPage: async () => ({ body: { orders: [] }, rlogid: null, requestId: null }),
+        fetchOrdersByIds: async () => {
+          throw new Error("eBay order cancellations could not be read.");
+        },
+        store: {
+          async existing() {
+            return [];
+          },
+          async itemsForSkus() {
+            return [];
+          },
+          async apply() {
+            return { created: 0, updated: 0, linked: 0, cancelled: 0, cancelSkipped: 0 };
+          },
+          async listOpenEbayOrders() {
+            return [{ id: "so-2", ebayOrderId: "16-00001-00009", status: "picking" }];
+          },
+          async setWatermark() {
+            watermark = true;
+          },
+        },
+      }),
+    /eBay order cancellations could not be read/,
+  );
+  assert.equal(watermark, false);
+});
+
+test("the pull says when a shipped eBay order was left unchanged", () => {
+  const message = orderPullMessage({
+    created: 0,
+    updated: 0,
+    linked: 0,
+    labels: 0,
+    cancelSkipped: 2,
+  });
+  assert.match(message, /Left 2 already shipped or invoiced orders unchanged/);
 });
