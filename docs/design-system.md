@@ -97,7 +97,7 @@ Shell, item list, item detail, purchase orders, login, admin users, and Lens sho
 
 Night follows `prefers-color-scheme: dark`. There is no second switcher. The same tokens drive both themes: `--bg`, `--card`, `--ink`, `--muted`, `--line`, `--field`, `--surface`, status chips, and the sales-order stage chips.
 
-Day stage chips are a light glyph on a dark tint. Night flips that to a dark glyph on a light tint. Status chips stay a dark imprint on a light chip by day and a light imprint on a dark chip at night. Shared controls (fields, secondary buttons, icon buttons, menus, tables, cards, the top bar) read those tokens, so a hardcoded light fill does not stay white when the rest of the page is dark.
+Sales-order stage chips use a dark imprint on a light tint in both day and night. Green means that stage is done, yellow means a later stage happened without this one or a payment does not match the invoice, red means a mismatch, an unpaid invoice, or a stage that happened on a cancelled order, and gray means the stage has not been reached. The list total is right-aligned with tabular figures so the cents share one line. Status chips stay a dark imprint on a light chip by day and a light imprint on a dark chip at night. Shared controls (fields, secondary buttons, icon buttons, menus, tables, cards, the top bar) read those tokens, so a hardcoded light fill does not stay white when the rest of the page is dark.
 
 Glass pages keep the violet mesh in day. At night the mesh turns off and the glass tokens use the same zinc night palette as `.ds`. Printing forces the day palette back so pick tickets and customer documents stay dark ink on white paper.
 
