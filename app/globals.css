@@ -6922,7 +6922,7 @@ input.num-input {
 
 @media (min-width: 1100px) {
   .move-lists {
-    grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.35fr);
   }
 }
 
@@ -7065,8 +7065,23 @@ input.num-input {
   margin: 0;
 }
 
+.move-page table.move-contents-table {
+  width: max-content;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .move-contents-table td {
   vertical-align: middle;
+}
+
+.move-contents-table .move-what {
+  display: inline-block;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .move-contents-table th.pick,

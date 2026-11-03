@@ -68,7 +68,7 @@ describe("move inventory", () => {
   });
 
   it("formats the warehouse clock", () => {
-    assert.equal(formatMoveWhen("2026-10-24T18:05:00Z"), "24 Oct, 11:05");
+    assert.equal(formatMoveWhen("2026-10-24T18:05:00Z"), "10/24/26");
   });
 
   it("scopes recent moves to a resolved bin or location", () => {

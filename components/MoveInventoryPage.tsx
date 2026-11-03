@@ -417,7 +417,6 @@ export function MoveInventoryPage() {
                 <>
                   <button
                     type="button"
-                    className={choice?.kind === "bin" ? "" : "secondary"}
                     aria-pressed={choice?.kind === "bin"}
                     disabled={busy}
                     onClick={() => setChoice({ kind: "bin" })}
@@ -426,7 +425,6 @@ export function MoveInventoryPage() {
                   </button>
                   <button
                     type="button"
-                    className={choice?.kind === "empty" ? "" : "secondary"}
                     aria-pressed={choice?.kind === "empty"}
                     disabled={busy}
                     onClick={() => setChoice({ kind: "empty" })}
@@ -436,7 +434,7 @@ export function MoveInventoryPage() {
                 </>
               ) : null}
               {missing ? (
-                <button type="button" className="secondary" disabled={busy} onClick={() => void register(missing.code, missing.type)}>
+                <button type="button" disabled={busy} onClick={() => void register(missing.code, missing.type)}>
                   Register this bin
                 </button>
               ) : null}
@@ -503,7 +501,6 @@ export function MoveInventoryPage() {
               {targetMissing ? (
                 <button
                   type="button"
-                  className="secondary"
                   disabled={busy}
                   onClick={() => {
                     const code = targetShown?.kind === "missing_bin" ? targetShown.code : targetText.trim().toUpperCase();
@@ -534,10 +531,10 @@ export function MoveInventoryPage() {
             {result.summary}
           </p>
           <div className="move-actions">
-            <button type="button" className="secondary" disabled={busy} onClick={moveAnother}>
+            <button type="button" disabled={busy} onClick={moveAnother}>
               Move another from the same source
             </button>
-            <button type="button" className="secondary" disabled={busy} onClick={() => void undo()}>
+            <button type="button" disabled={busy} onClick={() => void undo()}>
               Undo
             </button>
           </div>
@@ -562,9 +559,8 @@ export function MoveInventoryPage() {
                 <table className="receive-table">
                   <thead>
                     <tr>
-                      <th className="fit">Date/time</th>
-                      <th className="fit">Init.</th>
-                      <th>What</th>
+                      <th className="fit">Date</th>
+                      <th className="fit">Op</th>
                       <th>From</th>
                       <th>To</th>
                       <th className="num fit">Qty</th>
@@ -575,7 +571,6 @@ export function MoveInventoryPage() {
                       <tr key={row.id}>
                         <td className="fit">{formatMoveWhen(row.occurredAt)}</td>
                         <td className="fit initials">{row.initials}</td>
-                        <td>{row.what}</td>
                         <td>{row.fromPlace}</td>
                         <td>{row.toPlace}</td>
                         <td className="num fit">{row.qty ?? ""}</td>
@@ -617,8 +612,8 @@ export function MoveInventoryPage() {
                 <table className="receive-table">
                   <thead>
                     <tr>
-                      <th className="fit">Date/time</th>
-                      <th className="fit">Init.</th>
+                      <th className="fit">Date</th>
+                      <th className="fit">Op</th>
                       <th>What</th>
                       <th>From</th>
                       <th className="num fit">Qty</th>
@@ -690,9 +685,8 @@ function ContentsTable({
                   <span className="sr-only">Select</span>
                 </th>
               ) : null}
-              <th>What</th>
+              <th className="what">What</th>
               <th className="num fit">Boxes</th>
-              <th className="num fit">Items</th>
               <th className="num fit">Qty</th>
             </tr>
           </thead>
@@ -762,9 +756,12 @@ function BinRow({
           </label>
         </td>
       ) : null}
-      <td>{child.label}</td>
+      <td className="what">
+        <span className="move-what" title={child.label}>
+          {child.label}
+        </span>
+      </td>
       <td className="num fit">{child.boxes}</td>
-      <td className="num fit">{child.items}</td>
       <td className="num fit" />
     </tr>
   );
@@ -803,8 +800,11 @@ function ItemRow({
           </label>
         </td>
       ) : null}
-      <td>{name}</td>
-      <td className="num fit" />
+      <td className="what">
+        <span className="move-what" title={name}>
+          {name}
+        </span>
+      </td>
       <td className="num fit" />
       <td className="num fit">
         {selectable ? (
