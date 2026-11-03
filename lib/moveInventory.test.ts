@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   binEntriesCode,
@@ -174,5 +175,17 @@ describe("move inventory", () => {
     assert.equal(place.kind, "missing_bin");
     if (place.kind !== "missing_bin") return;
     assert.equal(place.message, "No bin with that code. Use New bin.");
+  });
+
+  it("puts Qty before From on recent entries and leaves recent moves as From, To, Qty", () => {
+    const source = readFileSync(new URL("../components/MoveInventoryPage.tsx", import.meta.url), "utf8");
+    const moves = source.slice(source.indexOf('id="move-recent"'), source.indexOf('id="move-entries"'));
+    const entries = source.slice(source.indexOf('id="move-entries"'), source.indexOf("function PlaceNote"));
+    const headers = (block: string) => [...block.matchAll(/<th[^>]*>([^<]+)<\/th>/g)].map((match) => match[1]);
+    assert.deepEqual(headers(moves), ["Date", "Op", "From", "To", "Qty"]);
+    assert.deepEqual(headers(entries), ["Date", "Op", "What", "Qty", "From"]);
+    assert.equal(entries.indexOf("{row.qty ?? \"\"}"), entries.lastIndexOf("{row.qty ?? \"\"}"));
+    assert.ok(entries.indexOf("{row.qty ?? \"\"}") < entries.indexOf("{row.fromPlace}"));
+    assert.equal(source.split("<h2>Recent entries</h2>").length, 2);
   });
 });
