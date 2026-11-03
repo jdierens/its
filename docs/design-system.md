@@ -26,7 +26,7 @@ Do not invent a one-off hex in a new screen. Add the color to both blocks, or us
 
 The mesh is a background on `body` only. It is not `background-attachment: fixed`, which jumps on iOS Safari. The three washes (violet, cyan, rose) sit at about 0.62, 0.50, and 0.40 so the color reads on the canvas without covering the cards.
 
-Contrast targets are WCAG AA: 4.5:1 for text, 3:1 for control borders. Primary buttons (Save, Add, Find, Sign in) use `linear-gradient(135deg, #1d4ed8, #4f46e5, #6d28d9)`. White text stays above 4.5:1 on every stop (`#1d4ed8` about 6.7:1, `#4f46e5` about 6.3:1, `#6d28d9` about 7.1:1). Secondary buttons are quiet: ink text on a light fill with a neutral hairline, not an accent outline. The small ITS mark keeps the violet-to-teal gradient.
+Contrast targets are WCAG AA: 4.5:1 for text, 3:1 for control borders. Primary buttons (Save, Add, Find, Sign in, New quote review) use `linear-gradient(135deg, #1d4ed8, #4f46e5, #6d28d9)`. White text stays above 4.5:1 on every stop (`#1d4ed8` about 6.7:1, `#4f46e5` about 6.3:1, `#6d28d9` about 7.1:1). The label is `--accent-ink` (`#ffffff`) in day and night, whether the control is `<button class="button">` or `<a class="button">` (including a Next.js `<Link className="button">`). Secondary buttons are quiet: ink text on a light fill with a neutral hairline, not an accent outline. The small ITS mark keeps the violet-to-teal gradient.
 
 Icon-only controls on that dark primary fill use `--icon-on-dark` (`#eef2ff`), a light tint of the fill, for the glyph and its stroke. That includes sales-order icon actions, the new-order plus, the order confirmation Print icon, the items New button, the enabled toolbar save icon, and the pricing save icon. Do not set those to `color: inherit`: page text is dark on the light theme, and the icon disappears into the button. Light chips (`.icon-button`, `.secondary`) keep `--ink` on the light surface. Danger icon buttons stay white on `--danger-ink`.
 
@@ -103,7 +103,7 @@ Glass pages keep the violet mesh in day. At night the mesh turns off and the gla
 
 ## Zinc surface (opt in)
 
-Sales orders, pick, pack, ship, the invoice and confirmation page around the paper, the sales-order kit line, receiving, and inventory search use a second surface. Add the class `ds` next to `page` (`main.page.so-page.ds`). Other pages can follow the same way. Do not copy these hexes into a one-off screen, and do not replace the `:root` glass tokens. The sidebar stays the app sidebar. The paper invoice and order confirmation stay white in both themes.
+Sales orders, pick, pack, ship, the invoice and confirmation page around the paper, the sales-order kit line, receiving, inventory search, and quote reviews use a second surface. Add the class `ds` next to `page` (`main.page.so-page.ds`). Other pages can follow the same way. Do not copy these hexes into a one-off screen, and do not replace the `:root` glass tokens. The sidebar stays the app sidebar. The paper invoice and order confirmation stay white in both themes.
 
 | Token | Light | Dark |
 |---|---|---|
@@ -115,6 +115,8 @@ Sales orders, pick, pack, ship, the invoice and confirmation page around the pap
 Dark follows `prefers-color-scheme: dark`. While that matches, `.shell-body:has(.ds)` paints the same canvas, including the top bar, so the violet mesh does not frame the page. `--ds-muted` is neutral-500 in light. In dark it lifts to zinc-400 so metadata still clears AA on `#18181b`.
 
 Cards, the order banner, and drawers use `--ds-card` and a soft shadow. They do not use a heavy border or the glass blur. Page padding is 24px, and 16px below 800px. Fields use a 10px radius, a hairline zinc border, and a 200ms transition into a soft indigo ring (`box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.28)`).
+
+Primary filled buttons on a zinc page keep the shared gradient and a `--accent-ink` label, the same as every other primary button. That includes `<button class="button">` and `<a class="button">`. `.ds a` colors ordinary text links with `--ds-link` (`#4338ca` in day, `#a5b4fc` at night). That selector is one class and one element, which beats `.button`, so the link color must not win on a primary filled button. `app/globals.css` sets `.ds a.button:not(.secondary)` to `--accent-ink` in day and night, which keeps a future `<Link className="button">` on a `.ds` page readable. Secondary buttons stay ink on a light fill with a hairline. Icon-only primary links (`so-icon-action`, `so-new-order`) keep `--icon-on-dark`, named again after the label rule.
 
 Status chips inside `.ds` use a desaturated background and a rich foreground: draft and pending are warm amber (`#f5f0e6` / `#92400e`), not neon yellow. Cancelled is a quiet rose, not neon red. Purchase-order chips keep the glass colors in day. At night every status chip uses the zinc night pair.
 
