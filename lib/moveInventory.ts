@@ -148,16 +148,15 @@ export function moveItemLines(
   return { ok: true, items };
 }
 
+/** Warehouse date for the move lists: MM/DD/YY in Pacific time. */
 export function formatMoveWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Los_Angeles",
+    month: "2-digit",
     day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
+    year: "2-digit",
   }).format(date);
 }
 
