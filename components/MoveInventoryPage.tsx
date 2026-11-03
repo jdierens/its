@@ -615,8 +615,8 @@ export function MoveInventoryPage() {
                       <th className="fit">Date</th>
                       <th className="fit">Op</th>
                       <th>What</th>
-                      <th>From</th>
                       <th className="num fit">Qty</th>
+                      <th>From</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -625,8 +625,8 @@ export function MoveInventoryPage() {
                         <td className="fit">{formatMoveWhen(row.occurredAt)}</td>
                         <td className="fit initials">{row.initials}</td>
                         <td>{row.what}</td>
-                        <td>{row.fromPlace}</td>
                         <td className="num fit">{row.qty ?? ""}</td>
+                        <td>{row.fromPlace}</td>
                       </tr>
                     ))}
                   </tbody>
