@@ -199,5 +199,13 @@ describe("sales order list page", () => {
     assert.match(list, /salesOrderIsEcommerce/);
     assert.match(css, /\.so-col-sort/);
     assert.match(css, /\.so-sort-bar/);
+    assert.match(page, /<colgroup>/);
+    assert.match(css, /\.so-table-scroll col\.so-col-customer \{ width: 9rem; \}/);
+    assert.equal(css.includes("width: 9.4%"), false);
+    assert.match(
+      css,
+      /\.so-table-scroll th\.so-col-total,\n\.so-table-scroll td\.so-col-total \{\n  width: 8\.75rem;\n  text-align: right;\n  font-variant-numeric: tabular-nums lining-nums;\n  white-space: nowrap;/,
+    );
+    assert.match(page, /className="num so-col-total"/);
   });
 });

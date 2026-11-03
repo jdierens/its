@@ -96,6 +96,8 @@ describe("sales order stage icons", () => {
     assert.equal(title(stages, "packed"), "Invoiced without packing");
     assert.equal(tone(stages, "picked"), "gap");
     assert.equal(title(stages, "picked"), "Invoiced without picking");
+    assert.equal(tone(stages, "paid"), "bad");
+    assert.equal(title(stages, "paid"), "Unpaid");
   });
 
   it("turns the invoice icon red when the QuickBooks sale amount disagrees", () => {
@@ -181,6 +183,117 @@ describe("sales order stage icons", () => {
     assert.equal(tone(stages, "invoiced"), "neutral");
   });
 
+  it("places Paid beside Invoiced and leaves an unpaid draft gray", () => {
+    const stages = salesOrderStageIcons(input());
+    assert.deepEqual(
+      stages.map((stage) => stage.id),
+      ["approved", "picked", "packed", "shipped", "invoiced", "paid", "cancelled"],
+    );
+    assert.equal(tone(stages, "paid"), "neutral");
+    assert.equal(title(stages, "paid"), "Paid");
+  });
+
+  it("turns Paid red when an invoice is unpaid, the order is awaiting payment, or a prepay order has left draft", () => {
+    const invoiced = salesOrderStageIcons(
+      input({ status: "shipped", total: 100, qbo: qbo({ saleAmount: 100 }) }),
+    );
+    assert.equal(tone(invoiced, "paid"), "bad");
+    assert.equal(title(invoiced, "paid"), "Unpaid");
+    const waiting = salesOrderStageIcons(input({ status: "awaiting_payment" }));
+    assert.equal(tone(waiting, "paid"), "bad");
+    const prepay = salesOrderStageIcons(
+      input({ status: "approved", payment: { amount: null, status: "unpaid", dated: false, requirement: "prepay" } }),
+    );
+    assert.equal(tone(prepay, "paid"), "bad");
+    const draftPrepay = salesOrderStageIcons(
+      input({ payment: { amount: null, status: "unpaid", dated: false, requirement: "prepay" } }),
+    );
+    assert.equal(tone(draftPrepay, "paid"), "neutral");
+  });
+
+  it("turns Paid green when the recorded amount matches the QuickBooks invoice to the cent", () => {
+    const stages = salesOrderStageIcons(
+      input({
+        status: "shipped",
+        total: 80,
+        qbo: qbo({ saleAmount: 100.004 }),
+        payment: { amount: 100, status: "unpaid", dated: true, requirement: "terms" },
+      }),
+    );
+    assert.equal(tone(stages, "paid"), "done");
+    assert.equal(title(stages, "paid"), "Paid");
+    assert.equal(tone(stages, "shipped"), "done");
+  });
+
+  it("turns Paid yellow when the amount differs, when only part was recorded, or when there is no invoice yet", () => {
+    const mismatch = salesOrderStageIcons(
+      input({
+        status: "shipped",
+        total: 100,
+        qbo: qbo({ saleAmount: 100 }),
+        payment: { amount: 80, status: "paid", dated: true, requirement: "terms" },
+      }),
+    );
+    assert.equal(tone(mismatch, "paid"), "gap");
+    assert.equal(title(mismatch, "paid"), "Payment does not match this invoice");
+    const partial = salesOrderStageIcons(
+      input({
+        status: "shipped",
+        total: 100,
+        qbo: qbo({ saleAmount: 100 }),
+        payment: { amount: null, status: "partial", dated: true, requirement: "prepay" },
+      }),
+    );
+    assert.equal(tone(partial, "paid"), "gap");
+    assert.equal(title(partial, "paid"), "Partial payment");
+    const early = salesOrderStageIcons(
+      input({
+        status: "approved",
+        payment: { amount: 50, status: "unpaid", dated: true, requirement: "terms" },
+      }),
+    );
+    assert.equal(tone(early, "paid"), "gap");
+    assert.equal(title(early, "paid"), "Payment recorded without a QuickBooks invoice");
+    assert.equal(tone(early, "shipped"), "neutral");
+  });
+
+  it("treats a paid eBay order with no payment amount as the buyer total", () => {
+    const matched = salesOrderStageIcons(
+      input({
+        status: "shipped",
+        total: 100,
+        qbo: qbo({ saleAmount: 100 }),
+        payment: { amount: null, status: "paid", dated: true, requirement: "prepay" },
+      }),
+    );
+    assert.equal(tone(matched, "paid"), "done");
+    const short = salesOrderStageIcons(
+      input({
+        status: "shipped",
+        total: 90,
+        qbo: qbo({ saleAmount: 100 }),
+        payment: { amount: null, status: "paid", dated: true, requirement: "prepay" },
+      }),
+    );
+    assert.equal(tone(short, "paid"), "gap");
+    assert.equal(title(short, "paid"), "Payment does not match this invoice");
+  });
+
+  it("turns a recorded payment on a cancelled order red and leaves an unpaid cancellation gray", () => {
+    const recorded = salesOrderStageIcons(
+      input({
+        status: "cancelled",
+        total: 100,
+        qbo: qbo({ saleAmount: 100 }),
+        payment: { amount: 100, status: "paid", dated: true, requirement: "terms" },
+      }),
+    );
+    assert.equal(tone(recorded, "paid"), "bad");
+    assert.equal(title(recorded, "paid"), "Payment on a cancelled order");
+    const unpaid = salesOrderStageIcons(input({ status: "cancelled", approvedAt: true }));
+    assert.equal(tone(unpaid, "paid"), "neutral");
+  });
+
   it("matches the QuickBooks sale amount to the cent and flags a voided total", () => {
     assert.equal(qboInvoiceAmountsMatch(10, 10), true);
     assert.equal(qboInvoiceAmountsMatch(10, 10.004), true);
@@ -189,6 +302,34 @@ describe("sales order stage icons", () => {
     assert.equal(qboInvoiceVoided(100, 0), true);
     assert.equal(qboInvoiceVoided(0, 0), false);
     assert.equal(qboInvoiceVoided(100, 100), false);
+  });
+});
+
+describe("sales order stage icon chips", () => {
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  it("uses a dark imprint on a light tint for gray, green, yellow, and red in day, night, and print", () => {
+    const chips: Array<[string, string]> = [
+      ["--stage-neutral-bg", "#e4e4e7"],
+      ["--stage-neutral-ink", "#18181b"],
+      ["--stage-done-bg", "#bbf7d0"],
+      ["--stage-done-ink", "#14532d"],
+      ["--stage-gap-bg", "#fde68a"],
+      ["--stage-gap-ink", "#713f12"],
+      ["--stage-bad-bg", "#fecdd3"],
+      ["--stage-bad-ink", "#9f1239"],
+    ];
+    for (const [name, value] of chips) {
+      const found = css.match(new RegExp(`${name}:\\s*${value}`, "g"));
+      assert.equal(found?.length, 3, `${name} should be ${value} in day, night, and print`);
+    }
+    assert.match(css, /\.so-stage-icon\.so-stage-done[\s\S]*var\(--stage-done-bg\)[\s\S]*var\(--stage-done-ink\)/);
+    assert.match(css, /\.so-stage-icon\.so-stage-gap[\s\S]*var\(--stage-gap-bg\)[\s\S]*var\(--stage-gap-ink\)/);
+    assert.match(css, /\.so-stage-icon\.so-stage-bad[\s\S]*var\(--stage-bad-bg\)[\s\S]*var\(--stage-bad-ink\)/);
+    assert.equal(css.includes("--stage-done-bg: #166534"), false);
+    assert.equal(css.includes("--stage-done-ink: #bbf7d0"), false);
+    assert.equal(css.includes("--stage-neutral-ink: #fafafa"), false);
+    assert.equal(css.includes("--stage-gap-ink: #fef9c3"), false);
   });
 });
 

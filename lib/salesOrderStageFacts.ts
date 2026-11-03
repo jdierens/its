@@ -16,6 +16,10 @@ type OrderFlag = {
   status: string;
   approvedAt: boolean;
   packedAt: boolean;
+  paymentAmount: number | null;
+  paymentStatus: "unpaid" | "partial" | "paid";
+  paymentDated: boolean;
+  paymentRequirement: "prepay" | "terms";
 };
 
 function relationMissing(error: { code?: string; message?: string } | null): boolean {
@@ -102,34 +106,66 @@ export async function loadSalesOrderStageInputs(ids: readonly string[]): Promise
       hasShipment: shipments.has(id),
       total: lineFacts.totals.get(id) ?? null,
       qbo,
+      payment: {
+        amount: order.paymentAmount,
+        status: order.paymentStatus,
+        dated: order.paymentDated,
+        requirement: order.paymentRequirement,
+      },
     });
   }
   return result;
 }
 
+const ORDER_FLAG_COLUMNS = [
+  "id",
+  "status",
+  "approved_at",
+  "packed_at",
+  "payment_amount",
+  "payment_status",
+  "payment_date",
+  "payment_requirement",
+] as const;
+
 async function loadOrderFlags(supabase: Awaited<ReturnType<typeof getSupabase>>, ids: string[]): Promise<Map<string, OrderFlag>> {
   const flags = new Map<string, OrderFlag>();
   const rows = await inChunks(ids, async (slice) => {
-    const withPacked = await supabase.from("sales_orders").select("id, status, approved_at, packed_at").in("id", slice);
-    if (!withPacked.error) return asRows(withPacked.data);
-    if (!relationMissing(withPacked.error) || !/packed_at/i.test(withPacked.error.message ?? "")) {
-      throw new Error(withPacked.error.message || "Could not read sales orders.");
+    const wanted = new Set<string>(ORDER_FLAG_COLUMNS);
+    let lastError = "Could not read sales orders.";
+    for (let attempt = 0; attempt < ORDER_FLAG_COLUMNS.length; attempt += 1) {
+      const selected = await supabase.from("sales_orders").select([...wanted].join(", ")).in("id", slice);
+      if (!selected.error) return asRows(selected.data);
+      lastError = selected.error.message || lastError;
+      if (!relationMissing(selected.error)) throw new Error(lastError);
+      const missing = [...wanted].find((column) => lastError.includes(`'${column}'`) || lastError.includes(`"${column}"`));
+      if (!missing || missing === "id" || missing === "status") throw new Error(lastError);
+      wanted.delete(missing);
     }
-    const plain = await supabase.from("sales_orders").select("id, status, approved_at").in("id", slice);
-    if (plain.error) throw new Error(plain.error.message);
-    return asRows(plain.data);
+    throw new Error(lastError);
   });
   for (const row of rows) {
     const id = text(row.id);
     if (!id) continue;
+    const paymentStatus = text(row.payment_status);
     flags.set(id, {
       id,
       status: text(row.status) || "draft",
       approvedAt: row.approved_at != null && text(row.approved_at) !== "",
       packedAt: row.packed_at != null && text(row.packed_at) !== "",
+      paymentAmount: moneyOrNull(row.payment_amount),
+      paymentStatus: paymentStatus === "paid" || paymentStatus === "partial" ? paymentStatus : "unpaid",
+      paymentDated: row.payment_date != null && text(row.payment_date) !== "",
+      paymentRequirement: text(row.payment_requirement) === "prepay" ? "prepay" : "terms",
     });
   }
   return flags;
+}
+
+function moneyOrNull(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const amount = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(amount) ? amount : null;
 }
 
 async function loadLineFacts(

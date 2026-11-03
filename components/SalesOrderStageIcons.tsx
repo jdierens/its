@@ -1,4 +1,4 @@
-import { BadgeCheck, Ban, FileText, Package, PackageCheck, Truck, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Banknote, Ban, FileText, Package, PackageCheck, Truck, type LucideIcon } from "lucide-react";
 import type { SalesOrderStageIcon, SalesOrderStageIconId } from "@/lib/salesOrderStageIcons";
 
 const ICONS: Record<SalesOrderStageIconId, LucideIcon> = {
@@ -7,6 +7,7 @@ const ICONS: Record<SalesOrderStageIconId, LucideIcon> = {
   packed: Package,
   shipped: Truck,
   invoiced: FileText,
+  paid: Banknote,
   cancelled: Ban,
 };
 

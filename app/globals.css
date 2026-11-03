@@ -55,15 +55,17 @@
   --accent-text: #5b21b6;
   --segment-on: #0f172a;
   --segment-on-ink: #ffffff;
-  /* Stage chips: day is a light glyph on a dark tint. Night flips that. */
-  --stage-neutral-bg: #27272a;
-  --stage-neutral-ink: #fafafa;
-  --stage-done-bg: #166534;
-  --stage-done-ink: #bbf7d0;
-  --stage-gap-bg: #a16207;
-  --stage-gap-ink: #fef9c3;
-  --stage-bad-bg: #9f1239;
-  --stage-bad-ink: #fecdd3;
+  /* Stage chips: a dark imprint on a light tint, the same in day and night.
+     Green is done, yellow is a skipped earlier stage, red is a mismatch or
+     a stage that happened on a cancelled order, and gray is not reached. */
+  --stage-neutral-bg: #e4e4e7;
+  --stage-neutral-ink: #18181b;
+  --stage-done-bg: #bbf7d0;
+  --stage-done-ink: #14532d;
+  --stage-gap-bg: #fde68a;
+  --stage-gap-ink: #713f12;
+  --stage-bad-bg: #fecdd3;
+  --stage-bad-ink: #9f1239;
   --badge-neutral-bg: #e2e8f0;
   --badge-neutral-ink: #1e293b;
   --badge-draft-bg: #fde68a;
@@ -7586,11 +7588,13 @@ input.num-input {
 
 /* The list does not use .so-lines. Same letter-height row gap, on its own cells.
    The status pill is shortened so it does not open the row back up.
-   Reference is about two-thirds of the old auto share (~14% of the table), so
-   the status chip and the six stage icons stay on one row. */
+   Customer was the flexible column, so it took the width and clipped the
+   order reference. Customer is now the short column. Order reference takes
+   the space that frees. The total stays a fixed right-aligned column so the
+   cents share one line. */
 .so-table-scroll table {
   table-layout: fixed;
-  min-width: 58rem;
+  min-width: 64rem;
 }
 
 .so-table-scroll th,
@@ -7600,29 +7604,33 @@ input.num-input {
   line-height: 1.05;
 }
 
+.so-table-scroll col.so-col-number { width: 6.75rem; }
+.so-table-scroll col.so-col-customer { width: 9rem; }
+.so-table-scroll col.so-col-status { width: 22rem; }
+.so-table-scroll col.so-col-date { width: 5.75rem; }
+.so-table-scroll col.so-col-total { width: 8.75rem; }
+
 .so-table-scroll th.so-col-number,
 .so-table-scroll td.so-col-number {
   width: 6.75rem;
 }
 
-.so-table-scroll th.so-col-ref,
-.so-table-scroll td.so-col-ref {
-  width: 9.4%;
+.so-table-scroll th.so-col-customer,
+.so-table-scroll td.so-col-customer {
+  width: 9rem;
+  max-width: 9rem;
 }
 
+.so-table-scroll td.so-col-customer,
 .so-table-scroll td.so-col-ref {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.so-table-scroll td.so-col-customer {
-  overflow-wrap: anywhere;
-}
-
 .so-table-scroll th.so-col-status,
 .so-table-scroll td.so-col-status {
-  width: 20rem;
+  width: 22rem;
 }
 
 .so-table-scroll th.so-col-date,
@@ -7632,7 +7640,10 @@ input.num-input {
 
 .so-table-scroll th.so-col-total,
 .so-table-scroll td.so-col-total {
-  width: 6.75rem;
+  width: 8.75rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
 }
 
 .so-table-scroll .badge {
@@ -7671,8 +7682,12 @@ input.num-input {
   justify-content: flex-start;
 }
 
-.so-page .so-table-scroll th.num button.so-col-sort {
+.so-page .so-table-scroll th.num button.so-col-sort,
+.so-page .so-table-scroll th.so-col-total button.so-col-sort {
   justify-content: flex-end;
+  width: 100%;
+  text-align: right;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 /* The reference heading is narrower than its label, so the words wrap. */
@@ -8149,10 +8164,12 @@ input.num-input {
   white-space: nowrap;
 }
 
-/* Approved, picked, packed, shipped, invoiced, then cancelled on its own.
-   Day uses a light glyph on a dark tint. Night flips that: a dark glyph on a
-   light tint, so the color is a chip and not a thin stroke. Neutral stays
-   black and white. */
+/* Approved, picked, packed, shipped, invoiced, paid, then cancelled on its own.
+   Day and night use the same chip: a dark imprint on a light tint, so the
+   color reads as a chip and not a thin stroke. Green is done, yellow is a
+   skipped earlier stage or a payment that does not match the invoice, red is
+   a mismatch, an unpaid invoice, or a stage that happened on a cancelled
+   order, and gray is not yet reached. */
 .so-stage-icons {
   display: inline-flex;
   align-items: center;
@@ -8343,6 +8360,11 @@ input.num-input {
   margin: 0;
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+.so-card dd.num {
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
 }
 
 .so-page input:disabled,
@@ -9139,6 +9161,7 @@ button.so-new-order svg,
     --warn-bg: #3f2e12;
     --warn-ink: #fde68a;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45), 0 12px 28px rgba(0, 0, 0, 0.35);
+    /* Stage chips do not flip at night. Dark imprint, light tint, same as day. */
     --stage-neutral-bg: #e4e4e7;
     --stage-neutral-ink: #18181b;
     --stage-done-bg: #bbf7d0;
@@ -10617,14 +10640,15 @@ button.so-new-order svg,
     --ds-muted: #334155;
     --ds-line: rgba(24, 24, 27, 0.12);
     --ds-link: #4338ca;
-    --stage-neutral-bg: #27272a;
-    --stage-neutral-ink: #fafafa;
-    --stage-done-bg: #166534;
-    --stage-done-ink: #bbf7d0;
-    --stage-gap-bg: #a16207;
-    --stage-gap-ink: #fef9c3;
-    --stage-bad-bg: #9f1239;
-    --stage-bad-ink: #fecdd3;
+    /* Printed stage chips stay the screen pair: dark imprint on a light tint. */
+    --stage-neutral-bg: #e4e4e7;
+    --stage-neutral-ink: #18181b;
+    --stage-done-bg: #bbf7d0;
+    --stage-done-ink: #14532d;
+    --stage-gap-bg: #fde68a;
+    --stage-gap-ink: #713f12;
+    --stage-bad-bg: #fecdd3;
+    --stage-bad-ink: #9f1239;
   }
 
   body,

@@ -208,6 +208,11 @@ export function SalesOrderList({
           </div>
           <div className="card so-table-scroll">
             <table>
+              <colgroup>
+                {columns.map((column) => (
+                  <col key={column.key} className={column.className} />
+                ))}
+              </colgroup>
               <thead>
                 <tr>
                   {columns.map((column) => (
@@ -229,7 +234,9 @@ export function SalesOrderList({
                     <td className="tabular so-col-number">
                       <Link href={`/sales/orders/${order.id}`}>{order.number}</Link>
                     </td>
-                    <td className="so-col-customer">{order.customerName}</td>
+                    <td className="so-col-customer" title={order.customerName || undefined}>
+                      {order.customerName}
+                    </td>
                     <td className="so-col-ref" title={order.orderReference || undefined}>
                       {order.orderReference}
                     </td>
