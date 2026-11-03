@@ -125,6 +125,8 @@ test("warehouse roles are kept off settings, pricing, and admin pages", () => {
   assert.equal(routeAllowed("/admin/integrations/ebay", clerk), false);
   assert.equal(routeAllowed("/admin/manufacturers", clerk), false);
   assert.equal(routeAllowed("/pricing", clerk), false);
+  assert.equal(routeAllowed("/pricing/quotes", clerk), false);
+  assert.equal(routeAllowed("/pricing/quotes/new", { role: "staff", status: "approved", authOn: true }), true);
   assert.equal(routeAllowed("/warehouse/pick", clerk), true);
   assert.equal(routeAllowed("/items", clerk), true);
 
@@ -134,6 +136,7 @@ test("warehouse roles are kept off settings, pricing, and admin pages", () => {
 
   const reader = { role: "read_only", status: "approved", authOn: true };
   assert.equal(routeAllowed("/pricing", reader), true);
+  assert.equal(routeAllowed("/pricing/quotes", reader), true);
   assert.equal(routeAllowed("/admin/settings", reader), true);
   assert.equal(routeAllowed("/admin/users", reader), false);
   assert.equal(routeAllowed("/admin/integrations", reader), false);

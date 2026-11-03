@@ -1,0 +1,748 @@
+"use server";
+
+import { CAPABILITY_DENIED } from "@/lib/capabilities";
+import { errorText } from "@/lib/errors";
+import { formatDataDate } from "@/lib/formatDate";
+import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
+import { normalizePartNumber } from "@/lib/itemAttributeSearch";
+import { asMoney, formatMoney, moneyInput } from "@/lib/pricing/quotes";
+import { quoteReviewPageAccess } from "@/lib/quoteReviewSession";
+import {
+  DUE_SOON_DAYS,
+  addCalendarDays,
+  bestCompetingUnit,
+  counterpartyLabel,
+  isQuoteDueSoon,
+  isQuoteStatus,
+  linesForRelatedEvent,
+  parseQuoteQty,
+  parseQuoteSave,
+  parseRelatedQuote,
+  quoteCalendarDay,
+  quoteDirectionLabel,
+  quoteEventLabel,
+  quoteQtyText,
+  quoteReviewsUnavailable,
+  relationPhrase,
+  summarizeQuoteLines,
+  type ParsedQuoteLine,
+  type QuoteChoice,
+  type QuoteItemHit,
+  type QuoteLineDraft,
+  type QuoteListRow,
+  type QuoteRelatedInput,
+  type QuoteRelationView,
+  type QuoteReviewDraft,
+  type QuoteSaveInput,
+  type QuoteVendorOption,
+} from "@/lib/quoteReviews";
+import { getSupabase } from "@/lib/supabase";
+
+const EDIT_DENIED = CAPABILITY_DENIED.can_edit_financials;
+const VIEW_DENIED = CAPABILITY_DENIED.can_view_financials;
+const LIST_LIMIT = 500;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type QuoteListResult = {
+  unavailable: boolean;
+  truncated: boolean;
+  rows: QuoteListRow[];
+};
+
+export type QuoteDetailResult =
+  | { status: "ok"; draft: QuoteReviewDraft; relations: QuoteRelationView[] }
+  | { status: "missing" }
+  | { status: "unavailable" };
+
+export type QuoteSaveResult = {
+  id: string;
+  warnings: string[];
+  lines: { key: string; id: string; bids: { key: string; id: string }[] }[];
+};
+
+type Row = Record<string, unknown>;
+
+export async function listQuoteVendors(): Promise<QuoteVendorOption[]> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canView) return [];
+  const { data, error } = await (await getSupabase())
+    .from("vendors")
+    .select("id, display_name")
+    .eq("active", true)
+    .order("display_name");
+  if (error) throw new Error(errorText(error));
+  return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.display_name ?? "") }));
+}
+
+export async function listQuoteReviews(filter: { q?: string; status?: string; due?: string }): Promise<QuoteListResult> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canView) throw new Error(VIEW_DENIED);
+  const supabase = await getSupabase();
+  const today = quoteCalendarDay();
+  const status = filter.status && isQuoteStatus(filter.status) ? filter.status : "";
+  const dueSoon = filter.due === "soon";
+  let request = supabase
+    .from("quote_events")
+    .select("id, received_on, due_on, vendor_id, counterparty_name, channel, direction, status, reference, currency, vendors(display_name)");
+  if (status) request = request.eq("status", status);
+  if (dueSoon) {
+    request = request
+      .not("due_on", "is", null)
+      .lte("due_on", addCalendarDays(today, DUE_SOON_DAYS))
+      .in("status", ["open", "reviewing", "bid_sent"]);
+  }
+  const needle = searchNeedle(filter.q ?? "");
+  if (needle) {
+    const vendors = await listQuoteVendors();
+    const ids = vendors.filter((vendor) => vendor.name.toLowerCase().includes(needle.toLowerCase())).map((vendor) => vendor.id);
+    const pattern = `%${needle.replaceAll('"', "")}%`;
+    const parts = [`reference.ilike."${pattern}"`, `counterparty_name.ilike."${pattern}"`];
+    if (ids.length > 0) parts.push(`vendor_id.in.(${ids.join(",")})`);
+    request = request.or(parts.join(","));
+  }
+  const listed = await request.order("received_on", { ascending: false }).order("created_at", { ascending: false }).limit(LIST_LIMIT);
+  if (listed.error) {
+    if (quoteReviewsUnavailable(listed.error)) return { unavailable: true, truncated: false, rows: [] };
+    throw new Error(errorText(listed.error));
+  }
+  const events = (listed.data ?? []) as Row[];
+  const ids = events.map((row) => String(row.id));
+  const [lineMap, relatedMap] = await Promise.all([lineSummaries(ids), relatedByEvent(events, ids)]);
+  return {
+    unavailable: false,
+    truncated: events.length >= LIST_LIMIT,
+    rows: events.map((row) => {
+      const id = String(row.id);
+      const vendor = vendorName(row);
+      const counterparty = counterpartyLabel(vendor, text(row.counterparty_name));
+      const dueOn = text(row.due_on) || null;
+      const statusValue = text(row.status);
+      const totals = lineMap.get(id) ?? summarizeQuoteLines([]);
+      return {
+        id,
+        reference: text(row.reference),
+        label: quoteEventLabel({ reference: text(row.reference), counterparty, receivedOn: text(row.received_on) }),
+        receivedOn: text(row.received_on),
+        dueOn,
+        dueSoon: isQuoteDueSoon({ dueOn, status: statusValue, today }),
+        vendorId: text(row.vendor_id) || null,
+        counterparty,
+        channel: text(row.channel),
+        direction: text(row.direction),
+        status: statusValue,
+        lineCount: totals.lineCount,
+        qty: totals.qty,
+        offerExt: totals.offerExt,
+        competingExt: totals.competingExt,
+        currency: text(row.currency) || "USD",
+        related: relatedMap.get(id) ?? [],
+      };
+    }),
+  };
+}
+
+export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canView) throw new Error(VIEW_DENIED);
+  if (!UUID.test(id)) return { status: "missing" };
+  const supabase = await getSupabase();
+  const event = await supabase
+    .from("quote_events")
+    .select("id, received_on, due_on, vendor_id, counterparty_name, channel, direction, status, reference, notes, currency, updated_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (event.error) {
+    if (quoteReviewsUnavailable(event.error)) return { status: "unavailable" };
+    throw new Error(errorText(event.error));
+  }
+  if (!event.data) return { status: "missing" };
+  const lines = await supabase
+    .from("quote_event_lines")
+    .select("id, sort_order, item_id, part_number, sku, item_name, condition, qty, our_unit_price, decision, decision_note, quote_event_bids(id, sort_order, bidder_name, unit_price, note)")
+    .eq("quote_event_id", id)
+    .order("sort_order");
+  if (lines.error) throw new Error(errorText(lines.error));
+  const lineRows = ((lines.data ?? []) as Row[]).slice().sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order));
+  const context = await itemContext(lineRows.map((row) => text(row.item_id)).filter(Boolean));
+  const header = event.data as Row;
+  return {
+    status: "ok",
+    draft: {
+      id,
+      reference: text(header.reference),
+      counterpartyName: text(header.counterparty_name),
+      vendorId: text(header.vendor_id),
+      channel: text(header.channel),
+      direction: text(header.direction),
+      status: text(header.status),
+      receivedOn: text(header.received_on),
+      dueOn: text(header.due_on),
+      currency: text(header.currency) || "USD",
+      notes: text(header.notes),
+      lines: lineRows.map((row) => lineDraft(row, context)),
+    },
+    relations: await relationsFor(id),
+  };
+}
+
+export async function listQuoteReviewChoices(exceptId: string): Promise<QuoteChoice[]> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canView) return [];
+  const supabase = await getSupabase();
+  let request = supabase
+    .from("quote_events")
+    .select("id, reference, counterparty_name, direction, received_on, vendors(display_name)")
+    .order("received_on", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (UUID.test(exceptId)) request = request.neq("id", exceptId);
+  const { data, error } = await request;
+  if (error) {
+    if (quoteReviewsUnavailable(error)) return [];
+    throw new Error(errorText(error));
+  }
+  return ((data ?? []) as Row[]).map((row) => {
+    const counterparty = counterpartyLabel(vendorName(row), text(row.counterparty_name));
+    const label = quoteEventLabel({ reference: text(row.reference), counterparty, receivedOn: text(row.received_on) });
+    return {
+      id: String(row.id),
+      label: `${label} · ${quoteDirectionLabel(text(row.direction))} · ${formatDataDate(text(row.received_on))}`,
+    };
+  });
+}
+
+export async function saveQuoteReview(id: string | null, input: QuoteSaveInput): Promise<QuoteSaveResult> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canEdit) throw new Error(EDIT_DENIED);
+  const parsed = parseQuoteSave(input);
+  if (!parsed.ok) throw new Error(parsed.message);
+  if (id && !UUID.test(id)) throw new Error("That quote was not found.");
+  const supabase = await getSupabase();
+  const header = {
+    reference: parsed.value.reference,
+    counterparty_name: parsed.value.counterpartyName,
+    vendor_id: parsed.value.vendorId,
+    channel: parsed.value.channel,
+    direction: parsed.value.direction,
+    status: parsed.value.status,
+    received_on: parsed.value.receivedOn,
+    due_on: parsed.value.dueOn,
+    currency: parsed.value.currency,
+    notes: parsed.value.notes,
+  };
+  let eventId = id;
+  if (!eventId) {
+    const created = await supabase.from("quote_events").insert(header).select("id").single();
+    if (created.error || !created.data) throw dbError(created.error);
+    eventId = String(created.data.id);
+  } else {
+    const updated = await supabase.from("quote_events").update(header).eq("id", eventId).select("id").maybeSingle();
+    if (updated.error) throw dbError(updated.error);
+    if (!updated.data) throw new Error("That quote was not found.");
+  }
+  try {
+    const lines = await saveLines(eventId, parsed.value.lines);
+    return { id: eventId, warnings: parsed.warnings, lines };
+  } catch (error) {
+    if (!id) await supabase.from("quote_events").delete().eq("id", eventId);
+    throw error;
+  }
+}
+
+export async function searchQuoteItems(query: string): Promise<QuoteItemHit[]> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canEdit) throw new Error(EDIT_DENIED);
+  const needle = searchNeedle(query);
+  if (needle.length < 1) return [];
+  const supabase = await getSupabase();
+  const pattern = `%${needle}%`;
+  const listed = await supabase
+    .from("items")
+    .select("id, sku, name, part_number, oem_part_number, condition, quantity")
+    .or(`sku.ilike.${pattern},name.ilike.${pattern},part_number.ilike.${pattern},oem_part_number.ilike.${pattern}`)
+    .order("sku")
+    .limit(8);
+  if (listed.error) throw new Error(errorText(listed.error));
+  const rows = new Map<string, Row>();
+  for (const row of (listed.data ?? []) as Row[]) rows.set(String(row.id), row);
+  const extraIds = (await itemIdsMatchingAlnum(supabase, needle, {
+    columns: ["sku", "name", "part_number", "oem_part_number"],
+    limit: 8,
+  })).filter((itemId) => !rows.has(itemId));
+  if (extraIds.length > 0) {
+    const extra = await supabase
+      .from("items")
+      .select("id, sku, name, part_number, oem_part_number, condition, quantity")
+      .in("id", extraIds);
+    if (extra.error) throw new Error(errorText(extra.error));
+    for (const row of (extra.data ?? []) as Row[]) rows.set(String(row.id), row);
+  }
+  const hits = [...rows.values()].map((row) => hitFromRow(row));
+  const context = await itemContext([...rows.keys()]);
+  const norm = normalizePartNumber(needle);
+  return hits
+    .map((hit) => {
+      const side = context.get(hit.id);
+      return { ...hit, onHand: side?.onHand ?? hit.onHand, lastBuy: side?.lastBuy ?? "", lastSell: side?.lastSell ?? "" };
+    })
+    .sort((a, b) => rankHit(a, needle, norm) - rankHit(b, needle, norm))
+    .slice(0, 8);
+}
+
+export async function createRelatedQuoteReview(input: QuoteRelatedInput): Promise<{ id: string; copiedLines: number }> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canEdit) throw new Error(EDIT_DENIED);
+  const parsed = parseRelatedQuote(input);
+  if (!parsed.ok) throw new Error(parsed.message);
+  const supabase = await getSupabase();
+  const source = await supabase.from("quote_events").select("id, currency").eq("id", parsed.value.sourceId).maybeSingle();
+  if (source.error) throw dbError(source.error);
+  if (!source.data) throw new Error("That quote was not found.");
+  const sourceLines = await supabase
+    .from("quote_event_lines")
+    .select("item_id, part_number, sku, item_name, condition, qty, sort_order")
+    .eq("quote_event_id", parsed.value.sourceId)
+    .order("sort_order");
+  if (sourceLines.error) throw dbError(sourceLines.error);
+  const copied = linesForRelatedEvent(
+    ((sourceLines.data ?? []) as Row[])
+      .slice()
+      .sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order))
+      .map((row) => ({
+        itemId: text(row.item_id) || null,
+        partNumber: text(row.part_number),
+        sku: text(row.sku),
+        itemName: text(row.item_name),
+        condition: text(row.condition),
+        qty: quoteQtyText(row.qty),
+      })),
+  );
+  const currency = text((source.data as Row).currency);
+  const created = await supabase
+    .from("quote_events")
+    .insert({
+      reference: parsed.value.reference,
+      counterparty_name: parsed.value.counterpartyName,
+      vendor_id: parsed.value.vendorId,
+      channel: parsed.value.channel,
+      direction: parsed.value.direction,
+      status: "open",
+      received_on: parsed.value.receivedOn,
+      due_on: parsed.value.dueOn,
+      currency: /^[A-Z]{3}$/.test(currency) ? currency : "USD",
+      notes: null,
+    })
+    .select("id")
+    .single();
+  if (created.error || !created.data) throw dbError(created.error);
+  const eventId = String(created.data.id);
+  try {
+    if (copied.length > 0) {
+      const inserted = await supabase.from("quote_event_lines").insert(
+        copied.map((line, index) => ({
+          quote_event_id: eventId,
+          sort_order: index,
+          item_id: line.itemId,
+          part_number: line.partNumber || null,
+          sku: line.sku || null,
+          item_name: line.itemName || null,
+          condition: line.condition || null,
+          qty: storedQty(line.qty),
+        })),
+      );
+      if (inserted.error) throw dbError(inserted.error);
+    }
+    const linked = await supabase.from("quote_event_relations").insert({
+      from_event_id: eventId,
+      to_event_id: parsed.value.sourceId,
+      relation_type: parsed.value.relationType,
+      note: parsed.value.relationNote,
+    });
+    if (linked.error) throw dbError(linked.error);
+    return { id: eventId, copiedLines: copied.length };
+  } catch (error) {
+    await supabase.from("quote_events").delete().eq("id", eventId);
+    throw error;
+  }
+}
+
+export async function linkQuoteReviews(eventId: string, otherId: string, relationType: string, note: string): Promise<void> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canEdit) throw new Error(EDIT_DENIED);
+  if (!UUID.test(eventId) || !UUID.test(otherId)) throw new Error("Choose a quote to link.");
+  if (eventId === otherId) throw new Error("A quote cannot relate to itself.");
+  const parsed = parseRelatedQuote({
+    sourceId: eventId,
+    reference: "",
+    counterpartyName: "",
+    vendorId: "",
+    channel: "other",
+    direction: "inbound_ask",
+    receivedOn: quoteCalendarDay(),
+    dueOn: "",
+    relationType,
+    relationNote: note,
+  });
+  if (!parsed.ok) throw new Error(parsed.message);
+  const supabase = await getSupabase();
+  const existing = await supabase
+    .from("quote_event_relations")
+    .select("id")
+    .or(
+      `and(from_event_id.eq.${eventId},to_event_id.eq.${otherId}),and(from_event_id.eq.${otherId},to_event_id.eq.${eventId})`,
+    )
+    .limit(1);
+  if (existing.error) throw dbError(existing.error);
+  if ((existing.data ?? []).length > 0) throw new Error("Those quotes are already linked.");
+  const inserted = await supabase.from("quote_event_relations").insert({
+    from_event_id: eventId,
+    to_event_id: otherId,
+    relation_type: parsed.value.relationType,
+    note: parsed.value.relationNote,
+  });
+  if (inserted.error) throw dbError(inserted.error);
+}
+
+export async function unlinkQuoteReview(eventId: string, relationId: string): Promise<void> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canEdit) throw new Error(EDIT_DENIED);
+  if (!UUID.test(eventId) || !UUID.test(relationId)) throw new Error("That link was not found.");
+  const supabase = await getSupabase();
+  const removed = await supabase
+    .from("quote_event_relations")
+    .delete()
+    .eq("id", relationId)
+    .or(`from_event_id.eq.${eventId},to_event_id.eq.${eventId}`)
+    .select("id");
+  if (removed.error) throw dbError(removed.error);
+  if ((removed.data ?? []).length < 1) throw new Error("That link was not found.");
+}
+
+async function saveLines(eventId: string, lines: ParsedQuoteLine[]): Promise<QuoteSaveResult["lines"]> {
+  const supabase = await getSupabase();
+  const existing = await supabase.from("quote_event_lines").select("id").eq("quote_event_id", eventId);
+  if (existing.error) throw dbError(existing.error);
+  const existingIds = new Set((existing.data ?? []).map((row) => String(row.id)));
+  const saved: QuoteSaveResult["lines"] = [];
+  for (const [index, line] of lines.entries()) {
+    if (line.id && !existingIds.has(line.id)) throw new Error("A line does not belong to this quote.");
+    const payload = {
+      quote_event_id: eventId,
+      sort_order: index,
+      item_id: line.itemId,
+      part_number: line.partNumber,
+      sku: line.sku,
+      item_name: line.itemName,
+      condition: line.condition,
+      qty: line.qty,
+      our_unit_price: line.unitPrice,
+      decision: line.decision,
+      decision_note: line.decisionNote,
+      updated_at: new Date().toISOString(),
+    };
+    const written = line.id
+      ? await supabase.from("quote_event_lines").update(payload).eq("id", line.id).eq("quote_event_id", eventId).select("id").single()
+      : await supabase.from("quote_event_lines").insert(payload).select("id").single();
+    if (written.error || !written.data) throw dbError(written.error);
+    const lineId = String(written.data.id);
+    saved.push({ key: line.key, id: lineId, bids: await saveBids(lineId, line) });
+  }
+  const kept = new Set(saved.map((line) => line.id));
+  const remove = [...existingIds].filter((lineId) => !kept.has(lineId));
+  if (remove.length > 0) {
+    const deleted = await supabase.from("quote_event_lines").delete().eq("quote_event_id", eventId).in("id", remove);
+    if (deleted.error) throw dbError(deleted.error);
+  }
+  return saved;
+}
+
+async function saveBids(lineId: string, line: ParsedQuoteLine): Promise<{ key: string; id: string }[]> {
+  const supabase = await getSupabase();
+  const existing = await supabase.from("quote_event_bids").select("id").eq("line_id", lineId);
+  if (existing.error) throw dbError(existing.error);
+  const existingIds = new Set((existing.data ?? []).map((row) => String(row.id)));
+  const saved: { key: string; id: string }[] = [];
+  for (const [index, bid] of line.bids.entries()) {
+    const payload = {
+      line_id: lineId,
+      sort_order: index,
+      bidder_name: bid.bidderName,
+      unit_price: bid.unitPrice,
+      note: bid.note,
+    };
+    const id = bid.id && existingIds.has(bid.id) ? bid.id : null;
+    const written = id
+      ? await supabase.from("quote_event_bids").update(payload).eq("id", id).eq("line_id", lineId).select("id").single()
+      : await supabase.from("quote_event_bids").insert(payload).select("id").single();
+    if (written.error || !written.data) throw dbError(written.error);
+    saved.push({ key: bid.key, id: String(written.data.id) });
+  }
+  const kept = new Set(saved.map((bid) => bid.id));
+  const remove = [...existingIds].filter((bidId) => !kept.has(bidId));
+  if (remove.length > 0) {
+    const deleted = await supabase.from("quote_event_bids").delete().eq("line_id", lineId).in("id", remove);
+    if (deleted.error) throw dbError(deleted.error);
+  }
+  return saved;
+}
+
+async function lineSummaries(ids: string[]): Promise<Map<string, ReturnType<typeof summarizeQuoteLines>>> {
+  const map = new Map<string, ReturnType<typeof summarizeQuoteLines>>();
+  if (ids.length === 0) return map;
+  const { data, error } = await (await getSupabase())
+    .from("quote_event_lines")
+    .select("quote_event_id, qty, our_ext, quote_event_bids(unit_price)")
+    .in("quote_event_id", ids);
+  if (error) throw dbError(error);
+  const grouped = new Map<string, Row[]>();
+  for (const row of (data ?? []) as Row[]) {
+    const eventId = text(row.quote_event_id);
+    const list = grouped.get(eventId) ?? [];
+    list.push(row);
+    grouped.set(eventId, list);
+  }
+  for (const [eventId, rows] of grouped) {
+    map.set(
+      eventId,
+      summarizeQuoteLines(
+        rows.map((row) => ({
+          qty: asMoney(row.qty),
+          ext: asMoney(row.our_ext),
+          bestUnit: bestCompetingUnit(rowsOf(row.quote_event_bids).map((bid) => ({ unitPrice: moneyInput(asMoney(bid.unit_price)) }))),
+        })),
+      ),
+    );
+  }
+  return map;
+}
+
+async function relationsTouching(ids: string[]): Promise<Row[]> {
+  const supabase = await getSupabase();
+  const seen = new Set<string>();
+  const rows: Row[] = [];
+  for (let index = 0; index < ids.length; index += 80) {
+    const chunk = ids.slice(index, index + 80);
+    const { data, error } = await supabase
+      .from("quote_event_relations")
+      .select("id, from_event_id, to_event_id, relation_type")
+      .or(`from_event_id.in.(${chunk.join(",")}),to_event_id.in.(${chunk.join(",")})`);
+    if (error) throw dbError(error);
+    for (const row of (data ?? []) as Row[]) {
+      const id = text(row.id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
+async function relatedByEvent(events: Row[], ids: string[]) {
+  const map = new Map<string, QuoteListResult["rows"][number]["related"]>();
+  if (ids.length === 0) return map;
+  const links = await relationsTouching(ids);
+  const labels = new Map(events.map((row) => [String(row.id), eventLabel(row)]));
+  const missing = [...new Set(links.flatMap((row) => [text(row.from_event_id), text(row.to_event_id)]))].filter((id) => !labels.has(id));
+  if (missing.length > 0) {
+    const extra = await (await getSupabase())
+      .from("quote_events")
+      .select("id, reference, counterparty_name, received_on, vendors(display_name)")
+      .in("id", missing);
+    if (extra.error) throw dbError(extra.error);
+    for (const row of (extra.data ?? []) as Row[]) labels.set(String(row.id), eventLabel(row));
+  }
+  for (const row of links) {
+    const fromId = text(row.from_event_id);
+    const toId = text(row.to_event_id);
+    const type = text(row.relation_type);
+    pushRelated(map, fromId, {
+      id: text(row.id),
+      eventId: toId,
+      phrase: relationPhrase(type, "from"),
+      otherLabel: labels.get(toId) ?? "Quote",
+    });
+    pushRelated(map, toId, {
+      id: text(row.id),
+      eventId: fromId,
+      phrase: relationPhrase(type, "to"),
+      otherLabel: labels.get(fromId) ?? "Quote",
+    });
+  }
+  return map;
+}
+
+async function relationsFor(eventId: string): Promise<QuoteRelationView[]> {
+  const { data, error } = await (await getSupabase())
+    .from("quote_event_relations")
+    .select("id, from_event_id, to_event_id, relation_type, note")
+    .or(`from_event_id.eq.${eventId},to_event_id.eq.${eventId}`);
+  if (error) throw dbError(error);
+  const links = (data ?? []) as Row[];
+  const otherIds = [...new Set(links.map((row) => (text(row.from_event_id) === eventId ? text(row.to_event_id) : text(row.from_event_id))))];
+  const labels = new Map<string, string>();
+  if (otherIds.length > 0) {
+    const extra = await (await getSupabase())
+      .from("quote_events")
+      .select("id, reference, counterparty_name, received_on, vendors(display_name)")
+      .in("id", otherIds);
+    if (extra.error) throw dbError(extra.error);
+    for (const row of (extra.data ?? []) as Row[]) labels.set(String(row.id), eventLabel(row));
+  }
+  return links.map((row) => {
+    const fromId = text(row.from_event_id);
+    const side = fromId === eventId ? "from" : "to";
+    const otherId = side === "from" ? text(row.to_event_id) : fromId;
+    return {
+      id: text(row.id),
+      otherId,
+      otherLabel: labels.get(otherId) ?? "Quote",
+      phrase: relationPhrase(text(row.relation_type), side),
+      note: text(row.note),
+    };
+  });
+}
+
+async function itemContext(ids: string[]): Promise<Map<string, { onHand: number | null; lastBuy: string; lastSell: string }>> {
+  const map = new Map<string, { onHand: number | null; lastBuy: string; lastSell: string }>();
+  const unique = [...new Set(ids.filter((id) => UUID.test(id)))];
+  if (unique.length === 0) return map;
+  const supabase = await getSupabase();
+  const items = await supabase.from("items").select("id, quantity").in("id", unique);
+  if (!items.error) {
+    for (const row of (items.data ?? []) as Row[]) {
+      map.set(text(row.id), { onHand: asMoney(row.quantity), lastBuy: "", lastSell: "" });
+    }
+  }
+  const txns = await supabase
+    .from("item_transactions")
+    .select("item_id, type, unit_price, txn_date, created_at")
+    .in("item_id", unique)
+    .order("txn_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (txns.error) return map;
+  for (const row of (txns.data ?? []) as Row[]) {
+    const itemId = text(row.item_id);
+    const current = map.get(itemId) ?? { onHand: null, lastBuy: "", lastSell: "" };
+    const label = priceWhen(row.unit_price, row.txn_date);
+    if (text(row.type) === "buy" && !current.lastBuy) current.lastBuy = label;
+    if (text(row.type) === "sell" && !current.lastSell) current.lastSell = label;
+    map.set(itemId, current);
+  }
+  return map;
+}
+
+function lineDraft(row: Row, context: Map<string, { onHand: number | null; lastBuy: string; lastSell: string }>): QuoteLineDraft {
+  const itemId = text(row.item_id);
+  const side = itemId ? context.get(itemId) : undefined;
+  const bids = rowsOf(row.quote_event_bids)
+    .slice()
+    .sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order))
+    .map((bid) => ({
+      key: text(bid.id),
+      id: text(bid.id),
+      bidderName: text(bid.bidder_name),
+      unitPrice: moneyInput(asMoney(bid.unit_price)),
+      note: text(bid.note),
+    }));
+  return {
+    key: text(row.id),
+    id: text(row.id),
+    itemId,
+    partNumber: text(row.part_number),
+    sku: text(row.sku),
+    itemName: text(row.item_name),
+    condition: text(row.condition),
+    qty: quoteQtyText(row.qty),
+    unitPrice: moneyInput(asMoney(row.our_unit_price)),
+    decision: text(row.decision),
+    decisionNote: text(row.decision_note),
+    bids,
+    onHand: side?.onHand ?? null,
+    lastBuy: side?.lastBuy ?? "",
+    lastSell: side?.lastSell ?? "",
+  };
+}
+
+function hitFromRow(row: Row): QuoteItemHit {
+  return {
+    id: text(row.id),
+    sku: text(row.sku),
+    name: text(row.name),
+    partNumber: text(row.part_number) || text(row.oem_part_number),
+    condition: text(row.condition),
+    onHand: asMoney(row.quantity),
+    lastBuy: "",
+    lastSell: "",
+  };
+}
+
+function rankHit(hit: QuoteItemHit, needle: string, norm: string): number {
+  if (hit.sku.toLowerCase() === needle.toLowerCase()) return 0;
+  if (norm && normalizePartNumber(hit.partNumber) === norm) return 1;
+  return 2;
+}
+
+function eventLabel(row: Row): string {
+  const counterparty = counterpartyLabel(vendorName(row), text(row.counterparty_name));
+  return quoteEventLabel({ reference: text(row.reference), counterparty, receivedOn: text(row.received_on) });
+}
+
+function pushRelated(
+  map: Map<string, QuoteListResult["rows"][number]["related"]>,
+  eventId: string,
+  link: QuoteListResult["rows"][number]["related"][number],
+) {
+  if (!eventId) return;
+  const list = map.get(eventId) ?? [];
+  list.push(link);
+  map.set(eventId, list);
+}
+
+function storedQty(value: string): number | null {
+  const parsed = parseQuoteQty(value);
+  return parsed.ok ? parsed.qty : null;
+}
+
+function priceWhen(unitPrice: unknown, date: unknown): string {
+  const amount = asMoney(unitPrice);
+  if (amount == null) return "";
+  const when = formatDataDate(typeof date === "string" ? date : "");
+  return when ? `${formatMoney(amount)} on ${when}` : formatMoney(amount);
+}
+
+function vendorName(row: Row): string {
+  const value = row.vendors;
+  const record = Array.isArray(value) ? value[0] : value;
+  if (!record || typeof record !== "object" || !("display_name" in record)) return "";
+  const name = (record as { display_name?: unknown }).display_name;
+  return typeof name === "string" ? name : "";
+}
+
+function rowsOf(value: unknown): Row[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((row): row is Row => Boolean(row) && typeof row === "object");
+}
+
+function text(value: unknown): string {
+  if (value == null) return "";
+  return String(value);
+}
+
+function numberOf(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function searchNeedle(value: string): string {
+  return value.trim().replace(/[%_,()"\\]/g, "").slice(0, 80);
+}
+
+function dbError(error: { code?: string; message?: string } | null): Error {
+  if (quoteReviewsUnavailable(error)) {
+    return new Error("Quote reviews are not set up yet. Apply supabase/migrations/20261103180000_quote_events.sql.");
+  }
+  if (error?.code === "23505") return new Error("Those quotes are already linked.");
+  if (error?.code === "23503") return new Error("That vendor, item, or quote was not found.");
+  return new Error(errorText(error));
+}

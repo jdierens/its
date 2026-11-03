@@ -21,6 +21,7 @@ import {
   Search,
   Landmark,
   List,
+  ListChecks,
   Wallet,
   Settings,
   Shapes,
@@ -88,6 +89,7 @@ const ICONS: Record<string, LucideIcon> = {
   "/scan": ScanLine,
   "/warehouse/bins": Boxes,
   "/pricing": BadgeDollarSign,
+  "/pricing/quotes": ListChecks,
   "/admin/users": Users,
   "/admin/data": Database,
   "/admin/settings": Settings,
@@ -250,7 +252,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
           <nav className="sidebar-nav" aria-label="Main">
-            {groups.map((group) => (
+            {groups.map((group) => {
+              const groupHrefs = group.items.flatMap((item) => [
+                item.href,
+                ...(item.children?.map((child) => child.href) ?? []),
+              ]);
+              const specificHref = groupHrefs
+                .filter((href) => isNavActive(href, pathname))
+                .reduce((best, href) => (href.length > best.length ? href : best), "");
+              return (
               <div className="nav-group" key={group.label}>
                 <div className="nav-group-label">{group.label}</div>
                 {group.items.map((item) => {
@@ -275,13 +285,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                       </div>
                     );
                   }
-                  const matchingChildren = item.children?.filter((child) => isNavActive(child.href, pathname)) ?? [];
-                  const specificHref = matchingChildren.reduce(
-                    (best, child) => (child.href.length > best.length ? child.href : best),
-                    "",
-                  );
-                  const childActive = specificHref.length > 0;
-                  const active = isNavActive(item.href, pathname) || childActive;
+                  const childActive = item.children?.some((child) => child.href === specificHref) ?? false;
+                  const active = item.href === specificHref || childActive;
                   const current = pathname === item.href;
                   return (
                     <div key={item.href}>
@@ -316,7 +321,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                   );
                 })}
               </div>
-            ))}
+              );
+            })}
           </nav>
           <div className="sidebar-foot">
             <SignedInUser label={account?.name || account?.email || ""} />
