@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+test("item entries list receives, put-aways, moves, and picks", () => {
+  const sql = readFileSync(new URL("../supabase/migrations/20261103042000_item_entries.sql", import.meta.url), "utf8");
+  assert.match(sql, /list_item_entries\(p_item_id uuid, p_limit integer\)/);
+  assert.match(sql, /if p_item_id is null then/);
+  assert.match(sql, /return '\[\]'::jsonb/);
+  assert.match(sql, /event\.item_id = p_item_id/);
+  assert.match(sql, /event\.event_type in \('receive_into_bin', 'receipt_adjustment'\)/);
+  assert.match(sql, /'Received damaged'/);
+  assert.match(sql, /'Received'/);
+  assert.match(sql, /'Put away'/);
+  assert.match(sql, /'Adjusted'/);
+  assert.match(sql, /out_row\.direction = 'out'/);
+  assert.match(sql, /out_row\.ref_type = 'bin_transfer'/);
+  assert.match(sql, /'Moved'/);
+  assert.match(sql, /'Picked'/);
+  assert.match(sql, /'Pick undone'/);
+  assert.match(sql, /in_row\.direction = 'in'/);
+  assert.match(sql, /out_row\.item_id = in_row\.item_id/);
+  assert.match(sql, /order by entries\.occurred_at desc nulls last/);
+  assert.match(sql, /stock_events_item_occurred_idx/);
+  assert.match(sql, /revoke all on function public\.list_item_entries\(uuid, integer\) from public, anon, authenticated/);
+  assert.match(sql, /grant execute on function public\.list_item_entries\(uuid, integer\) to service_role/);
+  assert.equal(sql.includes("drop function"), false);
+  assert.equal(sql.includes("create policy"), false);
+  assert.equal(sql.includes("items.quantity"), false);
+  assert.equal(sql.includes("to anon"), false);
+  assert.equal(sql.includes("to authenticated"), false);
+});

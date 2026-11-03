@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CountrySelect } from "@/components/CountrySelect";
 import { FastArea, FastInput } from "@/components/FastField";
 import { ItemAttachments } from "@/components/ItemAttachments";
+import { ItemEntries } from "@/components/ItemEntries";
 import { ITEM_CAMERA_INPUT_ID, ItemGallery, type PendingImage } from "@/components/ItemGallery";
 import { ItemRecipe } from "@/components/ItemRecipe";
 import { UsedInKits } from "@/components/UsedInKits";
@@ -41,6 +42,7 @@ import {
   type ItemType,
 } from "@/lib/itemFields";
 import { isMemoryTaxonomy, memoryAttributeSlot, memorySlotRank } from "@/lib/itemFormDensity";
+import { fetchItemOnHand } from "@/lib/itemStockActions";
 import { assertDuplicateSave, fetchDuplicateSource, saveDuplicatePrices } from "@/lib/duplicateItemServer";
 import { sameItemName, skuReusesSource } from "@/lib/duplicateItem";
 import { changeItemTaxonomy, createItem, deleteItem, fetchItem, fetchTaxonomies, saveItemNotes, updateItem } from "@/lib/items";
@@ -155,6 +157,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [onHand, setOnHand] = useState<number | null>(null);
+  const [onHandError, setOnHandError] = useState<string | null>(null);
   const [itemsHref, setItemsHref] = useState("/items");
   const [taxonomyName, setTaxonomyName] = useState("");
   const [longCode, setLongCode] = useState("");
@@ -215,6 +218,33 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
     setItemsHref(itemsListHref());
   }, []);
 
+  useEffect(() => {
+    if (mode !== "edit" || !itemId) return;
+    const id = itemId;
+    let cancelled = false;
+    async function loadHand() {
+      try {
+        const qty = await fetchItemOnHand(id);
+        if (cancelled) return;
+        setOnHand(qty);
+        setOnHandError(null);
+      } catch (error: unknown) {
+        if (cancelled) return;
+        setOnHand(null);
+        setOnHandError(errorText(error));
+      }
+    }
+    void loadHand();
+    function onFocus() {
+      void loadHand();
+    }
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [mode, itemId]);
+
   usePageMeta({
     title: mode === "create" ? "New item" : name.trim() || "Edit item",
     backHref: itemsHref,
@@ -262,7 +292,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           setSku(item.sku);
           setName(item.name);
           setDescription(item.description);
-          setOnHand(typeof item.quantity === "number" ? item.quantity : null);
           setTaxonomyName(taxonomy?.name ?? "");
           setLoadedTaxonomyName(taxonomy?.name ?? null);
           setLoadedAttributes(values);
@@ -940,9 +969,20 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
           </label>
           <div className="on-hand">
             <span className="on-hand-label">On hand</span>
-            <strong className="on-hand-value">{onHand === null ? "—" : onHand.toLocaleString("en-US")}</strong>
+            <strong
+              className="on-hand-value"
+              aria-live="polite"
+              title="Sum of for-sale quantity on open bin cycles. Damaged pieces are not included."
+            >
+              {onHand === null ? "—" : onHand.toLocaleString("en-US")}
+            </strong>
           </div>
         </div>
+        {onHandError ? (
+          <p className="field-error" role="alert">
+            {onHandError}
+          </p>
+        ) : null}
         {sourceName ? (
           <p className="hint">On-hand quantity starts empty. The original quantity is not copied.</p>
         ) : null}
@@ -1437,6 +1477,7 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
         />
         <ItemAttachments itemId={mode === "edit" ? itemId : undefined} />
       </form>
+      {mode === "edit" && itemId ? <ItemEntries itemId={itemId} /> : null}
       {mode === "edit" && itemId ? <UsedInKits itemId={itemId} /> : null}
       {changeTaxonomy && mode === "edit" && itemId ? (
         <ChangeTaxonomyDialog
@@ -1463,7 +1504,6 @@ export function ItemForm({ mode, itemId, sourceId }: ItemFormProps) {
                   values[attribute?.name ?? link.name] = attribute ? canonicalValue(attribute, link.value) : link.value;
                 }
                 setSku(result.sku || item.sku);
-                setOnHand(typeof item.quantity === "number" ? item.quantity : null);
                 setNotes(result.notes);
                 setTaxonomyName(match?.name ?? "");
                 setLoadedTaxonomyName(match?.name ?? null);
