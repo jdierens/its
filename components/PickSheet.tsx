@@ -14,7 +14,9 @@ import {
   assignPickStagingBin,
   pastePickSerials,
   pasteSerialPulls,
+  readPickSheet,
   recordPick,
+  recordPickSerial,
   removePickSerial,
   setPickReplacement,
   setPickShort,
@@ -29,9 +31,11 @@ import {
   lineCanTakeSerial,
   pullFromLabel,
   pulledAllocationForUnknowns,
+  serialAddTarget,
+  serialRowFrom,
   unknownSerialPrompt,
 } from "@/lib/pickSerialConfirm";
-import { formatPullFrom, pullCue, type SerialPull } from "@/lib/pickSerialLocation";
+import { pullCue, type SerialPull } from "@/lib/pickSerialLocation";
 import {
   classifySerialPaste,
   formatSerialPasteReport,
@@ -48,12 +52,15 @@ type PendingUnknown = {
 };
 import { cooProblem } from "@/lib/stockUnits";
 import {
+  explainPickEdit,
+  finishBlockMessage,
   formatPickQty,
   itemSerials,
   lineRemaining,
   parsePickQty,
   pickCatchUpNote,
   pickedAfterShipNote,
+  pickSheetEditable,
   pickTargetForBin,
   serialProblem,
   omitPickTicketSku,
@@ -85,14 +92,30 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [error, setError] = useState<string | null>(null);
   const [pasteReport, setPasteReport] = useState<SerialPasteReport | null>(null);
   const [pendingUnknown, setPendingUnknown] = useState<PendingUnknown | null>(null);
+  const [serialNotice, setSerialNotice] = useState<string | null>(null);
   const applyingPaste = useRef(false);
-  const open = canPick && sheet.pickStatus === "open";
+  const loadGen = useRef(0);
+  const editable = pickSheetEditable({ canPick, status: sheet.status, pickStatus: sheet.pickStatus });
   const catchUp = sheet.pickStatus === "open" ? pickCatchUpNote(sheet.status) : null;
   const stayedShipped =
     sheet.pickStatus === "picked" || sheet.pickStatus === "short"
       ? pickedAfterShipNote(sheet.status, sheet.pickStatus)
       : null;
   const progress = sheetProgress(sheet.lines);
+  const balanceWarning =
+    sheet.finishBlock ??
+    (editable
+      ? finishBlockMessage(
+          sheet.lines.map((line) => ({
+            lineNo: line.lineNo,
+            sku: line.sku,
+            ordered: line.ordered,
+            picked: line.picked,
+            short: line.short,
+          })),
+          sheet.orphans.length,
+        )
+      : null);
   const title = sheet.soNumber ? `Pick SO${sheet.soNumber}` : "Pick sheet";
   const activePull =
     pull && (serialText[pull.allocationId] ?? "").trim().toLowerCase() === pull.serial.trim().toLowerCase() ? pull : null;
@@ -106,14 +129,37 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     ],
   });
 
+  // The sales-order list prefetches this page. That payload can still be the
+  // sheet from before the pick was saved. Reload the database copy on open so
+  // a finished pick does not come back as 0.
+  useEffect(() => {
+    setSheet(initial);
+    let cancel = false;
+    const ticket = ++loadGen.current;
+    void readPickSheet(initial.orderId)
+      .then((fresh) => {
+        if (!cancel && ticket === loadGen.current) setSheet(fresh);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [initial.orderId]);
+
+  function publish(next: PickSheetModel, ticket: number) {
+    if (ticket === loadGen.current) setSheet(next);
+  }
+
   async function run(action: () => Promise<PickSheetModel>) {
+    const ticket = ++loadGen.current;
     setBusy(true);
     setError(null);
     setPasteReport(null);
+    setSerialNotice(null);
     try {
-      setSheet(await action());
+      publish(await action(), ticket);
     } catch (cause) {
-      setError(errorText(cause));
+      setError(explainPickEdit(errorText(cause)));
     } finally {
       setBusy(false);
     }
@@ -228,12 +274,13 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   }
 
   async function applySerialPulls(serials: string[]) {
+    const ticket = ++loadGen.current;
     setBusy(true);
     setError(null);
     setPasteReport(null);
     try {
       const result = await pasteSerialPulls({ orderId: sheet.orderId, serials });
-      takeSerialResult(result, serials.length, null, "");
+      takeSerialResult(result, serials.length, null, "", ticket);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -246,9 +293,10 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     total: number,
     allocationId: string | null,
     coo: string,
+    ticket: number,
   ) {
     const next = result.sheet ?? sheet;
-    if (result.sheet) setSheet(result.sheet);
+    if (result.sheet) publish(result.sheet, ticket);
     if (result.report.accepted > 0) setPull(null);
     if (result.report.unknown.length > 0) {
       const lineId =
@@ -271,6 +319,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
 
   async function onConfirmUnknown(allocationId: string) {
     if (!pendingUnknown) return;
+    const ticket = ++loadGen.current;
     setBusy(true);
     setError(null);
     try {
@@ -280,7 +329,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         serials: pendingUnknown.serials,
         coo: pendingUnknown.coo,
       });
-      if (result.sheet) setSheet(result.sheet);
+      if (result.sheet) publish(result.sheet, ticket);
       setPasteReport(
         mergeSerialReports(
           { accepted: pendingUnknown.report.accepted, failures: pendingUnknown.report.failures, unknown: [] },
@@ -315,36 +364,44 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
 
   async function onAddSerial(line: PickLine) {
     setPasteReport(null);
+    setSerialNotice(null);
     const serial = (serialText[line.allocationId] ?? "").trim();
     const problem = serialProblem({ serial, sku: line.sku, existing: itemSerials(sheet, line.sku) });
     if (problem) {
-      setError(problem);
+      setSerialNotice(problem);
       return;
     }
     const country = cooProblem(cooText[line.allocationId] ?? "");
     if (country) {
-      setError(country);
+      setSerialNotice(country);
       return;
     }
+    const target = serialAddTarget({
+      picks: line.picks,
+      preferredBin: activePull?.allocationId === line.allocationId ? activePull.reference : null,
+    });
+    if (!target.ok) {
+      setSerialNotice(target.message);
+      return;
+    }
+    const ticket = ++loadGen.current;
     setBusy(true);
     setError(null);
     const allocationId = line.allocationId;
     const coo = (cooText[allocationId] ?? "").trim();
     try {
-      const result = await pastePickSerials({
-        orderId: sheet.orderId,
-        allocationId,
-        serials: [serial],
-        coo,
-      });
-      takeSerialResult(result, 1, allocationId, coo);
-      if (result.report.accepted > 0 || result.report.unknown.length > 0) {
-        setSerialText((current) => ({ ...current, [allocationId]: "" }));
-        if (result.report.accepted > 0) setCooText((current) => ({ ...current, [allocationId]: "" }));
+      const result = await recordPickSerial(target.pickId, serial, coo);
+      if (!result.ok) {
+        setSerialNotice(explainPickEdit(result.message));
+        return;
       }
+      publish(result.value, ticket);
+      setSerialText((current) => ({ ...current, [allocationId]: "" }));
+      setCooText((current) => ({ ...current, [allocationId]: "" }));
+      setPull(null);
     } catch (cause) {
       setPull(null);
-      setError(errorText(cause));
+      setSerialNotice(explainPickEdit(errorText(cause)));
     } finally {
       setBusy(false);
     }
@@ -360,6 +417,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       setError(country);
       return;
     }
+    const ticket = ++loadGen.current;
     setBusy(true);
     setError(null);
     setPasteReport(null);
@@ -373,7 +431,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         serials,
         coo,
       });
-      takeSerialResult(result, serials.length, allocationId, coo);
+      takeSerialResult(result, serials.length, allocationId, coo, ticket);
       if (result.report.accepted > 0) {
         setCooText((current) => ({ ...current, [allocationId]: "" }));
       }
@@ -396,7 +454,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       serial,
     })),
   );
-  const showSerials = open || serialRows.length > 0;
+  const showSerials = editable || serialRows.length > 0;
   const ticketLines = sheet.lines.filter((line) => !omitPickTicketSku(line.sku));
 
   return (
@@ -437,7 +495,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
           </button>
         </div>
       </header>
-      {open && !sheet.stagingBin ? (
+      {editable && !sheet.stagingBin ? (
         <form
           className="card pick-scan no-print"
           onSubmit={(event) => {
@@ -484,7 +542,8 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       {sheet.pickStatus === "picked" || sheet.pickStatus === "short" ? (
         <p className="banner ok" role="status">
           {stayedShipped ??
-            (sheet.pickStatus === "short" ? "Short pick is recorded." : "Picked into the staging bin.")}{" "}
+            (sheet.pickStatus === "short" ? "Short pick is recorded." : "Picked into the staging bin.")}
+          {editable ? " Bins, quantities, and serials can still be corrected." : ""}{" "}
           <Link href={`/warehouse/pack/${sheet.orderId}`}>Pack this order</Link>
         </p>
       ) : sheet.handoff ? (
@@ -499,7 +558,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       ) : null}
       {!canPick ? <p className="muted">You can look at this sheet. Recording a pick is turned off for this sign-in.</p> : null}
 
-      {open ? (
+      {editable ? (
         <form className="card pick-scan no-print" onSubmit={(event) => void onScan(event)}>
           <label>
             Scan a bin or serial
@@ -580,7 +639,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                             {line.swapReason ? ` · ${line.swapReason}` : ""}
                           </span>
                         ) : null}
-                        {open && sheet.allowReplacement && line.picked < 1 ? (
+                        {editable && sheet.allowReplacement && line.picked < 1 ? (
                           <span className="pick-icon-cell">
                             <button
                               type="button"
@@ -626,7 +685,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                         {formatPickQty(remaining)}
                         {line.short && remaining > 0 ? " · Short acknowledged" : ""}
                       </span>
-                      {open && remaining > 0 ? (
+                      {editable && remaining > 0 ? (
                         <button
                           type="button"
                           className="secondary pick-short"
@@ -669,7 +728,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                           {formatPickQty(bin.qty)}
                         </td>
                         <td className="num">
-                          {open ? (
+                          {editable ? (
                             <div className="pick-qty-cell">
                               <input
                                 aria-label={`Quantity from ${bin.reference}`}
@@ -692,7 +751,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                           ) : null}
                         </td>
                         <td className="pick-action-cell">
-                          {open ? (
+                          {editable ? (
                             <button type="button" className="pick-action no-print" disabled={busy} onClick={() => onLinePick(line, bin.binId, bin.qty)}>
                               Pick
                             </button>
@@ -716,7 +775,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                 <th className="sku">SKU</th>
                 <th className="num">Qty</th>
                 <th>From</th>
-                {open ? <th /> : null}
+                {editable ? <th /> : null}
               </tr>
             </thead>
             <tbody>
@@ -728,7 +787,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                   </td>
                   <td className="num pick-code">{formatPickQty(pick.qty)}</td>
                   <td className="pick-code">{pullFromLabel(pick.fromBin)}</td>
-                  {open ? (
+                  {editable ? (
                     <td>
                       <button type="button" className="secondary" disabled={busy} onClick={() => void run(() => undoPick(pick.id))}>
                         Undo pick
@@ -744,6 +803,12 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
 
       {showSerials ? (
         <div className="card pick-table-wrap no-print">
+          {editable ? <p className="hint">From is the bin you picked in the table above.</p> : null}
+          {serialNotice ? (
+            <p className="banner error" role="alert">
+              {serialNotice}
+            </p>
+          ) : null}
           <table className="pick-serials">
             <thead>
               <tr>
@@ -751,20 +816,29 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                 <th>Serial</th>
                 <th>COO</th>
                 <th>From</th>
-                {open ? <th /> : null}
+                {editable ? <th /> : null}
               </tr>
             </thead>
             <tbody>
               {sheet.lines.flatMap((line) => {
                 const rows = line.picks.flatMap((pick) => pick.serials.map((serial) => ({ pick, serial })));
-                const entry = open ? (
+                const preferredBin = activePull?.allocationId === line.allocationId ? activePull.reference : null;
+                const target = serialAddTarget({ picks: line.picks, preferredBin });
+                const from = serialRowFrom({
+                  active: activePull?.allocationId === line.allocationId
+                    ? { reference: activePull.reference, location: activePull.location }
+                    : null,
+                  fromBin: target.ok ? target.fromBin : null,
+                  bins: line.bins,
+                });
+                const entry = editable ? (
                   <SerialEntryRow
                     key={`${line.allocationId}-entry`}
                     line={line}
                     busy={busy}
                     serial={serialText[line.allocationId] ?? ""}
                     coo={cooText[line.allocationId] ?? ""}
-                    from={activePull?.allocationId === line.allocationId ? formatPullFrom(activePull.reference, activePull.location) : ""}
+                    from={from}
                     onSerial={(value) => setSerialText((current) => ({ ...current, [line.allocationId]: value }))}
                     onCoo={(value) => setCooText((current) => ({ ...current, [line.allocationId]: value }))}
                     onScan={() => void fillSerialLocation(serialText[line.allocationId] ?? "", line.allocationId)}
@@ -779,7 +853,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                       <td>{serial.serial}</td>
                       <td className="pick-code">{dash(serial.coo)}</td>
                       <td className="pick-code">{pullFromLabel(pick.fromBin)}</td>
-                      {open ? (
+                      {editable ? (
                         <td>
                           <div className="pick-icon-cell">
                             <button
@@ -805,12 +879,16 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         </div>
       ) : null}
 
-      {open ? (
+      {balanceWarning ? (
+        <p className="banner warn" role="status">
+          {balanceWarning}
+        </p>
+      ) : null}
+      {editable && sheet.pickStatus === "open" ? (
         <div className="pick-finish no-print">
-          <button id="pick-finish" type="button" disabled={busy || Boolean(sheet.finishBlock)} onClick={() => void run(() => finishPick(sheet.orderId))}>
+          <button id="pick-finish" type="button" disabled={busy || Boolean(balanceWarning)} onClick={() => void run(() => finishPick(sheet.orderId))}>
             Finish pick
           </button>
-          {sheet.finishBlock ? <p className="muted">{sheet.finishBlock}</p> : null}
         </div>
       ) : null}
 
@@ -1000,7 +1078,8 @@ function SerialEntryRow({
           aria-label={`Pull from location for ${line.sku}`}
           value={from}
           readOnly
-          placeholder="Location"
+          placeholder="Bin picked above"
+          title="Filled from the bin you picked above"
         />
       </td>
       <td>

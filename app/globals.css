@@ -10294,6 +10294,15 @@ button.so-new-order svg,
   border-collapse: collapse;
 }
 
+/* Pick sheet tables match the items list and quote reviews: Plus Jakarta Sans,
+   13px in the cells, 11px in the headings. The page body is still 15px. */
+.pick-sheet,
+.pick-serials {
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
 .pick-code {
   white-space: nowrap;
   font-variant-numeric: tabular-nums lining-nums;
@@ -10311,9 +10320,14 @@ button.so-new-order svg,
 .pick-sheet td,
 .pick-serials th,
 .pick-serials td {
-  padding: 0.35rem 0.45rem;
-  line-height: 1.35;
+  padding: 0.2rem 0.4rem;
+  line-height: 1.25;
   border-bottom: 1px solid var(--ds-line, var(--line));
+}
+
+.pick-sheet th,
+.pick-serials th {
+  font-size: 11px;
 }
 
 .pick-sheet th.num,
@@ -10335,7 +10349,7 @@ button.so-new-order svg,
 
 .pick-ticket tr.pick-head-bin th {
   color: var(--ds-muted, var(--muted));
-  font-size: 0.75rem;
+  font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -10387,7 +10401,7 @@ button.so-new-order svg,
 .pick-planned {
   display: block;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 11px;
   font-weight: 550;
   line-height: 1.3;
 }
@@ -10404,7 +10418,16 @@ button.so-new-order svg,
 }
 
 .pick-sheet input,
-.pick-serials input,
+.pick-serials input {
+  margin: 0;
+  height: 30px;
+  min-height: 0;
+  padding: 0 0.45rem;
+  font-size: 13px;
+  line-height: 30px;
+  vertical-align: middle;
+}
+
 .pick-scan input {
   margin: 0;
   height: 2.25rem;
@@ -10419,7 +10442,15 @@ button.so-new-order svg,
 }
 
 .pick-qty-cell button,
-.pick-action,
+.pick-action {
+  height: 30px;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0.55rem;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
 .pick-scan button,
 .pick-short {
   height: 2.25rem;
@@ -10434,6 +10465,24 @@ button.so-new-order svg,
   min-height: 2rem;
   margin-top: 0.35rem;
   padding: 0.25rem 0.55rem;
+}
+
+.pick-serials tr.pick-serial-entry td {
+  vertical-align: middle;
+}
+
+.pick-serials tr.pick-serial-entry .pick-icon-cell {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  height: 30px;
+}
+
+.pick-serials tr.pick-serial-entry .pick-icon-cell button.icon-button {
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  vertical-align: middle;
 }
 
 .pick-serials td input {

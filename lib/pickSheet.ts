@@ -309,6 +309,30 @@ export function pickWritableStatus(status: string): boolean {
 }
 
 /**
+ * The sheet stays editable after Finish while the order can still take a pick.
+ * Packing and later statuses stay read-only: those quantities have left this sheet.
+ */
+export function pickSheetEditable(input: { canPick: boolean; status: string; pickStatus: string | null }): boolean {
+  if (!input.canPick || !pickWritableStatus(input.status)) return false;
+  return input.pickStatus === "open" || input.pickStatus === "picked" || input.pickStatus === "short";
+}
+
+/** Line quantity shown on the sheet. Pick rows win when the reported total is behind them. */
+export function pickedQuantity(reported: number, picks: readonly { qty: number }[]): number {
+  const fromPicks = picks.reduce((sum, pick) => sum + (Number.isFinite(pick.qty) ? pick.qty : 0), 0);
+  const line = Number.isFinite(reported) ? reported : 0;
+  return Math.max(line, fromPicks);
+}
+
+export const PICK_EDIT_MIGRATION = "supabase/migrations/20261104061116_pick_edit_after_finish.sql";
+
+/** A finished list refuses edits until that migration is applied. Say so next to the action. */
+export function explainPickEdit(message: string): string {
+  if (!message.includes("This pick sheet is already finished.")) return message;
+  return `${message} Apply ${PICK_EDIT_MIGRATION} before a finished pick can be corrected.`;
+}
+
+/**
  * Shipped orders on Warehouse → Picking.
  * No pick list yet, or the list is still open. A finished pick leaves the queue.
  */
@@ -486,6 +510,7 @@ export function pickSheetFromJson(value: unknown): PickSheetModel {
         throw new Error("Unexpected pick sheet.");
       }
       const plannedSku = typeof line.planned_sku === "string" && line.planned_sku ? line.planned_sku : line.sku;
+      const linePicks = picks(line.picks);
       return {
         allocationId: line.allocation_id,
         plannedItemId: typeof line.planned_item_id === "string" ? line.planned_item_id : "",
@@ -497,11 +522,11 @@ export function pickSheetFromJson(value: unknown): PickSheetModel {
         replaced: line.replaced === true,
         swapReason: typeof line.swap_reason === "string" ? line.swap_reason : "",
         ordered: qty(line.ordered),
-        picked: qty(line.picked),
+        picked: pickedQuantity(qty(line.picked), linePicks),
         short: line.short === true,
         itemCoo: optionalCoo(line, "item_coo"),
         bins: bins(line.bins),
-        picks: picks(line.picks),
+        picks: linePicks,
       };
     }),
     skipped: row.skipped.map((entry) => {

@@ -6,6 +6,7 @@
  */
 
 import { lineRemaining } from "@/lib/pickSheet";
+import { formatPullFrom } from "@/lib/pickSerialLocation";
 import {
   pickSlotForSerial,
   UNKNOWN_SERIAL_MESSAGE,
@@ -81,6 +82,47 @@ type SerialRoomLine = {
 export function lineCanTakeSerial(line: SerialRoomLine): boolean {
   if (lineRemaining(line.ordered, line.picked) >= 1) return true;
   return (line.picks ?? []).some((pick) => pick.serials.length < pick.qty);
+}
+
+type SerialSlot = {
+  id: string;
+  fromBin: string | null;
+  qty: number;
+  serials: readonly unknown[];
+};
+
+/**
+ * The + control attaches to a pick that still has room.
+ * A serial lookup names the bin. Otherwise the bin just picked in the table is used,
+ * which is the latest open slot. A typed serial is not looked up again before this choice.
+ */
+export function serialAddTarget(input: {
+  picks: readonly SerialSlot[];
+  preferredBin?: string | null;
+}): { ok: true; pickId: string; fromBin: string | null } | { ok: false; message: string } {
+  const open = input.picks.filter((pick) => pick.qty > 0 && pick.serials.length < pick.qty);
+  const preferred = input.preferredBin?.trim() ?? "";
+  if (preferred) {
+    const match = [...open].reverse().find((pick) => (pick.fromBin ?? "").trim().toUpperCase() === preferred.toUpperCase());
+    if (match) return { ok: true, pickId: match.id, fromBin: match.fromBin };
+    return { ok: false, message: `Pick a quantity from ${preferred} before adding this serial.` };
+  }
+  const slot = open[open.length - 1];
+  if (!slot) return { ok: false, message: "Pick a quantity from a bin above before adding a serial." };
+  return { ok: true, pickId: slot.id, fromBin: slot.fromBin };
+}
+
+/** From on the serial row. A lookup wins. Otherwise it is the bin the + control will use. */
+export function serialRowFrom(input: {
+  active: { reference: string; location: string | null } | null;
+  fromBin: string | null;
+  bins: readonly { reference: string; location: string | null }[];
+}): string {
+  if (input.active?.reference.trim()) return formatPullFrom(input.active.reference, input.active.location);
+  const bin = input.fromBin?.trim() ?? "";
+  if (!bin) return "";
+  const match = input.bins.find((row) => row.reference.trim().toUpperCase() === bin.toUpperCase());
+  return formatPullFrom(bin, match?.location?.trim() || null);
 }
 
 /** The line a confirmed unknown serial is added to. A paste on a row wins. One open line is enough. */
