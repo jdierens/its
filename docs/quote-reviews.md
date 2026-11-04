@@ -42,6 +42,8 @@ The list shows the type, the originator company and contact, line count, total q
 
 ## Lines and bids
 
+The list and the line tables use a 13px cell and an 11px heading, with short row padding, so more prices fit across the screen.
+
 Above the editor, **Overview** is one row per request line: part, SKU, quantity, condition, **DDS unit**, **DDS ext**, then one column per other price (LNT, XYS, and the rest). A bidder cell shows the unit and, under it, the extension for the request quantity. A related quote adds a column for its DDS price when it has one, and a column for each of its bidders, matched on part number. Hong’s market prices show on the Mainstream overview that way.
 
 The line grid under that is the request on the left and the DDS response on the right.

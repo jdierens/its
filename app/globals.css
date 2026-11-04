@@ -10767,9 +10767,39 @@ button.so-new-order svg,
   overflow-x: auto;
 }
 
+/* Same density as the items list (13px rows, 11px headings) and the sales-order
+   line padding, so a long price matrix stays on one screen. */
 .qr-list-scroll table,
 .qr-scroll table {
-  min-width: 88rem;
+  width: max-content;
+  min-width: 100%;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.qr-list-scroll th,
+.qr-list-scroll td,
+.qr-scroll th,
+.qr-scroll td {
+  padding: 0.2rem 0.4rem;
+  line-height: 1.25;
+}
+
+.qr-list-scroll th,
+.qr-scroll th {
+  font-size: 11px;
+}
+
+.qr-list-scroll td.num,
+.qr-scroll td.num,
+.qr-list-scroll th.num,
+.qr-scroll th.num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.qr-list-scroll .badge {
+  height: 1.15rem;
 }
 
 .qr-flow,
@@ -10783,8 +10813,9 @@ button.so-new-order svg,
 }
 
 .qr-flow-name {
-  font-size: 1rem;
+  font-size: 0.92rem;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .qr-contact {
@@ -10835,17 +10866,42 @@ button.so-new-order svg,
   gap: 0.45rem;
 }
 
-.qr-lines th,
-.qr-lines td {
-  padding: 0.4rem 0.35rem;
+.qr-overview .qr-context,
+.qr-lines .qr-context {
+  display: block;
+  margin: 0.05rem 0 0;
+  color: var(--ds-muted, var(--muted));
+  font-size: 0.85em;
+  font-weight: 550;
+  line-height: 1.15;
 }
 
-.qr-context {
-  display: block;
-  margin: 0.2rem 0 0;
-  color: var(--ds-muted, var(--muted));
-  font-size: 0.78rem;
-  font-weight: 550;
+@media (min-width: 801px) {
+  .so-page .qr-lines input:not([type="checkbox"]),
+  .so-page .qr-lines select,
+  .so-page .qr-bidder-detail input:not([type="checkbox"]),
+  .so-page .qr-bidder-detail select {
+    height: 1.5rem;
+    min-height: 0;
+    padding: 0 0.35rem;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .so-page .qr-head input,
+  .so-page .qr-head select,
+  .so-page .qr-head textarea,
+  .so-page .qr-filters input,
+  .so-page .qr-filters select {
+    font-size: 0.875rem;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .qr-bidders .button,
+  .qr-bidder-strip .qr-bid .button {
+    padding: 0.28rem 0.55rem;
+    font-size: 13px;
+  }
 }
 
 .qr-side,
