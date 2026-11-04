@@ -10776,6 +10776,20 @@ button.so-new-order svg,
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+/* Quote header: about 20% smaller type, tighter rows, and more fields per row. */
+.qr-head.qr-meta {
+  gap: 0.32rem 0.5rem;
+}
+
+.qr-head.qr-meta label {
+  gap: 0.12rem;
+  font-size: 0.6rem;
+}
+
+.qr-head.qr-meta textarea {
+  min-height: 2.5rem;
+}
+
 .qr-filters label,
 .qr-head label {
   display: grid;
@@ -10916,6 +10930,15 @@ button.so-new-order svg,
   margin-top: 0.9rem;
 }
 
+.qr-overview .qr-bidder-strip {
+  margin-top: 0;
+  gap: 0.4rem;
+}
+
+.qr-overview .qr-scroll + .qr-bidder-strip {
+  margin-top: 0.35rem;
+}
+
 .qr-bidder-strip h3,
 .qr-bidder-detail h3 {
   margin: 0;
@@ -10963,6 +10986,18 @@ button.so-new-order svg,
   .so-page .qr-filters select {
     font-size: 0.875rem;
     padding: 0.35rem 0.5rem;
+  }
+
+  .qr-head.qr-meta {
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  }
+
+  .so-page .qr-head.qr-meta input,
+  .so-page .qr-head.qr-meta select,
+  .so-page .qr-head.qr-meta textarea {
+    font-size: 0.7rem;
+    padding: 0.22rem 0.4rem;
+    line-height: 1.2;
   }
 
   .qr-bidders .button,

@@ -44,17 +44,17 @@ The list shows the type, the originator company and contact, line count, total q
 
 The list and the line tables use a 13px cell and an 11px heading, with short row padding, so more prices fit across the screen.
 
-Above the editor, **Overview** is one row per request line: part, SKU, quantity, condition, **DDS unit**, **DDS ext**, then one column per other price (LNT, XYS, and the rest). A bidder cell shows the unit and, under it, the extension for the request quantity. A related quote adds a column for its DDS price when it has one, and a column for each of its bidders, matched on part number. Hong’s market prices show on the Mainstream overview that way.
+Above the editor, **Overview** is one row per request line: part, SKU, quantity, condition, then **DDS unit** with DDS ext under that unit, then one column per other price (LNT, XYS, and the rest). Every price cell shows the unit and, under it, the extension for the request quantity. Extensions display as whole currency units, with no cents. Unit prices keep cents. A related quote adds a column for its DDS price when it has one, and a column for each of its bidders, matched on part number. Hong’s market prices show on the Mainstream overview that way.
 
 The line grid under that is the request on the left and the DDS response on the right.
 
 Request columns are the part number, quantity, optional target price, optional condition, and optional special requirements. `qty` is the request quantity. `target_price` is optional. `special_requirements` is optional.
 
-DDS columns are the SKU, the item name, the reply quantity, **DDS unit**, **DDS ext**, lead time, notes, and the decision. `our_unit_price` is DDS unit. `reply_qty` is the reply quantity. When it is empty, DDS ext uses the request quantity. `our_ext` is that quantity times DDS unit, rounded to cents by the database, and null when either input is null. `lead_time` is optional. Empty means in stock, and the page shows In stock. `decision` is `bid`, `pass`, `counter`, or empty. `decision_note` is the reply note.
+DDS columns are the SKU, the item name, the reply quantity, **DDS unit** with DDS ext under that unit, lead time, notes, and the decision. `our_unit_price` is DDS unit. `reply_qty` is the reply quantity. When it is empty, DDS ext uses the request quantity. `our_ext` is that quantity times DDS unit, rounded to cents by the database, and null when either input is null. The page shows that extension as a whole number. `lead_time` is optional. Empty means in stock, and the page shows In stock. `decision` is `bid`, `pass`, `counter`, or empty. `decision_note` is the reply note.
 
 `item_id` is null until the part is matched, and deleting the item clears it. `part_number` can stand alone. `part_number_norm` is generated the same way as `price_quotes.part_number_norm`: uppercase, with whitespace, `-`, and `/` removed.
 
-Other responses sit under the grid as a numbered strip: `1. CompA`, `2. CompB`, and so on. Choosing a name opens that party’s reply for every line: SKU, name, quantity, unit price, lead time, and note. Those fields live on `quote_event_bids`. Empty SKU, name, or quantity on a bid uses the line’s values as the placeholder. DDS unit and DDS ext stay in the main grid. A bidder can be saved without a price. A price needs a name.
+Other responses sit in a numbered strip directly under the overview: `1. CompA`, `2. CompB`, and so on. A related quote is on that strip too, after the responses, using the same party name as the related-quotes table. Choosing a response opens that party’s reply for every line: SKU, name, quantity, unit price, lead time, and note. Choosing a related quote opens that quote. Those reply fields live on `quote_event_bids`. Empty SKU, name, or quantity on a bid uses the line’s values as the placeholder. DDS unit and DDS ext stay on the DDS column. A bidder can be saved without a price. A price needs a name.
 
 Find item searches SKU, name, and part number. The line can stay unmatched. On-hand quantity and the latest buy and sell for a matched item are shown beside the line. They are a hook, not a full market strip.
 

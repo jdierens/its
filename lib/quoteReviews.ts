@@ -489,11 +489,26 @@ export function quoteMoneyText(value: string, currency = "USD"): string {
   return formatMoney(parsed.amount, currency);
 }
 
+/** Extended totals display as whole currency units. Unit prices keep cents. */
+function formatQuoteExt(amount: number, currency = "USD"): string {
+  const whole = Math.round(amount);
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(whole);
+  } catch {
+    return `${whole} ${currency}`;
+  }
+}
+
 export function quoteMoneyExt(qty: string, unit: string, currency = "USD"): string {
   const parsedQty = parseQuoteQty(qty);
   const parsed = parseMoney(unit);
   if (!parsedQty.ok || !parsed.ok || parsedQty.qty == null || parsed.amount == null) return "";
-  return formatMoney(roundMoney(parsedQty.qty * parsed.amount), currency);
+  return formatQuoteExt(roundMoney(parsedQty.qty * parsed.amount), currency);
 }
 
 export function offerUnit(column: QuoteOfferColumn, partNumber: string, sku: string): string {
@@ -608,7 +623,7 @@ export function quoteLeadTime(value: string): string {
   return trimmed || QUOTE_LEAD_TIME_DEFAULT;
 }
 
-/** Bidder names in first-seen order. The strip under the grid uses this order. */
+/** Bidder names in first-seen order. The strip under the overview uses this order. */
 export function quoteBidders(lines: { bids: { bidderName: string }[] }[]): string[] {
   const names: string[] = [];
   const seen = new Set<string>();
@@ -622,6 +637,49 @@ export function quoteBidders(lines: { bids: { bidderName: string }[] }[]): strin
     }
   }
   return names;
+}
+
+/** Column heading shared by the overview and the bidder strip. */
+export function quoteOfferHeading(label: string): string {
+  const trimmed = label.trim() || "Related";
+  if (trimmed.length <= 28) return trimmed;
+  return `${trimmed.slice(0, 27)}…`;
+}
+
+export type QuoteBidderListEntry =
+  | { kind: "bid"; name: string }
+  | { kind: "related"; id: string; otherId: string; label: string; phrase: string };
+
+/**
+ * Numbered strip under the overview: other responses, then each related quote.
+ * A related party keeps the same name as its overview column.
+ */
+export function quoteBidderList(
+  lines: { bids: { bidderName: string }[] }[],
+  relations: { id: string; otherId: string; otherLabel: string; phrase: string }[] = [],
+): QuoteBidderListEntry[] {
+  const names = quoteBidders(lines);
+  const entries: QuoteBidderListEntry[] = names.map((name) => ({ kind: "bid", name }));
+  const used = new Set(names.map((name) => name.toLowerCase()));
+  for (const relation of relations) {
+    const base = quoteOfferHeading(relation.otherLabel);
+    let label = base;
+    if (used.has(label.toLowerCase())) label = `${base} · related`;
+    let extra = 2;
+    while (used.has(label.toLowerCase())) {
+      label = `${base} · related ${extra}`;
+      extra += 1;
+    }
+    used.add(label.toLowerCase());
+    entries.push({
+      kind: "related",
+      id: relation.id,
+      otherId: relation.otherId,
+      label,
+      phrase: relation.phrase.trim(),
+    });
+  }
+  return entries;
 }
 
 /**
@@ -724,7 +782,7 @@ export function quoteExtension(qty: string, unitPrice: string): string {
   const parsedQty = parseQuoteQty(qty);
   const parsedPrice = parseMoney(unitPrice);
   if (!parsedQty.ok || !parsedPrice.ok || parsedQty.qty == null || parsedPrice.amount == null) return "";
-  return formatMoney(roundMoney(parsedQty.qty * parsedPrice.amount));
+  return formatQuoteExt(roundMoney(parsedQty.qty * parsedPrice.amount));
 }
 
 /** DDS ext uses the reply quantity when it is filled in, otherwise the request quantity. */

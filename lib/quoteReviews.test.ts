@@ -18,6 +18,7 @@ import {
   quoteLineMatchKey,
   quoteMoneyExt,
   parseRelatedQuote,
+  quoteBidderList,
   quoteBidders,
   quoteExtension,
   quoteFlowLabel,
@@ -89,8 +90,10 @@ test("type labels are the pattern name and never say ask", () => {
   assert.deepEqual(displayAxes("buy", "inbound_ask"), { side: "buy", direction: "inbound" });
   assert.equal(quoteLineMatchKey("MZ-1 /A", ""), "p:MZ1A");
   assert.equal(offerUnit({ id: "1", label: "LNT", prices: [{ matchKey: "p:MZ1A", unitPrice: "10" }] }, "mz-1/a", ""), "10");
-  assert.equal(quoteMoneyExt("2", "10", "USD"), "$20.00");
-  assert.equal(quoteMoneyExt("500", "218.80", "USD"), "$109,400.00");
+  assert.equal(quoteMoneyExt("2", "10", "USD"), "$20");
+  assert.equal(quoteMoneyExt("500", "218.80", "USD"), "$109,400");
+  assert.equal(quoteMoneyExt("1", "10.49", "USD"), "$10");
+  assert.equal(quoteMoneyExt("1", "10.50", "USD"), "$11");
 });
 
 test("changing side and direction keeps only the party that still fits", () => {
@@ -191,9 +194,10 @@ test("line totals sum our extension and the lowest competing price", () => {
     { lineCount: 3, qty: 3, offerExt: 20, competingExt: 23 },
   );
   assert.equal(bestCompetingUnit([{ unitPrice: "12.00" }, { unitPrice: "9.50" }, { unitPrice: "" }]), 9.5);
-  assert.equal(quoteExtension("2", "10"), "$20.00");
-  assert.equal(quoteReplyExtension("2", "3", "10"), "$30.00");
-  assert.equal(quoteReplyExtension("2", "", "10"), "$20.00");
+  assert.equal(quoteExtension("2", "10"), "$20");
+  assert.equal(quoteExtension("2", "10.25"), "$21");
+  assert.equal(quoteReplyExtension("2", "3", "10"), "$30");
+  assert.equal(quoteReplyExtension("2", "", "10"), "$20");
   assert.equal(counterpartyLabel("Mainstream", "Joe"), "Mainstream (Joe)");
   assert.equal(counterpartyLabel("Mainstream", "mainstream"), "Mainstream");
   assert.deepEqual(quoteBidders([{ bids: [{ bidderName: "LNT" }, { bidderName: "XYS" }] }, { bids: [{ bidderName: "lnt" }, { bidderName: "ACR" }] }]), [
@@ -201,6 +205,23 @@ test("line totals sum our extension and the lowest competing price", () => {
     "XYS",
     "ACR",
   ]);
+  assert.deepEqual(
+    quoteBidderList(
+      [{ bids: [{ bidderName: "LNT" }] }],
+      [{ id: "rel-hong", otherId: "hong", otherLabel: "Hong Li", phrase: "Response from" }],
+    ),
+    [
+      { kind: "bid", name: "LNT" },
+      { kind: "related", id: "rel-hong", otherId: "hong", label: "Hong Li", phrase: "Response from" },
+    ],
+  );
+  assert.equal(
+    quoteBidderList(
+      [{ bids: [{ bidderName: "Hong Li" }] }],
+      [{ id: "rel-hong", otherId: "hong", otherLabel: "Hong Li", phrase: " Response from " }],
+    )[1].label,
+    "Hong Li · related",
+  );
 });
 
 function saveInput(patch: Partial<QuoteSaveInput> = {}, linePatch: Partial<QuoteLineInput> = {}): QuoteSaveInput {

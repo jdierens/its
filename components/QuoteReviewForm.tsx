@@ -21,6 +21,7 @@ import {
   blankQuoteBid,
   blankQuoteLine,
   originatorForFlow,
+  quoteBidderList,
   quoteBidders,
   quoteDirectionLabel,
   quoteFlowHint,
@@ -32,13 +33,14 @@ import {
   type QuoteLineDraft,
   type QuoteOfferColumn,
   type QuotePartyOption,
+  type QuoteBidderListEntry,
   type QuoteRelationView,
   type QuoteReviewDraft,
 } from "@/lib/quoteReviews";
 
 type EditorLine = QuoteLineDraft & { hits: QuoteItemHit[]; findNote: string };
 
-const LINE_COLUMNS = 15;
+const LINE_COLUMNS = 14;
 
 function toEditor(line: QuoteLineDraft): EditorLine {
   return { ...line, key: line.key || crypto.randomUUID(), hits: [], findNote: "" };
@@ -79,6 +81,7 @@ export function QuoteReviewForm({
       ? "Due date is before the received date. You can still save."
       : "";
   const bidders = quoteBidders(lines);
+  const bidderEntries = quoteBidderList(lines, relations);
   const activeBidder = selectedBidder && bidders.some((name) => name.toLowerCase() === selectedBidder.toLowerCase()) ? selectedBidder : null;
 
   function patchLine(key: string, patch: Partial<EditorLine>) {
@@ -285,7 +288,7 @@ export function QuoteReviewForm({
         <div className="card qr-related">
           <QuoteFlowMarks side={header.side} direction={header.direction} />
           <p className="hint">{quoteFlowHint(header.side, header.direction)}</p>
-          <div className="qr-head">
+          <div className="qr-head qr-meta">
             <label>
               List name
               <input value={header.reference} disabled={!canEdit} onChange={(event) => setHeader({ ...header, reference: event.target.value })} />
@@ -371,7 +374,7 @@ export function QuoteReviewForm({
             </label>
             <label className="qr-notes">
               Notes
-              <textarea rows={3} value={header.notes} disabled={!canEdit} onChange={(event) => setHeader({ ...header, notes: event.target.value })} />
+              <textarea rows={2} value={header.notes} disabled={!canEdit} onChange={(event) => setHeader({ ...header, notes: event.target.value })} />
             </label>
           </div>
           {dueWarning ? <p className="hint">{dueWarning}</p> : null}
@@ -386,7 +389,20 @@ export function QuoteReviewForm({
             </p>
           ) : null}
         </div>
-        <QuotePriceOverview lines={lines} offers={offers} currency={header.currency || "USD"} />
+        <QuotePriceOverview lines={lines} offers={offers} currency={header.currency || "USD"}>
+          <BidderStrip
+            canEdit={canEdit}
+            entries={bidderEntries}
+            bidderName={bidderName}
+            activeBidder={activeBidder}
+            lines={lines}
+            onBidderName={setBidderName}
+            onSelect={setSelectedBidder}
+            onAdd={addBidder}
+            onRemove={removeBidder}
+            onPatch={patchBidder}
+          />
+        </QuotePriceOverview>
         <div className="card qr-lines">
           <div className="qr-line-bar">
             <h2>Line detail</h2>
@@ -397,7 +413,7 @@ export function QuoteReviewForm({
             ) : null}
           </div>
           <p className="hint">
-            Request on the left. DDS unit and DDS ext on the right. An empty lead time means in stock. Sheet and photo import is not on this page.
+            Request on the left. DDS unit on the right, with DDS ext under the unit. An empty lead time means in stock. Sheet and photo import is not on this page.
           </p>
           <div className="qr-scroll">
             <table>
@@ -407,7 +423,7 @@ export function QuoteReviewForm({
                   <th className="qr-request" colSpan={5}>
                     Request
                   </th>
-                  <th className="qr-dds" colSpan={8}>
+                  <th className="qr-dds" colSpan={7}>
                     DDS response
                   </th>
                   <th />
@@ -423,7 +439,6 @@ export function QuoteReviewForm({
                   <th>Name</th>
                   <th className="num">Qty</th>
                   <th className="num">DDS unit</th>
-                  <th className="num">DDS ext</th>
                   <th>Lead time</th>
                   <th>Notes</th>
                   <th>Decision</th>
@@ -450,127 +465,6 @@ export function QuoteReviewForm({
                 })}
               </tbody>
             </table>
-          </div>
-          <div className="qr-bidder-strip">
-            <h3>Bidders</h3>
-            {bidders.length === 0 ? <p className="muted">No other responses yet.</p> : null}
-            <div className="qr-bidders" role="list">
-              {bidders.map((name, index) => (
-                <button
-                  key={name}
-                  type="button"
-                  className="button secondary qr-bidder"
-                  aria-pressed={activeBidder?.toLowerCase() === name.toLowerCase()}
-                  onClick={() => setSelectedBidder(name)}
-                >
-                  {index + 1}. {name}
-                </button>
-              ))}
-            </div>
-            {canEdit ? (
-              <div className="qr-bid">
-                <input aria-label="New bidder" placeholder="Bidder" value={bidderName} onChange={(event) => setBidderName(event.target.value)} />
-                <button type="button" className="button secondary" onClick={addBidder}>
-                  Add bidder
-                </button>
-              </div>
-            ) : null}
-            {activeBidder ? (
-              <div className="qr-bidder-detail">
-                <div className="qr-line-bar">
-                  <h3>{activeBidder}</h3>
-                  {canEdit ? (
-                    <button type="button" className="button secondary" onClick={() => removeBidder(activeBidder)}>
-                      Remove bidder
-                    </button>
-                  ) : null}
-                </div>
-                <p className="hint">This party’s reply. DDS unit and DDS ext stay in the grid above. An empty lead time means in stock.</p>
-                <div className="qr-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Part</th>
-                        <th>SKU</th>
-                        <th>Name</th>
-                        <th className="num">Qty</th>
-                        <th className="num">Unit</th>
-                        <th>Lead time</th>
-                        <th>Notes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lines.map((line, index) => {
-                        const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === activeBidder.toLowerCase());
-                        return (
-                          <tr key={line.key}>
-                            <td className="num">{index + 1}</td>
-                            <td>{line.partNumber || "—"}</td>
-                            <td>
-                              <input
-                                aria-label={`${activeBidder} SKU on line ${index + 1}`}
-                                value={bid?.sku ?? ""}
-                                disabled={!canEdit}
-                                placeholder={line.sku}
-                                onChange={(event) => patchBidder(line.key, activeBidder, { sku: event.target.value })}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                aria-label={`${activeBidder} name on line ${index + 1}`}
-                                value={bid?.itemName ?? ""}
-                                disabled={!canEdit}
-                                placeholder={line.itemName}
-                                onChange={(event) => patchBidder(line.key, activeBidder, { itemName: event.target.value })}
-                              />
-                            </td>
-                            <td className="num">
-                              <input
-                                className="num"
-                                inputMode="decimal"
-                                aria-label={`${activeBidder} quantity on line ${index + 1}`}
-                                value={bid?.qty ?? ""}
-                                disabled={!canEdit}
-                                placeholder={line.qty}
-                                onChange={(event) => patchBidder(line.key, activeBidder, { qty: event.target.value })}
-                              />
-                            </td>
-                            <td className="num">
-                              <input
-                                className="num"
-                                inputMode="decimal"
-                                aria-label={`${activeBidder} unit price on line ${index + 1}`}
-                                value={bid?.unitPrice ?? ""}
-                                disabled={!canEdit}
-                                onChange={(event) => patchBidder(line.key, activeBidder, { unitPrice: event.target.value })}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                aria-label={`${activeBidder} lead time on line ${index + 1}`}
-                                value={bid?.leadTime ?? ""}
-                                disabled={!canEdit}
-                                placeholder={quoteLeadTime("")}
-                                onChange={(event) => patchBidder(line.key, activeBidder, { leadTime: event.target.value })}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                aria-label={`${activeBidder} note on line ${index + 1}`}
-                                value={bid?.note ?? ""}
-                                disabled={!canEdit}
-                                onChange={(event) => patchBidder(line.key, activeBidder, { note: event.target.value })}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
         {canEdit ? (
@@ -609,6 +503,161 @@ export function QuoteReviewForm({
   );
 }
 
+function BidderStrip({
+  canEdit,
+  entries,
+  bidderName,
+  activeBidder,
+  lines,
+  onBidderName,
+  onSelect,
+  onAdd,
+  onRemove,
+  onPatch,
+}: {
+  canEdit: boolean;
+  entries: QuoteBidderListEntry[];
+  bidderName: string;
+  activeBidder: string | null;
+  lines: EditorLine[];
+  onBidderName: (name: string) => void;
+  onSelect: (name: string) => void;
+  onAdd: () => void;
+  onRemove: (name: string) => void;
+  onPatch: (lineKey: string, name: string, patch: Partial<QuoteLineDraft["bids"][number]>) => void;
+}) {
+  return (
+    <div className="qr-bidder-strip">
+      <h3>Bidders</h3>
+      {entries.length === 0 ? <p className="muted">No other responses yet.</p> : null}
+      <div className="qr-bidders" role="list">
+        {entries.map((entry, index) =>
+          entry.kind === "bid" ? (
+            <button
+              key={`bid:${entry.name}`}
+              type="button"
+              className="button secondary qr-bidder"
+              aria-pressed={activeBidder?.toLowerCase() === entry.name.toLowerCase()}
+              onClick={() => onSelect(entry.name)}
+            >
+              {index + 1}. {entry.name}
+            </button>
+          ) : (
+            <Link key={`related:${entry.id}`} href={`${QUOTE_REVIEWS_PATH}/${entry.otherId}`} className="button secondary qr-bidder">
+              {index + 1}. {entry.label}
+              {entry.phrase ? ` · ${entry.phrase}` : ""}
+            </Link>
+          ),
+        )}
+      </div>
+      {canEdit ? (
+        <div className="qr-bid">
+          <input aria-label="New bidder" placeholder="Bidder" value={bidderName} onChange={(event) => onBidderName(event.target.value)} />
+          <button type="button" className="button secondary" onClick={onAdd}>
+            Add bidder
+          </button>
+        </div>
+      ) : null}
+      {activeBidder ? (
+        <div className="qr-bidder-detail">
+          <div className="qr-line-bar">
+            <h3>{activeBidder}</h3>
+            {canEdit ? (
+              <button type="button" className="button secondary" onClick={() => onRemove(activeBidder)}>
+                Remove bidder
+              </button>
+            ) : null}
+          </div>
+          <p className="hint">This party’s reply. DDS unit and DDS ext stay on the DDS column. An empty lead time means in stock.</p>
+          <div className="qr-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Part</th>
+                  <th>SKU</th>
+                  <th>Name</th>
+                  <th className="num">Qty</th>
+                  <th className="num">Unit</th>
+                  <th>Lead time</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line, index) => {
+                  const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === activeBidder.toLowerCase());
+                  return (
+                    <tr key={line.key}>
+                      <td className="num">{index + 1}</td>
+                      <td>{line.partNumber || "—"}</td>
+                      <td>
+                        <input
+                          aria-label={`${activeBidder} SKU on line ${index + 1}`}
+                          value={bid?.sku ?? ""}
+                          disabled={!canEdit}
+                          placeholder={line.sku}
+                          onChange={(event) => onPatch(line.key, activeBidder, { sku: event.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          aria-label={`${activeBidder} name on line ${index + 1}`}
+                          value={bid?.itemName ?? ""}
+                          disabled={!canEdit}
+                          placeholder={line.itemName}
+                          onChange={(event) => onPatch(line.key, activeBidder, { itemName: event.target.value })}
+                        />
+                      </td>
+                      <td className="num">
+                        <input
+                          className="num"
+                          inputMode="decimal"
+                          aria-label={`${activeBidder} quantity on line ${index + 1}`}
+                          value={bid?.qty ?? ""}
+                          disabled={!canEdit}
+                          placeholder={line.qty}
+                          onChange={(event) => onPatch(line.key, activeBidder, { qty: event.target.value })}
+                        />
+                      </td>
+                      <td className="num">
+                        <input
+                          className="num"
+                          inputMode="decimal"
+                          aria-label={`${activeBidder} unit price on line ${index + 1}`}
+                          value={bid?.unitPrice ?? ""}
+                          disabled={!canEdit}
+                          onChange={(event) => onPatch(line.key, activeBidder, { unitPrice: event.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          aria-label={`${activeBidder} lead time on line ${index + 1}`}
+                          value={bid?.leadTime ?? ""}
+                          disabled={!canEdit}
+                          placeholder={quoteLeadTime("")}
+                          onChange={(event) => onPatch(line.key, activeBidder, { leadTime: event.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          aria-label={`${activeBidder} note on line ${index + 1}`}
+                          value={bid?.note ?? ""}
+                          disabled={!canEdit}
+                          onChange={(event) => onPatch(line.key, activeBidder, { note: event.target.value })}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function lineHasRequest(line: QuoteLineDraft): boolean {
   return Boolean(
     line.partNumber.trim() ||
@@ -643,6 +692,7 @@ function LineRows({
   onRemove: () => void;
 }) {
   const number = index + 1;
+  const ddsExt = quoteReplyExtension(line.qty, line.replyQty, line.unitPrice);
   return (
     <>
       <tr>
@@ -676,9 +726,12 @@ function LineRows({
         </td>
         <td className="num" data-label="DDS unit">
           <input className="num" inputMode="decimal" aria-label={`DDS unit for line ${number}`} value={line.unitPrice} disabled={!canEdit} onChange={(event) => onPatch({ unitPrice: event.target.value })} />
-        </td>
-        <td className="num" data-label="DDS ext">
-          <span>{quoteReplyExtension(line.qty, line.replyQty, line.unitPrice) || "—"}</span>
+          {ddsExt ? (
+            <span className="qr-context">
+              <span className="sr-only">DDS ext </span>
+              {ddsExt}
+            </span>
+          ) : null}
           {best != null ? <span className="qr-context">Best {formatMoney(best)}</span> : null}
         </td>
         <td data-label="Lead time">
