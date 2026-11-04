@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from
 import { usePageMeta } from "@/components/AppShell";
 import { LetterPrint } from "@/components/LetterPrint";
 import { SalesOrderStageNav } from "@/components/SalesOrderStageNav";
+import { CountrySelect } from "@/components/CountrySelect";
 import { ReplaceSkuPicker } from "@/components/ReplaceSkuPicker";
 import {
   confirmPulledSerials,
@@ -22,7 +23,9 @@ import {
   setPickShort,
   undoPick,
 } from "@/lib/pickActions";
+import { fetchCountries, type Country } from "@/lib/countries";
 import { errorText } from "@/lib/errors";
+import { countryResolutionMessage, resolveCountry, type CountryResolution } from "@/lib/itemFields";
 import { PICK_TICKET_PRINT, prepareLetterPrint } from "@/lib/letterPrint";
 import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
 import {
@@ -84,6 +87,8 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [qtyText, setQtyText] = useState<Record<string, string>>({});
   const [serialText, setSerialText] = useState<Record<string, string>>({});
   const [cooText, setCooText] = useState<Record<string, string>>({});
+  const [countries, setCountries] = useState<Country[]>([]);
+  const commitCoo = useRef<Record<string, () => CountryResolution>>({});
   const [pull, setPull] = useState<SerialPull | null>(null);
   const [scan, setScan] = useState("");
   const [stageScan, setStageScan] = useState("");
@@ -119,6 +124,18 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const title = sheet.soNumber ? `Pick SO${sheet.soNumber}` : "Pick sheet";
   const activePull =
     pull && (serialText[pull.allocationId] ?? "").trim().toLowerCase() === pull.serial.trim().toLowerCase() ? pull : null;
+
+  useEffect(() => {
+    let cancel = false;
+    void fetchCountries()
+      .then((rows) => {
+        if (!cancel) setCountries(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   usePageMeta({
     title,
@@ -362,6 +379,21 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     void pickQty(line.allocationId, binId, parsed.qty);
   }
 
+  function countryForLine(allocationId: string): { ok: true; coo: string } | { ok: false; message: string } {
+    const stored = cooText[allocationId] ?? "";
+    const resolved = commitCoo.current[allocationId]?.() ?? resolveCountry(stored, countries);
+    if (countries.length === 0) {
+      const raw = resolved.status === "none" || resolved.status === "ambiguous" ? resolved.query : stored;
+      const problem = cooProblem(raw);
+      if (problem) return { ok: false, message: "Choose a country from the list." };
+      return { ok: true, coo: raw.trim().toUpperCase() };
+    }
+    const message = countryResolutionMessage(resolved);
+    if (message) return { ok: false, message };
+    if (resolved.status === "match") return { ok: true, coo: resolved.alpha3 };
+    return { ok: true, coo: "" };
+  }
+
   async function onAddSerial(line: PickLine) {
     setPasteReport(null);
     setSerialNotice(null);
@@ -371,11 +403,12 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       setSerialNotice(problem);
       return;
     }
-    const country = cooProblem(cooText[line.allocationId] ?? "");
-    if (country) {
-      setSerialNotice(country);
+    const country = countryForLine(line.allocationId);
+    if (!country.ok) {
+      setSerialNotice(country.message);
       return;
     }
+    setCooText((current) => ({ ...current, [line.allocationId]: country.coo }));
     const target = serialAddTarget({
       picks: line.picks,
       preferredBin: activePull?.allocationId === line.allocationId ? activePull.reference : null,
@@ -388,7 +421,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
     setBusy(true);
     setError(null);
     const allocationId = line.allocationId;
-    const coo = (cooText[allocationId] ?? "").trim();
+    const coo = country.coo;
     try {
       const result = await recordPickSerial(target.pickId, serial, coo);
       if (!result.ok) {
@@ -397,7 +430,6 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       }
       publish(result.value, ticket);
       setSerialText((current) => ({ ...current, [allocationId]: "" }));
-      setCooText((current) => ({ ...current, [allocationId]: "" }));
       setPull(null);
     } catch (cause) {
       setPull(null);
@@ -410,20 +442,21 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   async function onPasteSerials(line: PickLine, serials: string[]) {
     if (applyingPaste.current) return;
     applyingPaste.current = true;
-    const country = cooProblem(cooText[line.allocationId] ?? "");
-    if (country) {
+    const country = countryForLine(line.allocationId);
+    if (!country.ok) {
       applyingPaste.current = false;
       setPasteReport(null);
-      setError(country);
+      setSerialNotice(country.message);
       return;
     }
+    setCooText((current) => ({ ...current, [line.allocationId]: country.coo }));
     const ticket = ++loadGen.current;
     setBusy(true);
     setError(null);
     setPasteReport(null);
     setSerialText((current) => ({ ...current, [line.allocationId]: "" }));
     const allocationId = line.allocationId;
-    const coo = (cooText[allocationId] ?? "").trim();
+    const coo = country.coo;
     try {
       const result = await pastePickSerials({
         orderId: sheet.orderId,
@@ -432,9 +465,6 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         coo,
       });
       takeSerialResult(result, serials.length, allocationId, coo, ticket);
-      if (result.report.accepted > 0) {
-        setCooText((current) => ({ ...current, [allocationId]: "" }));
-      }
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -802,7 +832,7 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       ) : null}
 
       {showSerials ? (
-        <div className="card pick-table-wrap no-print">
+        <div className="card pick-table-wrap pick-serial-card no-print">
           {editable ? <p className="hint">From is the bin you picked in the table above.</p> : null}
           {serialNotice ? (
             <p className="banner error" role="alert">
@@ -836,8 +866,12 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
                     key={`${line.allocationId}-entry`}
                     line={line}
                     busy={busy}
+                    countries={countries}
                     serial={serialText[line.allocationId] ?? ""}
                     coo={cooText[line.allocationId] ?? ""}
+                    registerCooCommit={(commit) => {
+                      commitCoo.current[line.allocationId] = commit;
+                    }}
                     from={from}
                     onSerial={(value) => setSerialText((current) => ({ ...current, [line.allocationId]: value }))}
                     onCoo={(value) => setCooText((current) => ({ ...current, [line.allocationId]: value }))}
@@ -1016,9 +1050,11 @@ function onSerialFieldPaste(
 function SerialEntryRow({
   line,
   busy,
+  countries,
   serial,
   coo,
   from,
+  registerCooCommit,
   onSerial,
   onCoo,
   onScan,
@@ -1027,9 +1063,11 @@ function SerialEntryRow({
 }: {
   line: PickLine;
   busy: boolean;
+  countries: Country[];
   serial: string;
   coo: string;
   from: string;
+  registerCooCommit: (commit: () => CountryResolution) => void;
   onSerial: (value: string) => void;
   onCoo: (value: string) => void;
   onScan: () => void;
@@ -1056,20 +1094,16 @@ function SerialEntryRow({
         />
       </td>
       <td>
-        <input
-          className="pick-coo"
-          aria-label={`Country of origin for ${line.sku}`}
+        <CountrySelect
+          bare
+          display="code"
+          ariaLabel={`Country of origin for ${line.sku}`}
+          inputClassName="pick-coo"
+          countries={countries}
           value={coo}
-          placeholder={line.itemCoo || "USA"}
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => onCoo(event.target.value.toUpperCase())}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              onAdd();
-            }
-          }}
+          onChange={onCoo}
+          onEnter={onAdd}
+          registerCommit={registerCooCommit}
         />
       </td>
       <td>

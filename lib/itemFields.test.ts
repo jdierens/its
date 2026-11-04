@@ -3,11 +3,14 @@ import test from "node:test";
 import {
   conditionNoteAfterChange,
   countryLabel,
+  countryResolutionMessage,
   htsError,
   isItemType,
   itemTypeOrDefault,
+  resolveCountry,
   unitOrDefault,
   normalizeLabel,
+  type CountryCode,
 } from "./itemFields.ts";
 
 test("manufacturer lookup ignores case and repeated spaces", () => {
@@ -46,4 +49,29 @@ test("unit defaults to Piece and keeps a known name", () => {
 
 test("country option shows the alpha-3 code and the name", () => {
   assert.equal(countryLabel("USA", "United States of America"), "USA — United States of America");
+});
+
+const COUNTRIES: CountryCode[] = [
+  { alpha3: "IND", alpha2: "IN", name: "India" },
+  { alpha3: "IDN", alpha2: "ID", name: "Indonesia" },
+  { alpha3: "USA", alpha2: "US", name: "United States of America" },
+];
+
+test("a country name or code resolves to alpha-3", () => {
+  assert.deepEqual(resolveCountry("", COUNTRIES), { status: "empty" });
+  assert.deepEqual(resolveCountry("   ", COUNTRIES), { status: "empty" });
+  assert.deepEqual(resolveCountry("IND", COUNTRIES), { status: "match", alpha3: "IND" });
+  assert.deepEqual(resolveCountry("ind", COUNTRIES), { status: "match", alpha3: "IND" });
+  assert.deepEqual(resolveCountry("IN", COUNTRIES), { status: "match", alpha3: "IND" });
+  assert.deepEqual(resolveCountry("India", COUNTRIES), { status: "match", alpha3: "IND" });
+  assert.deepEqual(resolveCountry("  INDIA  ", COUNTRIES), { status: "match", alpha3: "IND" });
+  assert.deepEqual(resolveCountry("IND — India", COUNTRIES), { status: "match", alpha3: "IND" });
+  assert.deepEqual(resolveCountry("IND - India", COUNTRIES), { status: "match", alpha3: "IND" });
+  assert.deepEqual(resolveCountry("United States of America", COUNTRIES), { status: "match", alpha3: "USA" });
+  assert.deepEqual(resolveCountry("Ind", COUNTRIES), { status: "match", alpha3: "IND" });
+  assert.deepEqual(resolveCountry("ia", COUNTRIES), { status: "ambiguous", query: "ia" });
+  assert.deepEqual(resolveCountry("Narnia", COUNTRIES), { status: "none", query: "Narnia" });
+  assert.match(countryResolutionMessage({ status: "none", query: "INDIA" }) ?? "", /No country matches INDIA/);
+  assert.equal(countryResolutionMessage({ status: "ambiguous", query: "ia" }), "Choose a country from the list.");
+  assert.equal(countryResolutionMessage({ status: "match", alpha3: "IND" }), null);
 });

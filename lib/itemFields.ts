@@ -23,6 +23,63 @@ export function countryLabel(alpha3: string, name: string): string {
   return `${alpha3} — ${name}`;
 }
 
+export type CountryCode = {
+  alpha3: string;
+  alpha2: string;
+  name: string;
+};
+
+export type CountryResolution =
+  | { status: "empty" }
+  | { status: "match"; alpha3: string }
+  | { status: "none"; query: string }
+  | { status: "ambiguous"; query: string };
+
+function countryKey(value: string): string {
+  return normalizeLabel(value)
+    .replace(/[—–-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Turn a typed country into the ISO alpha-3 code stored on a pick or an item.
+ * An exact code, an exact name, or the only list match wins. "India" is IND.
+ * A blank value stays blank. Several matches stay unresolved.
+ */
+export function resolveCountry(query: string, countries: readonly CountryCode[]): CountryResolution {
+  const shown = collapseLabel(query);
+  const needle = countryKey(shown);
+  if (!needle) return { status: "empty" };
+
+  const exactAlpha3 = countries.find((country) => countryKey(country.alpha3) === needle);
+  if (exactAlpha3) return { status: "match", alpha3: exactAlpha3.alpha3 };
+
+  const exactAlpha2 = countries.find((country) => countryKey(country.alpha2) === needle);
+  if (exactAlpha2) return { status: "match", alpha3: exactAlpha2.alpha3 };
+
+  const exactName = countries.filter((country) => countryKey(country.name) === needle);
+  if (exactName.length === 1) return { status: "match", alpha3: exactName[0].alpha3 };
+  if (exactName.length > 1) return { status: "ambiguous", query: shown };
+
+  const exactLabel = countries.find((country) => countryKey(countryLabel(country.alpha3, country.name)) === needle);
+  if (exactLabel) return { status: "match", alpha3: exactLabel.alpha3 };
+
+  const partial = countries.filter((country) => {
+    const label = countryKey(`${country.alpha3} ${country.alpha2} ${country.name}`);
+    return label.includes(needle);
+  });
+  if (partial.length === 1) return { status: "match", alpha3: partial[0].alpha3 };
+  if (partial.length > 1) return { status: "ambiguous", query: shown };
+  return { status: "none", query: shown };
+}
+
+export function countryResolutionMessage(result: CountryResolution): string | null {
+  if (result.status === "none") return `No country matches ${result.query}. Choose one from the list.`;
+  if (result.status === "ambiguous") return "Choose a country from the list.";
+  return null;
+}
+
 export function htsError(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;

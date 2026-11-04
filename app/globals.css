@@ -10491,8 +10491,16 @@ button.so-new-order svg,
 }
 
 .pick-serials input.pick-coo {
-  min-width: 5.5rem;
+  min-width: 7.5rem;
   white-space: nowrap;
+}
+
+.pick-page .pick-serial-card {
+  overflow: visible;
+}
+
+.pick-serials .combo {
+  min-width: 7.5rem;
 }
 
 .pick-serials input.pick-from {
