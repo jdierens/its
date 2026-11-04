@@ -2,8 +2,10 @@ import type { ReactNode } from "react";
 import {
   offerUnit,
   quoteBidders,
-  quoteMoneyExt,
+  quoteExtText,
+  quoteExtTotal,
   quoteMoneyText,
+  quoteOverviewExt,
   type QuoteLineDraft,
   type QuoteOfferColumn,
 } from "@/lib/quoteReviews";
@@ -39,7 +41,7 @@ export function QuotePriceOverview({
   return (
     <div className="card qr-lines qr-overview">
       <h2>Overview</h2>
-      <p className="hint">Every price on the list, side by side. The extension sits under the unit. Related quotes add their own columns.</p>
+      <p className="hint">Every price on the list, side by side. The extension sits under the unit. The total row sums those extensions. Related quotes add their own columns.</p>
       <div className="qr-scroll">
         <table>
           <thead>
@@ -63,8 +65,7 @@ export function QuotePriceOverview({
           </thead>
           <tbody>
             {visible.map((line) => {
-              const requestQty = line.qty.trim() || line.replyQty;
-              const ddsExt = quoteMoneyExt(line.replyQty.trim() || line.qty, line.unitPrice, currency);
+              const ddsExt = quoteExtText(quoteOverviewExt(line, line.unitPrice, "dds"), currency);
               return (
                 <tr key={line.key || `${line.partNumber}-${line.sku}`}>
                   <td>{line.partNumber || "—"}</td>
@@ -78,7 +79,7 @@ export function QuotePriceOverview({
                   {local.map((name) => {
                     const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
                     const unit = bid?.unitPrice ?? "";
-                    const ext = quoteMoneyExt(requestQty, unit, currency);
+                    const ext = quoteExtText(quoteOverviewExt(line, unit, "bid"), currency);
                     return (
                       <td className="num" key={name}>
                         <span>{quoteMoneyText(unit, currency) || "—"}</span>
@@ -88,7 +89,7 @@ export function QuotePriceOverview({
                   })}
                   {related.map((column) => {
                     const unit = offerUnit(column, line.partNumber, line.sku);
-                    const ext = quoteMoneyExt(requestQty, unit, currency);
+                    const ext = quoteExtText(quoteOverviewExt(line, unit, "bid"), currency);
                     return (
                       <td className="num" key={column.id}>
                         <span>{quoteMoneyText(unit, currency) || "—"}</span>
@@ -100,6 +101,38 @@ export function QuotePriceOverview({
               );
             })}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={4} data-label="">
+                Total
+              </td>
+              <td className="num" data-label="DDS">
+                {quoteExtTotal(
+                  visible.map((line) => quoteOverviewExt(line, line.unitPrice, "dds")),
+                  currency,
+                ) || "—"}
+              </td>
+              {local.map((name) => (
+                <td className="num" data-label={name} key={name}>
+                  {quoteExtTotal(
+                    visible.map((line) => {
+                      const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
+                      return quoteOverviewExt(line, bid?.unitPrice ?? "", "bid");
+                    }),
+                    currency,
+                  ) || "—"}
+                </td>
+              ))}
+              {related.map((column) => (
+                <td className="num" data-label={column.label} key={column.id}>
+                  {quoteExtTotal(
+                    visible.map((line) => quoteOverviewExt(line, offerUnit(column, line.partNumber, line.sku), "bid")),
+                    currency,
+                  ) || "—"}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
         </table>
       </div>
       {children}

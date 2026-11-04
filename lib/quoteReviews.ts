@@ -504,11 +504,43 @@ function formatQuoteExt(amount: number, currency = "USD"): string {
   }
 }
 
-export function quoteMoneyExt(qty: string, unit: string, currency = "USD"): string {
+/** Whole-dollar extension shown under a unit. Null when quantity or unit is missing. */
+export function quoteExtWhole(qty: string, unit: string): number | null {
   const parsedQty = parseQuoteQty(qty);
   const parsed = parseMoney(unit);
-  if (!parsedQty.ok || !parsed.ok || parsedQty.qty == null || parsed.amount == null) return "";
-  return formatQuoteExt(roundMoney(parsedQty.qty * parsed.amount), currency);
+  if (!parsedQty.ok || !parsed.ok || parsedQty.qty == null || parsed.amount == null) return null;
+  return Math.round(roundMoney(parsedQty.qty * parsed.amount));
+}
+
+export function quoteExtText(amount: number | null, currency = "USD"): string {
+  if (amount == null) return "";
+  return formatQuoteExt(amount, currency);
+}
+
+export function quoteMoneyExt(qty: string, unit: string, currency = "USD"): string {
+  return quoteExtText(quoteExtWhole(qty, unit), currency);
+}
+
+/**
+ * Extension used on the overview. DDS uses the reply quantity when it is filled in.
+ * Every other column uses the request quantity, then the reply quantity.
+ */
+export function quoteOverviewExt(line: { qty: string; replyQty?: string }, unit: string, kind: "dds" | "bid"): number | null {
+  const reply = (line.replyQty ?? "").trim();
+  const request = line.qty.trim();
+  return quoteExtWhole(kind === "dds" ? reply || request : request || reply, unit);
+}
+
+/** Sum of the whole-dollar extensions already shown in one column. */
+export function quoteExtTotal(amounts: (number | null)[], currency = "USD"): string {
+  let total = 0;
+  let any = false;
+  for (const amount of amounts) {
+    if (amount == null) continue;
+    total += amount;
+    any = true;
+  }
+  return any ? formatQuoteExt(total, currency) : "";
 }
 
 export function offerUnit(column: QuoteOfferColumn, partNumber: string, sku: string): string {
