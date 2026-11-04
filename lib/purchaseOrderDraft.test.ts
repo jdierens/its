@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   descriptionFromPickedItem,
+  formatPurchaseOrderNumber,
   hidePurchaseMoney,
   normalizePurchaseOrderDraft,
+  parsePurchaseOrderNumber,
+  purchaseOrderNumberLabel,
   purchaseOrderTotal,
   type PoDraftInput,
 } from "./purchaseOrderDraft.ts";
@@ -154,4 +157,20 @@ test("people who cannot see money do not receive costs", () => {
     { canEdit: false, canViewMoney: true },
   );
   assert.equal(visible.unitCost, 12);
+});
+
+test("purchase order numbers use PO plus the integer", () => {
+  assert.equal(formatPurchaseOrderNumber(6304), "PO6304");
+  assert.equal(formatPurchaseOrderNumber("PO6304"), "PO6304");
+  assert.equal(formatPurchaseOrderNumber("po6302"), "PO6302");
+  assert.equal(formatPurchaseOrderNumber(null), null);
+  assert.equal(formatPurchaseOrderNumber("PO-1"), null);
+  assert.equal(parsePurchaseOrderNumber("PO6305"), 6305);
+  assert.equal(parsePurchaseOrderNumber("6305"), 6305);
+  assert.equal(parsePurchaseOrderNumber("PO"), null);
+  assert.equal(parsePurchaseOrderNumber("PO-1"), null);
+  assert.equal(purchaseOrderNumberLabel(null), "Draft");
+  assert.equal(purchaseOrderNumberLabel(""), "Draft");
+  assert.equal(purchaseOrderNumberLabel("PO6304"), "PO6304");
+  assert.equal(purchaseOrderNumberLabel("PO-1"), "PO-1");
 });

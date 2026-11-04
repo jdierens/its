@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PurchaseOrderForm } from "@/components/PurchaseOrderForm";
-import { listPurchaseVendors } from "@/lib/purchaseOrders";
+import { listPurchaseVendors, suggestPurchaseOrderNumber } from "@/lib/purchaseOrders";
 import { purchasePageAccess } from "@/lib/purchaseSession";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,15 @@ export default async function NewPurchaseOrderPage() {
       </main>
     );
   }
+  const suggestedNumber = await suggestPurchaseOrderNumber();
 
-  return <PurchaseOrderForm order={null} vendors={vendors} canEdit={access.canEdit} showMoney={access.canViewMoney} />;
+  return (
+    <PurchaseOrderForm
+      order={null}
+      vendors={vendors}
+      canEdit={access.canEdit}
+      showMoney={access.canViewMoney}
+      suggestedNumber={suggestedNumber}
+    />
+  );
 }

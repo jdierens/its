@@ -100,6 +100,7 @@ export async function searchReceivingPurchaseOrders(query: string): Promise<Rece
     .from("purchase_orders")
     .select("id, number, vendor_id, vendors(display_name)")
     .neq("status", "cancelled")
+    .not("number", "is", null)
     .order("created_at", { ascending: false })
     .limit(20);
   if (needle) request = request.ilike("number", `%${needle}%`);

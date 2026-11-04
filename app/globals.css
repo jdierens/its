@@ -4424,6 +4424,61 @@ button.sidebar-signout:hover {
   line-height: 1;
 }
 
+.po-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: end;
+  margin: 0 0 0.25rem;
+}
+
+.po-actions-lead,
+.po-actions-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 0.85rem;
+  align-items: end;
+}
+
+.po-actions-lead .sku {
+  font-size: 1.15rem;
+  line-height: 2.25rem;
+}
+
+.po-page .so-number-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.po-actions > .hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.po-page button.so-icon-action,
+.po-page a.so-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  text-decoration: none;
+}
+
+.po-page a.so-icon-action,
+.po-page a.so-icon-action svg {
+  color: var(--icon-on-dark);
+}
+
 .po-page button.combo-option {
   height: auto;
   padding: 0.45rem 0.55rem;
@@ -10067,6 +10122,10 @@ button.so-new-order svg,
 .cust-doc-terms {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   border-top: 1px solid #b45f06;
+}
+
+.cust-doc-terms.po-doc-terms {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .cust-doc-terms div {

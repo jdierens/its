@@ -188,7 +188,7 @@ Test results hang off the serial (the unit), not off the SKU. A later listing ro
 | Column | Notes |
 |---|---|
 | `id` | uuid |
-| `number` | unique text. `reserve_purchase_order_number()` returns `PO` plus the integer, with no hyphen, for example `PO6304`. The purchase-order screen shows that stored value |
+| `number` | unique text, null on a draft. Approve stores `PO` plus the integer, with no hyphen, for example `PO6304`. The screen shows that stored value, or Draft while it is still null |
 | `vendor_id` | seller or consignor |
 | `project_id` | nullable |
 | `purpose` | `purchase`, `settlement`, `buyout` |
@@ -217,7 +217,9 @@ Freight-in is stored for a later landed-cost allocation. That allocation is not 
 
 `supabase/migrations/20261024080000_po_number_format.sql` replaces the hyphenated number with `PO` plus the integer. That file does not change `po_counter`. Applying it now leaves the next number where it is, so a test purchase order still takes the current series and does not use `PO6304`.
 
-At go-live, run `supabase/go-live/po_counter_seed.sql` by hand. It is not a migration, and `db push` does not apply it. The statement sets `po_counter.next_number` to 6304 when the counter is still below 6304. The first purchase order issued after that step is `PO6304`. A counter already at or above 6304 stays where it is. The script does not renumber or delete purchase orders that already exist. A test row such as `PO-1` keeps the number it has. Remove or renumber those test rows separately if they should not stay.
+A draft does not take a number. The field shows one past the highest `PO` number already stored, even when `po_counter.next_number` has drifted. Approve claims the typed number when no other purchase order has it, and sets `po_counter.next_number` to at least one past that number. The counter never moves backwards. `supabase/migrations/20261104210000_po_approve_and_number.sql` is the migration. Apply it by hand. It does not renumber existing rows.
+
+At go-live, run `supabase/go-live/po_counter_seed.sql` by hand. It is not a migration, and `db push` does not apply it. The statement sets `po_counter.next_number` to 6304 when the counter is still below 6304. A counter already at or above 6304 stays where it is. The script does not renumber or delete purchase orders that already exist. A test row such as `PO-1` keeps the number it has. Remove or renumber those test rows separately if they should not stay. The suggestion still follows the highest stored `PO` number, not the seed, once any `POxxxx` row exists.
 
 `po_lines.line_kind` is `known` or `lot`.
 
@@ -273,11 +275,11 @@ Consigned units stay at no cost from intake until that approval. They are sellab
 
 ## Status of a purchase order
 
-`draft`, `open`, `partially_received`, `received`, `closed`, `cancelled`. Send moves `draft` to `open` and sets `sent_at`.
+`draft`, `open`, `partially_received`, `received`, `closed`, `cancelled`. Approve moves `draft` to `open`, assigns the number, and sets `sent_at`. Cancel is available until the order is cancelled or closed. A number already assigned stays used.
 
 | From | To | When |
 |---|---|---|
-| `draft` | `open` | Send, or approve a settlement |
+| `draft` | `open` | Approve, or approve a settlement |
 | `draft` | `cancelled` | Nothing received, or a draft settlement discarded |
 | `open` | `partially_received` | A known line still has a balance |
 | `open` | `received` | Known lines are filled, and any lot line's bulk has arrived |

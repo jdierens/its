@@ -6,9 +6,9 @@ export type PurchaseAccess = {
 };
 
 /**
- * Creating, entering, and sending a purchase order is can_edit_financials.
+ * Creating, entering, and approving a purchase order is can_edit_financials.
  * Seeing costs is can_view_financials. A pricing officer can see costs and
- * cannot send the order. Warehouse roles see quantities only.
+ * cannot approve the order. Warehouse roles see quantities only.
  */
 export function purchaseAccessForRole(
   role: string | null,

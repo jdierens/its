@@ -72,6 +72,32 @@ export function purchaseOrderStatusLabel(status: string): string {
   return status;
 }
 
+/** Display form of the integer claimed on approve. A draft has none until then. */
+export function formatPurchaseOrderNumber(value: number | string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "string" && /^PO\d+$/i.test(value.trim())) {
+    return `PO${value.trim().replace(/^PO/i, "")}`;
+  }
+  const numeric = typeof value === "number" ? value : Number(String(value).trim().replace(/^PO/i, ""));
+  if (!Number.isSafeInteger(numeric) || numeric < 1) return null;
+  return `PO${numeric}`;
+}
+
+/** Accepts 6304 or PO6304. */
+export function parsePurchaseOrderNumber(value: string): number | null {
+  const trimmed = value.trim().toUpperCase().replace(/^PO/, "");
+  if (!/^[0-9]+$/.test(trimmed)) return null;
+  const numeric = Number(trimmed);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) return null;
+  return numeric;
+}
+
+/** List and header label. A stored legacy value that is not POxxxx stays as stored. */
+export function purchaseOrderNumberLabel(value: string | null | undefined): string {
+  if (value == null || value.trim() === "") return "Draft";
+  return formatPurchaseOrderNumber(value) ?? value.trim();
+}
+
 export function normalizePurchaseOrderDraft(input: PoDraftInput): { ok: true; value: NormalizedPoDraft } | { ok: false; error: string } {
   const vendorId = input.vendorId.trim();
   if (!UUID.test(vendorId)) return { ok: false, error: "Choose a vendor." };

@@ -7,8 +7,10 @@ import { normalizeShipments, parseFreightIn, type ShipmentInput } from "@/lib/po
 import { formatExtension, formatUnitPrice } from "@/lib/poLineMoney";
 import { loadPoAttachments, type PoAttachmentView } from "@/lib/poAttachments";
 import {
+  formatPurchaseOrderNumber,
   hidePurchaseMoney,
   normalizePurchaseOrderDraft,
+  purchaseOrderNumberLabel,
   purchaseOrderTotal,
   type PoDraftInput,
 } from "@/lib/purchaseOrderDraft";
@@ -75,6 +77,7 @@ export type PoSaveInput = PoDraftInput & {
 };
 
 const EDIT_DENIED = "You cannot change a purchase order.";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function listPurchaseVendors(): Promise<PurchaseVendor[]> {
   const { data, error } = await (await getSupabase())
@@ -138,7 +141,7 @@ export async function listPurchaseOrders(): Promise<PurchaseOrderListItem[]> {
     const item = hidePurchaseMoney(
       {
         id: String(row.id),
-        number: String(row.number),
+        number: purchaseOrderNumberLabel(row.number == null ? null : String(row.number)),
         vendorName: String(vendor?.display_name ?? ""),
         status: String(row.status),
         orderedOn: dateValue(row.ordered_on),
@@ -202,7 +205,7 @@ export async function loadPurchaseOrder(id: string): Promise<PurchaseOrderView |
   const shown = hidePurchaseMoney(
     {
       id: String(data.id),
-      number: String(data.number),
+      number: data.number == null ? "" : String(data.number),
       status: String(data.status),
       vendorId: String(data.vendor_id),
       vendorName: String(vendor?.display_name ?? ""),
@@ -283,32 +286,73 @@ export async function savePurchaseOrderCharges(
   await persistCharges(id, normalizeCharges(input, access), access);
 }
 
-export async function sendPurchaseOrder(id: string): Promise<void> {
+export async function suggestPurchaseOrderNumber(): Promise<number> {
+  const { data, error } = await (await getSupabase()).rpc("suggest_purchase_order_number");
+  if (error) throw new Error(friendlyPurchaseError(error));
+  const numeric = typeof data === "number" ? data : Number(data);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) throw new Error("Could not suggest a purchase order number.");
+  return numeric;
+}
+
+export type PurchaseApproval =
+  | { ok: true; id: string; number: string }
+  | { ok: false; message: string; id: string | null };
+
+/**
+ * Save the draft, then approve it. The number is claimed only on approve.
+ * A failure after the draft exists returns that id so a retry updates the same row.
+ */
+export async function approvePurchaseOrderFromDraft(
+  id: string | null,
+  input: PoSaveInput,
+  poNumber: number,
+): Promise<PurchaseApproval> {
+  let savedId: string | null = null;
+  try {
+    const saved = await savePurchaseOrder(id, input);
+    savedId = saved.id;
+    const approved = await approvePurchaseOrder(saved.id, poNumber);
+    return { ok: true, id: saved.id, number: approved.number };
+  } catch (error) {
+    return { ok: false, message: errorText(error), id: savedId };
+  }
+}
+
+export async function approvePurchaseOrder(id: string, poNumber: number): Promise<{ number: string }> {
   const access = await purchasePageAccess();
   if (!access.canEdit) throw new Error(EDIT_DENIED);
-  const { data, error } = await (await getSupabase())
-    .from("purchase_orders")
-    .update({ status: "open", sent_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("status", "draft")
-    .eq("purpose", "purchase")
-    .select("id");
-  if (error) throw new Error(errorText(error));
-  if (!data || data.length !== 1) throw new Error("Only a draft purchase order can be sent.");
+  if (!UUID.test(id)) throw new Error("Purchase order not found.");
+  if (!Number.isSafeInteger(poNumber) || poNumber < 1) throw new Error("Enter a purchase order number.");
+  const { data, error } = await (await getSupabase()).rpc("approve_purchase_order", {
+    p_order: id,
+    p_operator_id: await purchaseOperatorId(),
+    p_number: poNumber,
+  });
+  if (error) throw new Error(friendlyPurchaseError(error));
+  const number = rpcNumber(data) || formatPurchaseOrderNumber(poNumber) || "";
+  return { number };
 }
 
 export async function cancelPurchaseOrder(id: string): Promise<void> {
   const access = await purchasePageAccess();
   if (!access.canEdit) throw new Error(EDIT_DENIED);
-  const { data, error } = await (await getSupabase())
+  if (!UUID.test(id)) throw new Error("Purchase order not found.");
+  const supabase = await getSupabase();
+  const existing = await supabase.from("purchase_orders").select("id, status").eq("id", id).maybeSingle();
+  if (existing.error) throw new Error(errorText(existing.error));
+  if (!existing.data) throw new Error("Purchase order not found.");
+  const status = String(existing.data.status ?? "");
+  if (status === "cancelled" || status === "closed") {
+    throw new Error(`That purchase order is already ${status}.`);
+  }
+  const { data, error } = await supabase
     .from("purchase_orders")
     .update({ status: "cancelled" })
     .eq("id", id)
-    .eq("status", "draft")
     .eq("purpose", "purchase")
     .select("id");
   if (error) throw new Error(errorText(error));
-  if (!data || data.length !== 1) throw new Error("Only a draft purchase order can be cancelled.");
+  if (!data || data.length !== 1) throw new Error("That purchase order could not be cancelled.");
 }
 
 async function readInternalNotes(id: string): Promise<string | null> {
@@ -363,8 +407,19 @@ function noteOrNull(value: string, label: string): string | null {
   return trimmed || null;
 }
 
+function rpcNumber(data: unknown): string {
+  if (data && typeof data === "object" && "number" in data) {
+    const number = (data as { number: unknown }).number;
+    if (typeof number === "string" && number.trim()) return number;
+  }
+  return "";
+}
+
 function friendlyPurchaseError(error: { message?: string }): string {
   const text = errorText(error);
+  if (text.includes("Only a draft can be approved")) return "Only a draft can be approved.";
+  if (text.includes("already used")) return text;
+  if (text.includes("purchase_orders_number_unique")) return "That purchase order number is already used.";
   if (text.includes("Only a draft")) return "Only a draft purchase order can be edited.";
   if (text.includes("Add a line")) return "Add a line.";
   if (text.includes("purchase_orders_vendor_id_fkey")) return "Choose a vendor.";
