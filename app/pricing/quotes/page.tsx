@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { QuoteFlowMarks } from "@/components/QuoteFlowMarks";
 import { Badge } from "@/components/ui/badge";
 import { errorText } from "@/lib/errors";
 import { formatDataDate } from "@/lib/formatDate";
@@ -6,13 +7,15 @@ import { formatMoney } from "@/lib/pricing/quotes";
 import { quoteReviewPageAccess } from "@/lib/quoteReviewSession";
 import { listQuoteReviews } from "@/lib/quoteReviewsServer";
 import {
+  QUOTE_DIRECTIONS,
   QUOTE_REVIEWS_PATH,
   QUOTE_REVIEWS_SETUP,
+  QUOTE_SIDES,
   QUOTE_STATUSES,
   quoteChannelLabel,
-  quoteDirectionLabel,
   quoteStatusLabel,
   quoteStatusTone,
+  type QuoteListRow,
 } from "@/lib/quoteReviews";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +23,14 @@ export const dynamic = "force-dynamic";
 export default async function QuoteReviewsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; due?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; due?: string; side?: string; direction?: string }>;
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
   const status = params.status ?? "";
   const due = params.due ?? "";
+  const side = params.side ?? "";
+  const direction = params.direction ?? "";
   const access = await quoteReviewPageAccess();
   if (!access.canView) {
     return (
@@ -40,17 +45,17 @@ export default async function QuoteReviewsPage({
   let result: Awaited<ReturnType<typeof listQuoteReviews>> | null = null;
   let problem = "";
   try {
-    result = await listQuoteReviews({ q, status, due });
+    result = await listQuoteReviews({ q, status, due, side, direction });
   } catch (error) {
     problem = errorText(error);
   }
 
-  const filtering = Boolean(q.trim() || status || due === "soon");
+  const filtering = Boolean(q.trim() || status || due === "soon" || side || direction);
 
   return (
     <main className="page so-page ds">
       <p className="page-note">
-        Review one vendor or customer list as a single quote. Sheet and photo import is not on this page.
+        Buy wins as a purchase order. Sell wins as a sales order. Inbound means they asked. Outbound means DDS asked. Sheet and photo import is not on this page.
       </p>
       {access.canEdit ? (
         <p>
@@ -63,8 +68,8 @@ export default async function QuoteReviewsPage({
       )}
       <form className="qr-filters" method="get">
         <label>
-          Counterparty
-          <input name="q" defaultValue={q} placeholder="Vendor, contact, or list name" />
+          Originator
+          <input name="q" defaultValue={q} placeholder="Company, contact, or list name" />
         </label>
         <label>
           Status
@@ -73,6 +78,28 @@ export default async function QuoteReviewsPage({
             {QUOTE_STATUSES.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Side
+          <select name="side" defaultValue={side}>
+            <option value="">Any</option>
+            {QUOTE_SIDES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Direction
+          <select name="direction" defaultValue={direction}>
+            <option value="">Any</option>
+            {QUOTE_DIRECTIONS.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.id === "inbound" ? "In" : "Out"}
               </option>
             ))}
           </select>
@@ -111,13 +138,13 @@ export default async function QuoteReviewsPage({
                   <th>List</th>
                   <th>Received</th>
                   <th>Due</th>
-                  <th>Counterparty</th>
+                  <th>Type</th>
+                  <th>Originator</th>
                   <th>Channel</th>
-                  <th>Direction</th>
                   <th>Status</th>
                   <th className="num">Lines</th>
                   <th className="num">Qty</th>
-                  <th className="num">Our offer</th>
+                  <th className="num">DDS offer</th>
                   <th className="num">Best competing</th>
                   <th>Related</th>
                 </tr>
@@ -131,10 +158,12 @@ export default async function QuoteReviewsPage({
                     <td>{formatDataDate(row.receivedOn)}</td>
                     <td className={row.dueSoon ? "qr-due-soon" : undefined}>{formatDataDate(row.dueOn) || "—"}</td>
                     <td>
-                      {row.vendorId ? <Link href={`/vendors/${row.vendorId}`}>{row.counterparty}</Link> : row.counterparty}
+                      <QuoteFlowMarks side={row.side} direction={row.direction} />
+                    </td>
+                    <td>
+                      <OriginatorCell row={row} />
                     </td>
                     <td>{quoteChannelLabel(row.channel)}</td>
-                    <td>{quoteDirectionLabel(row.direction)}</td>
                     <td>
                       <Badge tone={quoteStatusTone(row.status)}>{quoteStatusLabel(row.status)}</Badge>
                     </td>
@@ -170,12 +199,16 @@ export default async function QuoteReviewsPage({
                   <dd>{formatDataDate(row.receivedOn)}</dd>
                   <dt>Due</dt>
                   <dd className={row.dueSoon ? "qr-due-soon" : undefined}>{formatDataDate(row.dueOn) || "—"}</dd>
-                  <dt>Counterparty</dt>
-                  <dd>{row.vendorId ? <Link href={`/vendors/${row.vendorId}`}>{row.counterparty}</Link> : row.counterparty}</dd>
+                  <dt>Type</dt>
+                  <dd>
+                    <QuoteFlowMarks side={row.side} direction={row.direction} />
+                  </dd>
+                  <dt>Originator</dt>
+                  <dd>
+                    <OriginatorCell row={row} />
+                  </dd>
                   <dt>Channel</dt>
                   <dd>{quoteChannelLabel(row.channel)}</dd>
-                  <dt>Direction</dt>
-                  <dd>{quoteDirectionLabel(row.direction)}</dd>
                   <dt>Status</dt>
                   <dd>
                     <Badge tone={quoteStatusTone(row.status)}>{quoteStatusLabel(row.status)}</Badge>
@@ -184,7 +217,7 @@ export default async function QuoteReviewsPage({
                   <dd>{row.lineCount}</dd>
                   <dt>Qty</dt>
                   <dd>{row.qty ?? "—"}</dd>
-                  <dt>Our offer</dt>
+                  <dt>DDS offer</dt>
                   <dd>{formatMoney(row.offerExt, row.currency)}</dd>
                   <dt>Best competing</dt>
                   <dd>{formatMoney(row.competingExt, row.currency)}</dd>
@@ -197,5 +230,19 @@ export default async function QuoteReviewsPage({
         </>
       ) : null}
     </main>
+  );
+}
+
+function OriginatorCell({ row }: { row: QuoteListRow }) {
+  const company = row.company || (row.originatorKind === "dds" ? "DDS" : "—");
+  const href = row.customerId ? `/customers/${row.customerId}` : row.vendorId ? `/vendors/${row.vendorId}` : "";
+  const showContact = Boolean(row.contact && row.contact.toLowerCase() !== company.toLowerCase());
+  return (
+    <span className="qr-origin">
+      {row.originatorKind === "dds" && row.company ? <span>DDS → </span> : null}
+      {href ? <Link href={href}>{company}</Link> : company}
+      {showContact ? <span className="qr-contact">{row.contact}</span> : null}
+      {row.prospectId ? <Badge tone="neutral">Prospect</Badge> : null}
+    </span>
   );
 }

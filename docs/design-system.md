@@ -105,6 +105,8 @@ Glass pages keep the violet mesh in day. At night the mesh turns off and the gla
 
 Sales orders, pick, pack, ship, the invoice and confirmation page around the paper, the sales-order kit line, receiving, inventory search, and quote reviews use a second surface. Add the class `ds` next to `page` (`main.page.so-page.ds`). Other pages can follow the same way. Do not copy these hexes into a one-off screen, and do not replace the `:root` glass tokens. The sidebar stays the app sidebar. The paper invoice and order confirmation stay white in both themes.
 
+Quote reviews stay on that zinc surface. The list and the event header show Buy and Sell, and In and Out, with the existing status badge tones (open, received, pending, draft). The pattern name sits beside those chips: Inbound Sell Request, Inbound Buy Request, Outbound Sell Request, or Outbound Buy Offer. The line grid labels the left group Request and the right group DDS response, including DDS unit and DDS ext. Bidder names under the grid are secondary buttons. The selected bidder uses the accent fill and `--accent-ink`, the same readable label as a primary button. New quote review, Save quote, Save prospect, and Create related quote stay `<button class="button">` or `<Link className="button">`. `.ds a` must not become the ink on those controls.
+
 | Token | Light | Dark |
 |---|---|---|
 | `--ds-canvas` | `#fafafa` | `#09090b` |

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { QuoteFlowMarks } from "@/components/QuoteFlowMarks";
+import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
 import { QuoteReviewRelated } from "@/components/QuoteReviewRelated";
 import { errorText } from "@/lib/errors";
 import { formatMoney } from "@/lib/pricing/quotes";
@@ -12,19 +14,27 @@ import {
   QUOTE_DECISIONS,
   QUOTE_DIRECTIONS,
   QUOTE_REVIEWS_PATH,
+  QUOTE_SIDES,
   QUOTE_STATUSES,
   bestCompetingUnit,
+  blankQuoteBid,
   blankQuoteLine,
-  quoteExtension,
+  originatorForFlow,
+  quoteBidders,
+  quoteFlowHint,
+  quoteLeadTime,
+  quoteReplyExtension,
   type QuoteChoice,
   type QuoteItemHit,
   type QuoteLineDraft,
+  type QuotePartyOption,
   type QuoteRelationView,
   type QuoteReviewDraft,
-  type QuoteVendorOption,
 } from "@/lib/quoteReviews";
 
 type EditorLine = QuoteLineDraft & { hits: QuoteItemHit[]; findNote: string };
+
+const LINE_COLUMNS = 15;
 
 function toEditor(line: QuoteLineDraft): EditorLine {
   return { ...line, key: line.key || crypto.randomUUID(), hits: [], findNote: "" };
@@ -34,18 +44,25 @@ export function QuoteReviewForm({
   canEdit,
   draft,
   vendors,
+  customers,
+  prospects: initialProspects,
   relations,
   choices,
 }: {
   canEdit: boolean;
   draft: QuoteReviewDraft;
-  vendors: QuoteVendorOption[];
+  vendors: QuotePartyOption[];
+  customers: QuotePartyOption[];
+  prospects: QuotePartyOption[];
   relations: QuoteRelationView[];
   choices: QuoteChoice[];
 }) {
   const router = useRouter();
   const [header, setHeader] = useState(draft);
+  const [prospects, setProspects] = useState(initialProspects);
   const [lines, setLines] = useState<EditorLine[]>(() => (draft.lines.length > 0 ? draft.lines.map(toEditor) : [toEditor(blankQuoteLine())]));
+  const [bidderName, setBidderName] = useState("");
+  const [selectedBidder, setSelectedBidder] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [finding, setFinding] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -55,9 +72,62 @@ export function QuoteReviewForm({
     header.dueOn && header.receivedOn && header.dueOn < header.receivedOn
       ? "Due date is before the received date. You can still save."
       : "";
+  const bidders = quoteBidders(lines);
+  const activeBidder = selectedBidder && bidders.some((name) => name.toLowerCase() === selectedBidder.toLowerCase()) ? selectedBidder : null;
 
   function patchLine(key: string, patch: Partial<EditorLine>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  }
+
+  function setFlow(patch: { side?: string; direction?: string }) {
+    setHeader((current) => {
+      const side = patch.side ?? current.side;
+      const direction = patch.direction ?? current.direction;
+      return { ...current, side, direction, ...originatorForFlow(side, direction, current) };
+    });
+  }
+
+  function addBidder() {
+    const name = bidderName.trim();
+    if (!name) return;
+    const existing = quoteBidders(lines).find((item) => item.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setSelectedBidder(existing);
+      setBidderName("");
+      return;
+    }
+    setLines((current) => {
+      if (current.some((line) => line.bids.some((bid) => bid.bidderName.trim().toLowerCase() === name.toLowerCase()))) return current;
+      const hosts = current.filter(lineHasRequest);
+      const targets = hosts.length > 0 ? hosts : current.slice(0, 1);
+      const keys = new Set(targets.map((line) => line.key));
+      return current.map((line) =>
+        keys.has(line.key) ? { ...line, bids: [...line.bids, { ...blankQuoteBid(name), key: crypto.randomUUID() }] } : line,
+      );
+    });
+    setSelectedBidder(name);
+    setBidderName("");
+  }
+
+  function removeBidder(name: string) {
+    setLines((current) =>
+      current.map((line) => ({
+        ...line,
+        bids: line.bids.filter((bid) => bid.bidderName.trim().toLowerCase() !== name.toLowerCase()),
+      })),
+    );
+    setSelectedBidder(null);
+  }
+
+  function patchBidder(lineKey: string, name: string, patch: Partial<QuoteLineDraft["bids"][number]>) {
+    setLines((current) =>
+      current.map((line) => {
+        if (line.key !== lineKey) return line;
+        const index = line.bids.findIndex((bid) => bid.bidderName.trim().toLowerCase() === name.toLowerCase());
+        if (index < 0) return { ...line, bids: [...line.bids, { ...blankQuoteBid(name), key: crypto.randomUUID(), ...patch }] };
+        return { ...line, bids: line.bids.map((bid, bidIndex) => (bidIndex === index ? { ...bid, ...patch } : bid)) };
+      }),
+    );
   }
 
   async function onFind(line: EditorLine) {
@@ -105,8 +175,12 @@ export function QuoteReviewForm({
         reference: header.reference,
         counterpartyName: header.counterpartyName,
         vendorId: header.vendorId,
+        customerId: header.customerId,
+        prospectId: header.prospectId,
+        originatorKind: header.originatorKind,
         channel: header.channel,
         direction: header.direction,
+        side: header.side,
         status: header.status,
         receivedOn: header.receivedOn,
         dueOn: header.dueOn,
@@ -121,7 +195,11 @@ export function QuoteReviewForm({
           itemName: line.itemName,
           condition: line.condition,
           qty: line.qty,
+          targetPrice: line.targetPrice,
+          specialRequirements: line.specialRequirements,
+          replyQty: line.replyQty,
           unitPrice: line.unitPrice,
+          leadTime: line.leadTime,
           decision: line.decision,
           decisionNote: line.decisionNote,
           bids: line.bids.map((bid) => ({
@@ -130,6 +208,10 @@ export function QuoteReviewForm({
             bidderName: bid.bidderName,
             unitPrice: bid.unitPrice,
             note: bid.note,
+            sku: bid.sku,
+            itemName: bid.itemName,
+            qty: bid.qty,
+            leadTime: bid.leadTime,
           })),
         })),
       });
@@ -141,7 +223,7 @@ export function QuoteReviewForm({
             ...current,
             id: saved.id,
             bids: current.bids
-              .filter((bid) => bid.bidderName.trim() || bid.unitPrice.trim() || bid.note.trim())
+              .filter((bid) => bid.bidderName.trim() || bid.unitPrice.trim() || bid.note.trim() || bid.sku.trim() || bid.itemName.trim() || bid.qty.trim() || bid.leadTime.trim())
               .map((bid) => {
                 const match = saved.bids.find((item) => item.key === bid.key);
                 return match ? { ...bid, id: match.id } : bid;
@@ -164,6 +246,13 @@ export function QuoteReviewForm({
       setSaving(false);
     }
   }
+
+  const companyHref = header.customerId ? `/customers/${header.customerId}` : header.vendorId ? `/vendors/${header.vendorId}` : "";
+  const companyName = header.customerId
+    ? customers.find((party) => party.id === header.customerId)?.name
+    : header.vendorId
+      ? vendors.find((party) => party.id === header.vendorId)?.name
+      : prospects.find((party) => party.id === header.prospectId)?.name;
 
   return (
     <>
@@ -188,36 +277,36 @@ export function QuoteReviewForm({
         ))}
         {!canEdit ? <p className="muted">You can view this quote. Editing is limited to admin and staff.</p> : null}
         <div className="card qr-related">
+          <QuoteFlowMarks side={header.side} direction={header.direction} />
+          <p className="hint">{quoteFlowHint(header.side, header.direction)}</p>
           <div className="qr-head">
             <label>
               List name
-              <input
-                value={header.reference}
-                disabled={!canEdit}
-                onChange={(event) => setHeader({ ...header, reference: event.target.value })}
-              />
+              <input value={header.reference} disabled={!canEdit} onChange={(event) => setHeader({ ...header, reference: event.target.value })} />
+            </label>
+            <label>
+              Side
+              <select value={header.side} disabled={!canEdit} onChange={(event) => setFlow({ side: event.target.value })}>
+                {QUOTE_SIDES.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label} · won → {item.outcome}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Direction
-              <select
-                value={header.direction}
-                disabled={!canEdit}
-                onChange={(event) => setHeader({ ...header, direction: event.target.value })}
-              >
+              <select value={header.direction} disabled={!canEdit} onChange={(event) => setFlow({ direction: event.target.value })}>
                 {QUOTE_DIRECTIONS.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label}
+                    {item.id === "inbound" ? "In · they asked" : "Out · DDS asked"}
                   </option>
                 ))}
               </select>
             </label>
             <label>
               Channel
-              <select
-                value={header.channel}
-                disabled={!canEdit}
-                onChange={(event) => setHeader({ ...header, channel: event.target.value })}
-              >
+              <select value={header.channel} disabled={!canEdit} onChange={(event) => setHeader({ ...header, channel: event.target.value })}>
                 {QUOTE_CHANNELS.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}
@@ -235,37 +324,22 @@ export function QuoteReviewForm({
                 ))}
               </select>
             </label>
-            <label>
-              Vendor
-              <select
-                value={header.vendorId}
-                disabled={!canEdit}
-                onChange={(event) => {
-                  const vendorId = event.target.value;
-                  const vendor = vendors.find((item) => item.id === vendorId);
-                  setHeader((current) => ({
-                    ...current,
-                    vendorId,
-                    counterpartyName: current.counterpartyName.trim() ? current.counterpartyName : vendor?.name ?? "",
-                  }));
-                }}
-              >
-                <option value="">No vendor</option>
-                {vendors.map((vendor) => (
-                  <option key={vendor.id} value={vendor.id}>
-                    {vendor.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Contact name
-              <input
-                value={header.counterpartyName}
-                disabled={!canEdit}
-                onChange={(event) => setHeader({ ...header, counterpartyName: event.target.value })}
-              />
-            </label>
+            <QuoteOriginatorFields
+              side={header.side}
+              direction={header.direction}
+              originatorKind={header.originatorKind}
+              vendorId={header.vendorId}
+              customerId={header.customerId}
+              prospectId={header.prospectId}
+              contact={header.counterpartyName}
+              disabled={!canEdit}
+              vendors={vendors}
+              customers={customers}
+              prospects={prospects}
+              onOriginator={(next) => setHeader((current) => ({ ...current, ...next }))}
+              onContact={(counterpartyName) => setHeader((current) => ({ ...current, counterpartyName }))}
+              onProspect={(prospect) => setProspects((current) => (current.some((item) => item.id === prospect.id) ? current : [...current, prospect].sort((a, b) => a.name.localeCompare(b.name))))}
+            />
             <label>
               Received
               <input
@@ -278,12 +352,7 @@ export function QuoteReviewForm({
             </label>
             <label>
               Due
-              <input
-                type="date"
-                value={header.dueOn}
-                disabled={!canEdit}
-                onChange={(event) => setHeader({ ...header, dueOn: event.target.value })}
-              />
+              <input type="date" value={header.dueOn} disabled={!canEdit} onChange={(event) => setHeader({ ...header, dueOn: event.target.value })} />
             </label>
             <label>
               Currency
@@ -296,18 +365,18 @@ export function QuoteReviewForm({
             </label>
             <label className="qr-notes">
               Notes
-              <textarea
-                rows={3}
-                value={header.notes}
-                disabled={!canEdit}
-                onChange={(event) => setHeader({ ...header, notes: event.target.value })}
-              />
+              <textarea rows={3} value={header.notes} disabled={!canEdit} onChange={(event) => setHeader({ ...header, notes: event.target.value })} />
             </label>
           </div>
           {dueWarning ? <p className="hint">{dueWarning}</p> : null}
-          {header.vendorId ? (
+          {companyName ? (
             <p className="hint">
-              Vendor record: <Link href={`/vendors/${header.vendorId}`}>{vendors.find((vendor) => vendor.id === header.vendorId)?.name || "Vendor"}</Link>
+              {header.originatorKind === "dds" ? "DDS → " : null}
+              {companyHref ? <Link href={companyHref}>{companyName}</Link> : companyName}
+              {header.counterpartyName.trim() && header.counterpartyName.trim().toLowerCase() !== companyName.toLowerCase()
+                ? ` · ${header.counterpartyName.trim()}`
+                : null}
+              {header.prospectId ? " · Prospect" : null}
             </p>
           ) : null}
         </div>
@@ -315,31 +384,43 @@ export function QuoteReviewForm({
           <div className="qr-line-bar">
             <h2>Lines</h2>
             {canEdit ? (
-              <button
-                type="button"
-                className="button secondary"
-                onClick={() => setLines((current) => [...current, toEditor(blankQuoteLine())])}
-              >
+              <button type="button" className="button secondary" onClick={() => setLines((current) => [...current, toEditor(blankQuoteLine())])}>
                 Add line
               </button>
             ) : null}
           </div>
-          <p className="hint">Sheet and photo import is not on this page. An unmatched part number can stay on the line.</p>
+          <p className="hint">
+            Request on the left. DDS unit and DDS ext on the right. An empty lead time means in stock. Sheet and photo import is not on this page.
+          </p>
           <div className="qr-scroll">
             <table>
               <thead>
+                <tr className="qr-groups">
+                  <th />
+                  <th className="qr-request" colSpan={5}>
+                    Request
+                  </th>
+                  <th className="qr-dds" colSpan={8}>
+                    DDS response
+                  </th>
+                  <th />
+                </tr>
                 <tr>
                   <th>#</th>
                   <th>Part</th>
+                  <th className="num">Qty</th>
+                  <th className="num">Target</th>
+                  <th>Condition</th>
+                  <th>Requirements</th>
                   <th>SKU</th>
                   <th>Name</th>
-                  <th>Condition</th>
                   <th className="num">Qty</th>
-                  <th className="num">Our price</th>
-                  <th className="num">Ext</th>
+                  <th className="num">DDS unit</th>
+                  <th className="num">DDS ext</th>
+                  <th>Lead time</th>
+                  <th>Notes</th>
                   <th>Decision</th>
-                  <th>Note</th>
-                  <th></th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -363,6 +444,127 @@ export function QuoteReviewForm({
               </tbody>
             </table>
           </div>
+          <div className="qr-bidder-strip">
+            <h3>Bidders</h3>
+            {bidders.length === 0 ? <p className="muted">No other responses yet.</p> : null}
+            <div className="qr-bidders" role="list">
+              {bidders.map((name, index) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="button secondary qr-bidder"
+                  aria-pressed={activeBidder?.toLowerCase() === name.toLowerCase()}
+                  onClick={() => setSelectedBidder(name)}
+                >
+                  {index + 1}. {name}
+                </button>
+              ))}
+            </div>
+            {canEdit ? (
+              <div className="qr-bid">
+                <input aria-label="New bidder" placeholder="Bidder" value={bidderName} onChange={(event) => setBidderName(event.target.value)} />
+                <button type="button" className="button secondary" onClick={addBidder}>
+                  Add bidder
+                </button>
+              </div>
+            ) : null}
+            {activeBidder ? (
+              <div className="qr-bidder-detail">
+                <div className="qr-line-bar">
+                  <h3>{activeBidder}</h3>
+                  {canEdit ? (
+                    <button type="button" className="button secondary" onClick={() => removeBidder(activeBidder)}>
+                      Remove bidder
+                    </button>
+                  ) : null}
+                </div>
+                <p className="hint">This party’s reply. DDS unit and DDS ext stay in the grid above. An empty lead time means in stock.</p>
+                <div className="qr-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Part</th>
+                        <th>SKU</th>
+                        <th>Name</th>
+                        <th className="num">Qty</th>
+                        <th className="num">Unit</th>
+                        <th>Lead time</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((line, index) => {
+                        const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === activeBidder.toLowerCase());
+                        return (
+                          <tr key={line.key}>
+                            <td className="num">{index + 1}</td>
+                            <td>{line.partNumber || "—"}</td>
+                            <td>
+                              <input
+                                aria-label={`${activeBidder} SKU on line ${index + 1}`}
+                                value={bid?.sku ?? ""}
+                                disabled={!canEdit}
+                                placeholder={line.sku}
+                                onChange={(event) => patchBidder(line.key, activeBidder, { sku: event.target.value })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                aria-label={`${activeBidder} name on line ${index + 1}`}
+                                value={bid?.itemName ?? ""}
+                                disabled={!canEdit}
+                                placeholder={line.itemName}
+                                onChange={(event) => patchBidder(line.key, activeBidder, { itemName: event.target.value })}
+                              />
+                            </td>
+                            <td className="num">
+                              <input
+                                className="num"
+                                inputMode="decimal"
+                                aria-label={`${activeBidder} quantity on line ${index + 1}`}
+                                value={bid?.qty ?? ""}
+                                disabled={!canEdit}
+                                placeholder={line.qty}
+                                onChange={(event) => patchBidder(line.key, activeBidder, { qty: event.target.value })}
+                              />
+                            </td>
+                            <td className="num">
+                              <input
+                                className="num"
+                                inputMode="decimal"
+                                aria-label={`${activeBidder} unit price on line ${index + 1}`}
+                                value={bid?.unitPrice ?? ""}
+                                disabled={!canEdit}
+                                onChange={(event) => patchBidder(line.key, activeBidder, { unitPrice: event.target.value })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                aria-label={`${activeBidder} lead time on line ${index + 1}`}
+                                value={bid?.leadTime ?? ""}
+                                disabled={!canEdit}
+                                placeholder={quoteLeadTime("")}
+                                onChange={(event) => patchBidder(line.key, activeBidder, { leadTime: event.target.value })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                aria-label={`${activeBidder} note on line ${index + 1}`}
+                                value={bid?.note ?? ""}
+                                disabled={!canEdit}
+                                onChange={(event) => patchBidder(line.key, activeBidder, { note: event.target.value })}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
         {canEdit ? (
           <p>
@@ -377,10 +579,14 @@ export function QuoteReviewForm({
           eventId={header.id}
           canEdit={canEdit}
           currency={header.currency || "USD"}
+          sourceSide={header.side}
           sourceDirection={header.direction}
           sourceChannel={header.channel}
           sourceReference={header.reference}
           vendors={vendors}
+          customers={customers}
+          prospects={prospects}
+          onProspect={(prospect) => setProspects((current) => (current.some((item) => item.id === prospect.id) ? current : [...current, prospect]))}
           relations={relations}
           choices={choices}
         />
@@ -388,11 +594,23 @@ export function QuoteReviewForm({
       <section className="card qr-related">
         <h2>Files</h2>
         <p className="muted">
-          Files are not stored on a quote review. Purchase orders and sales orders keep their own PDFs. Creating a purchase
-          order or estimate from this quote is not built yet.
+          Files are not stored on a quote review. Purchase orders and sales orders keep their own PDFs. Creating a purchase order or sales order from
+          this quote is not built yet.
         </p>
       </section>
     </>
+  );
+}
+
+function lineHasRequest(line: QuoteLineDraft): boolean {
+  return Boolean(
+    line.partNumber.trim() ||
+      line.sku.trim() ||
+      line.itemName.trim() ||
+      line.qty.trim() ||
+      line.targetPrice.trim() ||
+      line.specialRequirements.trim() ||
+      line.itemId,
   );
 }
 
@@ -425,71 +643,45 @@ function LineRows({
           {number}
         </td>
         <td data-label="Part">
-          <input
-            aria-label={`Part for line ${number}`}
-            value={line.partNumber}
-            disabled={!canEdit}
-            onChange={(event) => onPatch({ partNumber: event.target.value })}
-          />
+          <input aria-label={`Part for line ${number}`} value={line.partNumber} disabled={!canEdit} onChange={(event) => onPatch({ partNumber: event.target.value })} />
         </td>
-        <td data-label="SKU">
-          <input
-            aria-label={`SKU for line ${number}`}
-            value={line.sku}
-            disabled={!canEdit}
-            onChange={(event) => onPatch({ sku: event.target.value })}
-          />
-          {line.itemId ? (
-            <Link href={`/items/${line.itemId}`}>{line.sku || "Item"}</Link>
-          ) : null}
+        <td className="num" data-label="Request qty">
+          <input className="num" inputMode="decimal" aria-label={`Request quantity for line ${number}`} value={line.qty} disabled={!canEdit} onChange={(event) => onPatch({ qty: event.target.value })} />
         </td>
-        <td data-label="Name">
-          <input
-            aria-label={`Name for line ${number}`}
-            value={line.itemName}
-            disabled={!canEdit}
-            onChange={(event) => onPatch({ itemName: event.target.value })}
-          />
+        <td className="num" data-label="Target">
+          <input className="num" inputMode="decimal" aria-label={`Target price for line ${number}`} value={line.targetPrice} disabled={!canEdit} onChange={(event) => onPatch({ targetPrice: event.target.value })} />
         </td>
         <td data-label="Condition">
-          <input
-            aria-label={`Condition for line ${number}`}
-            value={line.condition}
-            disabled={!canEdit}
-            onChange={(event) => onPatch({ condition: event.target.value })}
-          />
+          <input aria-label={`Condition for line ${number}`} value={line.condition} disabled={!canEdit} onChange={(event) => onPatch({ condition: event.target.value })} />
         </td>
-        <td className="num" data-label="Qty">
-          <input
-            className="num"
-            inputMode="decimal"
-            aria-label={`Quantity for line ${number}`}
-            value={line.qty}
-            disabled={!canEdit}
-            onChange={(event) => onPatch({ qty: event.target.value })}
-          />
+        <td data-label="Requirements">
+          <input aria-label={`Special requirements for line ${number}`} value={line.specialRequirements} disabled={!canEdit} onChange={(event) => onPatch({ specialRequirements: event.target.value })} />
         </td>
-        <td className="num" data-label="Our price">
-          <input
-            className="num"
-            inputMode="decimal"
-            aria-label={`Our price for line ${number}`}
-            value={line.unitPrice}
-            disabled={!canEdit}
-            onChange={(event) => onPatch({ unitPrice: event.target.value })}
-          />
+        <td data-label="SKU">
+          <input aria-label={`SKU for line ${number}`} value={line.sku} disabled={!canEdit} onChange={(event) => onPatch({ sku: event.target.value })} />
+          {line.itemId ? <Link href={`/items/${line.itemId}`}>{line.sku || "Item"}</Link> : null}
         </td>
-        <td className="num" data-label="Ext">
-          <span>{quoteExtension(line.qty, line.unitPrice) || "—"}</span>
+        <td data-label="Name">
+          <input aria-label={`Name for line ${number}`} value={line.itemName} disabled={!canEdit} onChange={(event) => onPatch({ itemName: event.target.value })} />
+        </td>
+        <td className="num" data-label="Reply qty">
+          <input className="num" inputMode="decimal" aria-label={`Reply quantity for line ${number}`} placeholder={line.qty} value={line.replyQty} disabled={!canEdit} onChange={(event) => onPatch({ replyQty: event.target.value })} />
+        </td>
+        <td className="num" data-label="DDS unit">
+          <input className="num" inputMode="decimal" aria-label={`DDS unit for line ${number}`} value={line.unitPrice} disabled={!canEdit} onChange={(event) => onPatch({ unitPrice: event.target.value })} />
+        </td>
+        <td className="num" data-label="DDS ext">
+          <span>{quoteReplyExtension(line.qty, line.replyQty, line.unitPrice) || "—"}</span>
           {best != null ? <span className="qr-context">Best {formatMoney(best)}</span> : null}
         </td>
+        <td data-label="Lead time">
+          <input aria-label={`Lead time for line ${number}`} placeholder={quoteLeadTime("")} value={line.leadTime} disabled={!canEdit} onChange={(event) => onPatch({ leadTime: event.target.value })} />
+        </td>
+        <td data-label="Notes">
+          <input aria-label={`Notes for line ${number}`} value={line.decisionNote} disabled={!canEdit} onChange={(event) => onPatch({ decisionNote: event.target.value })} />
+        </td>
         <td data-label="Decision">
-          <select
-            aria-label={`Decision for line ${number}`}
-            value={line.decision}
-            disabled={!canEdit}
-            onChange={(event) => onPatch({ decision: event.target.value })}
-          >
+          <select aria-label={`Decision for line ${number}`} value={line.decision} disabled={!canEdit} onChange={(event) => onPatch({ decision: event.target.value })}>
             <option value="">—</option>
             {QUOTE_DECISIONS.map((item) => (
               <option key={item.id} value={item.id}>
@@ -497,14 +689,6 @@ function LineRows({
               </option>
             ))}
           </select>
-        </td>
-        <td data-label="Note">
-          <input
-            aria-label={`Note for line ${number}`}
-            value={line.decisionNote}
-            disabled={!canEdit}
-            onChange={(event) => onPatch({ decisionNote: event.target.value })}
-          />
         </td>
         <td data-label="">
           {canEdit ? (
@@ -515,7 +699,7 @@ function LineRows({
         </td>
       </tr>
       <tr>
-        <td colSpan={11} data-label="">
+        <td colSpan={LINE_COLUMNS} data-label="">
           <div className="qr-side">
             {line.itemId ? (
               <p className="qr-context">
@@ -546,69 +730,6 @@ function LineRows({
                 ))}
               </ul>
             ) : null}
-            <div className="qr-bids">
-              {line.bids.map((bid, bidIndex) => (
-                <div className="qr-bid" key={bid.key}>
-                  <input
-                    aria-label={`Bidder ${bidIndex + 1} on line ${number}`}
-                    placeholder="Bidder"
-                    value={bid.bidderName}
-                    disabled={!canEdit}
-                    onChange={(event) =>
-                      onPatch({
-                        bids: line.bids.map((item) => (item.key === bid.key ? { ...item, bidderName: event.target.value } : item)),
-                      })
-                    }
-                  />
-                  <input
-                    className="num"
-                    inputMode="decimal"
-                    aria-label={`Bid ${bidIndex + 1} on line ${number}`}
-                    placeholder="Unit price"
-                    value={bid.unitPrice}
-                    disabled={!canEdit}
-                    onChange={(event) =>
-                      onPatch({
-                        bids: line.bids.map((item) => (item.key === bid.key ? { ...item, unitPrice: event.target.value } : item)),
-                      })
-                    }
-                  />
-                  <input
-                    aria-label={`Bid note ${bidIndex + 1} on line ${number}`}
-                    placeholder="Note"
-                    value={bid.note}
-                    disabled={!canEdit}
-                    onChange={(event) =>
-                      onPatch({
-                        bids: line.bids.map((item) => (item.key === bid.key ? { ...item, note: event.target.value } : item)),
-                      })
-                    }
-                  />
-                  {canEdit ? (
-                    <button
-                      type="button"
-                      className="button secondary"
-                      onClick={() => onPatch({ bids: line.bids.filter((item) => item.key !== bid.key) })}
-                    >
-                      Remove bid
-                    </button>
-                  ) : null}
-                </div>
-              ))}
-              {canEdit ? (
-                <button
-                  type="button"
-                  className="button secondary"
-                  onClick={() =>
-                    onPatch({
-                      bids: [...line.bids, { key: crypto.randomUUID(), id: "", bidderName: "", unitPrice: "", note: "" }],
-                    })
-                  }
-                >
-                  Add bid
-                </button>
-              ) : null}
-            </div>
           </div>
         </td>
       </tr>
