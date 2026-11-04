@@ -25,6 +25,7 @@ import {
   quoteEventLabel,
   quoteFlowLabel,
   quoteLineMatchKey,
+  quoteOfferHeading,
   quoteQtyText,
   quoteReviewsUnavailable,
   relationPhrase,
@@ -288,7 +289,7 @@ async function relatedOfferColumns(relations: QuoteRelationView[]): Promise<Quot
       return [{ matchKey, unitPrice: unit }];
     });
     if (ddsPrices.length > 0) {
-      columns.push({ id: `dds:${relation.otherId}`, label: offerHeading(relation.otherLabel), prices: ddsPrices });
+      columns.push({ id: `dds:${relation.otherId}`, label: quoteOfferHeading(relation.otherLabel), prices: ddsPrices });
     }
     const bidderNames: string[] = [];
     const seen = new Set<string>();
@@ -314,12 +315,6 @@ async function relatedOfferColumns(relations: QuoteRelationView[]): Promise<Quot
     }
   }
   return columns;
-}
-
-function offerHeading(label: string): string {
-  const trimmed = label.trim() || "Related";
-  if (trimmed.length <= 28) return trimmed;
-  return `${trimmed.slice(0, 27)}…`;
 }
 
 export async function listQuoteReviewChoices(exceptId: string): Promise<QuoteChoice[]> {

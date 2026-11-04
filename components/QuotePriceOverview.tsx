@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   offerUnit,
   quoteBidders,
@@ -11,15 +12,20 @@ export function QuotePriceOverview({
   lines,
   offers,
   currency,
+  children,
 }: {
   lines: QuoteLineDraft[];
   offers: QuoteOfferColumn[];
   currency: string;
+  children?: ReactNode;
 }) {
   const visible = lines.filter(
     (line) => line.partNumber.trim() || line.sku.trim() || line.qty.trim() || line.condition.trim() || line.unitPrice.trim() || line.bids.some((bid) => bid.unitPrice.trim() || bid.bidderName.trim()),
   );
-  if (visible.length === 0) return null;
+  if (visible.length === 0) {
+    if (!children) return null;
+    return <div className="card qr-lines qr-overview">{children}</div>;
+  }
   const local = quoteBidders(visible);
   const used = new Set(local.map((name) => name.toLowerCase()));
   const related = offers.map((offer) => {
@@ -33,7 +39,7 @@ export function QuotePriceOverview({
   return (
     <div className="card qr-lines qr-overview">
       <h2>Overview</h2>
-      <p className="hint">Every price on the list, side by side. Related quotes add their own columns.</p>
+      <p className="hint">Every price on the list, side by side. The extension sits under the unit. Related quotes add their own columns.</p>
       <div className="qr-scroll">
         <table>
           <thead>
@@ -43,7 +49,6 @@ export function QuotePriceOverview({
               <th className="num">Qty</th>
               <th>Condition</th>
               <th className="num">DDS unit</th>
-              <th className="num">DDS ext</th>
               {local.map((name) => (
                 <th className="num" key={name}>
                   {name}
@@ -66,8 +71,10 @@ export function QuotePriceOverview({
                   <td>{line.sku || "—"}</td>
                   <td className="num">{line.qty || "—"}</td>
                   <td>{line.condition || "—"}</td>
-                  <td className="num">{quoteMoneyText(line.unitPrice, currency) || "—"}</td>
-                  <td className="num">{ddsExt || "—"}</td>
+                  <td className="num">
+                    <span>{quoteMoneyText(line.unitPrice, currency) || "—"}</span>
+                    {ddsExt ? <span className="qr-context">{ddsExt}</span> : null}
+                  </td>
                   {local.map((name) => {
                     const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
                     const unit = bid?.unitPrice ?? "";
@@ -95,6 +102,7 @@ export function QuotePriceOverview({
           </tbody>
         </table>
       </div>
+      {children}
     </div>
   );
 }
