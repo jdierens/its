@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { QuoteFitInput } from "@/components/QuoteFitInput";
 import { QuoteFlowMarks } from "@/components/QuoteFlowMarks";
 import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
 import { QuotePriceOverview } from "@/components/QuotePriceOverview";
@@ -292,11 +293,11 @@ export function QuoteReviewForm({
           <div className="qr-head qr-meta">
             <label>
               List name
-              <input value={header.reference} disabled={!canEdit} onChange={(event) => setHeader({ ...header, reference: event.target.value })} />
+              <QuoteFitInput floor={8} cap={32} value={header.reference} disabled={!canEdit} onChange={(event) => setHeader({ ...header, reference: event.target.value })} />
             </label>
             <label>
               Side
-              <select value={header.side} disabled={!canEdit} onChange={(event) => setFlow({ side: event.target.value })}>
+              <select className="qr-fit" value={header.side} disabled={!canEdit} onChange={(event) => setFlow({ side: event.target.value })}>
                 {QUOTE_SIDES.map((item) => (
                   <option key={item.id} value={item.id}>
                     {quoteSideLabel(item.id)}
@@ -306,7 +307,7 @@ export function QuoteReviewForm({
             </label>
             <label>
               Direction
-              <select value={header.direction} disabled={!canEdit} onChange={(event) => setFlow({ direction: event.target.value })}>
+              <select className="qr-fit" value={header.direction} disabled={!canEdit} onChange={(event) => setFlow({ direction: event.target.value })}>
                 {QUOTE_DIRECTIONS.map((item) => (
                   <option key={item.id} value={item.id}>
                     {quoteDirectionLabel(item.id)}
@@ -316,7 +317,7 @@ export function QuoteReviewForm({
             </label>
             <label>
               Channel
-              <select value={header.channel} disabled={!canEdit} onChange={(event) => setHeader({ ...header, channel: event.target.value })}>
+              <select className="qr-fit" value={header.channel} disabled={!canEdit} onChange={(event) => setHeader({ ...header, channel: event.target.value })}>
                 {QUOTE_CHANNELS.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}
@@ -326,7 +327,7 @@ export function QuoteReviewForm({
             </label>
             <label>
               Status
-              <select value={header.status} disabled={!canEdit} onChange={(event) => setHeader({ ...header, status: event.target.value })}>
+              <select className="qr-fit" value={header.status} disabled={!canEdit} onChange={(event) => setHeader({ ...header, status: event.target.value })}>
                 {QUOTE_STATUSES.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.label}
@@ -366,7 +367,9 @@ export function QuoteReviewForm({
             </label>
             <label>
               Currency
-              <input
+              <QuoteFitInput
+                floor={3}
+                cap={4}
                 value={header.currency}
                 disabled={!canEdit}
                 maxLength={3}
@@ -448,7 +451,7 @@ export function QuoteReviewForm({
               </thead>
               <tbody>
                 {lines.map((line, index) => {
-                  const best = bestQuotedUnit(line, offers);
+                  const best = bestQuotedUnit(line, offers, header.side, header.direction);
                   return (
                     <LineRows
                       key={line.key}
@@ -553,7 +556,7 @@ function BidderStrip({
       </div>
       {canEdit ? (
         <div className="qr-bid">
-          <input aria-label="New bidder" placeholder="Bidder" value={bidderName} onChange={(event) => onBidderName(event.target.value)} />
+          <QuoteFitInput floor={6} cap={24} aria-label="New bidder" placeholder="Bidder" value={bidderName} onChange={(event) => onBidderName(event.target.value)} />
           <button type="button" className="button secondary" onClick={onAdd}>
             Add bidder
           </button>
@@ -592,7 +595,9 @@ function BidderStrip({
                       <td className="num">{index + 1}</td>
                       <td>{line.partNumber || "—"}</td>
                       <td>
-                        <input
+                        <QuoteFitInput
+                          floor={7}
+                          cap={20}
                           aria-label={`${activeBidder} SKU on line ${index + 1}`}
                           value={bid?.sku ?? ""}
                           disabled={!canEdit}
@@ -601,7 +606,9 @@ function BidderStrip({
                         />
                       </td>
                       <td>
-                        <input
+                        <QuoteFitInput
+                          floor={10}
+                          cap={36}
                           aria-label={`${activeBidder} name on line ${index + 1}`}
                           value={bid?.itemName ?? ""}
                           disabled={!canEdit}
@@ -610,7 +617,9 @@ function BidderStrip({
                         />
                       </td>
                       <td className="num">
-                        <input
+                        <QuoteFitInput
+                          floor={3}
+                          cap={8}
                           className="num"
                           inputMode="decimal"
                           aria-label={`${activeBidder} quantity on line ${index + 1}`}
@@ -621,7 +630,9 @@ function BidderStrip({
                         />
                       </td>
                       <td className="num">
-                        <input
+                        <QuoteFitInput
+                          floor={5}
+                          cap={12}
                           className="num"
                           inputMode="decimal"
                           aria-label={`${activeBidder} unit price on line ${index + 1}`}
@@ -631,7 +642,9 @@ function BidderStrip({
                         />
                       </td>
                       <td>
-                        <input
+                        <QuoteFitInput
+                          floor={8}
+                          cap={18}
                           aria-label={`${activeBidder} lead time on line ${index + 1}`}
                           value={bid?.leadTime ?? ""}
                           disabled={!canEdit}
@@ -640,7 +653,9 @@ function BidderStrip({
                         />
                       </td>
                       <td>
-                        <input
+                        <QuoteFitInput
+                          floor={8}
+                          cap={32}
                           aria-label={`${activeBidder} note on line ${index + 1}`}
                           value={bid?.note ?? ""}
                           disabled={!canEdit}
@@ -701,32 +716,32 @@ function LineRows({
           {number}
         </td>
         <td data-label="Part">
-          <input aria-label={`Part for line ${number}`} value={line.partNumber} disabled={!canEdit} onChange={(event) => onPatch({ partNumber: event.target.value })} />
+          <QuoteFitInput floor={8} cap={28} aria-label={`Part for line ${number}`} value={line.partNumber} disabled={!canEdit} onChange={(event) => onPatch({ partNumber: event.target.value })} />
         </td>
         <td className="num" data-label="Request qty">
-          <input className="num" inputMode="decimal" aria-label={`Request quantity for line ${number}`} value={line.qty} disabled={!canEdit} onChange={(event) => onPatch({ qty: event.target.value })} />
+          <QuoteFitInput floor={3} cap={8} className="num" inputMode="decimal" aria-label={`Request quantity for line ${number}`} value={line.qty} disabled={!canEdit} onChange={(event) => onPatch({ qty: event.target.value })} />
         </td>
         <td className="num" data-label="Target">
-          <input className="num" inputMode="decimal" aria-label={`Target price for line ${number}`} value={line.targetPrice} disabled={!canEdit} onChange={(event) => onPatch({ targetPrice: event.target.value })} />
+          <QuoteFitInput floor={5} cap={12} className="num" inputMode="decimal" aria-label={`Target price for line ${number}`} value={line.targetPrice} disabled={!canEdit} onChange={(event) => onPatch({ targetPrice: event.target.value })} />
         </td>
         <td data-label="Condition">
-          <input aria-label={`Condition for line ${number}`} value={line.condition} disabled={!canEdit} onChange={(event) => onPatch({ condition: event.target.value })} />
+          <QuoteFitInput floor={6} cap={16} aria-label={`Condition for line ${number}`} value={line.condition} disabled={!canEdit} onChange={(event) => onPatch({ condition: event.target.value })} />
         </td>
         <td data-label="Requirements">
-          <input aria-label={`Special requirements for line ${number}`} value={line.specialRequirements} disabled={!canEdit} onChange={(event) => onPatch({ specialRequirements: event.target.value })} />
+          <QuoteFitInput floor={8} cap={32} aria-label={`Special requirements for line ${number}`} value={line.specialRequirements} disabled={!canEdit} onChange={(event) => onPatch({ specialRequirements: event.target.value })} />
         </td>
         <td data-label="SKU">
-          <input aria-label={`SKU for line ${number}`} value={line.sku} disabled={!canEdit} onChange={(event) => onPatch({ sku: event.target.value })} />
+          <QuoteFitInput floor={7} cap={20} aria-label={`SKU for line ${number}`} value={line.sku} disabled={!canEdit} onChange={(event) => onPatch({ sku: event.target.value })} />
           {line.itemId ? <Link href={`/items/${line.itemId}`}>{line.sku || "Item"}</Link> : null}
         </td>
         <td data-label="Name">
-          <input aria-label={`Name for line ${number}`} value={line.itemName} disabled={!canEdit} onChange={(event) => onPatch({ itemName: event.target.value })} />
+          <QuoteFitInput floor={10} cap={36} aria-label={`Name for line ${number}`} value={line.itemName} disabled={!canEdit} onChange={(event) => onPatch({ itemName: event.target.value })} />
         </td>
         <td className="num" data-label="Reply qty">
-          <input className="num" inputMode="decimal" aria-label={`Reply quantity for line ${number}`} placeholder={line.qty} value={line.replyQty} disabled={!canEdit} onChange={(event) => onPatch({ replyQty: event.target.value })} />
+          <QuoteFitInput floor={3} cap={8} className="num" inputMode="decimal" aria-label={`Reply quantity for line ${number}`} placeholder={line.qty} value={line.replyQty} disabled={!canEdit} onChange={(event) => onPatch({ replyQty: event.target.value })} />
         </td>
         <td className="num" data-label="DDS unit">
-          <input className="num" inputMode="decimal" aria-label={`DDS unit for line ${number}`} value={line.unitPrice} disabled={!canEdit} onChange={(event) => onPatch({ unitPrice: event.target.value })} />
+          <QuoteFitInput floor={5} cap={12} className="num" inputMode="decimal" aria-label={`DDS unit for line ${number}`} value={line.unitPrice} disabled={!canEdit} onChange={(event) => onPatch({ unitPrice: event.target.value })} />
           {ddsExt ? (
             <span className="qr-context">
               <span className="sr-only">DDS ext </span>
@@ -736,13 +751,13 @@ function LineRows({
           {best != null ? <span className="qr-context">Best {formatMoney(best)}</span> : null}
         </td>
         <td data-label="Lead time">
-          <input aria-label={`Lead time for line ${number}`} placeholder={quoteLeadTime("")} value={line.leadTime} disabled={!canEdit} onChange={(event) => onPatch({ leadTime: event.target.value })} />
+          <QuoteFitInput floor={8} cap={18} aria-label={`Lead time for line ${number}`} placeholder={quoteLeadTime("")} value={line.leadTime} disabled={!canEdit} onChange={(event) => onPatch({ leadTime: event.target.value })} />
         </td>
         <td data-label="Notes">
-          <input aria-label={`Notes for line ${number}`} value={line.decisionNote} disabled={!canEdit} onChange={(event) => onPatch({ decisionNote: event.target.value })} />
+          <QuoteFitInput floor={8} cap={32} aria-label={`Notes for line ${number}`} value={line.decisionNote} disabled={!canEdit} onChange={(event) => onPatch({ decisionNote: event.target.value })} />
         </td>
         <td data-label="Decision">
-          <select aria-label={`Decision for line ${number}`} value={line.decision} disabled={!canEdit} onChange={(event) => onPatch({ decision: event.target.value })}>
+          <select className="qr-fit" aria-label={`Decision for line ${number}`} value={line.decision} disabled={!canEdit} onChange={(event) => onPatch({ decision: event.target.value })}>
             <option value="">—</option>
             {QUOTE_DECISIONS.map((item) => (
               <option key={item.id} value={item.id}>

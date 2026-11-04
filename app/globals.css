@@ -10776,12 +10776,14 @@ button.so-new-order svg,
 }
 
 .qr-filters {
-  grid-template-columns: minmax(12rem, 1.5fr) repeat(3, minmax(7rem, 0.7fr)) auto auto;
+  grid-template-columns: minmax(14rem, 1fr) max-content max-content max-content max-content max-content;
   margin-bottom: 1rem;
 }
 
 .qr-head {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
 }
 
 /* Quote header: about 20% smaller type, tighter rows, and more fields per row. */
@@ -10808,6 +10810,15 @@ button.so-new-order svg,
   font-weight: 600;
 }
 
+.qr-head label {
+  width: max-content;
+  max-width: 100%;
+}
+
+.qr-filters label:first-child {
+  width: 100%;
+}
+
 .qr-filters label.qr-check {
   display: flex;
   align-items: center;
@@ -10821,19 +10832,54 @@ button.so-new-order svg,
   width: auto;
 }
 
-.qr-notes {
-  grid-column: 1 / -1;
+.qr-head label.qr-notes {
+  flex: 1 1 100%;
+  width: 100%;
+  max-width: 100%;
 }
 
-.qr-head input,
-.qr-head select,
-.qr-head textarea,
-.qr-lines input,
-.qr-lines select,
-.qr-filters input,
-.qr-filters select {
+.qr-filters input:not([type="checkbox"]),
+.qr-notes textarea,
+.qr-notes input {
   width: 100%;
   min-width: 0;
+  max-width: none;
+  field-sizing: fixed;
+}
+
+/* Quote fields track the value. --qr-floor and --qr-cap are character counts.
+   Dates stay a date control. Notes stay on their own row. Below 800px the
+   stacked layout uses the row again. */
+input.qr-fit,
+select.qr-fit {
+  field-sizing: content;
+  width: auto;
+  max-width: 100%;
+}
+
+input.qr-fit {
+  /* ch is the text. The added length covers the field padding so the value is not clipped. */
+  min-width: calc(var(--qr-floor, 4) * 1ch + 0.9rem);
+  max-width: min(calc(var(--qr-cap, 24) * 1ch + 0.9rem), 100%);
+}
+
+select.qr-fit {
+  min-width: 4.5rem;
+  max-width: min(22rem, 100%);
+}
+
+.qr-detail select.qr-fit {
+  --qr-select-min: 4.25rem;
+  --qr-select-max: 8rem;
+  min-width: var(--qr-select-min);
+  max-width: var(--qr-select-max);
+}
+
+.qr-head input[type="date"] {
+  field-sizing: fixed;
+  width: 10.5rem;
+  min-width: 10.5rem;
+  max-width: 100%;
 }
 
 .qr-related h2,
@@ -10913,15 +10959,17 @@ button.so-new-order svg,
 }
 
 .qr-prospect {
-  grid-column: 1 / -1;
+  flex: 1 1 100%;
+  width: 100%;
+  max-width: 100%;
 }
 
 .qr-prospect .button {
   width: auto;
 }
 
-.qr-prospect input {
-  width: 12rem;
+.qr-prospect input.qr-fit {
+  width: auto;
 }
 
 .qr-lines .qr-request {
@@ -11041,10 +11089,6 @@ button.so-new-order svg,
     padding: 0.35rem 0.5rem;
   }
 
-  .qr-head.qr-meta {
-    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  }
-
   .so-page .qr-head.qr-meta input,
   .so-page .qr-head.qr-meta select,
   .so-page .qr-head.qr-meta textarea {
@@ -11092,8 +11136,8 @@ button.so-new-order svg,
   align-items: center;
 }
 
-.qr-bid input {
-  width: 9rem;
+.qr-bid input.qr-fit {
+  width: auto;
 }
 
 .qr-hits button {
@@ -11138,7 +11182,27 @@ button.so-new-order svg,
 @media (max-width: 800px) {
   .qr-filters,
   .qr-head {
+    display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .qr-filters label,
+  .qr-head label,
+  .qr-notes,
+  .qr-prospect {
+    width: 100%;
+    max-width: none;
+  }
+
+  input.qr-fit,
+  select.qr-fit,
+  .qr-detail select.qr-fit,
+  .qr-head input[type="date"],
+  .qr-filters input:not([type="checkbox"]) {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    field-sizing: fixed;
   }
 
   .qr-list-scroll {

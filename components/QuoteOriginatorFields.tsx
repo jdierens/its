@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { QuoteFitInput } from "@/components/QuoteFitInput";
 import { errorText } from "@/lib/errors";
 import { createQuoteProspect } from "@/lib/quoteReviewsServer";
 import { originatorPicker, type OriginatorIds, type QuotePartyOption } from "@/lib/quoteReviews";
@@ -106,12 +107,12 @@ export function QuoteOriginatorFields({
       {picker.kind === "dds" ? (
         <label>
           Originator
-          <input value="DDS" readOnly disabled={disabled} aria-label="Originator DDS" />
+          <QuoteFitInput floor={3} cap={4} value="DDS" readOnly disabled={disabled} aria-label="Originator DDS" />
         </label>
       ) : null}
       <label>
         {partyLabel}
-        <select value={partyValue} disabled={disabled} aria-label={partyLabel} onChange={(event) => choose(event.target.value)}>
+        <select className="qr-fit" value={partyValue} disabled={disabled} aria-label={partyLabel} onChange={(event) => choose(event.target.value)}>
           <option value="">{customersAndProspects ? "Choose a customer or prospect" : "Choose a vendor"}</option>
           {customersAndProspects ? (
             <>
@@ -141,14 +142,14 @@ export function QuoteOriginatorFields({
       </label>
       <label>
         Contact
-        <input value={contact} disabled={disabled} aria-label="Contact" onChange={(event) => onContact(event.target.value)} />
+        <QuoteFitInput floor={8} cap={28} value={contact} disabled={disabled} aria-label="Contact" onChange={(event) => onContact(event.target.value)} />
       </label>
       {customersAndProspects && !disabled ? (
         <div className="qr-prospect">
           {adding ? (
             <>
-              <input aria-label="Prospect company" placeholder="Prospect company" value={company} onChange={(event) => setCompany(event.target.value)} />
-              <input aria-label="Prospect contact" placeholder="Contact" value={person} onChange={(event) => setPerson(event.target.value)} />
+              <QuoteFitInput floor={16} cap={32} aria-label="Prospect company" placeholder="Prospect company" value={company} onChange={(event) => setCompany(event.target.value)} />
+              <QuoteFitInput floor={8} cap={24} aria-label="Prospect contact" placeholder="Contact" value={person} onChange={(event) => setPerson(event.target.value)} />
               <button type="button" className="button" disabled={saving} onClick={() => void saveProspect()}>
                 {saving ? "Saving…" : "Save prospect"}
               </button>

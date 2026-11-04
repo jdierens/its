@@ -6,6 +6,8 @@ import {
   addCalendarDays,
   bestCompetingUnit,
   bestQuotedUnit,
+  quoteFieldChars,
+  quoteLineBestIsHigh,
   counterpartyLabel,
   isQuoteDueSoon,
   linesForRelatedEvent,
@@ -206,24 +208,35 @@ test("line totals sum our extension and the lowest competing price", () => {
     { lineCount: 3, qty: 3, offerExt: 20, competingExt: 23 },
   );
   assert.equal(bestCompetingUnit([{ unitPrice: "12.00" }, { unitPrice: "9.50" }, { unitPrice: "" }]), 9.5);
-  assert.equal(
-    bestQuotedUnit(
-      { partNumber: "MZ-1", sku: "", bids: [{ unitPrice: "200.10" }] },
-      [{ id: "hong", label: "Hong Li", prices: [{ matchKey: "p:MZ1", unitPrice: "190.25" }] }],
-    ),
-    190.25,
-  );
+  const line = { partNumber: "MZ-1", sku: "", bids: [{ unitPrice: "200.10" }, { unitPrice: "" }] };
+  const offers = [{ id: "hong", label: "Hong Li", prices: [{ matchKey: "p:MZ1", unitPrice: "190.25" }] }];
+  assert.equal(quoteLineBestIsHigh("buy", "outbound"), false);
+  assert.equal(quoteLineBestIsHigh("sell", "inbound"), false);
+  assert.equal(quoteLineBestIsHigh("buy", "inbound"), true);
+  assert.equal(quoteLineBestIsHigh("sell", "outbound"), true);
+  assert.equal(quoteLineBestIsHigh("buy", "inbound_response"), true);
+  assert.equal(bestQuotedUnit(line, offers, "buy", "outbound"), 190.25);
+  assert.equal(bestQuotedUnit(line, offers, "sell", "inbound"), 190.25);
+  assert.equal(bestQuotedUnit(line, offers, "buy", "inbound"), 200.1);
+  assert.equal(bestQuotedUnit(line, offers, "sell", "outbound"), 200.1);
   assert.equal(
     bestQuotedUnit(
       { partNumber: "MZ-1", sku: "", bids: [{ unitPrice: "8.00" }] },
       [{ id: "hong", label: "Hong Li", prices: [{ matchKey: "p:MZ1", unitPrice: "9.25" }] }],
+      "sell",
+      "outbound",
     ),
-    8,
+    9.25,
   );
   assert.equal(
-    bestQuotedUnit({ partNumber: "MZ-1", sku: "", bids: [{ unitPrice: "" }] }, [{ id: "hong", label: "Hong Li", prices: [{ matchKey: "p:OTHER", unitPrice: "9.25" }] }]),
+    bestQuotedUnit({ partNumber: "MZ-1", sku: "", bids: [{ unitPrice: "" }] }, [{ id: "hong", label: "Hong Li", prices: [{ matchKey: "p:OTHER", unitPrice: "9.25" }] }], "buy", "inbound"),
     null,
   );
+  assert.equal(quoteFieldChars("", 4, 12), 4);
+  assert.equal(quoteFieldChars("MZ-1A", 4, 12), 5);
+  assert.equal(quoteFieldChars("1", 3, 8, "1000"), 4);
+  assert.equal(quoteFieldChars("", 4, 18, "In stock"), 8);
+  assert.equal(quoteFieldChars("a very long pasted requirement that should not stretch the row", 8, 32), 32);
   assert.equal(quoteExtension("2", "10"), "$20");
   assert.equal(quoteExtension("2", "10.25"), "$21");
   assert.equal(quoteReplyExtension("2", "3", "10"), "$30");
