@@ -10700,7 +10700,7 @@ button.so-new-order svg,
 }
 
 .qr-filters {
-  grid-template-columns: minmax(14rem, 1.6fr) minmax(10rem, 0.8fr) auto auto;
+  grid-template-columns: minmax(12rem, 1.5fr) repeat(3, minmax(7rem, 0.7fr)) auto auto;
   margin-bottom: 1rem;
 }
 
@@ -10769,7 +10769,70 @@ button.so-new-order svg,
 
 .qr-list-scroll table,
 .qr-scroll table {
-  min-width: 72rem;
+  min-width: 88rem;
+}
+
+.qr-flow,
+.qr-origin,
+.qr-bidders,
+.qr-prospect {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+}
+
+.qr-flow-name {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.qr-contact {
+  color: var(--ds-muted, var(--muted));
+}
+
+.qr-prospect {
+  grid-column: 1 / -1;
+}
+
+.qr-prospect .button {
+  width: auto;
+}
+
+.qr-prospect input {
+  width: 12rem;
+}
+
+.qr-lines .qr-request {
+  box-shadow: inset 0 -2px 0 var(--line);
+}
+
+.qr-lines .qr-dds {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.qr-bidder-strip {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
+.qr-bidder-strip h3,
+.qr-bidder-detail h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.qr-bidder[aria-pressed="true"],
+.ds button.qr-bidder[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+.qr-bidder-detail {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .qr-lines th,

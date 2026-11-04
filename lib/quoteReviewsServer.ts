@@ -11,16 +11,19 @@ import {
   DUE_SOON_DAYS,
   addCalendarDays,
   bestCompetingUnit,
-  counterpartyLabel,
+  isQuoteDirection,
   isQuoteDueSoon,
+  isQuoteSide,
   isQuoteStatus,
   linesForRelatedEvent,
+  originatorDisplay,
+  isQuoteRelationType,
   parseQuoteQty,
   parseQuoteSave,
   parseRelatedQuote,
   quoteCalendarDay,
-  quoteDirectionLabel,
   quoteEventLabel,
+  quoteFlowLabel,
   quoteQtyText,
   quoteReviewsUnavailable,
   relationPhrase,
@@ -30,11 +33,11 @@ import {
   type QuoteItemHit,
   type QuoteLineDraft,
   type QuoteListRow,
+  type QuotePartyOption,
   type QuoteRelatedInput,
   type QuoteRelationView,
   type QuoteReviewDraft,
   type QuoteSaveInput,
-  type QuoteVendorOption,
 } from "@/lib/quoteReviews";
 import { getSupabase } from "@/lib/supabase";
 
@@ -62,7 +65,7 @@ export type QuoteSaveResult = {
 
 type Row = Record<string, unknown>;
 
-export async function listQuoteVendors(): Promise<QuoteVendorOption[]> {
+export async function listQuoteVendors(): Promise<QuotePartyOption[]> {
   const access = await quoteReviewPageAccess();
   if (!access.canView) return [];
   const { data, error } = await (await getSupabase())
@@ -74,17 +77,69 @@ export async function listQuoteVendors(): Promise<QuoteVendorOption[]> {
   return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.display_name ?? "") }));
 }
 
-export async function listQuoteReviews(filter: { q?: string; status?: string; due?: string }): Promise<QuoteListResult> {
+export async function listQuoteCustomers(): Promise<QuotePartyOption[]> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canView) return [];
+  const { data, error } = await (await getSupabase())
+    .from("customers")
+    .select("id, display_name")
+    .eq("active", true)
+    .order("display_name");
+  if (error) throw new Error(errorText(error));
+  return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.display_name ?? "") }));
+}
+
+export async function listQuoteProspects(): Promise<QuotePartyOption[]> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canView) return [];
+  const { data, error } = await (await getSupabase()).from("quote_prospects").select("id, display_name").order("display_name");
+  if (error) {
+    if (quoteReviewsUnavailable(error)) return [];
+    throw new Error(errorText(error));
+  }
+  return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.display_name ?? "") }));
+}
+
+export async function createQuoteProspect(input: { displayName: string; contactName: string }): Promise<QuotePartyOption> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canEdit) throw new Error(EDIT_DENIED);
+  const displayName = input.displayName.trim();
+  const contactName = input.contactName.trim();
+  if (!displayName) throw new Error("Enter the prospect company.");
+  if (displayName.length > 200) throw new Error("The prospect company name is too long.");
+  if (contactName.length > 200) throw new Error("The prospect contact is too long.");
+  const created = await (await getSupabase())
+    .from("quote_prospects")
+    .insert({ display_name: displayName, contact_name: contactName || null })
+    .select("id, display_name")
+    .single();
+  if (created.error || !created.data) throw dbError(created.error);
+  return { id: String(created.data.id), name: String(created.data.display_name ?? displayName) };
+}
+
+export async function listQuoteReviews(filter: {
+  q?: string;
+  status?: string;
+  due?: string;
+  side?: string;
+  direction?: string;
+}): Promise<QuoteListResult> {
   const access = await quoteReviewPageAccess();
   if (!access.canView) throw new Error(VIEW_DENIED);
   const supabase = await getSupabase();
   const today = quoteCalendarDay();
   const status = filter.status && isQuoteStatus(filter.status) ? filter.status : "";
+  const side = filter.side && isQuoteSide(filter.side) ? filter.side : "";
+  const direction = filter.direction && isQuoteDirection(filter.direction) ? filter.direction : "";
   const dueSoon = filter.due === "soon";
   let request = supabase
     .from("quote_events")
-    .select("id, received_on, due_on, vendor_id, counterparty_name, channel, direction, status, reference, currency, vendors(display_name)");
+    .select(
+      "id, received_on, due_on, vendor_id, customer_id, prospect_id, counterparty_name, channel, direction, side, originator_kind, status, reference, currency, vendors(display_name), customers(display_name), quote_prospects(display_name)",
+    );
   if (status) request = request.eq("status", status);
+  if (side) request = request.eq("side", side);
+  if (direction) request = request.eq("direction", direction);
   if (dueSoon) {
     request = request
       .not("due_on", "is", null)
@@ -93,11 +148,16 @@ export async function listQuoteReviews(filter: { q?: string; status?: string; du
   }
   const needle = searchNeedle(filter.q ?? "");
   if (needle) {
-    const vendors = await listQuoteVendors();
-    const ids = vendors.filter((vendor) => vendor.name.toLowerCase().includes(needle.toLowerCase())).map((vendor) => vendor.id);
+    const [vendors, customers, prospects] = await Promise.all([listQuoteVendors(), listQuoteCustomers(), listQuoteProspects()]);
+    const lowered = needle.toLowerCase();
+    const vendorIds = vendors.filter((party) => party.name.toLowerCase().includes(lowered)).map((party) => party.id);
+    const customerIds = customers.filter((party) => party.name.toLowerCase().includes(lowered)).map((party) => party.id);
+    const prospectIds = prospects.filter((party) => party.name.toLowerCase().includes(lowered)).map((party) => party.id);
     const pattern = `%${needle.replaceAll('"', "")}%`;
     const parts = [`reference.ilike."${pattern}"`, `counterparty_name.ilike."${pattern}"`];
-    if (ids.length > 0) parts.push(`vendor_id.in.(${ids.join(",")})`);
+    if (vendorIds.length > 0) parts.push(`vendor_id.in.(${vendorIds.join(",")})`);
+    if (customerIds.length > 0) parts.push(`customer_id.in.(${customerIds.join(",")})`);
+    if (prospectIds.length > 0) parts.push(`prospect_id.in.(${prospectIds.join(",")})`);
     request = request.or(parts.join(","));
   }
   const listed = await request.order("received_on", { ascending: false }).order("created_at", { ascending: false }).limit(LIST_LIMIT);
@@ -113,22 +173,27 @@ export async function listQuoteReviews(filter: { q?: string; status?: string; du
     truncated: events.length >= LIST_LIMIT,
     rows: events.map((row) => {
       const id = String(row.id);
-      const vendor = vendorName(row);
-      const counterparty = counterpartyLabel(vendor, text(row.counterparty_name));
+      const party = partyOf(row);
       const dueOn = text(row.due_on) || null;
       const statusValue = text(row.status);
       const totals = lineMap.get(id) ?? summarizeQuoteLines([]);
       return {
         id,
         reference: text(row.reference),
-        label: quoteEventLabel({ reference: text(row.reference), counterparty, receivedOn: text(row.received_on) }),
+        label: quoteEventLabel({ reference: text(row.reference), counterparty: party.originator, receivedOn: text(row.received_on) }),
         receivedOn: text(row.received_on),
         dueOn,
         dueSoon: isQuoteDueSoon({ dueOn, status: statusValue, today }),
-        vendorId: text(row.vendor_id) || null,
-        counterparty,
+        vendorId: party.vendorId,
+        customerId: party.customerId,
+        prospectId: party.prospectId,
+        originatorKind: party.kind,
+        company: party.company,
+        contact: party.contact,
+        originator: party.originator,
         channel: text(row.channel),
         direction: text(row.direction),
+        side: text(row.side),
         status: statusValue,
         lineCount: totals.lineCount,
         qty: totals.qty,
@@ -148,7 +213,9 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
   const supabase = await getSupabase();
   const event = await supabase
     .from("quote_events")
-    .select("id, received_on, due_on, vendor_id, counterparty_name, channel, direction, status, reference, notes, currency, updated_at")
+    .select(
+      "id, received_on, due_on, vendor_id, customer_id, prospect_id, counterparty_name, channel, direction, side, originator_kind, status, reference, notes, currency, updated_at",
+    )
     .eq("id", id)
     .maybeSingle();
   if (event.error) {
@@ -158,7 +225,9 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
   if (!event.data) return { status: "missing" };
   const lines = await supabase
     .from("quote_event_lines")
-    .select("id, sort_order, item_id, part_number, sku, item_name, condition, qty, our_unit_price, decision, decision_note, quote_event_bids(id, sort_order, bidder_name, unit_price, note)")
+    .select(
+      "id, sort_order, item_id, part_number, sku, item_name, condition, qty, target_price, special_requirements, reply_qty, our_unit_price, lead_time, decision, decision_note, quote_event_bids(id, sort_order, bidder_name, unit_price, note, sku, item_name, qty, lead_time)",
+    )
     .eq("quote_event_id", id)
     .order("sort_order");
   if (lines.error) throw new Error(errorText(lines.error));
@@ -172,8 +241,12 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
       reference: text(header.reference),
       counterpartyName: text(header.counterparty_name),
       vendorId: text(header.vendor_id),
+      customerId: text(header.customer_id),
+      prospectId: text(header.prospect_id),
+      originatorKind: text(header.originator_kind),
       channel: text(header.channel),
       direction: text(header.direction),
+      side: text(header.side),
       status: text(header.status),
       receivedOn: text(header.received_on),
       dueOn: text(header.due_on),
@@ -191,7 +264,9 @@ export async function listQuoteReviewChoices(exceptId: string): Promise<QuoteCho
   const supabase = await getSupabase();
   let request = supabase
     .from("quote_events")
-    .select("id, reference, counterparty_name, direction, received_on, vendors(display_name)")
+    .select(
+      "id, reference, counterparty_name, direction, side, originator_kind, received_on, vendors(display_name), customers(display_name), quote_prospects(display_name)",
+    )
     .order("received_on", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(200);
@@ -202,11 +277,11 @@ export async function listQuoteReviewChoices(exceptId: string): Promise<QuoteCho
     throw new Error(errorText(error));
   }
   return ((data ?? []) as Row[]).map((row) => {
-    const counterparty = counterpartyLabel(vendorName(row), text(row.counterparty_name));
-    const label = quoteEventLabel({ reference: text(row.reference), counterparty, receivedOn: text(row.received_on) });
+    const party = partyOf(row);
+    const label = quoteEventLabel({ reference: text(row.reference), counterparty: party.originator, receivedOn: text(row.received_on) });
     return {
       id: String(row.id),
-      label: `${label} · ${quoteDirectionLabel(text(row.direction))} · ${formatDataDate(text(row.received_on))}`,
+      label: `${label} · ${quoteFlowLabel(text(row.side), text(row.direction))} · ${formatDataDate(text(row.received_on))}`,
     };
   });
 }
@@ -222,8 +297,12 @@ export async function saveQuoteReview(id: string | null, input: QuoteSaveInput):
     reference: parsed.value.reference,
     counterparty_name: parsed.value.counterpartyName,
     vendor_id: parsed.value.vendorId,
+    customer_id: parsed.value.customerId,
+    prospect_id: parsed.value.prospectId,
+    originator_kind: parsed.value.originatorKind,
     channel: parsed.value.channel,
     direction: parsed.value.direction,
+    side: parsed.value.side,
     status: parsed.value.status,
     received_on: parsed.value.receivedOn,
     due_on: parsed.value.dueOn,
@@ -300,7 +379,7 @@ export async function createRelatedQuoteReview(input: QuoteRelatedInput): Promis
   if (!source.data) throw new Error("That quote was not found.");
   const sourceLines = await supabase
     .from("quote_event_lines")
-    .select("item_id, part_number, sku, item_name, condition, qty, sort_order")
+    .select("item_id, part_number, sku, item_name, condition, qty, target_price, special_requirements, sort_order")
     .eq("quote_event_id", parsed.value.sourceId)
     .order("sort_order");
   if (sourceLines.error) throw dbError(sourceLines.error);
@@ -315,6 +394,8 @@ export async function createRelatedQuoteReview(input: QuoteRelatedInput): Promis
         itemName: text(row.item_name),
         condition: text(row.condition),
         qty: quoteQtyText(row.qty),
+        targetPrice: moneyInput(asMoney(row.target_price)),
+        specialRequirements: text(row.special_requirements),
       })),
   );
   const currency = text((source.data as Row).currency);
@@ -324,8 +405,12 @@ export async function createRelatedQuoteReview(input: QuoteRelatedInput): Promis
       reference: parsed.value.reference,
       counterparty_name: parsed.value.counterpartyName,
       vendor_id: parsed.value.vendorId,
+      customer_id: parsed.value.customerId,
+      prospect_id: parsed.value.prospectId,
+      originator_kind: parsed.value.originatorKind,
       channel: parsed.value.channel,
       direction: parsed.value.direction,
+      side: parsed.value.side,
       status: "open",
       received_on: parsed.value.receivedOn,
       due_on: parsed.value.dueOn,
@@ -348,6 +433,8 @@ export async function createRelatedQuoteReview(input: QuoteRelatedInput): Promis
           item_name: line.itemName || null,
           condition: line.condition || null,
           qty: storedQty(line.qty),
+          target_price: storedMoney(line.targetPrice),
+          special_requirements: line.specialRequirements || null,
         })),
       );
       if (inserted.error) throw dbError(inserted.error);
@@ -371,19 +458,9 @@ export async function linkQuoteReviews(eventId: string, otherId: string, relatio
   if (!access.canEdit) throw new Error(EDIT_DENIED);
   if (!UUID.test(eventId) || !UUID.test(otherId)) throw new Error("Choose a quote to link.");
   if (eventId === otherId) throw new Error("A quote cannot relate to itself.");
-  const parsed = parseRelatedQuote({
-    sourceId: eventId,
-    reference: "",
-    counterpartyName: "",
-    vendorId: "",
-    channel: "other",
-    direction: "inbound_ask",
-    receivedOn: quoteCalendarDay(),
-    dueOn: "",
-    relationType,
-    relationNote: note,
-  });
-  if (!parsed.ok) throw new Error(parsed.message);
+  if (!isQuoteRelationType(relationType)) throw new Error("Choose how the quotes are related.");
+  const relationNote = note.trim();
+  if (relationNote.length > 500) throw new Error("The relation note is too long.");
   const supabase = await getSupabase();
   const existing = await supabase
     .from("quote_event_relations")
@@ -397,8 +474,8 @@ export async function linkQuoteReviews(eventId: string, otherId: string, relatio
   const inserted = await supabase.from("quote_event_relations").insert({
     from_event_id: eventId,
     to_event_id: otherId,
-    relation_type: parsed.value.relationType,
-    note: parsed.value.relationNote,
+    relation_type: relationType,
+    note: relationNote || null,
   });
   if (inserted.error) throw dbError(inserted.error);
 }
@@ -435,7 +512,11 @@ async function saveLines(eventId: string, lines: ParsedQuoteLine[]): Promise<Quo
       item_name: line.itemName,
       condition: line.condition,
       qty: line.qty,
+      target_price: line.targetPrice,
+      special_requirements: line.specialRequirements,
+      reply_qty: line.replyQty,
       our_unit_price: line.unitPrice,
+      lead_time: line.leadTime,
       decision: line.decision,
       decision_note: line.decisionNote,
       updated_at: new Date().toISOString(),
@@ -469,6 +550,10 @@ async function saveBids(lineId: string, line: ParsedQuoteLine): Promise<{ key: s
       bidder_name: bid.bidderName,
       unit_price: bid.unitPrice,
       note: bid.note,
+      sku: bid.sku,
+      item_name: bid.itemName,
+      qty: bid.qty,
+      lead_time: bid.leadTime,
     };
     const id = bid.id && existingIds.has(bid.id) ? bid.id : null;
     const written = id
@@ -546,7 +631,9 @@ async function relatedByEvent(events: Row[], ids: string[]) {
   if (missing.length > 0) {
     const extra = await (await getSupabase())
       .from("quote_events")
-      .select("id, reference, counterparty_name, received_on, vendors(display_name)")
+      .select(
+        "id, reference, counterparty_name, originator_kind, vendor_id, customer_id, prospect_id, received_on, vendors(display_name), customers(display_name), quote_prospects(display_name)",
+      )
       .in("id", missing);
     if (extra.error) throw dbError(extra.error);
     for (const row of (extra.data ?? []) as Row[]) labels.set(String(row.id), eventLabel(row));
@@ -583,7 +670,9 @@ async function relationsFor(eventId: string): Promise<QuoteRelationView[]> {
   if (otherIds.length > 0) {
     const extra = await (await getSupabase())
       .from("quote_events")
-      .select("id, reference, counterparty_name, received_on, vendors(display_name)")
+      .select(
+        "id, reference, counterparty_name, originator_kind, vendor_id, customer_id, prospect_id, received_on, vendors(display_name), customers(display_name), quote_prospects(display_name)",
+      )
       .in("id", otherIds);
     if (extra.error) throw dbError(extra.error);
     for (const row of (extra.data ?? []) as Row[]) labels.set(String(row.id), eventLabel(row));
@@ -644,6 +733,10 @@ function lineDraft(row: Row, context: Map<string, { onHand: number | null; lastB
       bidderName: text(bid.bidder_name),
       unitPrice: moneyInput(asMoney(bid.unit_price)),
       note: text(bid.note),
+      sku: text(bid.sku),
+      itemName: text(bid.item_name),
+      qty: quoteQtyText(bid.qty),
+      leadTime: text(bid.lead_time),
     }));
   return {
     key: text(row.id),
@@ -654,7 +747,11 @@ function lineDraft(row: Row, context: Map<string, { onHand: number | null; lastB
     itemName: text(row.item_name),
     condition: text(row.condition),
     qty: quoteQtyText(row.qty),
+    targetPrice: moneyInput(asMoney(row.target_price)),
+    specialRequirements: text(row.special_requirements),
+    replyQty: quoteQtyText(row.reply_qty),
     unitPrice: moneyInput(asMoney(row.our_unit_price)),
+    leadTime: text(row.lead_time),
     decision: text(row.decision),
     decisionNote: text(row.decision_note),
     bids,
@@ -684,8 +781,41 @@ function rankHit(hit: QuoteItemHit, needle: string, norm: string): number {
 }
 
 function eventLabel(row: Row): string {
-  const counterparty = counterpartyLabel(vendorName(row), text(row.counterparty_name));
-  return quoteEventLabel({ reference: text(row.reference), counterparty, receivedOn: text(row.received_on) });
+  return quoteEventLabel({
+    reference: text(row.reference),
+    counterparty: partyOf(row).originator,
+    receivedOn: text(row.received_on),
+  });
+}
+
+function partyOf(row: Row): {
+  kind: string;
+  company: string;
+  contact: string;
+  originator: string;
+  vendorId: string | null;
+  customerId: string | null;
+  prospectId: string | null;
+} {
+  const kind = text(row.originator_kind);
+  const vendorId = text(row.vendor_id) || null;
+  const customerId = text(row.customer_id) || null;
+  const prospectId = text(row.prospect_id) || null;
+  const contact = text(row.counterparty_name);
+  let company = "";
+  if (customerId && (kind === "customer" || kind === "dds")) company = joinedName(row, "customers");
+  else if (vendorId && (kind === "vendor" || kind === "dds")) company = joinedName(row, "vendors");
+  else if (prospectId) company = joinedName(row, "quote_prospects");
+  else if (vendorId) company = joinedName(row, "vendors");
+  return {
+    kind,
+    company,
+    contact,
+    originator: originatorDisplay({ kind, company, contact }),
+    vendorId,
+    customerId,
+    prospectId,
+  };
 }
 
 function pushRelated(
@@ -704,6 +834,10 @@ function storedQty(value: string): number | null {
   return parsed.ok ? parsed.qty : null;
 }
 
+function storedMoney(value: string): number | null {
+  return asMoney(value.replaceAll(",", "").replaceAll("$", ""));
+}
+
 function priceWhen(unitPrice: unknown, date: unknown): string {
   const amount = asMoney(unitPrice);
   if (amount == null) return "";
@@ -711,8 +845,8 @@ function priceWhen(unitPrice: unknown, date: unknown): string {
   return when ? `${formatMoney(amount)} on ${when}` : formatMoney(amount);
 }
 
-function vendorName(row: Row): string {
-  const value = row.vendors;
+function joinedName(row: Row, key: string): string {
+  const value = row[key];
   const record = Array.isArray(value) ? value[0] : value;
   if (!record || typeof record !== "object" || !("display_name" in record)) return "";
   const name = (record as { display_name?: unknown }).display_name;
@@ -740,9 +874,12 @@ function searchNeedle(value: string): string {
 
 function dbError(error: { code?: string; message?: string } | null): Error {
   if (quoteReviewsUnavailable(error)) {
-    return new Error("Quote reviews are not set up yet. Apply supabase/migrations/20261103180000_quote_events.sql.");
+    return new Error(
+      "Quote reviews are not set up yet. Apply supabase/migrations/20261103180000_quote_events.sql and supabase/migrations/20261104140000_quote_event_flow.sql.",
+    );
   }
   if (error?.code === "23505") return new Error("Those quotes are already linked.");
-  if (error?.code === "23503") return new Error("That vendor, item, or quote was not found.");
+  if (error?.code === "23514") return new Error("That originator does not match this quote.");
+  if (error?.code === "23503") return new Error("That customer, vendor, prospect, item, or quote was not found.");
   return new Error(errorText(error));
 }

@@ -2,10 +2,10 @@ import { asMoney, formatMoney, parseMoney } from "@/lib/pricing/quotes";
 
 export const QUOTE_REVIEWS_PATH = "/pricing/quotes";
 
-export const QUOTE_REVIEWS_MIGRATION = "supabase/migrations/20261103180000_quote_events.sql";
+export const QUOTE_REVIEWS_MIGRATION = "supabase/migrations/20261104140000_quote_event_flow.sql";
 
 export const QUOTE_REVIEWS_SETUP =
-  "Quote reviews are not set up yet. Apply supabase/migrations/20261103180000_quote_events.sql. Deploying does not run it.";
+  "Quote reviews need supabase/migrations/20261103180000_quote_events.sql and supabase/migrations/20261104140000_quote_event_flow.sql. Deploying does not run them.";
 
 export const DUE_SOON_DAYS = 7;
 
@@ -13,11 +13,23 @@ export const QUOTE_LINE_LIMIT = 500;
 
 export const QUOTE_BID_LIMIT = 12;
 
+export const QUOTE_LEAD_TIME_DEFAULT = "In stock";
+
+export const QUOTE_SIDES = [
+  { id: "buy", label: "Buy", outcome: "PO" },
+  { id: "sell", label: "Sell", outcome: "SO" },
+] as const;
+
 export const QUOTE_DIRECTIONS = [
-  { id: "inbound_ask", label: "Inbound ask" },
-  { id: "outbound_ask", label: "Outbound ask" },
-  { id: "inbound_response", label: "Inbound response" },
-  { id: "outbound_offer", label: "Outbound offer" },
+  { id: "inbound", label: "In" },
+  { id: "outbound", label: "Out" },
+] as const;
+
+export const QUOTE_ORIGINATORS = [
+  { id: "customer", label: "Customer" },
+  { id: "vendor", label: "Vendor" },
+  { id: "prospect", label: "Prospect" },
+  { id: "dds", label: "DDS" },
 ] as const;
 
 export const QUOTE_CHANNELS = [
@@ -49,7 +61,9 @@ export const QUOTE_RELATIONS = [
   { id: "other", label: "Other" },
 ] as const;
 
+export type QuoteSide = (typeof QUOTE_SIDES)[number]["id"];
 export type QuoteDirection = (typeof QUOTE_DIRECTIONS)[number]["id"];
+export type QuoteOriginatorKind = (typeof QUOTE_ORIGINATORS)[number]["id"];
 export type QuoteChannel = (typeof QUOTE_CHANNELS)[number]["id"];
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number]["id"];
 export type QuoteDecision = (typeof QUOTE_DECISIONS)[number]["id"];
@@ -65,6 +79,10 @@ export type QuoteBidInput = {
   bidderName: string;
   unitPrice: string;
   note: string;
+  sku: string;
+  itemName: string;
+  qty: string;
+  leadTime: string;
 };
 
 export type QuoteLineInput = {
@@ -76,7 +94,11 @@ export type QuoteLineInput = {
   itemName: string;
   condition: string;
   qty: string;
+  targetPrice: string;
+  specialRequirements: string;
+  replyQty: string;
   unitPrice: string;
+  leadTime: string;
   decision: string;
   decisionNote: string;
   bids: QuoteBidInput[];
@@ -86,8 +108,12 @@ export type QuoteSaveInput = {
   reference: string;
   counterpartyName: string;
   vendorId: string;
+  customerId: string;
+  prospectId: string;
+  originatorKind: string;
   channel: string;
   direction: string;
+  side: string;
   status: string;
   receivedOn: string;
   dueOn: string;
@@ -102,6 +128,10 @@ export type ParsedQuoteBid = {
   bidderName: string;
   unitPrice: number | null;
   note: string | null;
+  sku: string | null;
+  itemName: string | null;
+  qty: number | null;
+  leadTime: string | null;
 };
 
 export type ParsedQuoteLine = {
@@ -113,7 +143,11 @@ export type ParsedQuoteLine = {
   itemName: string | null;
   condition: string | null;
   qty: number | null;
+  targetPrice: number | null;
+  specialRequirements: string | null;
+  replyQty: number | null;
   unitPrice: number | null;
+  leadTime: string | null;
   decision: QuoteDecision | null;
   decisionNote: string | null;
   bids: ParsedQuoteBid[];
@@ -123,8 +157,12 @@ export type ParsedQuote = {
   reference: string | null;
   counterpartyName: string | null;
   vendorId: string | null;
+  customerId: string | null;
+  prospectId: string | null;
+  originatorKind: QuoteOriginatorKind;
   channel: QuoteChannel;
   direction: QuoteDirection;
+  side: QuoteSide;
   status: QuoteStatus;
   receivedOn: string;
   dueOn: string | null;
@@ -142,6 +180,8 @@ export type QuoteLineIdentity = {
   itemName: string;
   condition: string;
   qty: string;
+  targetPrice: string;
+  specialRequirements: string;
 };
 
 export type QuoteTotals = {
@@ -157,7 +197,9 @@ export type QuoteLineSummary = {
   bestUnit: number | null;
 };
 
-export type QuoteVendorOption = { id: string; name: string };
+export type QuotePartyOption = { id: string; name: string };
+
+export type QuoteVendorOption = QuotePartyOption;
 
 export type QuoteBidDraft = {
   key: string;
@@ -165,6 +207,10 @@ export type QuoteBidDraft = {
   bidderName: string;
   unitPrice: string;
   note: string;
+  sku: string;
+  itemName: string;
+  qty: string;
+  leadTime: string;
 };
 
 export type QuoteLineDraft = {
@@ -176,7 +222,11 @@ export type QuoteLineDraft = {
   itemName: string;
   condition: string;
   qty: string;
+  targetPrice: string;
+  specialRequirements: string;
+  replyQty: string;
   unitPrice: string;
+  leadTime: string;
   decision: string;
   decisionNote: string;
   bids: QuoteBidDraft[];
@@ -190,8 +240,12 @@ export type QuoteReviewDraft = {
   reference: string;
   counterpartyName: string;
   vendorId: string;
+  customerId: string;
+  prospectId: string;
+  originatorKind: string;
   channel: string;
   direction: string;
+  side: string;
   status: string;
   receivedOn: string;
   dueOn: string;
@@ -223,9 +277,15 @@ export type QuoteListRow = {
   dueOn: string | null;
   dueSoon: boolean;
   vendorId: string | null;
-  counterparty: string;
+  customerId: string | null;
+  prospectId: string | null;
+  originatorKind: string;
+  company: string;
+  contact: string;
+  originator: string;
   channel: string;
   direction: string;
+  side: string;
   status: string;
   lineCount: number;
   qty: number | null;
@@ -248,6 +308,27 @@ export type QuoteItemHit = {
   lastSell: string;
 };
 
+export type OriginatorIds = {
+  originatorKind: string;
+  vendorId: string;
+  customerId: string;
+  prospectId: string;
+};
+
+export function blankQuoteBid(name = ""): QuoteBidDraft {
+  return {
+    key: "",
+    id: "",
+    bidderName: name,
+    unitPrice: "",
+    note: "",
+    sku: "",
+    itemName: "",
+    qty: "",
+    leadTime: "",
+  };
+}
+
 export function blankQuoteLine(): QuoteLineDraft {
   return {
     key: "",
@@ -258,7 +339,11 @@ export function blankQuoteLine(): QuoteLineDraft {
     itemName: "",
     condition: "",
     qty: "",
+    targetPrice: "",
+    specialRequirements: "",
+    replyQty: "",
     unitPrice: "",
+    leadTime: "",
     decision: "",
     decisionNote: "",
     bids: [],
@@ -276,8 +361,12 @@ export function blankQuoteDraft(today: string): QuoteReviewDraft {
     reference: "",
     counterpartyName: "",
     vendorId: "",
+    customerId: "",
+    prospectId: "",
+    originatorKind: "customer",
     channel: "whatsapp",
-    direction: "inbound_ask",
+    direction: "inbound",
+    side: "sell",
     status: "open",
     receivedOn: today,
     dueOn: "",
@@ -293,6 +382,14 @@ export function quoteOptionLabel(options: readonly { id: string; label: string }
 
 export function quoteDirectionLabel(value: string): string {
   return quoteOptionLabel(QUOTE_DIRECTIONS, value);
+}
+
+export function quoteSideLabel(value: string): string {
+  return quoteOptionLabel(QUOTE_SIDES, value);
+}
+
+export function quoteOriginatorLabel(value: string): string {
+  return quoteOptionLabel(QUOTE_ORIGINATORS, value);
 }
 
 export function quoteChannelLabel(value: string): string {
@@ -311,6 +408,14 @@ export function isQuoteDirection(value: string): value is QuoteDirection {
   return QUOTE_DIRECTIONS.some((item) => item.id === value);
 }
 
+export function isQuoteSide(value: string): value is QuoteSide {
+  return QUOTE_SIDES.some((item) => item.id === value);
+}
+
+export function isQuoteOriginatorKind(value: string): value is QuoteOriginatorKind {
+  return QUOTE_ORIGINATORS.some((item) => item.id === value);
+}
+
 export function isQuoteChannel(value: string): value is QuoteChannel {
   return QUOTE_CHANNELS.some((item) => item.id === value);
 }
@@ -321,6 +426,67 @@ export function isQuoteStatus(value: string): value is QuoteStatus {
 
 export function isQuoteRelationType(value: string): value is QuoteRelationType {
   return QUOTE_RELATIONS.some((item) => item.id === value);
+}
+
+/** Full pattern name. Inbound Sell Request is a customer ask that wins as a sales order. */
+export function quoteFlowLabel(side: string, direction: string): string {
+  if (direction === "inbound" && side === "sell") return "Inbound Sell Request";
+  if (direction === "inbound" && side === "buy") return "Inbound Buy Request";
+  if (direction === "outbound" && side === "sell") return "Outbound Sell Request";
+  if (direction === "outbound" && side === "buy") return "Outbound Buy Offer";
+  return "Quote";
+}
+
+export function quoteFlowHint(side: string, direction: string): string {
+  const label = quoteFlowLabel(side, direction);
+  if (direction === "inbound" && side === "sell") {
+    return `${label}. They asked DDS to sell. Won becomes a sales order. Pick the customer, or a prospect when they are not a customer yet.`;
+  }
+  if (direction === "inbound" && side === "buy") {
+    return `${label}. They asked DDS to buy. Won becomes a purchase order. Pick the vendor. Other prices are parties competing with DDS.`;
+  }
+  if (direction === "outbound" && side === "sell") {
+    return `${label}. DDS started a sell. Won becomes a sales order. The counterparty is a customer or a prospect.`;
+  }
+  return `${label}. DDS started a buy and expects a quote back. Won becomes a purchase order. The counterparty is a vendor.`;
+}
+
+/**
+ * Inbound sell lists customers and prospects. Inbound buy lists vendors.
+ * Outbound is DDS, and the counterparty list follows the side.
+ */
+export function originatorPicker(side: string, direction: string): { kind: "dds" | "party"; party: "customer" | "vendor" } {
+  if (direction === "outbound") return { kind: "dds", party: side === "buy" ? "vendor" : "customer" };
+  return { kind: "party", party: side === "buy" ? "vendor" : "customer" };
+}
+
+/** Keep the party that still belongs on this side and direction. Clear the rest. */
+export function originatorForFlow(side: string, direction: string, current: OriginatorIds): OriginatorIds {
+  const picker = originatorPicker(side, direction);
+  if (picker.kind === "dds") {
+    if (picker.party === "vendor") {
+      return { originatorKind: "dds", vendorId: current.vendorId, customerId: "", prospectId: "" };
+    }
+    if (current.prospectId && !current.customerId) {
+      return { originatorKind: "dds", vendorId: "", customerId: "", prospectId: current.prospectId };
+    }
+    return { originatorKind: "dds", vendorId: "", customerId: current.customerId, prospectId: "" };
+  }
+  if (picker.party === "vendor") {
+    return { originatorKind: "vendor", vendorId: current.vendorId, customerId: "", prospectId: "" };
+  }
+  if (current.prospectId && !current.customerId) {
+    return { originatorKind: "prospect", vendorId: "", customerId: "", prospectId: current.prospectId };
+  }
+  return { originatorKind: "customer", vendorId: "", customerId: current.customerId, prospectId: "" };
+}
+
+export function originatorDisplay(input: { kind: string; company: string; contact: string }): string {
+  const company = input.company.trim();
+  const contact = input.contact.trim();
+  const party = counterpartyLabel(company, contact);
+  if (input.kind === "dds") return party === "—" ? "DDS" : `DDS → ${party}`;
+  return party;
 }
 
 /** Badge tone already used by the app. Quote statuses are not new chip colors. */
@@ -341,6 +507,18 @@ export function quoteStatusTone(status: string): string {
     default:
       return "neutral";
   }
+}
+
+export function quoteSideTone(side: string): string {
+  if (side === "buy") return "open";
+  if (side === "sell") return "received";
+  return "neutral";
+}
+
+export function quoteDirectionTone(direction: string): string {
+  if (direction === "inbound") return "pending";
+  if (direction === "outbound") return "draft";
+  return "neutral";
 }
 
 export function quoteCalendarDay(now = new Date()): string {
@@ -366,16 +544,33 @@ export function counterpartyLabel(vendorName: string, counterpartyName: string):
   return vendor || name || "—";
 }
 
-export function quoteEventLabel(input: {
-  reference: string;
-  counterparty: string;
-  receivedOn: string;
-}): string {
+export function quoteEventLabel(input: { reference: string; counterparty: string; receivedOn: string }): string {
   const reference = input.reference.trim();
   if (reference) return reference;
   const counterparty = input.counterparty.trim();
   if (counterparty && counterparty !== "—") return counterparty;
   return "Quote";
+}
+
+export function quoteLeadTime(value: string): string {
+  const trimmed = value.trim();
+  return trimmed || QUOTE_LEAD_TIME_DEFAULT;
+}
+
+/** Bidder names in first-seen order. The strip under the grid uses this order. */
+export function quoteBidders(lines: { bids: { bidderName: string }[] }[]): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    for (const bid of line.bids) {
+      const name = bid.bidderName.trim();
+      const key = name.toLowerCase();
+      if (!name || seen.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+    }
+  }
+  return names;
 }
 
 /**
@@ -396,37 +591,57 @@ export function relationPhrase(type: string, side: "from" | "to"): string {
   }
 }
 
-export function suggestedRelatedDirection(direction: QuoteDirection): QuoteDirection {
-  switch (direction) {
-    case "inbound_ask":
-      return "outbound_ask";
-    case "outbound_ask":
-      return "inbound_response";
-    case "inbound_response":
-      return "outbound_offer";
-    case "outbound_offer":
-      return "inbound_response";
-  }
+/**
+ * Inbound buy suggests an outbound sell (DDS asks someone else about the same parts).
+ * Inbound sell suggests an outbound buy forwarded for pricing.
+ */
+/** Relation label stored on the new quote, spoken from that new quote toward the one open now. */
+export function relationForNewFlow(side: QuoteSide, direction: QuoteDirection): QuoteRelationType {
+  if (direction === "outbound" && side === "buy") return "forwarded_for_pricing";
+  if (direction === "outbound" && side === "sell") return "response_to";
+  if (direction === "inbound" && side === "sell") return "response_to";
+  return "same_list";
 }
 
-export function suggestedRelationType(newDirection: QuoteDirection): QuoteRelationType {
-  switch (newDirection) {
-    case "outbound_ask":
-      return "forwarded_for_pricing";
-    case "inbound_response":
-    case "outbound_offer":
-      return "response_to";
-    default:
-      return "same_list";
+export function suggestedRelatedFlow(
+  side: QuoteSide,
+  direction: QuoteDirection,
+): { side: QuoteSide; direction: QuoteDirection; relationType: QuoteRelationType } {
+  if (direction === "inbound" && side === "buy") {
+    return { side: "sell", direction: "outbound", relationType: "response_to" };
   }
+  if (direction === "inbound" && side === "sell") {
+    return { side: "buy", direction: "outbound", relationType: "forwarded_for_pricing" };
+  }
+  if (direction === "outbound" && side === "sell") {
+    return { side: "buy", direction: "inbound", relationType: "response_to" };
+  }
+  return { side: "sell", direction: "inbound", relationType: "response_to" };
 }
 
-/** Identity copied onto a related quote. Prices, decisions, and bids are not on this type. */
+/** Request identity copied onto a related quote. Prices, lead time, decisions, and bids are not copied. */
 export function linesForRelatedEvent(
-  lines: (QuoteLineIdentity & { unitPrice?: string; decision?: string; decisionNote?: string })[],
+  lines: (Omit<QuoteLineIdentity, "targetPrice" | "specialRequirements"> & {
+    targetPrice?: string;
+    specialRequirements?: string;
+    unitPrice?: string;
+    decision?: string;
+    decisionNote?: string;
+    leadTime?: string;
+    replyQty?: string;
+  })[],
 ): QuoteLineIdentity[] {
   return lines
-    .filter((line) => line.itemId || line.partNumber.trim() || line.sku.trim() || line.itemName.trim() || line.qty.trim())
+    .filter(
+      (line) =>
+        line.itemId ||
+        line.partNumber.trim() ||
+        line.sku.trim() ||
+        line.itemName.trim() ||
+        line.qty.trim() ||
+        (line.targetPrice ?? "").trim() ||
+        (line.specialRequirements ?? "").trim(),
+    )
     .map((line) => ({
       itemId: line.itemId,
       partNumber: line.partNumber.trim(),
@@ -434,6 +649,8 @@ export function linesForRelatedEvent(
       itemName: line.itemName.trim(),
       condition: line.condition.trim(),
       qty: line.qty.trim(),
+      targetPrice: (line.targetPrice ?? "").trim(),
+      specialRequirements: (line.specialRequirements ?? "").trim(),
     }));
 }
 
@@ -457,6 +674,11 @@ export function quoteExtension(qty: string, unitPrice: string): string {
   const parsedPrice = parseMoney(unitPrice);
   if (!parsedQty.ok || !parsedPrice.ok || parsedQty.qty == null || parsedPrice.amount == null) return "";
   return formatMoney(roundMoney(parsedQty.qty * parsedPrice.amount));
+}
+
+/** DDS ext uses the reply quantity when it is filled in, otherwise the request quantity. */
+export function quoteReplyExtension(qty: string, replyQty: string, unitPrice: string): string {
+  return quoteExtension(replyQty.trim() ? replyQty : qty, unitPrice);
 }
 
 export function bestCompetingUnit(bids: { unitPrice: string }[]): number | null {
@@ -509,7 +731,8 @@ export function parseQuoteSave(input: QuoteSaveInput): QuoteParse {
   const notes = clip(input.notes, 4000);
   if (notes.error) return { ok: false, message: "Notes are too long." };
   if (!isQuoteChannel(input.channel)) return { ok: false, message: "Choose a channel." };
-  if (!isQuoteDirection(input.direction)) return { ok: false, message: "Choose a direction." };
+  if (!isQuoteDirection(input.direction)) return { ok: false, message: "Choose inbound or outbound." };
+  if (!isQuoteSide(input.side)) return { ok: false, message: "Choose buy or sell." };
   if (!isQuoteStatus(input.status)) return { ok: false, message: "Choose a status." };
   const received = parseDate(input.receivedOn, true);
   if (!received.ok || !received.value) return { ok: false, message: "Enter the received date." };
@@ -517,6 +740,20 @@ export function parseQuoteSave(input: QuoteSaveInput): QuoteParse {
   if (!due.ok) return due;
   const vendorId = optionalUuid(input.vendorId, "That vendor was not found.");
   if (!vendorId.ok) return vendorId;
+  const customerId = optionalUuid(input.customerId, "That customer was not found.");
+  if (!customerId.ok) return customerId;
+  const prospectId = optionalUuid(input.prospectId, "That prospect was not found.");
+  if (!prospectId.ok) return prospectId;
+  if (!isQuoteOriginatorKind(input.originatorKind)) return { ok: false, message: "Choose who started this quote." };
+  const partyError = originatorPartyError({
+    side: input.side,
+    direction: input.direction,
+    originatorKind: input.originatorKind,
+    vendorId: vendorId.value,
+    customerId: customerId.value,
+    prospectId: prospectId.value,
+  });
+  if (partyError) return { ok: false, message: partyError };
   const currency = (input.currency.trim() || "USD").toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) return { ok: false, message: "Currency is a 3-letter code." };
 
@@ -539,8 +776,12 @@ export function parseQuoteSave(input: QuoteSaveInput): QuoteParse {
       reference: reference.value,
       counterpartyName: counterpartyName.value,
       vendorId: vendorId.value,
+      customerId: customerId.value,
+      prospectId: prospectId.value,
+      originatorKind: input.originatorKind,
       channel: input.channel,
       direction: input.direction,
+      side: input.side,
       status: input.status,
       receivedOn: received.value,
       dueOn: due.value,
@@ -556,8 +797,12 @@ export type QuoteRelatedInput = {
   reference: string;
   counterpartyName: string;
   vendorId: string;
+  customerId: string;
+  prospectId: string;
+  originatorKind: string;
   channel: string;
   direction: string;
+  side: string;
   receivedOn: string;
   dueOn: string;
   relationType: string;
@@ -569,8 +814,12 @@ export type ParsedRelatedQuote = {
   reference: string | null;
   counterpartyName: string | null;
   vendorId: string | null;
+  customerId: string | null;
+  prospectId: string | null;
+  originatorKind: QuoteOriginatorKind;
   channel: QuoteChannel;
   direction: QuoteDirection;
+  side: QuoteSide;
   receivedOn: string;
   dueOn: string | null;
   relationType: QuoteRelationType;
@@ -583,8 +832,12 @@ export function parseRelatedQuote(input: QuoteRelatedInput): { ok: true; value: 
     reference: input.reference,
     counterpartyName: input.counterpartyName,
     vendorId: input.vendorId,
+    customerId: input.customerId,
+    prospectId: input.prospectId,
+    originatorKind: input.originatorKind,
     channel: input.channel,
     direction: input.direction,
+    side: input.side,
     status: "open",
     receivedOn: input.receivedOn,
     dueOn: input.dueOn,
@@ -603,8 +856,12 @@ export function parseRelatedQuote(input: QuoteRelatedInput): { ok: true; value: 
       reference: header.value.reference,
       counterpartyName: header.value.counterpartyName,
       vendorId: header.value.vendorId,
+      customerId: header.value.customerId,
+      prospectId: header.value.prospectId,
+      originatorKind: header.value.originatorKind,
       channel: header.value.channel,
       direction: header.value.direction,
+      side: header.value.side,
       receivedOn: header.value.receivedOn,
       dueOn: header.value.dueOn,
       relationType: input.relationType,
@@ -616,13 +873,40 @@ export function parseRelatedQuote(input: QuoteRelatedInput): { ok: true; value: 
 export function quoteReviewsUnavailable(error: { code?: string; message?: string } | null | undefined): boolean {
   if (!error) return false;
   const message = error.message ?? "";
-  if (!/quote_event/i.test(message)) return false;
+  if (!/quote_event|quote_prospect/i.test(message)) return false;
   return (
     error.code === "PGRST205" ||
     error.code === "PGRST204" ||
     error.code === "42P01" ||
+    error.code === "42703" ||
     /schema cache|does not exist|could not find/i.test(message)
   );
+}
+
+function originatorPartyError(input: {
+  side: QuoteSide;
+  direction: QuoteDirection;
+  originatorKind: QuoteOriginatorKind;
+  vendorId: string | null;
+  customerId: string | null;
+  prospectId: string | null;
+}): string | null {
+  if (input.direction === "inbound" && input.side === "sell") {
+    if (input.originatorKind === "customer" && input.customerId && !input.vendorId && !input.prospectId) return null;
+    if (input.originatorKind === "prospect" && input.prospectId && !input.vendorId && !input.customerId) return null;
+    return "Inbound Sell Request starts with a customer or a prospect.";
+  }
+  if (input.direction === "inbound" && input.side === "buy") {
+    if (input.originatorKind === "vendor" && input.vendorId && !input.customerId && !input.prospectId) return null;
+    return "Inbound Buy Request starts with a vendor.";
+  }
+  if (input.direction === "outbound" && input.originatorKind === "dds") {
+    if (input.side === "sell" && input.vendorId) return "Outbound Sell Request uses a customer or a prospect.";
+    if (input.side === "sell" && input.customerId && input.prospectId) return "Pick a customer or a prospect.";
+    if (input.side === "buy" && (input.customerId || input.prospectId)) return "Outbound Buy Offer uses a vendor.";
+    return null;
+  }
+  return "That originator does not match this quote.";
 }
 
 function parseLine(
@@ -644,12 +928,20 @@ function parseLine(
   if (itemName.error) return { ok: false, message: `The name on line ${number} is too long.` };
   const condition = clip(line.condition, 80);
   if (condition.error) return { ok: false, message: `The condition on line ${number} is too long.` };
+  const requirements = clip(line.specialRequirements, 500);
+  if (requirements.error) return { ok: false, message: `The special requirements on line ${number} are too long.` };
   const decisionNote = clip(line.decisionNote, 500);
   if (decisionNote.error) return { ok: false, message: `The note on line ${number} is too long.` };
+  const leadTime = clip(line.leadTime, 120);
+  if (leadTime.error) return { ok: false, message: `The lead time on line ${number} is too long.` };
   const qty = parseQuoteQty(line.qty);
   if (!qty.ok) return { ok: false, message: `Line ${number}: ${qty.message}` };
+  const replyQty = parseQuoteQty(line.replyQty);
+  if (!replyQty.ok) return { ok: false, message: `Line ${number} reply: ${replyQty.message}` };
   const unitPrice = parseMoney(line.unitPrice);
   if (!unitPrice.ok) return { ok: false, message: `Line ${number}: ${unitPrice.message}` };
+  const targetPrice = parseMoney(line.targetPrice);
+  if (!targetPrice.ok) return { ok: false, message: `Line ${number} target: ${targetPrice.message}` };
   const decision = line.decision.trim();
   if (decision && !QUOTE_DECISIONS.some((item) => item.id === decision)) {
     return { ok: false, message: `Choose a decision on line ${number}.` };
@@ -668,8 +960,12 @@ function parseLine(
       sku.value ||
       itemName.value ||
       condition.value ||
+      requirements.value ||
       qty.qty != null ||
+      replyQty.qty != null ||
       unitPrice.amount != null ||
+      targetPrice.amount != null ||
+      leadTime.value ||
       decision ||
       decisionNote.value ||
       bids.length > 0,
@@ -688,7 +984,11 @@ function parseLine(
       itemName: itemName.value,
       condition: condition.value,
       qty: qty.qty,
+      targetPrice: targetPrice.amount,
+      specialRequirements: requirements.value,
+      replyQty: replyQty.qty,
       unitPrice: unitPrice.amount,
+      leadTime: leadTime.value,
       decision: decision ? (decision as QuoteDecision) : null,
       decisionNote: decisionNote.value,
       bids,
@@ -704,15 +1004,41 @@ function parseBid(
   if (name.error) return { ok: false, message: `A bidder name on line ${lineNumber} is too long.` };
   const note = clip(bid.note, 300);
   if (note.error) return { ok: false, message: `A bid note on line ${lineNumber} is too long.` };
+  const sku = clip(bid.sku, 80);
+  if (sku.error) return { ok: false, message: `A bidder SKU on line ${lineNumber} is too long.` };
+  const itemName = clip(bid.itemName, 300);
+  if (itemName.error) return { ok: false, message: `A bidder item name on line ${lineNumber} is too long.` };
+  const leadTime = clip(bid.leadTime, 120);
+  if (leadTime.error) return { ok: false, message: `A bidder lead time on line ${lineNumber} is too long.` };
   const unitPrice = parseMoney(bid.unitPrice);
   if (!unitPrice.ok) return { ok: false, message: `Line ${lineNumber}: ${unitPrice.message}` };
-  if (!name.value && unitPrice.amount == null && !note.value) return { ok: true, bid: null };
+  const qty = parseQuoteQty(bid.qty);
+  if (!qty.ok) return { ok: false, message: `Line ${lineNumber}: ${qty.message}` };
+  const empty =
+    !name.value &&
+    unitPrice.amount == null &&
+    !note.value &&
+    !sku.value &&
+    !itemName.value &&
+    qty.qty == null &&
+    !leadTime.value;
+  if (empty) return { ok: true, bid: null };
   if (!name.value) return { ok: false, message: `Name the competing bidder on line ${lineNumber}.` };
   const id = optionalUuid(bid.id, `A competing bid on line ${lineNumber} was not found.`);
   if (!id.ok) return id;
   return {
     ok: true,
-    bid: { key: bid.key || name.value, id: id.value, bidderName: name.value, unitPrice: unitPrice.amount, note: note.value },
+    bid: {
+      key: bid.key || name.value,
+      id: id.value,
+      bidderName: name.value,
+      unitPrice: unitPrice.amount,
+      note: note.value,
+      sku: sku.value,
+      itemName: itemName.value,
+      qty: qty.qty,
+      leadTime: leadTime.value,
+    },
   };
 }
 

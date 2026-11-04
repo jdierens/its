@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { QuoteReviewForm } from "@/components/QuoteReviewForm";
 import { errorText } from "@/lib/errors";
 import { quoteReviewPageAccess } from "@/lib/quoteReviewSession";
-import { listQuoteReviewChoices, listQuoteVendors, loadQuoteReview } from "@/lib/quoteReviewsServer";
+import { listQuoteCustomers, listQuoteProspects, listQuoteReviewChoices, listQuoteVendors, loadQuoteReview } from "@/lib/quoteReviewsServer";
 import { QUOTE_REVIEWS_SETUP } from "@/lib/quoteReviews";
 
 export const dynamic = "force-dynamic";
@@ -31,13 +31,20 @@ export default async function QuoteReviewPage({ params }: { params: Promise<{ id
       );
     }
     if (detail.status === "missing") notFound();
-    const [vendors, choices] = await Promise.all([listQuoteVendors(), listQuoteReviewChoices(id)]);
+    const [vendors, customers, prospects, choices] = await Promise.all([
+      listQuoteVendors(),
+      listQuoteCustomers(),
+      listQuoteProspects(),
+      listQuoteReviewChoices(id),
+    ]);
     return (
       <main className="page so-page ds">
         <QuoteReviewForm
           canEdit={access.canEdit}
           draft={detail.draft}
           vendors={vendors}
+          customers={customers}
+          prospects={prospects}
           relations={detail.relations}
           choices={choices}
         />

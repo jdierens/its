@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
 import { errorText } from "@/lib/errors";
 import { createRelatedQuoteReview, linkQuoteReviews, unlinkQuoteReview } from "@/lib/quoteReviewsServer";
 import {
@@ -10,58 +11,68 @@ import {
   QUOTE_DIRECTIONS,
   QUOTE_RELATIONS,
   QUOTE_REVIEWS_PATH,
+  QUOTE_SIDES,
   isQuoteChannel,
   isQuoteDirection,
+  isQuoteSide,
+  originatorForFlow,
   quoteCalendarDay,
-  suggestedRelatedDirection,
-  suggestedRelationType,
+  quoteFlowLabel,
+  relationForNewFlow,
+  suggestedRelatedFlow,
+  type OriginatorIds,
   type QuoteChoice,
+  type QuotePartyOption,
   type QuoteRelationView,
-  type QuoteVendorOption,
 } from "@/lib/quoteReviews";
 
 export function QuoteReviewRelated({
   eventId,
   canEdit,
   currency,
+  sourceSide,
   sourceDirection,
   sourceChannel,
   sourceReference,
   vendors,
+  customers,
+  prospects,
+  onProspect,
   relations,
   choices,
 }: {
   eventId: string;
   canEdit: boolean;
   currency: string;
+  sourceSide: string;
   sourceDirection: string;
   sourceChannel: string;
   sourceReference: string;
-  vendors: QuoteVendorOption[];
+  vendors: QuotePartyOption[];
+  customers: QuotePartyOption[];
+  prospects: QuotePartyOption[];
+  onProspect: (prospect: QuotePartyOption) => void;
   relations: QuoteRelationView[];
   choices: QuoteChoice[];
 }) {
   const router = useRouter();
-  const direction = isQuoteDirection(sourceDirection) ? suggestedRelatedDirection(sourceDirection) : "outbound_ask";
-  const [related, setRelated] = useState<{
-    reference: string;
-    counterpartyName: string;
-    vendorId: string;
-    channel: string;
-    direction: string;
-    receivedOn: string;
-    dueOn: string;
-    relationType: string;
-    relationNote: string;
-  }>({
+  const suggested =
+    isQuoteSide(sourceSide) && isQuoteDirection(sourceDirection)
+      ? suggestedRelatedFlow(sourceSide, sourceDirection)
+      : { side: "sell" as const, direction: "outbound" as const, relationType: "response_to" as const };
+  const [related, setRelated] = useState({
     reference: sourceReference,
     counterpartyName: "",
     vendorId: "",
+    customerId: "",
+    prospectId: "",
+    originatorKind: suggested.direction === "outbound" ? "dds" : suggested.side === "buy" ? "vendor" : "customer",
     channel: isQuoteChannel(sourceChannel) ? sourceChannel : "other",
-    direction,
+    direction: suggested.direction,
+    side: suggested.side,
     receivedOn: quoteCalendarDay(),
     dueOn: "",
-    relationType: suggestedRelationType(direction),
+    relationType: suggested.relationType,
     relationNote: "",
   });
   const [relationTouched, setRelationTouched] = useState(false);
@@ -76,13 +87,23 @@ export function QuoteReviewRelated({
   const needle = choiceQuery.trim().toLowerCase();
   const available = choices.filter((choice) => !linked.has(choice.id) && (!needle || choice.label.toLowerCase().includes(needle)));
 
-  function setDirection(next: string) {
-    if (!isQuoteDirection(next)) return;
-    setRelated((current) => ({
-      ...current,
-      direction: next,
-      relationType: relationTouched ? current.relationType : suggestedRelationType(next),
-    }));
+  function setFlow(patch: { side?: string; direction?: string }) {
+    setRelated((current) => {
+      const side = patch.side ?? current.side;
+      const direction = patch.direction ?? current.direction;
+      return {
+        ...current,
+        side,
+        direction,
+        ...originatorForFlow(side, direction, current),
+        relationType:
+          relationTouched || !isQuoteSide(side) || !isQuoteDirection(direction) ? current.relationType : relationForNewFlow(side, direction),
+      };
+    });
+  }
+
+  function setOriginator(next: OriginatorIds) {
+    setRelated((current) => ({ ...current, ...next }));
   }
 
   async function onCreate(event: FormEvent) {
@@ -136,8 +157,9 @@ export function QuoteReviewRelated({
     <section className="card qr-related">
       <h2>Related quotes</h2>
       <p className="hint">
-        One link joins two events, in either direction. The label is stored from this quote toward the other one when you
-        link them here.
+        One link joins two events. A related quote keeps the part, SKU, name, condition, quantity, target, and special requirements. Price, lead
+        time, the decision, and bids stay on this quote.{" "}
+        {isQuoteSide(sourceSide) && isQuoteDirection(sourceDirection) ? `This quote is ${quoteFlowLabel(sourceSide, sourceDirection)}.` : null}
       </p>
       {relations.length === 0 ? <p className="muted">No related quotes yet.</p> : null}
       {relations.length > 0 ? (
@@ -171,9 +193,8 @@ export function QuoteReviewRelated({
           <form onSubmit={onCreate}>
             <h3>Create related quote</h3>
             <p className="hint">
-              Copies the saved lines: SKU, name, part number, item, condition, and quantity. Our price, the decision, and
-              competing bids stay blank. Currency stays {currency}. Save this quote first if the lines on screen are newer
-              than the saved copy.
+              Copies the saved request lines. Currency stays {currency}. Save this quote first if the lines on screen are newer than the saved copy.
+              An inbound buy suggests an outbound sell, the way the Hong Kong market prices sit beside Mainstream.
             </p>
             <div className="qr-head">
               <label>
@@ -181,11 +202,21 @@ export function QuoteReviewRelated({
                 <input value={related.reference} onChange={(event) => setRelated({ ...related, reference: event.target.value })} />
               </label>
               <label>
+                Side
+                <select value={related.side} onChange={(event) => setFlow({ side: event.target.value })}>
+                  {QUOTE_SIDES.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label} · won → {item.outcome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 Direction
-                <select value={related.direction} onChange={(event) => setDirection(event.target.value)}>
+                <select value={related.direction} onChange={(event) => setFlow({ direction: event.target.value })}>
                   {QUOTE_DIRECTIONS.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.label}
+                      {item.id === "inbound" ? "In · they asked" : "Out · DDS asked"}
                     </option>
                   ))}
                 </select>
@@ -216,43 +247,25 @@ export function QuoteReviewRelated({
                   ))}
                 </select>
               </label>
-              <label>
-                Vendor
-                <select
-                  value={related.vendorId}
-                  onChange={(event) => {
-                    const vendorId = event.target.value;
-                    const vendor = vendors.find((item) => item.id === vendorId);
-                    setRelated((current) => ({
-                      ...current,
-                      vendorId,
-                      counterpartyName: current.counterpartyName.trim() ? current.counterpartyName : vendor?.name ?? "",
-                    }));
-                  }}
-                >
-                  <option value="">No vendor</option>
-                  {vendors.map((vendor) => (
-                    <option key={vendor.id} value={vendor.id}>
-                      {vendor.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Contact name
-                <input
-                  value={related.counterpartyName}
-                  onChange={(event) => setRelated({ ...related, counterpartyName: event.target.value })}
-                />
-              </label>
+              <QuoteOriginatorFields
+                side={related.side}
+                direction={related.direction}
+                originatorKind={related.originatorKind}
+                vendorId={related.vendorId}
+                customerId={related.customerId}
+                prospectId={related.prospectId}
+                contact={related.counterpartyName}
+                disabled={false}
+                vendors={vendors}
+                customers={customers}
+                prospects={prospects}
+                onOriginator={setOriginator}
+                onContact={(counterpartyName) => setRelated((current) => ({ ...current, counterpartyName }))}
+                onProspect={onProspect}
+              />
               <label>
                 Received
-                <input
-                  type="date"
-                  value={related.receivedOn}
-                  onChange={(event) => setRelated({ ...related, receivedOn: event.target.value })}
-                  required
-                />
+                <input type="date" value={related.receivedOn} onChange={(event) => setRelated({ ...related, receivedOn: event.target.value })} required />
               </label>
               <label>
                 Due
@@ -274,7 +287,7 @@ export function QuoteReviewRelated({
             <div className="qr-head">
               <label>
                 Find
-                <input value={choiceQuery} onChange={(event) => setChoiceQuery(event.target.value)} placeholder="Name or direction" />
+                <input value={choiceQuery} onChange={(event) => setChoiceQuery(event.target.value)} placeholder="Name or type" />
               </label>
               <label>
                 Quote
