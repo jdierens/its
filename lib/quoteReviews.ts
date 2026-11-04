@@ -822,28 +822,55 @@ export function quoteReplyExtension(qty: string, replyQty: string, unitPrice: st
   return quoteExtension(replyQty.trim() ? replyQty : qty, unitPrice);
 }
 
-export function bestCompetingUnit(bids: { unitPrice: string }[]): number | null {
+function extremeUnit(prices: { unitPrice: string }[], high: boolean): number | null {
   let best: number | null = null;
-  for (const bid of bids) {
-    const parsed = parseMoney(bid.unitPrice);
+  for (const price of prices) {
+    const parsed = parseMoney(price.unitPrice);
     if (!parsed.ok || parsed.amount == null) continue;
-    if (best == null || parsed.amount < best) best = parsed.amount;
+    if (best == null || (high ? parsed.amount > best : parsed.amount < best)) best = parsed.amount;
   }
   return best;
 }
 
 /**
- * Lowest unit under the DDS price. Local bids are included, and so are related
- * quotes loaded with the page, so a price that moved onto a related quote is
- * not stuck at the old bid.
+ * Lowest local bid unit. The quote list's competing total uses this.
+ * It does not include related quotes and it does not follow the line-detail flip.
+ */
+export function bestCompetingUnit(bids: { unitPrice: string }[]): number | null {
+  return extremeUnit(bids, false);
+}
+
+/**
+ * Line-detail Best flips with direction and side.
+ * Lowest: outbound buy, inbound sell.
+ * Highest: inbound buy, outbound sell.
+ */
+export function quoteLineBestIsHigh(side: string, direction: string): boolean {
+  const axes = displayAxes(side, direction);
+  return (axes.direction === "inbound" && axes.side === "buy") || (axes.direction === "outbound" && axes.side === "sell");
+}
+
+/**
+ * Best under the DDS unit. The pool is this line's bids and the related quotes
+ * loaded with the page. Only the min or max flips. Editing a bid on the page
+ * is included. This is not the item ecommerce or market price.
  */
 export function bestQuotedUnit(
   line: { partNumber: string; sku: string; bids: { unitPrice: string }[] },
   offers: QuoteOfferColumn[],
+  side: string,
+  direction: string,
 ): number | null {
   const prices = line.bids.map((bid) => ({ unitPrice: bid.unitPrice }));
   for (const offer of offers) prices.push({ unitPrice: offerUnit(offer, line.partNumber, line.sku) });
-  return bestCompetingUnit(prices);
+  return extremeUnit(prices, quoteLineBestIsHigh(side, direction));
+}
+
+/** Character count for a quote field. The floor keeps an empty box usable. The cap stops a long value from stretching the row. */
+export function quoteFieldChars(value: string, floor: number, cap: number, placeholder = ""): number {
+  const low = Math.max(1, Math.floor(floor));
+  const high = Math.max(low, Math.floor(cap));
+  return Math.min(high, Math.max(low, value.length, placeholder.length));
 }
 
 export function summarizeQuoteLines(lines: QuoteLineSummary[]): QuoteTotals {

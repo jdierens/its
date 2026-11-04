@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { QuoteFitInput } from "@/components/QuoteFitInput";
 import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
 import { errorText } from "@/lib/errors";
 import { createRelatedQuoteReview, linkQuoteReviews, unlinkQuoteReview } from "@/lib/quoteReviewsServer";
@@ -222,11 +223,11 @@ export function QuoteReviewRelated({
             <div className="qr-head">
               <label>
                 List name
-                <input value={related.reference} onChange={(event) => setRelated({ ...related, reference: event.target.value })} />
+                <QuoteFitInput floor={8} cap={32} value={related.reference} onChange={(event) => setRelated({ ...related, reference: event.target.value })} />
               </label>
               <label>
                 Side
-                <select value={related.side} onChange={(event) => setFlow({ side: event.target.value })}>
+                <select className="qr-fit" value={related.side} onChange={(event) => setFlow({ side: event.target.value })}>
                   {QUOTE_SIDES.map((item) => (
                     <option key={item.id} value={item.id}>
                       {quoteSideLabel(item.id)}
@@ -236,7 +237,7 @@ export function QuoteReviewRelated({
               </label>
               <label>
                 Direction
-                <select value={related.direction} onChange={(event) => setFlow({ direction: event.target.value })}>
+                <select className="qr-fit" value={related.direction} onChange={(event) => setFlow({ direction: event.target.value })}>
                   {QUOTE_DIRECTIONS.map((item) => (
                     <option key={item.id} value={item.id}>
                       {quoteDirectionLabel(item.id)}
@@ -247,6 +248,7 @@ export function QuoteReviewRelated({
               <label>
                 Channel
                 <select
+                  className="qr-fit"
                   value={related.channel}
                   onChange={(event) => {
                     const channel = event.target.value;
@@ -264,6 +266,7 @@ export function QuoteReviewRelated({
               <label>
                 Relation
                 <select
+                  className="qr-fit"
                   value={related.relationType}
                   onChange={(event) => {
                     const relationType = event.target.value;
@@ -319,11 +322,11 @@ export function QuoteReviewRelated({
             <div className="qr-head">
               <label>
                 Find
-                <input value={choiceQuery} onChange={(event) => setChoiceQuery(event.target.value)} placeholder="Name or type" />
+                <QuoteFitInput floor={12} cap={28} value={choiceQuery} onChange={(event) => setChoiceQuery(event.target.value)} placeholder="Name or type" />
               </label>
               <label>
                 Quote
-                <select value={otherId} onChange={(event) => setOtherId(event.target.value)} required>
+                <select className="qr-fit" value={otherId} onChange={(event) => setOtherId(event.target.value)} required>
                   <option value="">Choose</option>
                   {available.map((choice) => (
                     <option key={choice.id} value={choice.id}>
@@ -334,7 +337,7 @@ export function QuoteReviewRelated({
               </label>
               <label>
                 This quote is
-                <select value={linkType} onChange={(event) => setLinkType(event.target.value)}>
+                <select className="qr-fit" value={linkType} onChange={(event) => setLinkType(event.target.value)}>
                   {QUOTE_RELATIONS.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.label}
@@ -344,7 +347,7 @@ export function QuoteReviewRelated({
               </label>
               <label>
                 Note
-                <input value={linkNote} onChange={(event) => setLinkNote(event.target.value)} />
+                <QuoteFitInput floor={8} cap={32} value={linkNote} onChange={(event) => setLinkNote(event.target.value)} />
               </label>
             </div>
             <p>

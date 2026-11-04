@@ -74,7 +74,7 @@ export default async function QuoteReviewsPage({
         </label>
         <label>
           Status
-          <select name="status" defaultValue={status}>
+          <select className="qr-fit" name="status" defaultValue={status}>
             <option value="">Any</option>
             {QUOTE_STATUSES.map((item) => (
               <option key={item.id} value={item.id}>
@@ -85,7 +85,7 @@ export default async function QuoteReviewsPage({
         </label>
         <label>
           Side
-          <select name="side" defaultValue={side}>
+          <select className="qr-fit" name="side" defaultValue={side}>
             <option value="">Any</option>
             {QUOTE_SIDES.map((item) => (
               <option key={item.id} value={item.id}>
@@ -96,7 +96,7 @@ export default async function QuoteReviewsPage({
         </label>
         <label>
           Direction
-          <select name="direction" defaultValue={direction}>
+          <select className="qr-fit" name="direction" defaultValue={direction}>
             <option value="">Any</option>
             {QUOTE_DIRECTIONS.map((item) => (
               <option key={item.id} value={item.id}>
