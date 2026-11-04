@@ -10957,6 +10957,12 @@ button.so-new-order svg,
   gap: 0.45rem;
 }
 
+.qr-overview tfoot td {
+  font-weight: 650;
+  border-bottom: 0;
+  box-shadow: inset 0 1px 0 var(--line);
+}
+
 .qr-overview .qr-context,
 .qr-lines .qr-context {
   display: block;
@@ -11110,6 +11116,7 @@ button.so-new-order svg,
 
   .qr-lines table,
   .qr-lines tbody,
+  .qr-lines tfoot,
   .qr-lines tr,
   .qr-lines td {
     display: block;

@@ -16,7 +16,10 @@ import {
   parseQuoteSave,
   quoteDirectionLabel,
   quoteLineMatchKey,
+  quoteExtTotal,
+  quoteExtWhole,
   quoteMoneyExt,
+  quoteOverviewExt,
   parseRelatedQuote,
   quoteBidderList,
   quoteBidders,
@@ -94,6 +97,14 @@ test("type labels are the pattern name and never say ask", () => {
   assert.equal(quoteMoneyExt("500", "218.80", "USD"), "$109,400");
   assert.equal(quoteMoneyExt("1", "10.49", "USD"), "$10");
   assert.equal(quoteMoneyExt("1", "10.50", "USD"), "$11");
+  assert.equal(quoteExtWhole("500", "218.80"), 109400);
+  assert.equal(quoteExtWhole("1", "10.49"), 10);
+  assert.equal(quoteExtWhole("", "10"), null);
+  assert.equal(quoteOverviewExt({ qty: "2", replyQty: "3" }, "10", "dds"), 30);
+  assert.equal(quoteOverviewExt({ qty: "2", replyQty: "3" }, "10", "bid"), 20);
+  assert.equal(quoteExtTotal([109400, 10], "USD"), "$109,410");
+  assert.equal(quoteExtTotal([quoteExtWhole("1", "10.49"), quoteExtWhole("1", "10.49")], "USD"), "$20");
+  assert.equal(quoteExtTotal([null, null], "USD"), "");
 });
 
 test("changing side and direction keeps only the party that still fits", () => {

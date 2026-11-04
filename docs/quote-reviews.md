@@ -44,7 +44,7 @@ The list shows the type, the originator company and contact, line count, total q
 
 The list and the line tables use a 13px cell and an 11px heading, with short row padding, so more prices fit across the screen.
 
-Above the editor, **Overview** is one row per request line: part, SKU, quantity, condition, then **DDS unit** with DDS ext under that unit, then one column per other price (LNT, XYS, and the rest). Every price cell shows the unit and, under it, the extension for the request quantity. Extensions display as whole currency units, with no cents. Unit prices keep cents. A related quote adds a column for its DDS price when it has one, and a column for each of its bidders, matched on part number. Hong’s market prices show on the Mainstream overview that way.
+Above the editor, **Overview** is one row per request line: part, SKU, quantity, condition, then **DDS unit** with DDS ext under that unit, then one column per other price (LNT, XYS, and the rest). Every price cell shows the unit and, under it, the extension for the request quantity. DDS ext uses the reply quantity when that is filled in. Extensions display as whole currency units, with no cents. Unit prices keep cents. A total row under the columns sums each column’s extensions as those same whole dollars. A related quote adds a column for its DDS price when it has one, and a column for each of its bidders, matched on part number. Hong’s market prices show on the Mainstream overview that way.
 
 The line grid under that is the request on the left and the DDS response on the right.
 
