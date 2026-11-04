@@ -832,6 +832,20 @@ export function bestCompetingUnit(bids: { unitPrice: string }[]): number | null 
   return best;
 }
 
+/**
+ * Lowest unit under the DDS price. Local bids are included, and so are related
+ * quotes loaded with the page, so a price that moved onto a related quote is
+ * not stuck at the old bid.
+ */
+export function bestQuotedUnit(
+  line: { partNumber: string; sku: string; bids: { unitPrice: string }[] },
+  offers: QuoteOfferColumn[],
+): number | null {
+  const prices = line.bids.map((bid) => ({ unitPrice: bid.unitPrice }));
+  for (const offer of offers) prices.push({ unitPrice: offerUnit(offer, line.partNumber, line.sku) });
+  return bestCompetingUnit(prices);
+}
+
 export function summarizeQuoteLines(lines: QuoteLineSummary[]): QuoteTotals {
   let qty = 0;
   let hasQty = false;

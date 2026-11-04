@@ -5,6 +5,7 @@ import { quoteReviewAccessForRole } from "./quoteReviewAccess.ts";
 import {
   addCalendarDays,
   bestCompetingUnit,
+  bestQuotedUnit,
   counterpartyLabel,
   isQuoteDueSoon,
   linesForRelatedEvent,
@@ -205,6 +206,24 @@ test("line totals sum our extension and the lowest competing price", () => {
     { lineCount: 3, qty: 3, offerExt: 20, competingExt: 23 },
   );
   assert.equal(bestCompetingUnit([{ unitPrice: "12.00" }, { unitPrice: "9.50" }, { unitPrice: "" }]), 9.5);
+  assert.equal(
+    bestQuotedUnit(
+      { partNumber: "MZ-1", sku: "", bids: [{ unitPrice: "200.10" }] },
+      [{ id: "hong", label: "Hong Li", prices: [{ matchKey: "p:MZ1", unitPrice: "190.25" }] }],
+    ),
+    190.25,
+  );
+  assert.equal(
+    bestQuotedUnit(
+      { partNumber: "MZ-1", sku: "", bids: [{ unitPrice: "8.00" }] },
+      [{ id: "hong", label: "Hong Li", prices: [{ matchKey: "p:MZ1", unitPrice: "9.25" }] }],
+    ),
+    8,
+  );
+  assert.equal(
+    bestQuotedUnit({ partNumber: "MZ-1", sku: "", bids: [{ unitPrice: "" }] }, [{ id: "hong", label: "Hong Li", prices: [{ matchKey: "p:OTHER", unitPrice: "9.25" }] }]),
+    null,
+  );
   assert.equal(quoteExtension("2", "10"), "$20");
   assert.equal(quoteExtension("2", "10.25"), "$21");
   assert.equal(quoteReplyExtension("2", "3", "10"), "$30");

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { QuoteFlowMarks } from "@/components/QuoteFlowMarks";
 import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
@@ -17,7 +18,7 @@ import {
   QUOTE_REVIEWS_PATH,
   QUOTE_SIDES,
   QUOTE_STATUSES,
-  bestCompetingUnit,
+  bestQuotedUnit,
   blankQuoteBid,
   blankQuoteLine,
   originatorForFlow,
@@ -403,7 +404,7 @@ export function QuoteReviewForm({
             onPatch={patchBidder}
           />
         </QuotePriceOverview>
-        <div className="card qr-lines">
+        <div className="card qr-lines qr-detail">
           <div className="qr-line-bar">
             <h2>Line detail</h2>
             {canEdit ? (
@@ -447,7 +448,7 @@ export function QuoteReviewForm({
               </thead>
               <tbody>
                 {lines.map((line, index) => {
-                  const best = bestCompetingUnit(line.bids);
+                  const best = bestQuotedUnit(line, offers);
                   return (
                     <LineRows
                       key={line.key}
@@ -752,8 +753,8 @@ function LineRows({
         </td>
         <td data-label="">
           {canEdit ? (
-            <button type="button" className="button secondary" onClick={onRemove}>
-              Remove
+            <button type="button" className="secondary so-icon-remove" aria-label={`Remove line ${number}`} title="Remove" onClick={onRemove}>
+              <Trash2 size={14} strokeWidth={1.75} aria-hidden />
             </button>
           ) : null}
         </td>
