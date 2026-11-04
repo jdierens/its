@@ -96,6 +96,8 @@ A draft opens only the sales order. Approving the order opens picking. Packing s
 
 Shipping is not in the control. Warehouse → Shipping is the list of packed orders, and there is no page for one order. `salesOrderShipHref` in `lib/salesOrderStages.ts` is the hook. When that function returns a path, Shipping shows in the control and stays off until the order is packed.
 
+On the sales order list, and on the order, the stage icons open that order's page. Approved opens the sales order. Picked opens `/warehouse/pick/[orderId]`. Packed opens `/warehouse/pack/[orderId]`. Invoiced opens the invoice for that order. Shipped opens the sales order, where that order's shipments are, until `salesOrderShipHref` returns a ship page. Paid and cancelled are not links. An order that has not been saved yet has no id, so its icons are not links.
+
 ## Picking
 
 Warehouse → Picking is written up in [Picking](picking.md). Product and kit stock lines are the pick rows. Freight, fees, services, and service item 4343 are left off the page entirely. The item row is followed by the bin titles, then the bins. Picked lines up with pick qty. Pending lines up with the Pick button. Print ticket prints that sheet.

@@ -8215,6 +8215,25 @@ input.num-input {
   color: var(--stage-bad-ink);
 }
 
+/* A linked chip keeps its tone. .ds a would otherwise paint the text-link color. */
+.ds a.so-stage-icon {
+  text-decoration: none;
+  cursor: pointer;
+  color: var(--stage-neutral-ink);
+}
+
+.ds a.so-stage-icon.so-stage-done {
+  color: var(--stage-done-ink);
+}
+
+.ds a.so-stage-icon.so-stage-gap {
+  color: var(--stage-gap-ink);
+}
+
+.ds a.so-stage-icon.so-stage-bad {
+  color: var(--stage-bad-ink);
+}
+
 .so-stage-cancel {
   margin-left: 0.28rem;
 }
