@@ -24,6 +24,7 @@ import {
   quoteCalendarDay,
   quoteEventLabel,
   quoteFlowLabel,
+  quoteLineMatchKey,
   quoteQtyText,
   quoteReviewsUnavailable,
   relationPhrase,
@@ -33,6 +34,7 @@ import {
   type QuoteItemHit,
   type QuoteLineDraft,
   type QuoteListRow,
+  type QuoteOfferColumn,
   type QuotePartyOption,
   type QuoteRelatedInput,
   type QuoteRelationView,
@@ -53,7 +55,7 @@ export type QuoteListResult = {
 };
 
 export type QuoteDetailResult =
-  | { status: "ok"; draft: QuoteReviewDraft; relations: QuoteRelationView[] }
+  | { status: "ok"; draft: QuoteReviewDraft; relations: QuoteRelationView[]; offers: QuoteOfferColumn[] }
   | { status: "missing" }
   | { status: "unavailable" };
 
@@ -234,6 +236,7 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
   const lineRows = ((lines.data ?? []) as Row[]).slice().sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order));
   const context = await itemContext(lineRows.map((row) => text(row.item_id)).filter(Boolean));
   const header = event.data as Row;
+  const relations = await relationsFor(id);
   return {
     status: "ok",
     draft: {
@@ -254,8 +257,69 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
       notes: text(header.notes),
       lines: lineRows.map((row) => lineDraft(row, context)),
     },
-    relations: await relationsFor(id),
+    relations,
+    offers: await relatedOfferColumns(relations),
   };
+}
+
+async function relatedOfferColumns(relations: QuoteRelationView[]): Promise<QuoteOfferColumn[]> {
+  if (relations.length === 0) return [];
+  const ids = relations.map((relation) => relation.otherId).filter((id) => UUID.test(id));
+  if (ids.length === 0) return [];
+  const listed = await (await getSupabase())
+    .from("quote_event_lines")
+    .select("quote_event_id, sort_order, part_number, sku, our_unit_price, quote_event_bids(sort_order, bidder_name, unit_price)")
+    .in("quote_event_id", ids);
+  if (listed.error) throw dbError(listed.error);
+  const byEvent = new Map<string, Row[]>();
+  for (const row of (listed.data ?? []) as Row[]) {
+    const eventId = text(row.quote_event_id);
+    const list = byEvent.get(eventId) ?? [];
+    list.push(row);
+    byEvent.set(eventId, list);
+  }
+  const columns: QuoteOfferColumn[] = [];
+  for (const relation of relations) {
+    const rows = (byEvent.get(relation.otherId) ?? []).slice().sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order));
+    const ddsPrices = rows.flatMap((row) => {
+      const unit = moneyInput(asMoney(row.our_unit_price));
+      const matchKey = quoteLineMatchKey(text(row.part_number), text(row.sku));
+      if (!unit || !matchKey) return [];
+      return [{ matchKey, unitPrice: unit }];
+    });
+    if (ddsPrices.length > 0) {
+      columns.push({ id: `dds:${relation.otherId}`, label: offerHeading(relation.otherLabel), prices: ddsPrices });
+    }
+    const bidderNames: string[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      for (const bid of rowsOf(row.quote_event_bids).slice().sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order))) {
+        const name = text(bid.bidder_name).trim();
+        const key = name.toLowerCase();
+        if (!name || seen.has(key)) continue;
+        seen.add(key);
+        bidderNames.push(name);
+      }
+    }
+    for (const name of bidderNames) {
+      const prices = rows.flatMap((row) => {
+        const bid = rowsOf(row.quote_event_bids).find((item) => text(item.bidder_name).trim().toLowerCase() === name.toLowerCase());
+        const unit = bid ? moneyInput(asMoney(bid.unit_price)) : "";
+        const matchKey = quoteLineMatchKey(text(row.part_number), text(row.sku));
+        if (!unit || !matchKey) return [];
+        return [{ matchKey, unitPrice: unit }];
+      });
+      if (prices.length === 0) continue;
+      columns.push({ id: `bid:${relation.otherId}:${name.toLowerCase()}`, label: name, prices });
+    }
+  }
+  return columns;
+}
+
+function offerHeading(label: string): string {
+  const trimmed = label.trim() || "Related";
+  if (trimmed.length <= 28) return trimmed;
+  return `${trimmed.slice(0, 27)}…`;
 }
 
 export async function listQuoteReviewChoices(exceptId: string): Promise<QuoteChoice[]> {

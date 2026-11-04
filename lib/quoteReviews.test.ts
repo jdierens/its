@@ -8,10 +8,15 @@ import {
   counterpartyLabel,
   isQuoteDueSoon,
   linesForRelatedEvent,
+  displayAxes,
+  offerUnit,
   originatorDisplay,
   originatorForFlow,
   originatorPicker,
   parseQuoteSave,
+  quoteDirectionLabel,
+  quoteLineMatchKey,
+  quoteMoneyExt,
   parseRelatedQuote,
   quoteBidders,
   quoteExtension,
@@ -65,6 +70,27 @@ test("canonical quote types name the side, the direction, and who is picked", ()
   assert.equal(originatorDisplay({ kind: "dds", company: "", contact: "" }), "DDS");
   assert.equal(quoteLeadTime(""), "In stock");
   assert.equal(quoteLeadTime("2 weeks"), "2 weeks");
+});
+
+test("type labels are the pattern name and never say ask", () => {
+  for (const side of ["buy", "sell"]) {
+    for (const direction of ["inbound", "outbound", "inbound_ask", "outbound_ask", "inbound_response", "outbound_offer"]) {
+      const label = quoteFlowLabel(side, direction);
+      assert.equal(label.toLowerCase().includes("ask"), false);
+      assert.match(label, /^(Inbound|Outbound) (Buy|Sell) /);
+    }
+  }
+  assert.equal(quoteFlowLabel("buy", "inbound"), "Inbound Buy Request");
+  assert.equal(quoteFlowLabel("sell", "outbound"), "Outbound Sell Request");
+  assert.equal(quoteFlowLabel("buy", "outbound"), "Outbound Buy Offer");
+  assert.equal(quoteDirectionLabel("inbound"), "Inbound");
+  assert.equal(quoteDirectionLabel("outbound"), "Outbound");
+  assert.equal(quoteDirectionLabel("inbound_ask"), "Inbound");
+  assert.deepEqual(displayAxes("buy", "inbound_ask"), { side: "buy", direction: "inbound" });
+  assert.equal(quoteLineMatchKey("MZ-1 /A", ""), "p:MZ1A");
+  assert.equal(offerUnit({ id: "1", label: "LNT", prices: [{ matchKey: "p:MZ1A", unitPrice: "10" }] }, "mz-1/a", ""), "10");
+  assert.equal(quoteMoneyExt("2", "10", "USD"), "$20.00");
+  assert.equal(quoteMoneyExt("500", "218.80", "USD"), "$109,400.00");
 });
 
 test("changing side and direction keeps only the party that still fits", () => {

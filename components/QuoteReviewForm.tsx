@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { QuoteFlowMarks } from "@/components/QuoteFlowMarks";
 import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
+import { QuotePriceOverview } from "@/components/QuotePriceOverview";
 import { QuoteReviewRelated } from "@/components/QuoteReviewRelated";
 import { errorText } from "@/lib/errors";
 import { formatMoney } from "@/lib/pricing/quotes";
@@ -21,12 +22,15 @@ import {
   blankQuoteLine,
   originatorForFlow,
   quoteBidders,
+  quoteDirectionLabel,
   quoteFlowHint,
   quoteLeadTime,
   quoteReplyExtension,
+  quoteSideLabel,
   type QuoteChoice,
   type QuoteItemHit,
   type QuoteLineDraft,
+  type QuoteOfferColumn,
   type QuotePartyOption,
   type QuoteRelationView,
   type QuoteReviewDraft,
@@ -48,6 +52,7 @@ export function QuoteReviewForm({
   prospects: initialProspects,
   relations,
   choices,
+  offers = [],
 }: {
   canEdit: boolean;
   draft: QuoteReviewDraft;
@@ -56,6 +61,7 @@ export function QuoteReviewForm({
   prospects: QuotePartyOption[];
   relations: QuoteRelationView[];
   choices: QuoteChoice[];
+  offers?: QuoteOfferColumn[];
 }) {
   const router = useRouter();
   const [header, setHeader] = useState(draft);
@@ -289,7 +295,7 @@ export function QuoteReviewForm({
               <select value={header.side} disabled={!canEdit} onChange={(event) => setFlow({ side: event.target.value })}>
                 {QUOTE_SIDES.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label} · won → {item.outcome}
+                    {quoteSideLabel(item.id)}
                   </option>
                 ))}
               </select>
@@ -299,7 +305,7 @@ export function QuoteReviewForm({
               <select value={header.direction} disabled={!canEdit} onChange={(event) => setFlow({ direction: event.target.value })}>
                 {QUOTE_DIRECTIONS.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.id === "inbound" ? "In · they asked" : "Out · DDS asked"}
+                    {quoteDirectionLabel(item.id)}
                   </option>
                 ))}
               </select>
@@ -380,9 +386,10 @@ export function QuoteReviewForm({
             </p>
           ) : null}
         </div>
+        <QuotePriceOverview lines={lines} offers={offers} currency={header.currency || "USD"} />
         <div className="card qr-lines">
           <div className="qr-line-bar">
-            <h2>Lines</h2>
+            <h2>Line detail</h2>
             {canEdit ? (
               <button type="button" className="button secondary" onClick={() => setLines((current) => [...current, toEditor(blankQuoteLine())])}>
                 Add line

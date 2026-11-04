@@ -10,7 +10,7 @@ Quote reviews are prices. Viewing uses `can_view_financials`. Creating and editi
 
 ## Two axes
 
-Side and direction are separate. The list and the header show both.
+Side and direction are separate. The list and the header lead with the pattern name: **Inbound Buy Request**, **Inbound Sell Request**, **Outbound Sell Request**, or **Outbound Buy Offer**. Buy, Sell, Inbound, and Outbound chips sit after that name. The page does not use “ask” as a type label.
 
 - **Side** is the goods flow. **Buy** wins as a purchase order. **Sell** wins as a sales order.
 - **Direction** is who started the ask. **Inbound** means someone else started it. **Outbound** means DDS started it.
@@ -42,7 +42,11 @@ The list shows the type, the originator company and contact, line count, total q
 
 ## Lines and bids
 
-The line grid is the request on the left and the DDS response on the right.
+The list and the line tables use a 13px cell and an 11px heading, with short row padding, so more prices fit across the screen.
+
+Above the editor, **Overview** is one row per request line: part, SKU, quantity, condition, **DDS unit**, **DDS ext**, then one column per other price (LNT, XYS, and the rest). A bidder cell shows the unit and, under it, the extension for the request quantity. A related quote adds a column for its DDS price when it has one, and a column for each of its bidders, matched on part number. Hong’s market prices show on the Mainstream overview that way.
+
+The line grid under that is the request on the left and the DDS response on the right.
 
 Request columns are the part number, quantity, optional target price, optional condition, and optional special requirements. `qty` is the request quantity. `target_price` is optional. `special_requirements` is optional.
 
