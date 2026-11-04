@@ -13,7 +13,7 @@ export default async function PurchaseOrdersPage() {
 
   return (
     <main className="page">
-      <p className="page-note">Create a purchase order and send it to a vendor. Receiving into inventory comes later.</p>
+      <p className="page-note">Create a purchase order and approve it. Receiving into inventory comes later.</p>
       {access.canEdit ? (
         <p>
           <Link className="button" href="/purchasing/orders/new">
@@ -21,7 +21,7 @@ export default async function PurchaseOrdersPage() {
           </Link>
         </p>
       ) : (
-        <p className="muted">You can view purchase orders. Creating and sending is limited to admin and staff.</p>
+        <p className="muted">You can view purchase orders. Creating and approving is limited to admin and staff.</p>
       )}
       {orders.length === 0 ? (
         <p className="muted">No purchase orders yet.</p>

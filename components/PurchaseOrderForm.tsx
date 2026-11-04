@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Ban, Check, Plus, Printer, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { memo, useCallback, useRef, useState } from "react";
@@ -21,13 +21,19 @@ import {
   syncLinePrices,
   type PriceEdit,
 } from "@/lib/poLineMoney";
-import { descriptionFromPickedItem, purchaseOrderStatusLabel } from "@/lib/purchaseOrderDraft";
 import {
+  descriptionFromPickedItem,
+  formatPurchaseOrderNumber,
+  parsePurchaseOrderNumber,
+  purchaseOrderNumberLabel,
+  purchaseOrderStatusLabel,
+} from "@/lib/purchaseOrderDraft";
+import {
+  approvePurchaseOrderFromDraft,
   cancelPurchaseOrder,
   savePurchaseOrder,
   savePurchaseOrderCharges,
   searchPurchaseItems,
-  sendPurchaseOrder,
   type PurchaseItemHit,
   type PurchaseOrderLineView,
   type PurchaseOrderView,
@@ -213,15 +219,18 @@ export function PurchaseOrderForm({
   vendors,
   canEdit,
   showMoney,
+  suggestedNumber,
 }: {
   order: PurchaseOrderView | null;
   vendors: PurchaseVendor[];
   canEdit: boolean;
   showMoney: boolean;
+  suggestedNumber: number | null;
 }) {
   const router = useRouter();
   const editable = canEdit && (order == null || order.status === "draft");
   const chargesEditable = canEdit && (order == null || order.status !== "cancelled");
+  const [orderId, setOrderId] = useState(order?.id ?? null);
   const [vendorId, setVendorId] = useState(order?.vendorId ?? vendors[0]?.id ?? "");
   const [fulfillment, setFulfillment] = useState(order?.fulfillment ?? "warehouse");
   const [terms, setTerms] = useState(order?.terms ?? "");
@@ -245,6 +254,9 @@ export function PurchaseOrderForm({
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [orderNumber, setOrderNumber] = useState(
+    order?.number || (suggestedNumber ? formatPurchaseOrderNumber(suggestedNumber) ?? "" : ""),
+  );
 
   const updateLine = useCallback((key: string, patch: Partial<LineState>) => {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
@@ -358,24 +370,54 @@ export function PurchaseOrderForm({
     return textLive.current.has(key) ? (textLive.current.get(key) as string) : fallback;
   }
 
+  function draftInput() {
+    return {
+      vendorId,
+      fulfillment,
+      terms: showMoney ? terms : "",
+      freightIn: showMoney ? readNote("freightIn", freightIn) : "",
+      shipments,
+      orderedOn,
+      expectedOn,
+      vendorNotes: readNote("vendorNotes", vendorNotes),
+      internalNotes: showMoney ? readNote("internalNotes", internalNotes) : "",
+      lines: linePayload(),
+    };
+  }
+
   async function save() {
     setSaving(true);
     setMessage(null);
     try {
-      const saved = await savePurchaseOrder(order?.id ?? null, {
-        vendorId,
-        fulfillment,
-        terms: showMoney ? terms : "",
-        freightIn: showMoney ? readNote("freightIn", freightIn) : "",
-        shipments,
-        orderedOn,
-        expectedOn,
-        vendorNotes: readNote("vendorNotes", vendorNotes),
-        internalNotes: showMoney ? readNote("internalNotes", internalNotes) : "",
-        lines: linePayload(),
-      });
+      const saved = await savePurchaseOrder(orderId, draftInput());
+      setOrderId(saved.id);
       if (order) router.refresh();
       else router.push(`/purchasing/orders/${saved.id}`);
+    } catch (error) {
+      setMessage(errorText(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function approve() {
+    const chosen = parsePurchaseOrderNumber(orderNumber);
+    if (!chosen) {
+      setMessage("Enter a purchase order number like PO6304.");
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const approved = await approvePurchaseOrderFromDraft(orderId, draftInput(), chosen);
+      if (!approved.ok) {
+        if (approved.id) setOrderId(approved.id);
+        setMessage(approved.message);
+        return;
+      }
+      setOrderId(approved.id);
+      router.replace(`/purchasing/orders/${approved.id}`);
+      router.refresh();
     } catch (error) {
       setMessage(errorText(error));
     } finally {
@@ -402,26 +444,12 @@ export function PurchaseOrderForm({
     }
   }
 
-  async function send() {
-    if (!order || !window.confirm(`Send ${order.number}?`)) return;
-    setSaving(true);
-    setMessage(null);
-    try {
-      await sendPurchaseOrder(order.id);
-      router.refresh();
-    } catch (error) {
-      setMessage(errorText(error));
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function cancel() {
-    if (!order || !window.confirm(`Cancel ${order.number}?`)) return;
+    if (!orderId || !window.confirm("Cancel this purchase order?")) return;
     setSaving(true);
     setMessage(null);
     try {
-      await cancelPurchaseOrder(order.id);
+      await cancelPurchaseOrder(orderId);
       router.refresh();
     } catch (error) {
       setMessage(errorText(error));
@@ -471,20 +499,20 @@ export function PurchaseOrderForm({
   }
 
   const allSelected = lines.length > 0 && lines.every((line) => line.selected);
+  const status = order?.status ?? "draft";
+  const numberLabel = order?.number ? purchaseOrderNumberLabel(order.number) : "Draft";
+  const canCancel = Boolean(orderId && order && canEdit && status !== "cancelled" && status !== "closed");
 
   return (
     <main className="page po-page">
       <p className="page-note">
         {order ? (
           <>
-            <span className="sku">{order.number}</span>
-            {" · "}
-            <Badge tone={order.status}>{purchaseOrderStatusLabel(order.status)}</Badge>
-            {order.vendorName ? ` · ${order.vendorName}` : ""}
+            {order.vendorName || "Purchase order"}
             {showMoney && order.total != null ? ` · ${formatMoney(order.total, order.currency ?? "USD")}` : ""}
           </>
         ) : (
-          "Create a purchase order. Sending it marks the order open. Receiving comes later."
+          "Create a purchase order. Approving it assigns the number and marks the order open."
         )}
       </p>
       {message ? (
@@ -498,11 +526,66 @@ export function PurchaseOrderForm({
         </p>
       ) : null}
       <form
+        id="po-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (editable) void save();
         }}
       >
+        <div className="po-actions">
+          <div className="po-actions-lead">
+            <span className="sku">{numberLabel}</span>
+            {order ? <Badge tone={order.status}>{purchaseOrderStatusLabel(order.status)}</Badge> : null}
+            {editable ? (
+              <label className="so-number-field">
+                Purchase order number
+                <input
+                  id="po-number"
+                  value={orderNumber}
+                  autoCapitalize="characters"
+                  aria-describedby="po-number-hint"
+                  onChange={(event) => setOrderNumber(event.target.value.toUpperCase())}
+                />
+              </label>
+            ) : null}
+          </div>
+          <div className="po-actions-buttons">
+            {editable ? (
+              <button className="so-icon-action" type="submit" disabled={saving} aria-label="Save draft" title="Save draft">
+                <Save size={18} strokeWidth={1.75} aria-hidden />
+              </button>
+            ) : null}
+            {editable ? (
+              <button className="so-icon-action" type="button" disabled={saving} aria-label="Approve" title="Approve" onClick={() => void approve()}>
+                <Check size={18} strokeWidth={1.75} aria-hidden />
+              </button>
+            ) : null}
+            {order?.id && order.number && showMoney ? (
+              <Link className="button so-icon-action" href={`/purchasing/orders/${order.id}/print`} aria-label="Print" title="Print">
+                <Printer size={18} strokeWidth={1.75} aria-hidden />
+              </Link>
+            ) : null}
+            {canCancel ? (
+              <button
+                className="so-icon-action secondary"
+                type="button"
+                disabled={saving}
+                aria-label="Cancel order"
+                title="Cancel order"
+                onClick={() => void cancel()}
+              >
+                <Ban size={18} strokeWidth={1.75} aria-hidden />
+              </button>
+            ) : null}
+          </div>
+          {editable ? (
+            <p id="po-number-hint" className="hint">
+              {order?.number
+                ? "This number is saved when you approve. Type another unused number to replace it."
+                : "Suggested next number. Type another number if that one should be skipped. It is saved when you approve."}
+            </p>
+          ) : null}
+        </div>
         <div className="po-head">
           <label>
             Vendor
@@ -807,29 +890,12 @@ export function PurchaseOrderForm({
 
         {showMoney ? (
           <PurchaseOrderAttachments
-            orderId={order?.id ?? null}
+            orderId={orderId}
             attachments={order?.attachments ?? []}
             canEdit={chargesEditable}
           />
         ) : null}
 
-        {editable ? (
-          <div className="actions">
-            <button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </button>
-            {order ? (
-              <button type="button" className="secondary" disabled={saving} onClick={() => void send()}>
-                Send
-              </button>
-            ) : null}
-            {order ? (
-              <button type="button" className="secondary" disabled={saving} onClick={() => void cancel()}>
-                Cancel order
-              </button>
-            ) : null}
-          </div>
-        ) : null}
         {!editable && chargesEditable && order ? (
           <div className="actions">
             <button type="button" disabled={saving} onClick={() => void saveCharges()}>

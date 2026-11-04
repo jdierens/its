@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { PurchaseOrderForm } from "@/components/PurchaseOrderForm";
-import { listPurchaseVendors, loadPurchaseOrder } from "@/lib/purchaseOrders";
+import { listPurchaseVendors, loadPurchaseOrder, suggestPurchaseOrderNumber } from "@/lib/purchaseOrders";
 import { purchasePageAccess } from "@/lib/purchaseSession";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,8 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
     loadPurchaseOrder(id),
     listPurchaseVendors(),
   ]);
+  const suggestedNumber =
+    access.canEdit && order?.status === "draft" && !order.number ? await suggestPurchaseOrderNumber() : null;
 
   if (!order) {
     return (
@@ -28,5 +30,13 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
     ? vendors
     : [{ id: order.vendorId, name: order.vendorName }, ...vendors];
 
-  return <PurchaseOrderForm order={order} vendors={vendorChoices} canEdit={access.canEdit} showMoney={access.canViewMoney} />;
+  return (
+    <PurchaseOrderForm
+      order={order}
+      vendors={vendorChoices}
+      canEdit={access.canEdit}
+      showMoney={access.canViewMoney}
+      suggestedNumber={suggestedNumber}
+    />
+  );
 }
