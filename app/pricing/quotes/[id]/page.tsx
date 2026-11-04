@@ -47,6 +47,7 @@ export default async function QuoteReviewPage({ params }: { params: Promise<{ id
           prospects={prospects}
           relations={detail.relations}
           choices={choices}
+          offers={detail.offers}
         />
       </main>
     );

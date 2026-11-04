@@ -17,7 +17,9 @@ import {
   isQuoteSide,
   originatorForFlow,
   quoteCalendarDay,
+  quoteDirectionLabel,
   quoteFlowLabel,
+  quoteSideLabel,
   relationForNewFlow,
   suggestedRelatedFlow,
   type OriginatorIds,
@@ -206,7 +208,7 @@ export function QuoteReviewRelated({
                 <select value={related.side} onChange={(event) => setFlow({ side: event.target.value })}>
                   {QUOTE_SIDES.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.label} · won → {item.outcome}
+                      {quoteSideLabel(item.id)}
                     </option>
                   ))}
                 </select>
@@ -216,7 +218,7 @@ export function QuoteReviewRelated({
                 <select value={related.direction} onChange={(event) => setFlow({ direction: event.target.value })}>
                   {QUOTE_DIRECTIONS.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.id === "inbound" ? "In · they asked" : "Out · DDS asked"}
+                      {quoteDirectionLabel(item.id)}
                     </option>
                   ))}
                 </select>

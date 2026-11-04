@@ -13,6 +13,7 @@ import {
   QUOTE_SIDES,
   QUOTE_STATUSES,
   quoteChannelLabel,
+  quoteDirectionLabel,
   quoteStatusLabel,
   quoteStatusTone,
   type QuoteListRow,
@@ -55,7 +56,7 @@ export default async function QuoteReviewsPage({
   return (
     <main className="page so-page ds">
       <p className="page-note">
-        Buy wins as a purchase order. Sell wins as a sales order. Inbound means they asked. Outbound means DDS asked. Sheet and photo import is not on this page.
+        The type is Inbound Buy Request, Inbound Sell Request, Outbound Sell Request, or Outbound Buy Offer. Buy wins as a purchase order. Sell wins as a sales order. Sheet and photo import is not on this page.
       </p>
       {access.canEdit ? (
         <p>
@@ -99,7 +100,7 @@ export default async function QuoteReviewsPage({
             <option value="">Any</option>
             {QUOTE_DIRECTIONS.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.id === "inbound" ? "In" : "Out"}
+                {quoteDirectionLabel(item.id)}
               </option>
             ))}
           </select>

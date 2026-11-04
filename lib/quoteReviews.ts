@@ -21,8 +21,8 @@ export const QUOTE_SIDES = [
 ] as const;
 
 export const QUOTE_DIRECTIONS = [
-  { id: "inbound", label: "In" },
-  { id: "outbound", label: "Out" },
+  { id: "inbound", label: "Inbound" },
+  { id: "outbound", label: "Outbound" },
 ] as const;
 
 export const QUOTE_ORIGINATORS = [
@@ -381,7 +381,8 @@ export function quoteOptionLabel(options: readonly { id: string; label: string }
 }
 
 export function quoteDirectionLabel(value: string): string {
-  return quoteOptionLabel(QUOTE_DIRECTIONS, value);
+  const axes = displayAxes("sell", value);
+  return axes.direction === "outbound" ? "Outbound" : "Inbound";
 }
 
 export function quoteSideLabel(value: string): string {
@@ -428,27 +429,77 @@ export function isQuoteRelationType(value: string): value is QuoteRelationType {
   return QUOTE_RELATIONS.some((item) => item.id === value);
 }
 
-/** Full pattern name. Inbound Sell Request is a customer ask that wins as a sales order. */
+const LEGACY_FLOW: Record<string, { side: QuoteSide; direction: QuoteDirection }> = {
+  inbound_ask: { side: "sell", direction: "inbound" },
+  outbound_ask: { side: "buy", direction: "outbound" },
+  inbound_response: { side: "buy", direction: "inbound" },
+  outbound_offer: { side: "sell", direction: "outbound" },
+};
+
+/** Stored side and direction, with the old four-way token mapped so the page never prints it. */
+export function displayAxes(side: string, direction: string): { side: QuoteSide; direction: QuoteDirection } {
+  const legacy = LEGACY_FLOW[direction];
+  const nextSide: QuoteSide = side === "buy" || side === "sell" ? side : legacy?.side ?? "sell";
+  const nextDirection: QuoteDirection =
+    direction === "inbound" || direction === "outbound" ? direction : legacy?.direction ?? "inbound";
+  return { side: nextSide, direction: nextDirection };
+}
+
+/** Full pattern name. This is the type label on the list and the quote. */
 export function quoteFlowLabel(side: string, direction: string): string {
-  if (direction === "inbound" && side === "sell") return "Inbound Sell Request";
-  if (direction === "inbound" && side === "buy") return "Inbound Buy Request";
-  if (direction === "outbound" && side === "sell") return "Outbound Sell Request";
-  if (direction === "outbound" && side === "buy") return "Outbound Buy Offer";
-  return "Quote";
+  const axes = displayAxes(side, direction);
+  if (axes.direction === "inbound" && axes.side === "sell") return "Inbound Sell Request";
+  if (axes.direction === "inbound" && axes.side === "buy") return "Inbound Buy Request";
+  if (axes.direction === "outbound" && axes.side === "sell") return "Outbound Sell Request";
+  return "Outbound Buy Offer";
 }
 
 export function quoteFlowHint(side: string, direction: string): string {
-  const label = quoteFlowLabel(side, direction);
-  if (direction === "inbound" && side === "sell") {
-    return `${label}. They asked DDS to sell. Won becomes a sales order. Pick the customer, or a prospect when they are not a customer yet.`;
+  const axes = displayAxes(side, direction);
+  const label = quoteFlowLabel(axes.side, axes.direction);
+  if (axes.direction === "inbound" && axes.side === "sell") {
+    return `${label}. Someone else started a sell. Won becomes a sales order. Pick the customer, or a prospect when they are not a customer yet.`;
   }
-  if (direction === "inbound" && side === "buy") {
-    return `${label}. They asked DDS to buy. Won becomes a purchase order. Pick the vendor. Other prices are parties competing with DDS.`;
+  if (axes.direction === "inbound" && axes.side === "buy") {
+    return `${label}. Someone else started a buy. Won becomes a purchase order. Pick the vendor. The overview lists every other price beside DDS.`;
   }
-  if (direction === "outbound" && side === "sell") {
+  if (axes.direction === "outbound" && axes.side === "sell") {
     return `${label}. DDS started a sell. Won becomes a sales order. The counterparty is a customer or a prospect.`;
   }
   return `${label}. DDS started a buy and expects a quote back. Won becomes a purchase order. The counterparty is a vendor.`;
+}
+
+export type QuoteOfferColumn = {
+  id: string;
+  label: string;
+  prices: { matchKey: string; unitPrice: string }[];
+};
+
+/** Part number, then SKU, so a related quote can share a price column with this list. */
+export function quoteLineMatchKey(partNumber: string, sku: string): string {
+  const part = partNumber.toUpperCase().replace(/[\s/\\-]/g, "");
+  if (part) return `p:${part}`;
+  const skuKey = sku.trim().toLowerCase();
+  return skuKey ? `s:${skuKey}` : "";
+}
+
+export function quoteMoneyText(value: string, currency = "USD"): string {
+  const parsed = parseMoney(value);
+  if (!parsed.ok || parsed.amount == null) return "";
+  return formatMoney(parsed.amount, currency);
+}
+
+export function quoteMoneyExt(qty: string, unit: string, currency = "USD"): string {
+  const parsedQty = parseQuoteQty(qty);
+  const parsed = parseMoney(unit);
+  if (!parsedQty.ok || !parsed.ok || parsedQty.qty == null || parsed.amount == null) return "";
+  return formatMoney(roundMoney(parsedQty.qty * parsed.amount), currency);
+}
+
+export function offerUnit(column: QuoteOfferColumn, partNumber: string, sku: string): string {
+  const key = quoteLineMatchKey(partNumber, sku);
+  if (!key) return "";
+  return column.prices.find((price) => price.matchKey === key)?.unitPrice ?? "";
 }
 
 /**
