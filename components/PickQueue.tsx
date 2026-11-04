@@ -7,10 +7,11 @@ export function PickQueue({ rows }: { rows: PickQueueRow[] }) {
   return (
     <main className="page pick-page ds">
       <p className="page-note">
-        Approved orders with a product or a kit. Freight and service lines stay off this list. Finish a pick, then open packing.
+        Approved orders with a product or a kit. A shipped order that still has no finished pick is here too.
+        Recording that pick leaves the ship date and the shipment as they are. Freight and service lines stay off this list.
       </p>
       {rows.length === 0 ? (
-        <p className="muted">No approved orders are waiting to pick.</p>
+        <p className="muted">No orders are waiting to pick.</p>
       ) : (
         <div className="card">
           <table className="pick-queue">

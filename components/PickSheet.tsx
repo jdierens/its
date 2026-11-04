@@ -52,6 +52,8 @@ import {
   itemSerials,
   lineRemaining,
   parsePickQty,
+  pickCatchUpNote,
+  pickedAfterShipNote,
   pickTargetForBin,
   serialProblem,
   omitPickTicketSku,
@@ -85,6 +87,11 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [pendingUnknown, setPendingUnknown] = useState<PendingUnknown | null>(null);
   const applyingPaste = useRef(false);
   const open = canPick && sheet.pickStatus === "open";
+  const catchUp = sheet.pickStatus === "open" ? pickCatchUpNote(sheet.status) : null;
+  const stayedShipped =
+    sheet.pickStatus === "picked" || sheet.pickStatus === "short"
+      ? pickedAfterShipNote(sheet.status, sheet.pickStatus)
+      : null;
   const progress = sheetProgress(sheet.lines);
   const title = sheet.soNumber ? `Pick SO${sheet.soNumber}` : "Pick sheet";
   const activePull =
@@ -476,12 +483,18 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       ) : null}
       {sheet.pickStatus === "picked" || sheet.pickStatus === "short" ? (
         <p className="banner ok" role="status">
-          {sheet.pickStatus === "short" ? "Short pick is recorded." : "Picked into the staging bin."}{" "}
+          {stayedShipped ??
+            (sheet.pickStatus === "short" ? "Short pick is recorded." : "Picked into the staging bin.")}{" "}
           <Link href={`/warehouse/pack/${sheet.orderId}`}>Pack this order</Link>
         </p>
       ) : sheet.handoff ? (
         <p className="banner ok" role="status">
           {sheet.handoff}
+        </p>
+      ) : null}
+      {catchUp ? (
+        <p className="banner warn" role="status">
+          {catchUp}
         </p>
       ) : null}
       {!canPick ? <p className="muted">You can look at this sheet. Recording a pick is turned off for this sign-in.</p> : null}

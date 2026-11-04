@@ -88,6 +88,19 @@ describe("sales order stage navigation", () => {
     assert.equal(packing.next, null);
   });
 
+  it("opens pick and pack from a shipped order that has no warehouse pick yet", () => {
+    for (const status of ["shipped", "partially_shipped"] as const) {
+      const model = nav(status, { pickStatus: null });
+      assert.equal(stage(model, "pick").active, true, status);
+      assert.equal(stage(model, "pick").href, `/warehouse/pick/${ORDER}`, status);
+      assert.equal(stage(model, "pack").active, true, status);
+      assert.equal(stage(model, "pack").href, `/warehouse/pack/${ORDER}`, status);
+    }
+    const cancelled = nav("cancelled", { pickStatus: null });
+    assert.equal(stage(cancelled, "pick").active, false);
+    assert.equal(stage(cancelled, "pack").active, false);
+  });
+
   it("keeps earlier stages open after the order is packed or further along", () => {
     for (const status of ["packed", "partially_shipped", "shipped", "invoiced", "closed"]) {
       const model = nav(status, { pickStatus: "picked", current: "pack" });

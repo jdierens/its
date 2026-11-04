@@ -444,7 +444,23 @@ export function shipQueueFromJson(value: unknown): ShipQueueRow[] {
   });
 }
 
+/**
+ * Shipped orders on Warehouse → Packing.
+ * The pick is finished and packed_at is still empty. An open pick stays on the pick queue.
+ */
+export function shippedOrderNeedsPack(
+  status: string,
+  pickStatus: string | null,
+  packedAt: string | null,
+): boolean {
+  if (!isShippedPackStatus(status)) return false;
+  if (packedAt) return false;
+  return pickStatus === "picked" || pickStatus === "short";
+}
+
 export function packQueueLabel(status: string): string {
+  if (status === "shipped") return "Shipped";
+  if (status === "partially_shipped") return "Partially shipped";
   if (status === "packing") return "Packing";
   if (status === "picking") return "Picked";
   if (status === "packed") return "Packed";

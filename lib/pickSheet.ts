@@ -295,7 +295,56 @@ export function pickFinishStatus(
   return lines.some((line) => line.picked < line.ordered) ? "short" : "picked";
 }
 
+/** Already shipped. Picking must not move this status. */
+export function isShippedPickStatus(status: string): boolean {
+  return status === "shipped" || status === "partially_shipped";
+}
+
+/**
+ * A pick can be opened and saved.
+ * Cancelled, invoiced, closed, packed, and packing cannot start one.
+ */
+export function pickWritableStatus(status: string): boolean {
+  return status === "approved" || status === "picking" || isShippedPickStatus(status);
+}
+
+/**
+ * Shipped orders on Warehouse → Picking.
+ * No pick list yet, or the list is still open. A finished pick leaves the queue.
+ */
+export function shippedOrderNeedsPick(status: string, pickStatus: string | null): boolean {
+  if (!isShippedPickStatus(status)) return false;
+  return pickStatus !== "picked" && pickStatus !== "short";
+}
+
+/** Shown while bins are recorded on an order that already shipped. */
+export function pickCatchUpNote(status: string): string | null {
+  if (status === "shipped") {
+    return "This order already shipped. Picking records the bins and leaves the ship record in place.";
+  }
+  if (status === "partially_shipped") {
+    return "This order is partially shipped. Picking records the bins and leaves the ship record in place.";
+  }
+  return null;
+}
+
+/** Shown after finish when status was left shipped. */
+export function pickedAfterShipNote(status: string, pickStatus: "picked" | "short"): string | null {
+  const short = pickStatus === "short";
+  if (status === "shipped") {
+    return short ? "Short pick is recorded. This order stays shipped." : "Picked. This order stays shipped.";
+  }
+  if (status === "partially_shipped") {
+    return short
+      ? "Short pick is recorded. This order stays partially shipped."
+      : "Picked. This order stays partially shipped.";
+  }
+  return null;
+}
+
 export function pickQueueLabel(status: string, pickStatus: string | null): string {
+  if (status === "shipped") return "Shipped";
+  if (status === "partially_shipped") return "Partially shipped";
   if (pickStatus === "open") return "Picking";
   if (pickStatus === "picked") return "Picked";
   if (pickStatus === "short") return "Short";

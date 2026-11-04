@@ -14,8 +14,10 @@ import {
   packedAfterShipNote,
   packQtyError,
   packQueueFromJson,
+  packQueueLabel,
   packRoom,
   packSheetFromJson,
+  shippedOrderNeedsPack,
   parsePackQty,
   parsePackWeight,
   shipQueueFromJson,
@@ -370,5 +372,23 @@ describe("pack shipped orders migration", () => {
     assert.match(shippedSql, /grant execute on function public\.finish_sales_order_pack\(uuid, text, uuid\) to service_role/);
     assert.doesNotMatch(shippedSql, /grant .+ to anon/);
     assert.doesNotMatch(shippedSql, /grant execute on function public\.so_packing_writable/);
+  });
+});
+
+describe("shipped orders on the pack queue", () => {
+  it("lists a shipped order only after the pick is finished and before packed_at is set", () => {
+    assert.equal(shippedOrderNeedsPack("shipped", "picked", null), true);
+    assert.equal(shippedOrderNeedsPack("shipped", "short", null), true);
+    assert.equal(shippedOrderNeedsPack("partially_shipped", "picked", null), true);
+    assert.equal(shippedOrderNeedsPack("shipped", "open", null), false);
+    assert.equal(shippedOrderNeedsPack("shipped", null, null), false);
+    assert.equal(shippedOrderNeedsPack("shipped", "picked", "2026-11-02T16:00:00Z"), false);
+    assert.equal(shippedOrderNeedsPack("packing", "picked", null), false);
+    assert.equal(shippedOrderNeedsPack("cancelled", "picked", null), false);
+    assert.equal(shippedOrderNeedsPack("invoiced", "picked", null), false);
+    assert.equal(packQueueLabel("shipped"), "Shipped");
+    assert.equal(packQueueLabel("partially_shipped"), "Partially shipped");
+    assert.equal(packQueueLabel("packing"), "Packing");
+    assert.equal(packQueueLabel("picking"), "Picked");
   });
 });

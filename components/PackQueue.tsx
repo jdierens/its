@@ -6,11 +6,12 @@ export function PackQueue({ rows }: { rows: PackQueueRow[] }) {
   return (
     <main className="page pick-page ds">
       <p className="page-note">
-        Picked orders. Put each picked quantity into a box or a pallet. Freight and service lines stay off this list.
-        Shipping labels are not on this screen.
+        Picked orders. A shipped order whose pick is finished and whose pack is still empty is here too.
+        Finish leaves that order shipped. Put each picked quantity into a box or a pallet. Freight and service lines
+        stay off this list. Shipping labels are not on this screen.
       </p>
       {rows.length === 0 ? (
-        <p className="muted">No picked orders are waiting to pack.</p>
+        <p className="muted">No orders are waiting to pack.</p>
       ) : (
         <div className="card">
           <table className="pick-queue">
