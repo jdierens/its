@@ -31,7 +31,7 @@ function StageControl({ stage }: { stage: SalesOrderStage }) {
   }
   if (stage.href) {
     return (
-      <Link className="so-stage" href={stage.href} aria-label={stage.label} title={stage.label}>
+      <Link className="so-stage" href={stage.href} aria-label={stage.label} title={stage.label} prefetch={false}>
         {body}
       </Link>
     );
@@ -49,7 +49,7 @@ function Step({ direction, stage }: { direction: "previous" | "next"; stage: Sal
   const icon = <Icon size={16} strokeWidth={1.75} aria-hidden />;
   if (stage?.href) {
     return (
-      <Link className="so-stage-jump" href={stage.href} aria-label={label} title={label}>
+      <Link className="so-stage-jump" href={stage.href} aria-label={label} title={label} prefetch={false}>
         {icon}
       </Link>
     );

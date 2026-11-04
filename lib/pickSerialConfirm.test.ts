@@ -8,6 +8,8 @@ import {
   mergeSerialReports,
   pullFromLabel,
   pulledAllocationForUnknowns,
+  serialAddTarget,
+  serialRowFrom,
   unknownSerialPrompt,
 } from "./pickSerialConfirm.ts";
 
@@ -127,6 +129,56 @@ describe("serial-only pull", () => {
         ],
       }),
       "a",
+    );
+  });
+});
+
+describe("serial + after a bin was picked", () => {
+  const picks = [
+    { id: "older", fromBin: "10001-C", qty: 1, serials: [] as string[] },
+    { id: "latest", fromBin: "10049-C", qty: 1, serials: [] as string[] },
+  ];
+
+  it("adds the serial onto the bin just picked, without a lookup", () => {
+    assert.deepEqual(serialAddTarget({ picks }), { ok: true, pickId: "latest", fromBin: "10049-C" });
+    assert.equal(
+      serialRowFrom({
+        active: null,
+        fromBin: "10049-C",
+        bins: [
+          { reference: "10001-C", location: "HWS.00.00.00" },
+          { reference: "10049-C", location: "HWS.00.00.00" },
+        ],
+      }),
+      "10049-C · HWS.00.00.00",
+    );
+  });
+
+  it("says to pick a quantity when every slot already has a serial", () => {
+    assert.deepEqual(
+      serialAddTarget({ picks: [{ id: "full", fromBin: "10049-C", qty: 1, serials: ["SN1"] }] }),
+      { ok: false, message: "Pick a quantity from a bin above before adding a serial." },
+    );
+    assert.equal(serialRowFrom({ active: null, fromBin: null, bins: [] }), "");
+  });
+
+  it("uses the looked-up bin when Enter already named one", () => {
+    assert.deepEqual(serialAddTarget({ picks, preferredBin: "10001-C" }), {
+      ok: true,
+      pickId: "older",
+      fromBin: "10001-C",
+    });
+    assert.deepEqual(serialAddTarget({ picks, preferredBin: "20000-B" }), {
+      ok: false,
+      message: "Pick a quantity from 20000-B before adding this serial.",
+    });
+    assert.equal(
+      serialRowFrom({
+        active: { reference: "20000-B", location: null },
+        fromBin: "10049-C",
+        bins: [],
+      }),
+      "20000-B",
     );
   });
 });

@@ -35,7 +35,7 @@ export function SalesOrderStageIcons({
           );
         }
         return (
-          <Link key={stage.id} href={href} className={className} title={stage.title} aria-label={stage.title}>
+          <Link key={stage.id} href={href} className={className} title={stage.title} aria-label={stage.title} prefetch={false}>
             {icon}
           </Link>
         );

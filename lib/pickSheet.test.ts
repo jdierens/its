@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
+  explainPickEdit,
   finishBlockMessage,
   formatPickQty,
   isStockPickLine,
@@ -16,10 +17,12 @@ import {
   pickQtyError,
   pickQueueFromJson,
   pickQueueLabel,
+  pickSheetEditable,
   pickSheetFromJson,
   pickTargetForBin,
   pickWritableStatus,
   pickedAfterShipNote,
+  pickedQuantity,
   shippedOrderNeedsPick,
   serialAttachError,
   serialProblem,
@@ -193,6 +196,7 @@ describe("pick sheet json", () => {
     assert.equal(sheet.soNumber, 27767);
     assert.equal(sheet.lines[0].bins[0].project, "AZSIM6930");
     assert.equal(sheet.lines[0].bins[0].ownership, "consigned");
+    assert.equal(sheet.lines[0].picked, 1);
     assert.equal(sheet.lines[0].picks[0].serials[0].serial, "KIOXIA-1");
     assert.equal(sheet.lines[0].picks[0].serials[0].coo, null);
     assert.equal(sheet.lines[0].itemCoo, null);
@@ -278,6 +282,81 @@ describe("pick order reference migration", () => {
     assert.equal(sql.includes("list_pack_queue"), false);
     assert.equal(sql.includes("sales_order_pack_sheet"), false);
     assert.equal(sql.includes("list_ship_queue"), false);
+  });
+});
+
+describe("finished pick still shows its quantity", () => {
+  it("keeps the picked total when the line and its pick rows agree", () => {
+    assert.equal(pickedQuantity(1, [{ qty: 1 }]), 1);
+    assert.equal(pickedQuantity(0, []), 0);
+  });
+
+  it("uses the pick rows when the reported line total is behind them", () => {
+    assert.equal(pickedQuantity(0, [{ qty: 1 }]), 1);
+    const sheet = pickSheetFromJson({
+      order_id: "ad72aa0c-8117-4972-b25e-59e632d934be",
+      so_number: 27783,
+      status: "shipped",
+      customer: "eBay Customer",
+      customer_po: null,
+      ebay_order_id: "24-15361-91829",
+      pick_list_id: "2c2b49ba-f952-4f84-9d3b-ee37fddf9629",
+      pick_status: "picked",
+      staging_bin: null,
+      staging: [],
+      finish_block: null,
+      handoff: "Picked into the staging bin. Packing is next.",
+      lines: [
+        {
+          allocation_id: "a9707195-64e3-4bf3-b540-b28d402336fd",
+          line_no: 1,
+          sku: "106823",
+          name: "NIC",
+          ordered: 1,
+          picked: 0,
+          short: false,
+          bins: [],
+          picks: [
+            {
+              id: "f0d41eac-237f-4a0f-b2a3-b0354d67c8be",
+              from_bin: "10049-C",
+              qty: 1,
+              project: "AZSIM6930",
+              ownership: "consigned",
+              serials: [],
+            },
+          ],
+        },
+      ],
+      skipped: [],
+      orphans: [],
+    });
+    assert.equal(sheet.pickStatus, "picked");
+    assert.equal(sheet.status, "shipped");
+    assert.equal(sheet.lines[0].picked, 1);
+    assert.equal(sheet.lines[0].picks[0].qty, 1);
+    assert.deepEqual(sheetProgress(sheet.lines), { ordered: 1, picked: 1 });
+  });
+});
+
+describe("editing a finished pick", () => {
+  it("stays editable after finish on a shipped order and locks once packing starts", () => {
+    assert.equal(pickSheetEditable({ canPick: true, status: "shipped", pickStatus: "picked" }), true);
+    assert.equal(pickSheetEditable({ canPick: true, status: "partially_shipped", pickStatus: "short" }), true);
+    assert.equal(pickSheetEditable({ canPick: true, status: "picking", pickStatus: "picked" }), true);
+    assert.equal(pickSheetEditable({ canPick: true, status: "picking", pickStatus: "open" }), true);
+    assert.equal(pickSheetEditable({ canPick: false, status: "shipped", pickStatus: "picked" }), false);
+    for (const status of ["packing", "packed", "invoiced", "closed", "cancelled"]) {
+      assert.equal(pickSheetEditable({ canPick: true, status, pickStatus: "picked" }), false, status);
+    }
+  });
+
+  it("names the migration when a finished list still refuses the save", () => {
+    assert.match(
+      explainPickEdit("This pick sheet is already finished."),
+      /20261104061116_pick_edit_after_finish\.sql/,
+    );
+    assert.equal(explainPickEdit("Enter a serial."), "Enter a serial.");
   });
 });
 
@@ -385,5 +464,29 @@ describe("shipped orders that still need a pick", () => {
     assert.match(sql, /grant execute on function public\.list_pick_queue\(\) to service_role/);
     assert.match(sql, /grant execute on function public\.list_pack_queue\(\) to service_role/);
     assert.match(sql, /grant execute on function public\.finish_sales_order_pick\(uuid, text, uuid\) to service_role/);
+  });
+});
+
+describe("edit a finished pick list", () => {
+  const sql = readFileSync(
+    new URL("../supabase/migrations/20261104061116_pick_edit_after_finish.sql", import.meta.url),
+    "utf8",
+  );
+
+  it("lets a picked or short list take corrections and reopens it when the balance breaks", () => {
+    assert.match(sql, /p_status in \('open', 'picked', 'short'\)/);
+    assert.match(sql, /so_pick_list_editable\(v_status\)/);
+    assert.match(sql, /so_pick_list_editable\(status\)/);
+    assert.match(sql, /so_pick_list_editable\(v_list_status\)/);
+    for (const name of ["record_pick_serial", "remove_pick_serial", "undo_sales_order_pick", "pick_sales_order_line", "record_pulled_serial", "set_pick_short", "assign_pick_staging_bin"]) {
+      assert.match(sql, new RegExp(name));
+    }
+    assert.match(sql, /so_sync_finished_pick_list/);
+    assert.match(sql, /set status = 'open'/);
+    assert.match(sql, /finished_at = null/);
+    assert.doesNotMatch(sql, /grant execute on function public\.so_pick_list_editable/);
+    assert.match(sql, /revoke all on function public\.so_pick_list_editable\(text\) from public, anon, authenticated/);
+    assert.match(sql, /revoke all on function public\.so_sync_finished_pick_list\(\) from public, anon, authenticated/);
+    assert.doesNotMatch(sql, /finish_sales_order_pick/);
   });
 });
