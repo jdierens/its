@@ -14,6 +14,7 @@ import {
   QUOTE_SIDES,
   isQuoteChannel,
   isQuoteDirection,
+  isQuoteRelationType,
   isQuoteSide,
   originatorForFlow,
   quoteCalendarDay,
@@ -23,10 +24,30 @@ import {
   relationForNewFlow,
   suggestedRelatedFlow,
   type OriginatorIds,
+  type QuoteChannel,
   type QuoteChoice,
+  type QuoteDirection,
   type QuotePartyOption,
+  type QuoteRelationType,
   type QuoteRelationView,
+  type QuoteSide,
 } from "@/lib/quoteReviews";
+
+type RelatedQuoteDraft = {
+  reference: string;
+  counterpartyName: string;
+  vendorId: string;
+  customerId: string;
+  prospectId: string;
+  originatorKind: string;
+  channel: QuoteChannel;
+  direction: QuoteDirection;
+  side: QuoteSide;
+  receivedOn: string;
+  dueOn: string;
+  relationType: QuoteRelationType;
+  relationNote: string;
+};
 
 export function QuoteReviewRelated({
   eventId,
@@ -62,7 +83,7 @@ export function QuoteReviewRelated({
     isQuoteSide(sourceSide) && isQuoteDirection(sourceDirection)
       ? suggestedRelatedFlow(sourceSide, sourceDirection)
       : { side: "sell" as const, direction: "outbound" as const, relationType: "response_to" as const };
-  const [related, setRelated] = useState({
+  const [related, setRelated] = useState<RelatedQuoteDraft>({
     reference: sourceReference,
     counterpartyName: "",
     vendorId: "",
@@ -91,15 +112,15 @@ export function QuoteReviewRelated({
 
   function setFlow(patch: { side?: string; direction?: string }) {
     setRelated((current) => {
-      const side = patch.side ?? current.side;
-      const direction = patch.direction ?? current.direction;
+      const side: QuoteSide = patch.side !== undefined && isQuoteSide(patch.side) ? patch.side : current.side;
+      const direction: QuoteDirection =
+        patch.direction !== undefined && isQuoteDirection(patch.direction) ? patch.direction : current.direction;
       return {
         ...current,
         side,
         direction,
         ...originatorForFlow(side, direction, current),
-        relationType:
-          relationTouched || !isQuoteSide(side) || !isQuoteDirection(direction) ? current.relationType : relationForNewFlow(side, direction),
+        relationType: relationTouched ? current.relationType : relationForNewFlow(side, direction),
       };
     });
   }
@@ -225,7 +246,14 @@ export function QuoteReviewRelated({
               </label>
               <label>
                 Channel
-                <select value={related.channel} onChange={(event) => setRelated({ ...related, channel: event.target.value })}>
+                <select
+                  value={related.channel}
+                  onChange={(event) => {
+                    const channel = event.target.value;
+                    if (!isQuoteChannel(channel)) return;
+                    setRelated({ ...related, channel });
+                  }}
+                >
                   {QUOTE_CHANNELS.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.label}
@@ -238,8 +266,10 @@ export function QuoteReviewRelated({
                 <select
                   value={related.relationType}
                   onChange={(event) => {
+                    const relationType = event.target.value;
+                    if (!isQuoteRelationType(relationType)) return;
                     setRelationTouched(true);
-                    setRelated({ ...related, relationType: event.target.value });
+                    setRelated({ ...related, relationType });
                   }}
                 >
                   {QUOTE_RELATIONS.map((item) => (
