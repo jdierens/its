@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { salesOrderShipHref } from "./salesOrderStages.ts";
 import {
   emptySalesOrderStageInput,
   qboInvoiceAmountsMatch,
   qboInvoiceVoided,
+  salesOrderStageIconHref,
   salesOrderStageIcons,
   type QboInvoiceFacts,
   type SalesOrderStageIconId,
@@ -302,6 +304,23 @@ describe("sales order stage icons", () => {
     assert.equal(qboInvoiceVoided(100, 0), true);
     assert.equal(qboInvoiceVoided(0, 0), false);
     assert.equal(qboInvoiceVoided(100, 100), false);
+  });
+});
+
+describe("sales order stage icon links", () => {
+  const orderId = "6f1c0b2e-1111-4222-8333-444455556666";
+
+  it("opens the process page for that sales order", () => {
+    assert.equal(salesOrderStageIconHref("approved", orderId), `/sales/orders/${orderId}`);
+    assert.equal(salesOrderStageIconHref("picked", orderId), `/warehouse/pick/${orderId}`);
+    assert.equal(salesOrderStageIconHref("packed", orderId), `/warehouse/pack/${orderId}`);
+    assert.equal(salesOrderStageIconHref("invoiced", orderId), `/sales/orders/${orderId}/invoice`);
+    assert.equal(salesOrderShipHref(orderId), null);
+    assert.equal(salesOrderStageIconHref("shipped", orderId), `/sales/orders/${orderId}`);
+    assert.equal(salesOrderStageIconHref("paid", orderId), null);
+    assert.equal(salesOrderStageIconHref("cancelled", orderId), null);
+    assert.equal(salesOrderStageIconHref("picked", null), null);
+    assert.equal(salesOrderStageIconHref("picked", "  "), null);
   });
 });
 

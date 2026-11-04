@@ -10,7 +10,7 @@ export const maxDuration = 60;
 
 const ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Opens a pick that can still start. A later order is shown as it was picked, without starting again. */
+/** Opens a pick that can still start, including one that already shipped. A cancelled or invoiced order is shown without starting again. */
 async function pickSheetForPage(orderId: string, canPick: boolean) {
   if (!canPick) return readPickSheet(orderId);
   try {

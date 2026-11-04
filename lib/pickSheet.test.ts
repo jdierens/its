@@ -9,12 +9,18 @@ import {
   pickSheetPlace,
   lineRemaining,
   parsePickQty,
+  isShippedPickStatus,
+  pickCatchUpNote,
   pickFinishStatus,
   pickOwnership,
   pickQtyError,
   pickQueueFromJson,
+  pickQueueLabel,
   pickSheetFromJson,
   pickTargetForBin,
+  pickWritableStatus,
+  pickedAfterShipNote,
+  shippedOrderNeedsPick,
   serialAttachError,
   serialProblem,
   sheetProgress,
@@ -272,5 +278,112 @@ describe("pick order reference migration", () => {
     assert.equal(sql.includes("list_pack_queue"), false);
     assert.equal(sql.includes("sales_order_pack_sheet"), false);
     assert.equal(sql.includes("list_ship_queue"), false);
+  });
+});
+
+describe("shipped orders that still need a pick", () => {
+  const sql = readFileSync(
+    new URL("../supabase/migrations/20261104183000_pick_shipped_orders.sql", import.meta.url),
+    "utf8",
+  );
+
+  function branch(marker: string): string {
+    const start = sql.indexOf(marker);
+    assert.notEqual(start, -1, marker);
+    const elseAt = sql.indexOf("\n  else", start);
+    assert.notEqual(elseAt, -1, marker);
+    return sql.slice(start, elseAt);
+  }
+
+  it("lets shipped and partially shipped orders record a pick and leaves every other status closed", () => {
+    assert.equal(pickWritableStatus("approved"), true);
+    assert.equal(pickWritableStatus("picking"), true);
+    assert.equal(pickWritableStatus("shipped"), true);
+    assert.equal(pickWritableStatus("partially_shipped"), true);
+    for (const status of ["draft", "packing", "packed", "cancelled", "invoiced", "closed"]) {
+      assert.equal(pickWritableStatus(status), false, status);
+      assert.equal(isShippedPickStatus(status), false, status);
+      assert.equal(pickCatchUpNote(status), null, status);
+      assert.equal(pickedAfterShipNote(status, "picked"), null, status);
+    }
+
+    assert.equal(shippedOrderNeedsPick("shipped", null), true);
+    assert.equal(shippedOrderNeedsPick("shipped", "open"), true);
+    assert.equal(shippedOrderNeedsPick("partially_shipped", null), true);
+    assert.equal(shippedOrderNeedsPick("shipped", "picked"), false);
+    assert.equal(shippedOrderNeedsPick("shipped", "short"), false);
+    assert.equal(shippedOrderNeedsPick("picking", null), false);
+    assert.equal(shippedOrderNeedsPick("invoiced", null), false);
+    assert.equal(shippedOrderNeedsPick("cancelled", "open"), false);
+
+    assert.equal(
+      pickCatchUpNote("shipped"),
+      "This order already shipped. Picking records the bins and leaves the ship record in place.",
+    );
+    assert.match(pickCatchUpNote("partially_shipped") ?? "", /partially shipped/);
+    assert.equal(pickCatchUpNote("picking"), null);
+    assert.equal(pickedAfterShipNote("shipped", "picked"), "Picked. This order stays shipped.");
+    assert.equal(pickedAfterShipNote("shipped", "short"), "Short pick is recorded. This order stays shipped.");
+    assert.equal(
+      pickedAfterShipNote("partially_shipped", "picked"),
+      "Picked. This order stays partially shipped.",
+    );
+    assert.equal(pickQueueLabel("shipped", "open"), "Shipped");
+    assert.equal(pickQueueLabel("partially_shipped", null), "Partially shipped");
+    assert.equal(pickQueueLabel("picking", "open"), "Picking");
+    assert.equal(pickQueueLabel("approved", null), "Approved");
+  });
+
+  it("opens and finishes a shipped pick without moving status, ship date, or shipments", () => {
+    assert.match(sql, /Apply by hand/);
+    assert.match(sql, /Deploying does not run this file/);
+    assert.match(sql, /p_status in \('approved', 'picking', 'shipped', 'partially_shipped'\)/);
+    assert.match(sql, /Same inventory movement|same movement|same functions as a pick/i);
+    assert.doesNotMatch(sql, /insert into public\.inventory_movements/i);
+    assert.doesNotMatch(sql, /ship_date\s*=/);
+    assert.doesNotMatch(sql, /(?:update|insert|delete)\s+(?:from\s+)?public\.so_shipments/i);
+    assert.doesNotMatch(sql, /grant execute on function public\.so_picking_writable/);
+    assert.doesNotMatch(sql, /grant .+ to anon/);
+
+    const opened = branch("-- shipped catch-up open");
+    assert.match(opened, /v_status,\s*\n\s*v_status/);
+    assert.match(opened, /Picking after shipping\. Status stays/);
+    assert.doesNotMatch(opened, /update public\.sales_orders/);
+    assert.doesNotMatch(opened, /status = 'picking'/);
+    const openElse = sql.slice(sql.indexOf("\n  else", sql.indexOf("-- shipped catch-up open")));
+    assert.match(openElse.slice(0, 500), /status = 'picking'/);
+
+    const finished = branch("-- shipped catch-up finish");
+    assert.match(finished, /v_order_status,\s*\n\s*v_order_status/);
+    assert.match(finished, /Picked after shipping\. Status stays/);
+    assert.doesNotMatch(finished, /update public\.sales_orders/);
+    assert.doesNotMatch(finished, /status = 'picking'/);
+    assert.match(sql, /update public\.so_pick_lists/);
+    assert.match(sql, /'picking',\s*\n\s*'picking'/);
+  });
+
+  it("keeps saving a pick on the normal inventory path and lists the catch-up on the queues", () => {
+    assert.match(
+      sql,
+      /not public\.so_picking_writable\(\(select status from public\.sales_orders where id = p_order for update\)\)/,
+    );
+    assert.match(sql, /not public\.so_picking_writable\(v_status\)/);
+    assert.match(sql, /pick_sales_order_line/);
+    assert.match(sql, /record_pulled_serial/);
+    assert.match(sql, /assign_pick_staging_bin/);
+    assert.match(sql, /elsif v_status not in \('draft', 'approved', 'picking'\)/);
+    assert.match(sql, /Approval still refuses a shipped order|approval still refuses a shipped order/i);
+
+    assert.match(sql, /o\.status in \('approved', 'picking'\)/);
+    assert.match(sql, /o\.status in \('shipped', 'partially_shipped'\)/);
+    assert.match(sql, /coalesce\(pl\.status, 'open'\) not in \('picked', 'short'\)/);
+    assert.match(sql, /'ebay_order_id', o\.ebay_order_id/);
+    assert.match(sql, /o\.status = 'packing'/);
+    assert.match(sql, /o\.status = 'picking' and pl\.status in \('picked', 'short'\)/);
+    assert.match(sql, /o\.packed_at is null/);
+    assert.match(sql, /pl\.status in \('picked', 'short'\)/);
+    assert.match(sql, /grant execute on function public\.list_pick_queue\(\) to service_role/);
+    assert.match(sql, /grant execute on function public\.list_pack_queue\(\) to service_role/);
+    assert.match(sql, /grant execute on function public\.finish_sales_order_pick\(uuid, text, uuid\) to service_role/);
   });
 });

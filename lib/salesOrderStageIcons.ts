@@ -1,4 +1,5 @@
 import { salesOrderTotal } from "@/lib/salesOrderDraft";
+import { salesOrderShipHref } from "@/lib/salesOrderStages";
 
 /**
  * Seven icons on a sales order: Approved, Picked, Packed, Shipped, Invoiced,
@@ -73,6 +74,32 @@ export type SalesOrderStageIcon = {
   tone: SalesOrderStageTone;
   title: string;
 };
+
+/**
+ * Page for this stage on one sales order.
+ * Pick, pack, and invoice have their own pages. Approved opens the order.
+ * Ship opens the order until `salesOrderShipHref` returns a per-order ship page.
+ * Paid and cancelled have no page. A saved id is required.
+ */
+export function salesOrderStageIconHref(id: SalesOrderStageIconId, orderId: string | null | undefined): string | null {
+  const target = orderId?.trim() ?? "";
+  if (!target) return null;
+  switch (id) {
+    case "approved":
+      return `/sales/orders/${target}`;
+    case "picked":
+      return `/warehouse/pick/${target}`;
+    case "packed":
+      return `/warehouse/pack/${target}`;
+    case "shipped":
+      return salesOrderShipHref(target) ?? `/sales/orders/${target}`;
+    case "invoiced":
+      return `/sales/orders/${target}/invoice`;
+    case "paid":
+    case "cancelled":
+      return null;
+  }
+}
 
 /** Stored so_invoices rows with source qbo_import. present is false when none exist yet. */
 export type QboInvoiceFacts = {

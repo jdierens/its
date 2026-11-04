@@ -824,7 +824,7 @@ export function SalesOrderForm({
                 />
               ) : null}
               <Badge tone={salesOrderBadgeTone(status)}>{salesOrderStatusLabel(status)}</Badge>
-              <SalesOrderStageIcons stages={stages} />
+              <SalesOrderStageIcons stages={stages} orderId={orderId} />
             </div>
             {!locked && drafting ? (
               <label className="so-number-field">

@@ -245,7 +245,7 @@ export function SalesOrderList({
                         <Badge className="so-status" tone={order.status}>
                           {salesOrderStatusLabel(order.status)}
                         </Badge>
-                        <SalesOrderStageIcons stages={order.stages} />
+                        <SalesOrderStageIcons stages={order.stages} orderId={order.id} />
                       </span>
                     </td>
                     <td className="so-col-date">{formatDataDate(order.orderDate)}</td>
@@ -271,7 +271,7 @@ export function SalesOrderList({
                       <Badge className="so-status" tone={order.status}>
                         {salesOrderStatusLabel(order.status)}
                       </Badge>
-                      <SalesOrderStageIcons stages={order.stages} />
+                      <SalesOrderStageIcons stages={order.stages} orderId={order.id} />
                     </span>
                   </dd>
                   <dt>Order date</dt>
