@@ -41,6 +41,13 @@ export type ItemAttachmentTicket = {
   signedUrl: string;
 };
 
+/** File checks are returned. A throw from these actions is replaced in production by the Server Components digest. */
+export type ItemAttachmentReservation =
+  | { ok: true; ticket: ItemAttachmentTicket }
+  | { ok: false; message: string };
+
+export type ItemAttachmentCommit = { ok: true } | { ok: false; message: string };
+
 export async function loadItemAttachments(itemId: string): Promise<ItemAttachmentList> {
   if (!UUID.test(itemId)) return { rows: [], available: true };
   const supabase = await getSupabase();
@@ -69,12 +76,12 @@ export async function loadItemAttachments(itemId: string): Promise<ItemAttachmen
 export async function reserveItemAttachmentUpload(
   itemId: string,
   file: { name: string; type: string; size: number; kind: string },
-): Promise<ItemAttachmentTicket> {
+): Promise<ItemAttachmentReservation> {
   await requireCapability("can_add_photos");
   const kind = parseItemAttachmentKind(file.kind);
-  if (!kind) throw new Error("Choose a file type.");
+  if (!kind) return { ok: false, message: "Choose a file type." };
   const problem = itemPdfFileError(file);
-  if (problem) throw new Error(problem);
+  if (problem) return { ok: false, message: problem };
   await assertAttachmentRoom(itemId);
   const id = crypto.randomUUID();
   const path = attachmentPath(itemId, id);
@@ -83,7 +90,7 @@ export async function reserveItemAttachmentUpload(
   if (signed.error || !signed.data?.signedUrl) {
     throw new Error(signed.error ? errorText(signed.error) : "Could not prepare the PDF upload.");
   }
-  return { id, path, signedUrl: signed.data.signedUrl };
+  return { ok: true, ticket: { id, path, signedUrl: signed.data.signedUrl } };
 }
 
 export async function commitItemAttachmentUpload(input: {
@@ -93,13 +100,13 @@ export async function commitItemAttachmentUpload(input: {
   kind: string;
   fileName: string;
   byteSize: number;
-}): Promise<void> {
+}): Promise<ItemAttachmentCommit> {
   await requireCapability("can_add_photos");
   const kind = parseItemAttachmentKind(input.kind);
-  if (!kind) throw new Error("Choose a file type.");
+  if (!kind) return { ok: false, message: "Choose a file type." };
   if (input.path !== attachmentPath(input.itemId, input.id)) throw new Error("Unknown file.");
   const problem = itemPdfFileError({ name: input.fileName, type: "application/pdf", size: input.byteSize });
-  if (problem) throw new Error(problem);
+  if (problem) return { ok: false, message: problem };
   await assertAttachmentRoom(input.itemId);
   if (!(await objectIsStored(input.path))) throw new Error(STORAGE_MISSING);
   const operator = await attachmentOperator();
@@ -115,6 +122,7 @@ export async function commitItemAttachmentUpload(input: {
     operator_label: operator.label,
   });
   if (error) throw attachmentError(error);
+  return { ok: true };
 }
 
 export async function discardItemAttachmentUpload(path: string): Promise<void> {

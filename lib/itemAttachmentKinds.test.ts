@@ -4,6 +4,7 @@ import {
   ITEM_ATTACHMENT_KINDS,
   itemAttachmentKindLabel,
   itemAttachmentsUnavailable,
+  ITEM_PDF_LIMIT,
   itemPdfDisplayName,
   itemPdfFileError,
   parseItemAttachmentKind,
@@ -21,8 +22,14 @@ test("item files are product documents", () => {
 });
 
 test("an item attachment has to be a PDF", () => {
+  assert.equal(ITEM_PDF_LIMIT, 25 * 1024 * 1024);
   assert.equal(itemPdfFileError({ name: "brief.pdf", type: "application/pdf", size: 20 }), null);
   assert.equal(itemPdfFileError({ name: "brief.pdf", type: "", size: 20 }), null);
+  assert.equal(itemPdfFileError({ name: "brief.pdf", type: "application/pdf", size: ITEM_PDF_LIMIT }), null);
+  assert.equal(
+    itemPdfFileError({ name: "brief.pdf", type: "application/pdf", size: ITEM_PDF_LIMIT + 1 }),
+    "A PDF must be 25 MB or smaller.",
+  );
   assert.equal(itemPdfFileError({ name: "brief.png", type: "image/png", size: 20 }), "Attachments are PDF files.");
   assert.equal(itemPdfFileError({ name: "brief.pdf", type: "application/pdf", size: 0 }), "Choose a PDF.");
   assert.equal(itemPdfDisplayName("../Brief 1.pdf"), "Brief 1.pdf");
