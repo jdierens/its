@@ -137,6 +137,11 @@ export function QuoteReviewRelated({
     setPending(true);
     try {
       const created = await createRelatedQuoteReview({ sourceId: eventId, ...related });
+      if (!created.ok) {
+        setProblem(created.message);
+        setPending(false);
+        return;
+      }
       router.push(`${QUOTE_REVIEWS_PATH}/${created.id}`);
     } catch (error) {
       setProblem(errorText(error));

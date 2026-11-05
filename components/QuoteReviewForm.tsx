@@ -2,14 +2,23 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { Save, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { QuoteFitInput } from "@/components/QuoteFitInput";
 import { QuoteFlowMarks } from "@/components/QuoteFlowMarks";
 import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
 import { QuotePriceOverview } from "@/components/QuotePriceOverview";
 import { QuoteReviewRelated } from "@/components/QuoteReviewRelated";
 import { errorText } from "@/lib/errors";
+import {
+  bindUnsavedBackGuard,
+  isDirty,
+  isGuardedNavigation,
+  isSaveShortcut,
+  LEAVE_QUOTE_UNSAVED,
+  readNavigationApi,
+  type LeaveAnchor,
+} from "@/lib/formDirty";
 import { formatMoney } from "@/lib/pricing/quotes";
 import { createQuoteOrderDraft, saveQuoteReview, searchQuoteItems, type QuoteOrderDraftResult } from "@/lib/quoteReviewsServer";
 import {
@@ -25,6 +34,9 @@ import {
   blankQuoteBid,
   blankQuoteLine,
   originatorForFlow,
+  parseQuoteSave,
+  quoteCounterpartyMessage,
+  quoteEditSnapshot,
   quoteBidderList,
   quoteBidders,
   quoteDirectionLabel,
@@ -49,6 +61,93 @@ type EditorAlt = QuoteAltDraft & { hits: QuoteItemHit[]; findNote: string };
 type EditorLine = Omit<QuoteLineDraft, "alts"> & { alts: EditorAlt[]; hits: QuoteItemHit[]; findNote: string };
 
 const LINE_COLUMNS = 14;
+
+function quotePayloadFrom(header: QuoteReviewDraft, lines: EditorLine[]) {
+  return {
+    reference: header.reference,
+    counterpartyName: header.counterpartyName,
+    vendorId: header.vendorId,
+    customerId: header.customerId,
+    prospectId: header.prospectId,
+    originatorKind: header.originatorKind,
+    channel: header.channel,
+    direction: header.direction,
+    side: header.side,
+    status: header.status,
+    receivedOn: header.receivedOn,
+    dueOn: header.dueOn,
+    currency: header.currency,
+    notes: header.notes,
+    lines: lines.map((line) => ({
+      key: line.key,
+      id: line.id,
+      itemId: line.itemId,
+      partNumber: line.partNumber,
+      sku: line.sku,
+      itemName: line.itemName,
+      condition: line.condition,
+      qty: line.qty,
+      targetPrice: line.targetPrice,
+      specialRequirements: line.specialRequirements,
+      replyQty: line.replyQty,
+      unitPrice: line.unitPrice,
+      leadTime: line.leadTime,
+      decision: line.decision,
+      decisionNote: line.decisionNote,
+      awardWinner: line.awardWinner,
+      awardQty: line.awardQty,
+      bids: line.bids.map((bid) => ({
+        key: bid.key,
+        id: bid.id,
+        bidderName: bid.bidderName,
+        unitPrice: bid.unitPrice,
+        note: bid.note,
+        sku: bid.sku,
+        itemName: bid.itemName,
+        qty: bid.qty,
+        leadTime: bid.leadTime,
+      })),
+      alts: line.alts.map((alt) => ({
+        key: alt.key,
+        id: alt.id,
+        itemId: alt.itemId,
+        partNumber: alt.partNumber,
+        sku: alt.sku,
+        itemName: alt.itemName,
+        unitPrice: alt.unitPrice,
+      })),
+    })),
+  };
+}
+
+function savedEditorLines(
+  current: EditorLine[],
+  saved: { key: string; id: string; bids: { key: string; id: string }[]; alts: { key: string; id: string }[] }[],
+): EditorLine[] {
+  const next = saved.flatMap((row) => {
+    const line = current.find((item) => item.key === row.key);
+    if (!line) return [];
+    return [
+      {
+        ...line,
+        id: row.id,
+        bids: line.bids
+          .filter((bid) => bid.bidderName.trim() || bid.unitPrice.trim() || bid.note.trim() || bid.sku.trim() || bid.itemName.trim() || bid.qty.trim() || bid.leadTime.trim())
+          .map((bid) => {
+            const match = row.bids.find((item) => item.key === bid.key);
+            return match ? { ...bid, id: match.id } : bid;
+          }),
+        alts: line.alts
+          .filter((alt) => alt.itemId || alt.partNumber.trim() || alt.sku.trim() || alt.itemName.trim())
+          .map((alt) => {
+            const match = row.alts.find((item) => item.key === alt.key);
+            return match ? { ...alt, id: match.id } : alt;
+          }),
+      },
+    ];
+  });
+  return next.length > 0 ? next : [toEditor(blankQuoteLine())];
+}
 
 function toEditor(line: QuoteLineDraft): EditorLine {
   return {
@@ -83,8 +182,12 @@ export function QuoteReviewForm({
 }) {
   const router = useRouter();
   const [header, setHeader] = useState(draft);
+  const [vendorChoices, setVendorChoices] = useState(vendors);
+  const [customerChoices, setCustomerChoices] = useState(customers);
   const [prospects, setProspects] = useState(initialProspects);
   const [lines, setLines] = useState<EditorLine[]>(() => (draft.lines.length > 0 ? draft.lines.map(toEditor) : [toEditor(blankQuoteLine())]));
+  const [baseline, setBaseline] = useState(() => quoteEditSnapshot(quotePayloadFrom(draft, lines)));
+  const [savedFlash, setSavedFlash] = useState(false);
   const [bidderName, setBidderName] = useState("");
   const [selectedBidder, setSelectedBidder] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -98,6 +201,68 @@ export function QuoteReviewForm({
   useEffect(() => {
     setOrderLink(order);
   }, [order]);
+
+  const currentSnapshot = quoteEditSnapshot(quotePayloadFrom(header, lines));
+  const dirty = isDirty(currentSnapshot, baseline);
+  const canSave = canEdit && dirty && !saving && !awarding;
+  const saveStatus = saving ? "Saving…" : dirty ? "Unsaved changes" : savedFlash ? "Saved" : "";
+  const canSaveRef = useRef(canSave);
+  const dirtyRef = useRef(dirty);
+  const saveRef = useRef<() => void>(() => undefined);
+  canSaveRef.current = canSave;
+  dirtyRef.current = dirty;
+
+  useEffect(() => {
+    if (!savedFlash || dirty || saving) return;
+    const timer = window.setTimeout(() => setSavedFlash(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [savedFlash, dirty, saving]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (!isSaveShortcut(event)) return;
+      event.preventDefault();
+      if (!canSaveRef.current) return;
+      saveRef.current();
+    }
+    function onLeave(event: BeforeUnloadEvent) {
+      if (!dirtyRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    function onClick(event: MouseEvent) {
+      if (!dirtyRef.current) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a");
+      const described: LeaveAnchor | null = anchor
+        ? { href: anchor.getAttribute("href"), target: anchor.getAttribute("target"), download: anchor.hasAttribute("download") }
+        : null;
+      if (!isGuardedNavigation(event, described)) return;
+      if (window.confirm(LEAVE_QUOTE_UNSAVED)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("beforeunload", onLeave);
+    document.addEventListener("click", onClick, true);
+    const releaseBack = bindUnsavedBackGuard({
+      isDirty: () => dirtyRef.current,
+      confirmLeave: () => window.confirm(LEAVE_QUOTE_UNSAVED),
+      history: window.history,
+      locationHref: () => window.location.href,
+      addPopState: (listener) => window.addEventListener("popstate", listener),
+      removePopState: (listener) => window.removeEventListener("popstate", listener),
+      navigation: readNavigationApi(window),
+      armSentinel: dirtyRef.current,
+    });
+    return () => {
+      releaseBack();
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("beforeunload", onLeave);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [dirty]);
   const dueWarning =
     header.dueOn && header.receivedOn && header.dueOn < header.receivedOn
       ? "Due date is before the received date. You can still save."
@@ -200,107 +365,47 @@ export function QuoteReviewForm({
     });
   }
 
-  function quotePayload() {
-    return {
-      reference: header.reference,
-      counterpartyName: header.counterpartyName,
-      vendorId: header.vendorId,
-      customerId: header.customerId,
-      prospectId: header.prospectId,
-      originatorKind: header.originatorKind,
-      channel: header.channel,
-      direction: header.direction,
-      side: header.side,
-      status: header.status,
-      receivedOn: header.receivedOn,
-      dueOn: header.dueOn,
-      currency: header.currency,
-      notes: header.notes,
-      lines: lines.map((line) => ({
-        key: line.key,
-        id: line.id,
-        itemId: line.itemId,
-        partNumber: line.partNumber,
-        sku: line.sku,
-        itemName: line.itemName,
-        condition: line.condition,
-        qty: line.qty,
-        targetPrice: line.targetPrice,
-        specialRequirements: line.specialRequirements,
-        replyQty: line.replyQty,
-        unitPrice: line.unitPrice,
-        leadTime: line.leadTime,
-        decision: line.decision,
-        decisionNote: line.decisionNote,
-        awardWinner: line.awardWinner,
-        awardQty: line.awardQty,
-        bids: line.bids.map((bid) => ({
-          key: bid.key,
-          id: bid.id,
-          bidderName: bid.bidderName,
-          unitPrice: bid.unitPrice,
-          note: bid.note,
-          sku: bid.sku,
-          itemName: bid.itemName,
-          qty: bid.qty,
-          leadTime: bid.leadTime,
-        })),
-        alts: line.alts.map((alt) => ({
-          key: alt.key,
-          id: alt.id,
-          itemId: alt.itemId,
-          partNumber: alt.partNumber,
-          sku: alt.sku,
-          itemName: alt.itemName,
-          unitPrice: alt.unitPrice,
-        })),
-      })),
-    };
+  function rememberSave(nextHeader: QuoteReviewDraft, nextLines: EditorLine[]) {
+    setHeader(nextHeader);
+    setLines(nextLines);
+    setBaseline(quoteEditSnapshot(quotePayloadFrom(nextHeader, nextLines)));
+    setSavedFlash(true);
   }
 
-  function applySavedLines(saved: { key: string; id: string; bids: { key: string; id: string }[]; alts: { key: string; id: string }[] }[]) {
-    const next = saved.flatMap((row) => {
-      const current = lines.find((line) => line.key === row.key);
-      if (!current) return [];
-      return [
-        {
-          ...current,
-          id: row.id,
-          bids: current.bids
-            .filter((bid) => bid.bidderName.trim() || bid.unitPrice.trim() || bid.note.trim() || bid.sku.trim() || bid.itemName.trim() || bid.qty.trim() || bid.leadTime.trim())
-            .map((bid) => {
-              const match = row.bids.find((item) => item.key === bid.key);
-              return match ? { ...bid, id: match.id } : bid;
-            }),
-          alts: current.alts
-            .filter((alt) => alt.itemId || alt.partNumber.trim() || alt.sku.trim() || alt.itemName.trim())
-            .map((alt) => {
-              const match = row.alts.find((item) => item.key === alt.key);
-              return match ? { ...alt, id: match.id } : alt;
-            }),
-        },
-      ];
-    });
-    setLines(next.length > 0 ? next : [toEditor(blankQuoteLine())]);
+  function validationMessage(): string | null {
+    const parsed = parseQuoteSave(quotePayloadFrom(header, lines));
+    return parsed.ok ? null : parsed.message;
   }
 
-  async function onSave(event: FormEvent) {
-    event.preventDefault();
-    if (!canEdit) return;
+  async function onSave(event?: FormEvent) {
+    event?.preventDefault();
+    if (!canEdit || saving || awarding) return;
+    if (!isDirty(quoteEditSnapshot(quotePayloadFrom(header, lines)), baseline)) return;
+    const invalid = validationMessage();
+    if (invalid) {
+      setMessage("");
+      setProblem(invalid);
+      return;
+    }
     setSaving(true);
     setProblem("");
     setMessage("");
     setWarnings([]);
     try {
-      const result = await saveQuoteReview(header.id, quotePayload());
-      applySavedLines(result.lines);
+      const result = await saveQuoteReview(header.id, quotePayloadFrom(header, lines));
+      if (!result.ok) {
+        setProblem(result.message);
+        return;
+      }
+      const nextLines = savedEditorLines(lines, result.lines);
+      const nextHeader = { ...header, id: result.id };
+      rememberSave(nextHeader, nextLines);
       setWarnings(result.warnings);
       setMessage("Saved.");
       if (!header.id) {
         router.push(`${QUOTE_REVIEWS_PATH}/${result.id}`);
         return;
       }
-      setHeader((current) => ({ ...current, id: result.id }));
       router.refresh();
     } catch (error) {
       setProblem(errorText(error));
@@ -308,6 +413,10 @@ export function QuoteReviewForm({
       setSaving(false);
     }
   }
+
+  saveRef.current = () => {
+    void onSave();
+  };
 
   function awardAll() {
     setLines((current) =>
@@ -323,25 +432,33 @@ export function QuoteReviewForm({
   }
 
   async function onAward() {
-    if (!canEdit) return;
+    if (!canEdit || saving || awarding) return;
+    const invalid = validationMessage();
+    if (invalid) {
+      setMessage("");
+      setProblem(invalid);
+      return;
+    }
     setAwarding(true);
     setProblem("");
     setMessage("");
     setWarnings([]);
     try {
-      const result = await saveQuoteReview(header.id, quotePayload());
-      applySavedLines(result.lines);
-      setWarnings(result.warnings);
-      setHeader((current) => ({ ...current, id: result.id }));
-      const drafted: QuoteOrderDraftResult = await createQuoteOrderDraft(result.id);
-      setOrderLink(drafted);
-      setMessage(drafted.message);
-      if (drafted.created) setHeader((current) => ({ ...current, id: result.id, status: drafted.quoteStatus }));
-      if (!header.id) {
-        router.push(`${QUOTE_REVIEWS_PATH}/${result.id}`);
+      const result = await saveQuoteReview(header.id, quotePayloadFrom(header, lines));
+      if (!result.ok) {
+        setProblem(result.message);
         return;
       }
-      router.refresh();
+      const nextLines = savedEditorLines(lines, result.lines);
+      const savedHeader = { ...header, id: result.id };
+      rememberSave(savedHeader, nextLines);
+      setWarnings(result.warnings);
+      const drafted: QuoteOrderDraftResult = await createQuoteOrderDraft(result.id);
+      const awardedHeader = { ...savedHeader, status: drafted.quoteStatus };
+      setHeader(awardedHeader);
+      setBaseline(quoteEditSnapshot(quotePayloadFrom(awardedHeader, nextLines)));
+      setOrderLink(drafted);
+      router.push(drafted.href);
     } catch (error) {
       setProblem(errorText(error));
     } finally {
@@ -349,18 +466,48 @@ export function QuoteReviewForm({
     }
   }
 
+  const counterpartyMessage = quoteCounterpartyMessage(header);
   const companyHref = header.customerId ? `/customers/${header.customerId}` : header.vendorId ? `/vendors/${header.vendorId}` : "";
   const companyName = header.customerId
-    ? customers.find((party) => party.id === header.customerId)?.name
+    ? customerChoices.find((party) => party.id === header.customerId)?.name
     : header.vendorId
-      ? vendors.find((party) => party.id === header.vendorId)?.name
+      ? vendorChoices.find((party) => party.id === header.vendorId)?.name
       : prospects.find((party) => party.id === header.prospectId)?.name;
+
+  function rememberParty(current: QuotePartyOption[], party: QuotePartyOption): QuotePartyOption[] {
+    return current.some((item) => item.id === party.id) ? current : [...current, party];
+  }
 
   return (
     <>
       <form onSubmit={onSave}>
+        {canEdit ? (
+          <div className="so-sticky qr-savebar">
+            <div className="so-sticky-lead">
+              <div className="so-identity">
+                <span className="sku">{header.reference.trim() || "Quote request"}</span>
+                {orderLink ? <QuoteOrderLink link={orderLink} /> : null}
+              </div>
+              <span className="hint" role="status">
+                {saveStatus || "Save keeps the header and lines."}
+              </span>
+            </div>
+            <div className="so-sticky-actions">
+              <button
+                className="button qr-save"
+                type="submit"
+                disabled={!canSave}
+                aria-label="Save"
+                title={canSave ? "Save (Ctrl/Cmd+S)" : "No unsaved changes"}
+              >
+                <Save size={18} strokeWidth={1.75} aria-hidden />
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        ) : null}
         <p>
-          <Link href={QUOTE_REVIEWS_PATH}>Back to quote reviews</Link>
+          <Link href={QUOTE_REVIEWS_PATH}>Back to quote requests</Link>
         </p>
         {problem ? (
           <p className="banner error" role="alert">
@@ -435,11 +582,13 @@ export function QuoteReviewForm({
               prospectId={header.prospectId}
               contact={header.counterpartyName}
               disabled={!canEdit}
-              vendors={vendors}
-              customers={customers}
+              vendors={vendorChoices}
+              customers={customerChoices}
               prospects={prospects}
               onOriginator={(next) => setHeader((current) => ({ ...current, ...next }))}
               onContact={(counterpartyName) => setHeader((current) => ({ ...current, counterpartyName }))}
+              onCustomer={(party) => setCustomerChoices((current) => rememberParty(current, party))}
+              onVendor={(party) => setVendorChoices((current) => rememberParty(current, party))}
               onProspect={(prospect) => setProspects((current) => (current.some((item) => item.id === prospect.id) ? current : [...current, prospect].sort((a, b) => a.name.localeCompare(b.name))))}
             />
             <label>
@@ -472,6 +621,11 @@ export function QuoteReviewForm({
               <textarea rows={2} value={header.notes} disabled={!canEdit} onChange={(event) => setHeader({ ...header, notes: event.target.value })} />
             </label>
           </div>
+          {counterpartyMessage ? (
+            <p className="banner error" role="alert">
+              {counterpartyMessage}
+            </p>
+          ) : null}
           {dueWarning ? <p className="hint">{dueWarning}</p> : null}
           {companyName ? (
             <p className="hint">
@@ -564,8 +718,8 @@ export function QuoteReviewForm({
         </div>
         {canEdit ? (
           <p>
-            <button className="button" type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save quote"}
+            <button className="button qr-save" type="submit" disabled={!canSave} aria-label="Save" title={canSave ? "Save (Ctrl/Cmd+S)" : "No unsaved changes"}>
+              {saving ? "Saving…" : "Save"}
             </button>
           </p>
         ) : null}
@@ -579,8 +733,8 @@ export function QuoteReviewForm({
           sourceDirection={header.direction}
           sourceChannel={header.channel}
           sourceReference={header.reference}
-          vendors={vendors}
-          customers={customers}
+          vendors={vendorChoices}
+          customers={customerChoices}
           prospects={prospects}
           onProspect={(prospect) => setProspects((current) => (current.some((item) => item.id === prospect.id) ? current : [...current, prospect]))}
           relations={relations}
@@ -600,12 +754,11 @@ export function QuoteReviewForm({
           {header.side === "buy"
             ? "A won buy becomes a draft purchase order. It is not approved."
             : "A won sell becomes a draft sales order. It is not approved."}{" "}
-          Check a line for a partial win. DDS is the response unless a bidder won that line.
+          Check a line for a partial win. Awarding every line marks the quote won. Awarding some lines marks it won partial. DDS is the response unless a bidder won that line.
         </p>
         {orderLink ? (
           <p>
-            <Link href={orderLink.href}>{orderLink.label}</Link>
-            {orderLink.status === "draft" ? " · draft" : ` · ${orderLink.status}`}
+            <QuoteOrderLink link={orderLink} />
           </p>
         ) : null}
         <div className="qr-scroll">
@@ -700,9 +853,19 @@ export function QuoteReviewForm({
       </section>
       <section className="card qr-related">
         <h2>Files</h2>
-        <p className="muted">Files are not stored on a quote review. Purchase orders and sales orders keep their own PDFs.</p>
+        <p className="muted">Files are not stored on a quote request. Purchase orders and sales orders keep their own PDFs.</p>
       </section>
     </>
+  );
+}
+
+function QuoteOrderLink({ link }: { link: QuoteOrderLink }) {
+  const extra = link.status === "draft" || link.label.startsWith("Draft ") ? "" : ` · ${link.status}`;
+  return (
+    <Link href={link.href}>
+      {link.label}
+      {extra}
+    </Link>
   );
 }
 

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EBAY_ORDER_CUSTOMER_NAME } from "./ebay/orderMap.ts";
-import { isEbaySourcedCustomer } from "./ebayCustomers.ts";
+import { isEbaySourcedCustomer, quoteCustomerEbayOrFilter } from "./ebayCustomers.ts";
+import { quotePartyNamePattern } from "./quoteReviews.ts";
 
 test("eBay buyers are the member mailbox and the order-pull customer", () => {
   assert.equal(EBAY_ORDER_CUSTOMER_NAME, "eBay Customer");
@@ -24,4 +25,11 @@ test("eBay buyers are the member mailbox and the order-pull customer", () => {
     false,
   );
   assert.equal(isEbaySourcedCustomer({ displayName: "Acme", primaryEmail: null }), false);
+  assert.equal(quotePartyNamePattern("  BRI_% "), "%BRI%");
+  assert.equal(quotePartyNamePattern("bri"), "%bri%");
+  assert.equal(quotePartyNamePattern("   "), null);
+  const exclusion = quoteCustomerEbayOrFilter();
+  assert.match(exclusion, /primary_email\.is\.null/);
+  assert.match(exclusion, /@members\.ebay\.com/);
+  assert.equal(exclusion.includes("BrightStar"), false);
 });
