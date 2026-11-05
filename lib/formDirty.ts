@@ -94,8 +94,9 @@ export type NavigationLike = {
   removeEventListener: (type: "navigate", listener: (event: NavigateEventLike) => void) => void;
 };
 
-export function readNavigationApi(target: { navigation?: unknown }): NavigationLike | null {
-  const nav = target.navigation;
+export function readNavigationApi(target: object): NavigationLike | null {
+  if (!("navigation" in target)) return null;
+  const nav = (target as { navigation?: unknown }).navigation;
   if (!nav || typeof nav !== "object") return null;
   const candidate = nav as Partial<NavigationLike>;
   if (typeof candidate.addEventListener !== "function" || typeof candidate.removeEventListener !== "function") return null;
