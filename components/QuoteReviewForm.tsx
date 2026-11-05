@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { QuoteFitInput } from "@/components/QuoteFitInput";
 import { QuoteFlowMarks } from "@/components/QuoteFlowMarks";
 import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
@@ -11,8 +11,9 @@ import { QuotePriceOverview } from "@/components/QuotePriceOverview";
 import { QuoteReviewRelated } from "@/components/QuoteReviewRelated";
 import { errorText } from "@/lib/errors";
 import { formatMoney } from "@/lib/pricing/quotes";
-import { saveQuoteReview, searchQuoteItems } from "@/lib/quoteReviewsServer";
+import { createQuoteOrderDraft, saveQuoteReview, searchQuoteItems, type QuoteOrderDraftResult } from "@/lib/quoteReviewsServer";
 import {
+  DDS_AWARD,
   QUOTE_CHANNELS,
   QUOTE_DECISIONS,
   QUOTE_DIRECTIONS,
@@ -20,6 +21,7 @@ import {
   QUOTE_SIDES,
   QUOTE_STATUSES,
   bestQuotedUnit,
+  blankQuoteAlt,
   blankQuoteBid,
   blankQuoteLine,
   originatorForFlow,
@@ -28,24 +30,34 @@ import {
   quoteDirectionLabel,
   quoteFlowHint,
   quoteLeadTime,
+  quoteMoneyExt,
   quoteReplyExtension,
   quoteSideLabel,
   type QuoteChoice,
   type QuoteItemHit,
+  type QuoteAltDraft,
   type QuoteLineDraft,
   type QuoteOfferColumn,
+  type QuoteOrderLink,
   type QuotePartyOption,
   type QuoteBidderListEntry,
   type QuoteRelationView,
   type QuoteReviewDraft,
 } from "@/lib/quoteReviews";
 
-type EditorLine = QuoteLineDraft & { hits: QuoteItemHit[]; findNote: string };
+type EditorAlt = QuoteAltDraft & { hits: QuoteItemHit[]; findNote: string };
+type EditorLine = Omit<QuoteLineDraft, "alts"> & { alts: EditorAlt[]; hits: QuoteItemHit[]; findNote: string };
 
 const LINE_COLUMNS = 14;
 
 function toEditor(line: QuoteLineDraft): EditorLine {
-  return { ...line, key: line.key || crypto.randomUUID(), hits: [], findNote: "" };
+  return {
+    ...line,
+    key: line.key || crypto.randomUUID(),
+    hits: [],
+    findNote: "",
+    alts: (line.alts ?? []).map((alt) => ({ ...alt, key: alt.key || crypto.randomUUID(), hits: [], findNote: "" })),
+  };
 }
 
 export function QuoteReviewForm({
@@ -57,6 +69,7 @@ export function QuoteReviewForm({
   relations,
   choices,
   offers = [],
+  order = null,
 }: {
   canEdit: boolean;
   draft: QuoteReviewDraft;
@@ -66,6 +79,7 @@ export function QuoteReviewForm({
   relations: QuoteRelationView[];
   choices: QuoteChoice[];
   offers?: QuoteOfferColumn[];
+  order?: QuoteOrderLink | null;
 }) {
   const router = useRouter();
   const [header, setHeader] = useState(draft);
@@ -78,6 +92,12 @@ export function QuoteReviewForm({
   const [message, setMessage] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [problem, setProblem] = useState("");
+  const [orderLink, setOrderLink] = useState<QuoteOrderLink | null>(order);
+  const [awarding, setAwarding] = useState(false);
+
+  useEffect(() => {
+    setOrderLink(order);
+  }, [order]);
   const dueWarning =
     header.dueOn && header.receivedOn && header.dueOn < header.receivedOn
       ? "Due date is before the received date. You can still save."
@@ -86,8 +106,14 @@ export function QuoteReviewForm({
   const bidderEntries = quoteBidderList(lines, relations);
   const activeBidder = selectedBidder && bidders.some((name) => name.toLowerCase() === selectedBidder.toLowerCase()) ? selectedBidder : null;
 
-  function patchLine(key: string, patch: Partial<EditorLine>) {
-    setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  function patchLine(key: string, patch: Partial<EditorLine> | ((line: EditorLine) => Partial<EditorLine>)) {
+    setLines((current) =>
+      current.map((line) => {
+        if (line.key !== key) return line;
+        const next = typeof patch === "function" ? patch(line) : patch;
+        return { ...line, ...next };
+      }),
+    );
   }
 
   function setFlow(patch: { side?: string; direction?: string }) {
@@ -174,6 +200,90 @@ export function QuoteReviewForm({
     });
   }
 
+  function quotePayload() {
+    return {
+      reference: header.reference,
+      counterpartyName: header.counterpartyName,
+      vendorId: header.vendorId,
+      customerId: header.customerId,
+      prospectId: header.prospectId,
+      originatorKind: header.originatorKind,
+      channel: header.channel,
+      direction: header.direction,
+      side: header.side,
+      status: header.status,
+      receivedOn: header.receivedOn,
+      dueOn: header.dueOn,
+      currency: header.currency,
+      notes: header.notes,
+      lines: lines.map((line) => ({
+        key: line.key,
+        id: line.id,
+        itemId: line.itemId,
+        partNumber: line.partNumber,
+        sku: line.sku,
+        itemName: line.itemName,
+        condition: line.condition,
+        qty: line.qty,
+        targetPrice: line.targetPrice,
+        specialRequirements: line.specialRequirements,
+        replyQty: line.replyQty,
+        unitPrice: line.unitPrice,
+        leadTime: line.leadTime,
+        decision: line.decision,
+        decisionNote: line.decisionNote,
+        awardWinner: line.awardWinner,
+        awardQty: line.awardQty,
+        bids: line.bids.map((bid) => ({
+          key: bid.key,
+          id: bid.id,
+          bidderName: bid.bidderName,
+          unitPrice: bid.unitPrice,
+          note: bid.note,
+          sku: bid.sku,
+          itemName: bid.itemName,
+          qty: bid.qty,
+          leadTime: bid.leadTime,
+        })),
+        alts: line.alts.map((alt) => ({
+          key: alt.key,
+          id: alt.id,
+          itemId: alt.itemId,
+          partNumber: alt.partNumber,
+          sku: alt.sku,
+          itemName: alt.itemName,
+          unitPrice: alt.unitPrice,
+        })),
+      })),
+    };
+  }
+
+  function applySavedLines(saved: { key: string; id: string; bids: { key: string; id: string }[]; alts: { key: string; id: string }[] }[]) {
+    const next = saved.flatMap((row) => {
+      const current = lines.find((line) => line.key === row.key);
+      if (!current) return [];
+      return [
+        {
+          ...current,
+          id: row.id,
+          bids: current.bids
+            .filter((bid) => bid.bidderName.trim() || bid.unitPrice.trim() || bid.note.trim() || bid.sku.trim() || bid.itemName.trim() || bid.qty.trim() || bid.leadTime.trim())
+            .map((bid) => {
+              const match = row.bids.find((item) => item.key === bid.key);
+              return match ? { ...bid, id: match.id } : bid;
+            }),
+          alts: current.alts
+            .filter((alt) => alt.itemId || alt.partNumber.trim() || alt.sku.trim() || alt.itemName.trim())
+            .map((alt) => {
+              const match = row.alts.find((item) => item.key === alt.key);
+              return match ? { ...alt, id: match.id } : alt;
+            }),
+        },
+      ];
+    });
+    setLines(next.length > 0 ? next : [toEditor(blankQuoteLine())]);
+  }
+
   async function onSave(event: FormEvent) {
     event.preventDefault();
     if (!canEdit) return;
@@ -182,67 +292,8 @@ export function QuoteReviewForm({
     setMessage("");
     setWarnings([]);
     try {
-      const result = await saveQuoteReview(header.id, {
-        reference: header.reference,
-        counterpartyName: header.counterpartyName,
-        vendorId: header.vendorId,
-        customerId: header.customerId,
-        prospectId: header.prospectId,
-        originatorKind: header.originatorKind,
-        channel: header.channel,
-        direction: header.direction,
-        side: header.side,
-        status: header.status,
-        receivedOn: header.receivedOn,
-        dueOn: header.dueOn,
-        currency: header.currency,
-        notes: header.notes,
-        lines: lines.map((line) => ({
-          key: line.key,
-          id: line.id,
-          itemId: line.itemId,
-          partNumber: line.partNumber,
-          sku: line.sku,
-          itemName: line.itemName,
-          condition: line.condition,
-          qty: line.qty,
-          targetPrice: line.targetPrice,
-          specialRequirements: line.specialRequirements,
-          replyQty: line.replyQty,
-          unitPrice: line.unitPrice,
-          leadTime: line.leadTime,
-          decision: line.decision,
-          decisionNote: line.decisionNote,
-          bids: line.bids.map((bid) => ({
-            key: bid.key,
-            id: bid.id,
-            bidderName: bid.bidderName,
-            unitPrice: bid.unitPrice,
-            note: bid.note,
-            sku: bid.sku,
-            itemName: bid.itemName,
-            qty: bid.qty,
-            leadTime: bid.leadTime,
-          })),
-        })),
-      });
-      const next = result.lines.flatMap((saved) => {
-        const current = lines.find((line) => line.key === saved.key);
-        if (!current) return [];
-        return [
-          {
-            ...current,
-            id: saved.id,
-            bids: current.bids
-              .filter((bid) => bid.bidderName.trim() || bid.unitPrice.trim() || bid.note.trim() || bid.sku.trim() || bid.itemName.trim() || bid.qty.trim() || bid.leadTime.trim())
-              .map((bid) => {
-                const match = saved.bids.find((item) => item.key === bid.key);
-                return match ? { ...bid, id: match.id } : bid;
-              }),
-          },
-        ];
-      });
-      setLines(next.length > 0 ? next : [toEditor(blankQuoteLine())]);
+      const result = await saveQuoteReview(header.id, quotePayload());
+      applySavedLines(result.lines);
       setWarnings(result.warnings);
       setMessage("Saved.");
       if (!header.id) {
@@ -255,6 +306,46 @@ export function QuoteReviewForm({
       setProblem(errorText(error));
     } finally {
       setSaving(false);
+    }
+  }
+
+  function awardAll() {
+    setLines((current) =>
+      current.map((line) => {
+        if (!lineHasRequest(line)) return line;
+        return {
+          ...line,
+          awardWinner: line.awardWinner || DDS_AWARD,
+          awardQty: line.awardQty || line.replyQty || line.qty,
+        };
+      }),
+    );
+  }
+
+  async function onAward() {
+    if (!canEdit) return;
+    setAwarding(true);
+    setProblem("");
+    setMessage("");
+    setWarnings([]);
+    try {
+      const result = await saveQuoteReview(header.id, quotePayload());
+      applySavedLines(result.lines);
+      setWarnings(result.warnings);
+      setHeader((current) => ({ ...current, id: result.id }));
+      const drafted: QuoteOrderDraftResult = await createQuoteOrderDraft(result.id);
+      setOrderLink(drafted);
+      setMessage(drafted.message);
+      if (drafted.created) setHeader((current) => ({ ...current, id: result.id, status: drafted.quoteStatus }));
+      if (!header.id) {
+        router.push(`${QUOTE_REVIEWS_PATH}/${result.id}`);
+        return;
+      }
+      router.refresh();
+    } catch (error) {
+      setProblem(errorText(error));
+    } finally {
+      setAwarding(false);
     }
   }
 
@@ -417,7 +508,7 @@ export function QuoteReviewForm({
             ) : null}
           </div>
           <p className="hint">
-            Request on the left. DDS unit on the right, with DDS ext under the unit. An empty lead time means in stock. Sheet and photo import is not on this page.
+            Request on the left. The primary SKU is the DDS response. Alternatives are other SKUs for that same request. An empty lead time means in stock.
           </p>
           <div className="qr-scroll">
             <table>
@@ -439,7 +530,7 @@ export function QuoteReviewForm({
                   <th className="num">Target</th>
                   <th>Condition</th>
                   <th>Requirements</th>
-                  <th>SKU</th>
+                  <th>Primary SKU</th>
                   <th>Name</th>
                   <th className="num">Qty</th>
                   <th className="num">DDS unit</th>
@@ -497,11 +588,119 @@ export function QuoteReviewForm({
         />
       ) : null}
       <section className="card qr-related">
-        <h2>Files</h2>
-        <p className="muted">
-          Files are not stored on a quote review. Purchase orders and sales orders keep their own PDFs. Creating a purchase order or sales order from
-          this quote is not built yet.
+        <div className="qr-line-bar">
+          <h2>Award</h2>
+          {canEdit ? (
+            <button type="button" className="button secondary" disabled={saving || awarding} onClick={awardAll}>
+              Award every line
+            </button>
+          ) : null}
+        </div>
+        <p className="hint">
+          {header.side === "buy"
+            ? "A won buy becomes a draft purchase order. It is not approved."
+            : "A won sell becomes a draft sales order. It is not approved."}{" "}
+          Check a line for a partial win. DDS is the response unless a bidder won that line.
         </p>
+        {orderLink ? (
+          <p>
+            <Link href={orderLink.href}>{orderLink.label}</Link>
+            {orderLink.status === "draft" ? " · draft" : ` · ${orderLink.status}`}
+          </p>
+        ) : null}
+        <div className="qr-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Award</th>
+                <th>#</th>
+                <th>Part</th>
+                <th>Won by</th>
+                <th className="num">Qty</th>
+                <th className="num">Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line, index) => {
+                const winners = [{ id: DDS_AWARD, label: "DDS" }, ...line.bids.filter((bid) => bid.bidderName.trim()).map((bid) => ({ id: bid.bidderName, label: bid.bidderName }))];
+                const winner = line.awardWinner.trim();
+                const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === winner.toLowerCase());
+                const unit = winner.toLowerCase() === DDS_AWARD ? line.unitPrice : bid?.unitPrice ?? "";
+                const qty = line.awardQty || line.replyQty || line.qty;
+                return (
+                  <tr key={line.key}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`Award line ${index + 1}`}
+                        checked={Boolean(winner)}
+                        disabled={!canEdit}
+                        onChange={(event) => {
+                          if (!event.target.checked) {
+                            patchLine(line.key, { awardWinner: "", awardQty: "" });
+                            return;
+                          }
+                          patchLine(line.key, { awardWinner: winner || DDS_AWARD, awardQty: line.awardQty || line.replyQty || line.qty });
+                        }}
+                      />
+                    </td>
+                    <td className="num">{index + 1}</td>
+                    <td>{line.partNumber || line.sku || "—"}</td>
+                    <td>
+                      <select
+                        className="qr-fit"
+                        aria-label={`Winner for line ${index + 1}`}
+                        value={winner || DDS_AWARD}
+                        disabled={!canEdit || !winner}
+                        onChange={(event) => patchLine(line.key, { awardWinner: event.target.value })}
+                      >
+                        {winners.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="num">
+                      <QuoteFitInput
+                        floor={3}
+                        cap={8}
+                        className="num"
+                        inputMode="decimal"
+                        aria-label={`Awarded quantity for line ${index + 1}`}
+                        value={line.awardQty}
+                        placeholder={line.replyQty || line.qty}
+                        disabled={!canEdit || !winner}
+                        onChange={(event) => patchLine(line.key, { awardQty: event.target.value })}
+                      />
+                    </td>
+                    <td className="num">
+                      {quoteMoneyExt(qty, unit, header.currency || "USD") ? (
+                        <span>
+                          {unit}
+                          <span className="qr-context"> {quoteMoneyExt(qty, unit, header.currency || "USD")}</span>
+                        </span>
+                      ) : (
+                        unit || "—"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {canEdit ? (
+          <p>
+            <button type="button" className="button" disabled={saving || awarding} onClick={() => void onAward()}>
+              {awarding ? "Creating…" : header.side === "buy" ? "Create draft purchase order" : "Create draft sales order"}
+            </button>
+          </p>
+        ) : null}
+      </section>
+      <section className="card qr-related">
+        <h2>Files</h2>
+        <p className="muted">Files are not stored on a quote review. Purchase orders and sales orders keep their own PDFs.</p>
       </section>
     </>
   );
@@ -702,13 +901,54 @@ function LineRows({
   canEdit: boolean;
   finding: boolean;
   best: number | null;
-  onPatch: (patch: Partial<EditorLine>) => void;
+  onPatch: (patch: Partial<EditorLine> | ((line: EditorLine) => Partial<EditorLine>)) => void;
   onFind: () => void;
   onPick: (hit: QuoteItemHit) => void;
   onRemove: () => void;
 }) {
   const number = index + 1;
   const ddsExt = quoteReplyExtension(line.qty, line.replyQty, line.unitPrice);
+  const [findingAlt, setFindingAlt] = useState<string | null>(null);
+
+  function patchAlt(key: string, patch: Partial<EditorAlt>) {
+    onPatch((latest) => ({ alts: latest.alts.map((alt) => (alt.key === key ? { ...alt, ...patch } : alt)) }));
+  }
+
+  function pickAlt(key: string, hit: QuoteItemHit) {
+    onPatch((latest) => ({
+      alts: latest.alts.map((alt) =>
+        alt.key === key
+          ? {
+              ...alt,
+              itemId: hit.id,
+              sku: hit.sku || alt.sku,
+              itemName: hit.name || alt.itemName,
+              partNumber: alt.partNumber || hit.partNumber,
+              hits: [],
+              findNote: "",
+            }
+          : alt,
+      ),
+    }));
+  }
+
+  async function findAlt(alt: EditorAlt) {
+    const query = alt.sku.trim() || alt.partNumber.trim() || alt.itemName.trim();
+    if (!query) {
+      patchAlt(alt.key, { findNote: "Enter a SKU, part, or name to find an alternative.", hits: [] });
+      return;
+    }
+    setFindingAlt(alt.key);
+    try {
+      const hits = await searchQuoteItems(query);
+      patchAlt(alt.key, { hits, findNote: hits.length === 0 ? "No item matched. The alternative can stay unmatched." : "" });
+    } catch (error) {
+      patchAlt(alt.key, { findNote: errorText(error), hits: [] });
+    } finally {
+      setFindingAlt(null);
+    }
+  }
+
   return (
     <>
       <tr>
@@ -730,8 +970,8 @@ function LineRows({
         <td data-label="Requirements">
           <QuoteFitInput floor={8} cap={32} aria-label={`Special requirements for line ${number}`} value={line.specialRequirements} disabled={!canEdit} onChange={(event) => onPatch({ specialRequirements: event.target.value })} />
         </td>
-        <td data-label="SKU">
-          <QuoteFitInput floor={7} cap={20} aria-label={`SKU for line ${number}`} value={line.sku} disabled={!canEdit} onChange={(event) => onPatch({ sku: event.target.value })} />
+        <td data-label="Primary SKU">
+          <QuoteFitInput floor={7} cap={20} aria-label={`Primary SKU for line ${number}`} value={line.sku} disabled={!canEdit} onChange={(event) => onPatch({ sku: event.target.value })} />
           {line.itemId ? <Link href={`/items/${line.itemId}`}>{line.sku || "Item"}</Link> : null}
         </td>
         <td data-label="Name">
@@ -806,6 +1046,84 @@ function LineRows({
                 ))}
               </ul>
             ) : null}
+            <div className="qr-alts">
+              <p className="qr-context">Alternatives</p>
+              {line.alts.map((alt, altIndex) => {
+                const ext = quoteMoneyExt(line.replyQty || line.qty, alt.unitPrice);
+                return (
+                  <div key={alt.key || altIndex} className="qr-alt">
+                    <QuoteFitInput
+                      floor={7}
+                      cap={20}
+                      aria-label={`Alternative SKU ${altIndex + 1} for line ${number}`}
+                      placeholder="SKU"
+                      value={alt.sku}
+                      disabled={!canEdit}
+                      onChange={(event) => patchAlt(alt.key, { sku: event.target.value })}
+                    />
+                    <QuoteFitInput
+                      floor={10}
+                      cap={28}
+                      aria-label={`Alternative name ${altIndex + 1} for line ${number}`}
+                      placeholder="Name"
+                      value={alt.itemName}
+                      disabled={!canEdit}
+                      onChange={(event) => patchAlt(alt.key, { itemName: event.target.value })}
+                    />
+                    <QuoteFitInput
+                      floor={5}
+                      cap={12}
+                      className="num"
+                      inputMode="decimal"
+                      aria-label={`Alternative unit ${altIndex + 1} for line ${number}`}
+                      placeholder="Unit"
+                      value={alt.unitPrice}
+                      disabled={!canEdit}
+                      onChange={(event) => patchAlt(alt.key, { unitPrice: event.target.value })}
+                    />
+                    {ext ? <span className="qr-context">{ext}</span> : null}
+                    {alt.itemId ? <Link href={`/items/${alt.itemId}`}>{alt.sku || "Item"}</Link> : null}
+                    {canEdit ? (
+                      <button type="button" className="button secondary" disabled={findingAlt === alt.key} onClick={() => void findAlt(alt)}>
+                        {findingAlt === alt.key ? "Finding…" : "Find"}
+                      </button>
+                    ) : null}
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        className="secondary so-icon-remove"
+                        aria-label={`Remove alternative ${altIndex + 1} on line ${number}`}
+                        title="Remove alternative"
+                        onClick={() => onPatch({ alts: line.alts.filter((item) => item.key !== alt.key) })}
+                      >
+                        <Trash2 size={14} strokeWidth={1.75} aria-hidden />
+                      </button>
+                    ) : null}
+                    {alt.findNote ? <p className="hint">{alt.findNote}</p> : null}
+                    {alt.hits.length > 0 ? (
+                      <ul className="qr-hits">
+                        {alt.hits.map((hit) => (
+                          <li key={hit.id}>
+                            <button type="button" onClick={() => pickAlt(alt.key, hit)}>
+                              {hit.sku || hit.partNumber || "Item"} · {hit.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {canEdit ? (
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => onPatch({ alts: [...line.alts, { ...blankQuoteAlt(), key: crypto.randomUUID(), hits: [], findNote: "" }] })}
+                >
+                  Add alternative SKU
+                </button>
+              ) : null}
+            </div>
           </div>
         </td>
       </tr>

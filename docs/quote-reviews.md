@@ -2,7 +2,7 @@
 
 A quote review is one list, reviewed as one event. Pricing office (`/pricing`) is still the placeholder for selling prices. Quote reviews are **Pricing > Quote reviews** (`/pricing/quotes`).
 
-Apply `supabase/migrations/20261103180000_quote_events.sql`, then `supabase/migrations/20261104140000_quote_event_flow.sql`, by hand. Deploying does not run them. Apply the second file with this release. Until it is applied, the page says the tables are missing and does not write. The previous release still expects the four-way direction token, so apply the file once this release is the one being served.
+Apply `supabase/migrations/20261103180000_quote_events.sql`, then `supabase/migrations/20261104140000_quote_event_flow.sql`, then `supabase/migrations/20261105040000_quote_line_alts_and_awards.sql`, by hand. Deploying does not run them. Apply the latest file with this release. Until the quote tables exist, the page says they are missing and does not write.
 
 ## Who can open it
 
@@ -31,6 +31,7 @@ Each row on the list is one `quote_events` row.
 - `received_on` is when the list was received or created. `due_on` is optional. A due date before the received date saves, and the page says so.
 - `originator_kind` is `customer`, `prospect`, `vendor`, or `dds`.
 - Inbound sell requires `customer_id` or `prospect_id`. Inbound buy requires `vendor_id`. Outbound sets `originator_kind` to `dds`. An outbound sell may also name a customer or a prospect. An outbound buy may also name a vendor.
+- The customer and vendor fields are type-to-filter lists. The customer list hides eBay-sourced customers: `primary_email` ending in `@members.ebay.com` (QuickBooks buyer cards from eBay’s anonymized mailbox), and the customer named `eBay Customer` (the one record the order pull uses). A display name that only contains “ebay”, such as a reseller, stays. Those rows are not deleted. A quote that already points at one still shows that customer. Search on the quote list still matches them.
 - `counterparty_name` is the contact. The company comes from the customer, vendor, or prospect, so the list does not depend on the notes.
 - `quote_prospects` is a light company that is not a customer yet. New prospect on the quote saves one. It is not a QuickBooks customer. Pick the customer later, once the company exists.
 - `channel` is `whatsapp`, `email`, `sheet`, or `other`.
@@ -52,13 +53,21 @@ Request columns are the part number, quantity, optional target price, optional c
 
 DDS columns are the SKU, the item name, the reply quantity, **DDS unit** with DDS ext under that unit, lead time, notes, and the decision. **Best** under the DDS unit is one unit from this line’s bids and the related quotes loaded with the page. Outbound buy and inbound sell use the lowest of those units. Inbound buy and outbound sell use the highest. Editing a bid here updates it immediately. It is not a price stored on the line, and it is not the item’s ecommerce or market price. The quote list’s Best competing total is still the lowest local bid only. `our_unit_price` is DDS unit. `reply_qty` is the reply quantity. When it is empty, DDS ext uses the request quantity. `our_ext` is that quantity times DDS unit, rounded to cents by the database, and null when either input is null. The page shows that extension as a whole number. `lead_time` is optional. Empty means in stock, and the page shows In stock. `decision` is `bid`, `pass`, `counter`, or empty. `decision_note` is the reply note.
 
-`item_id` is null until the part is matched, and deleting the item clears it. `part_number` can stand alone. `part_number_norm` is generated the same way as `price_quotes.part_number_norm`: uppercase, with whitespace, `-`, and `/` removed.
+`item_id` is null until the part is matched, and deleting the item clears it. `part_number` can stand alone. The SKU on the line is the primary response item. `quote_event_line_alts` holds optional alternative SKUs for that same line: part, SKU, name, optional item, and optional unit price. The primary stays when an alternative is added, edited, or removed. An alternative extension uses the reply quantity, or the request quantity, and displays as whole dollars. Alternatives are not copied onto a related quote. `part_number_norm` is generated the same way as `price_quotes.part_number_norm`: uppercase, with whitespace, `-`, and `/` removed.
 
 Other responses sit in a numbered strip directly under the overview: `1. CompA`, `2. CompB`, and so on. A related quote is on that strip too, after the responses, using the same party name as the related-quotes table. Choosing a response opens that party’s reply for every line: SKU, name, quantity, unit price, lead time, and note. Choosing a related quote opens that quote. Those reply fields live on `quote_event_bids`. Empty SKU, name, or quantity on a bid uses the line’s values as the placeholder. DDS unit and DDS ext stay on the DDS column. A bidder can be saved without a price. A price needs a name.
 
 Find item searches SKU, name, and part number. The line can stay unmatched. On-hand quantity and the latest buy and sell for a matched item are shown beside the line. They are a hook, not a full market strip.
 
 An empty line is dropped on save. A quote can be saved with no lines. A bad price or quantity is refused. A due date is not.
+
+## Award
+
+Award sits under the line detail. Check the lines that won, or use Award every line. Each awarded line names who won it, DDS or a bidder on that line, and the quantity. The quantity can be less than the request. DDS uses the primary item and the DDS unit. A bidder uses that bidder’s unit. A bidder SKU that differs from the primary is ordered as that SKU, without the primary item.
+
+Create draft purchase order on a buy, or create draft sales order on a sell. Only the awarded lines are copied. The vendor or customer is the quote’s party. A prospect is not a customer yet, so a sell needs a customer first. Prices and quantities come from the award. The draft’s internal note names the quote, and `purchase_orders.quote_event_id` or `sales_orders.quote_event_id` stores the link. The purchase-order draft is warehouse, Net 30, and unnumbered. The sales-order draft leaves channel, terms, and payment blank. Neither draft is approved.
+
+Doing it again does not create a second order. The page opens the draft, or names the purchase order or sales order that is already linked, until that order is cancelled. When every line is awarded, status becomes won. A partial award leaves status as it is, and the lines that were not awarded stay on the quote.
 
 ## Related quotes
 
@@ -76,6 +85,6 @@ Hong Li is an outbound sell related response-to the Mainstream inbound buy. His 
 
 ## Out of scope
 
-Sheet and photo import is not on this page. Files are not stored on a quote review. Purchase orders and sales orders keep their own PDFs. Creating a purchase order or sales order from an event is not built. The page does not change cost or inventory. Prospects are not a full contacts book.
+Sheet and photo import is not on this page. Files are not stored on a quote review. Purchase orders and sales orders keep their own PDFs. An award creates a draft only. The page does not change cost or inventory. Prospects are not a full contacts book. Competing bidder rows do not have their own alternative SKUs. Alternatives belong to the DDS response line.
 
 Row level security is on for the quote tables, including `quote_prospects`, with no anon or authenticated policy. Only `service_role` can read or write them. That is the same grant `price_quotes` has after the lockdown. The server checks `can_view_financials` and `can_edit_financials` before it uses that role.

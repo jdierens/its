@@ -11209,6 +11209,49 @@ select.qr-fit {
   cursor: pointer;
 }
 
+.qr-party {
+  position: relative;
+  display: block;
+}
+
+.qr-party .combo-menu {
+  min-width: 16rem;
+  width: max-content;
+  max-width: 28rem;
+}
+
+.qr-party .combo-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.qr-party .combo-option {
+  font-size: 0.75rem;
+  padding: 0.28rem 0.45rem;
+}
+
+.qr-party-group {
+  display: block;
+  padding: 0.28rem 0.45rem 0;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.qr-alts {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.qr-alt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+}
+
 .qr-due-soon {
   color: var(--danger-ink);
   font-weight: 650;

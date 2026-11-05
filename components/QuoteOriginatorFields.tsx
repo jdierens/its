@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { QuoteFitInput } from "@/components/QuoteFitInput";
+import { QuotePartyPicker } from "@/components/QuotePartyPicker";
 import { errorText } from "@/lib/errors";
 import { createQuoteProspect } from "@/lib/quoteReviewsServer";
 import { originatorPicker, type OriginatorIds, type QuotePartyOption } from "@/lib/quoteReviews";
@@ -112,33 +113,21 @@ export function QuoteOriginatorFields({
       ) : null}
       <label>
         {partyLabel}
-        <select className="qr-fit" value={partyValue} disabled={disabled} aria-label={partyLabel} onChange={(event) => choose(event.target.value)}>
-          <option value="">{customersAndProspects ? "Choose a customer or prospect" : "Choose a vendor"}</option>
-          {customersAndProspects ? (
-            <>
-              <optgroup label="Customers">
-                {customers.map((party) => (
-                  <option key={party.id} value={`customer:${party.id}`}>
-                    {party.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Prospects">
-                {prospects.map((party) => (
-                  <option key={party.id} value={`prospect:${party.id}`}>
-                    {party.name}
-                  </option>
-                ))}
-              </optgroup>
-            </>
-          ) : (
-            vendors.map((party) => (
-              <option key={party.id} value={`vendor:${party.id}`}>
-                {party.name}
-              </option>
-            ))
-          )}
-        </select>
+        <QuotePartyPicker
+          label={partyLabel}
+          value={partyValue}
+          placeholder={customersAndProspects ? "Type a customer or prospect" : "Type a vendor"}
+          disabled={disabled}
+          groups={
+            customersAndProspects
+              ? [
+                  { label: "Customers", options: customers.map((party) => ({ value: `customer:${party.id}`, name: party.name })) },
+                  { label: "Prospects", options: prospects.map((party) => ({ value: `prospect:${party.id}`, name: party.name })) },
+                ]
+              : [{ label: "Vendors", options: vendors.map((party) => ({ value: `vendor:${party.id}`, name: party.name })) }]
+          }
+          onChange={choose}
+        />
       </label>
       <label>
         Contact

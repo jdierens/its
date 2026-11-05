@@ -1,22 +1,32 @@
 "use server";
 
 import { CAPABILITY_DENIED } from "@/lib/capabilities";
+import { isEbaySourcedCustomer } from "@/lib/ebayCustomers";
 import { errorText } from "@/lib/errors";
 import { formatDataDate } from "@/lib/formatDate";
 import { itemIdsMatchingAlnum } from "@/lib/itemAlnumSearch";
 import { normalizePartNumber } from "@/lib/itemAttributeSearch";
+import { extensionFromUnit, formatExtension, formatUnitPrice } from "@/lib/poLineMoney";
 import { asMoney, formatMoney, moneyInput } from "@/lib/pricing/quotes";
+import { purchaseOrderNumberLabel } from "@/lib/purchaseOrderDraft";
+import { savePurchaseOrder } from "@/lib/purchaseOrders";
 import { quoteReviewPageAccess } from "@/lib/quoteReviewSession";
+import { emptyAddress, formatSalesOrderNumber, type SoDraftInput } from "@/lib/salesOrderDraft";
+import { saveSalesOrder } from "@/lib/salesOrders";
 import {
   DUE_SOON_DAYS,
   addCalendarDays,
   bestCompetingUnit,
+  buildQuoteAward,
   isQuoteDirection,
   isQuoteDueSoon,
   isQuoteSide,
   isQuoteStatus,
   linesForRelatedEvent,
   originatorDisplay,
+  quoteOrderKind,
+  quoteOrderNote,
+  quoteOrderReuseMessage,
   isQuoteRelationType,
   parseQuoteQty,
   parseQuoteSave,
@@ -27,15 +37,18 @@ import {
   quoteLineMatchKey,
   quoteOfferHeading,
   quoteQtyText,
+  QUOTE_REVIEWS_SETUP,
   quoteReviewsUnavailable,
   relationPhrase,
   summarizeQuoteLines,
+  type BuiltQuoteAwardLine,
   type ParsedQuoteLine,
   type QuoteChoice,
   type QuoteItemHit,
   type QuoteLineDraft,
   type QuoteListRow,
   type QuoteOfferColumn,
+  type QuoteOrderLink,
   type QuotePartyOption,
   type QuoteRelatedInput,
   type QuoteRelationView,
@@ -56,14 +69,20 @@ export type QuoteListResult = {
 };
 
 export type QuoteDetailResult =
-  | { status: "ok"; draft: QuoteReviewDraft; relations: QuoteRelationView[]; offers: QuoteOfferColumn[] }
+  | { status: "ok"; draft: QuoteReviewDraft; relations: QuoteRelationView[]; offers: QuoteOfferColumn[]; order: QuoteOrderLink | null }
   | { status: "missing" }
   | { status: "unavailable" };
 
 export type QuoteSaveResult = {
   id: string;
   warnings: string[];
-  lines: { key: string; id: string; bids: { key: string; id: string }[] }[];
+  lines: { key: string; id: string; bids: { key: string; id: string }[]; alts: { key: string; id: string }[] }[];
+};
+
+export type QuoteOrderDraftResult = QuoteOrderLink & {
+  created: boolean;
+  message: string;
+  quoteStatus: string;
 };
 
 type Row = Record<string, unknown>;
@@ -80,16 +99,23 @@ export async function listQuoteVendors(): Promise<QuotePartyOption[]> {
   return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.display_name ?? "") }));
 }
 
-export async function listQuoteCustomers(): Promise<QuotePartyOption[]> {
+export async function listQuoteCustomers(options?: { includeEbay?: boolean; keepIds?: string[] }): Promise<QuotePartyOption[]> {
   const access = await quoteReviewPageAccess();
   if (!access.canView) return [];
   const { data, error } = await (await getSupabase())
     .from("customers")
-    .select("id, display_name")
+    .select("id, display_name, primary_email")
     .eq("active", true)
     .order("display_name");
   if (error) throw new Error(errorText(error));
-  return (data ?? []).map((row) => ({ id: String(row.id), name: String(row.display_name ?? "") }));
+  const keep = new Set((options?.keepIds ?? []).filter((id) => UUID.test(id)));
+  return (data ?? []).flatMap((row) => {
+    const id = String(row.id);
+    const name = String(row.display_name ?? "");
+    const sourced = isEbaySourcedCustomer({ displayName: name, primaryEmail: row.primary_email == null ? null : String(row.primary_email) });
+    if (sourced && !options?.includeEbay && !keep.has(id)) return [];
+    return [{ id, name }];
+  });
 }
 
 export async function listQuoteProspects(): Promise<QuotePartyOption[]> {
@@ -151,7 +177,11 @@ export async function listQuoteReviews(filter: {
   }
   const needle = searchNeedle(filter.q ?? "");
   if (needle) {
-    const [vendors, customers, prospects] = await Promise.all([listQuoteVendors(), listQuoteCustomers(), listQuoteProspects()]);
+    const [vendors, customers, prospects] = await Promise.all([
+      listQuoteVendors(),
+      listQuoteCustomers({ includeEbay: true }),
+      listQuoteProspects(),
+    ]);
     const lowered = needle.toLowerCase();
     const vendorIds = vendors.filter((party) => party.name.toLowerCase().includes(lowered)).map((party) => party.id);
     const customerIds = customers.filter((party) => party.name.toLowerCase().includes(lowered)).map((party) => party.id);
@@ -229,11 +259,14 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
   const lines = await supabase
     .from("quote_event_lines")
     .select(
-      "id, sort_order, item_id, part_number, sku, item_name, condition, qty, target_price, special_requirements, reply_qty, our_unit_price, lead_time, decision, decision_note, quote_event_bids(id, sort_order, bidder_name, unit_price, note, sku, item_name, qty, lead_time)",
+      "id, sort_order, item_id, part_number, sku, item_name, condition, qty, target_price, special_requirements, reply_qty, our_unit_price, lead_time, decision, decision_note, award_winner, award_qty, quote_event_bids(id, sort_order, bidder_name, unit_price, note, sku, item_name, qty, lead_time), quote_event_line_alts(id, sort_order, item_id, part_number, sku, item_name, unit_price)",
     )
     .eq("quote_event_id", id)
     .order("sort_order");
-  if (lines.error) throw new Error(errorText(lines.error));
+  if (lines.error) {
+    if (quoteReviewsUnavailable(lines.error)) return { status: "unavailable" };
+    throw new Error(errorText(lines.error));
+  }
   const lineRows = ((lines.data ?? []) as Row[]).slice().sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order));
   const context = await itemContext(lineRows.map((row) => text(row.item_id)).filter(Boolean));
   const header = event.data as Row;
@@ -260,6 +293,7 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
     },
     relations,
     offers: await relatedOfferColumns(relations),
+    order: await linkedQuoteOrder(id, text(header.side)),
   };
 }
 
@@ -554,6 +588,253 @@ export async function unlinkQuoteReview(eventId: string, relationId: string): Pr
   if ((removed.data ?? []).length < 1) throw new Error("That link was not found.");
 }
 
+export async function createQuoteOrderDraft(eventId: string): Promise<QuoteOrderDraftResult> {
+  const access = await quoteReviewPageAccess();
+  if (!access.canEdit) throw new Error(EDIT_DENIED);
+  if (!UUID.test(eventId)) throw new Error("That quote was not found.");
+  const supabase = await getSupabase();
+  const ready = await supabase.from("purchase_orders").select("quote_event_id").limit(1);
+  if (ready.error) throw dbError(ready.error);
+  const event = await supabase
+    .from("quote_events")
+    .select("id, side, reference, counterparty_name, vendor_id, customer_id, currency")
+    .eq("id", eventId)
+    .maybeSingle();
+  if (event.error) throw dbError(event.error);
+  if (!event.data) throw new Error("That quote was not found.");
+  const header = event.data as Row;
+  const side = text(header.side);
+  const quoteStatus = text(header.status);
+  const existing = await linkedQuoteOrder(eventId, side);
+  if (existing) return { ...existing, created: false, message: quoteOrderReuseMessage(existing), quoteStatus };
+
+  const listed = await supabase
+    .from("quote_event_lines")
+    .select(
+      "id, sort_order, item_id, part_number, sku, item_name, condition, our_unit_price, award_winner, award_qty, quote_event_bids(bidder_name, unit_price, sku, item_name)",
+    )
+    .eq("quote_event_id", eventId)
+    .order("sort_order");
+  if (listed.error) throw dbError(listed.error);
+  const rows = ((listed.data ?? []) as Row[]).slice().sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order));
+  const built = buildQuoteAward(
+    rows.map((row) => ({
+      id: text(row.id),
+      partNumber: text(row.part_number) || null,
+      sku: text(row.sku) || null,
+      itemName: text(row.item_name) || null,
+      itemId: text(row.item_id) || null,
+      condition: text(row.condition) || null,
+      unitPrice: asMoney(row.our_unit_price),
+      awardWinner: text(row.award_winner) || null,
+      awardQty: asMoney(row.award_qty),
+      bids: rowsOf(row.quote_event_bids).map((bid) => ({
+        bidderName: text(bid.bidder_name),
+        unitPrice: asMoney(bid.unit_price),
+        sku: text(bid.sku) || null,
+        itemName: text(bid.item_name) || null,
+      })),
+    })),
+  );
+  if (!built.ok) throw new Error(built.message);
+
+  const reference = text(header.reference);
+  const currency = (text(header.currency) || "USD").toUpperCase();
+  const note = currency === "USD" ? quoteOrderNote({ reference, id: eventId }) : `${quoteOrderNote({ reference, id: eventId })} Quote currency is ${currency}.`;
+  const kind = quoteOrderKind(side);
+  let createdId = "";
+  if (kind === "purchase") {
+    const vendorId = text(header.vendor_id);
+    if (!UUID.test(vendorId)) throw new Error("Choose a vendor before creating a purchase order.");
+    const saved = await savePurchaseOrder(null, {
+      vendorId,
+      fulfillment: "warehouse",
+      terms: "Net30",
+      orderedOn: quoteCalendarDay(),
+      expectedOn: "",
+      vendorNotes: "",
+      internalNotes: note,
+      freightIn: "",
+      shipments: [],
+      lines: built.lines.map((line) => ({
+        itemId: line.itemId ?? "",
+        description: orderDescription(line),
+        qty: qtyText(line.qty),
+        unitCost: formatUnitPrice(line.unitPrice),
+        extPrice: formatExtension(extensionFromUnit(line.qty, line.unitPrice)),
+        condition: line.condition,
+        unit: "Piece",
+      })),
+    });
+    createdId = saved.id;
+    const linked = await supabase.from("purchase_orders").update({ quote_event_id: eventId }).eq("id", createdId).eq("status", "draft");
+    if (linked.error) {
+      if (linked.error.code === "23505") {
+        await supabase.from("purchase_orders").delete().eq("id", createdId).eq("status", "draft");
+        const again = await linkedQuoteOrder(eventId, side);
+        if (again) return { ...again, created: false, message: quoteOrderReuseMessage(again), quoteStatus };
+      }
+      throw dbError(linked.error);
+    }
+  } else {
+    const customerId = text(header.customer_id);
+    if (!UUID.test(customerId)) throw new Error("Pick a customer before creating a sales order. A prospect is not a customer yet.");
+    const saved = await saveSalesOrder(
+      salesDraftFromAward({
+        customerId,
+        reference,
+        contactName: text(header.counterparty_name),
+        currency,
+        note,
+        lines: built.lines,
+      }),
+    );
+    createdId = saved.id;
+    const linked = await supabase.from("sales_orders").update({ quote_event_id: eventId }).eq("id", createdId).eq("status", "draft");
+    if (linked.error) {
+      if (linked.error.code === "23505") {
+        await supabase.from("sales_orders").delete().eq("id", createdId).eq("status", "draft");
+        const again = await linkedQuoteOrder(eventId, side);
+        if (again) return { ...again, created: false, message: quoteOrderReuseMessage(again), quoteStatus };
+      }
+      throw dbError(linked.error);
+    }
+  }
+  const nextStatus = built.coversAll ? "won" : quoteStatus;
+  if (nextStatus !== quoteStatus) {
+    await supabase.from("quote_events").update({ status: nextStatus }).eq("id", eventId);
+  }
+  const link = await linkedQuoteOrder(eventId, side);
+  if (!link) throw new Error("The draft was saved, but the quote link was not.");
+  const noun = kind === "purchase" ? "purchase order" : "sales order";
+  return { ...link, created: true, message: `Draft ${noun} created. It is not approved.`, quoteStatus: nextStatus };
+}
+
+function salesDraftFromAward(input: {
+  customerId: string;
+  reference: string;
+  contactName: string;
+  currency: string;
+  note: string;
+  lines: BuiltQuoteAwardLine[];
+}): SoDraftInput {
+  return {
+    id: null,
+    customerId: input.customerId,
+    customerPo: input.reference.trim().slice(0, 200),
+    reference: "",
+    channel: "",
+    orderDate: quoteCalendarDay(),
+    shipDate: "",
+    billTo: emptyAddress(),
+    shipTo: emptyAddress(),
+    terms: "",
+    incoterms: "",
+    shipMethod: "",
+    carrierAccount: "",
+    currency: input.currency,
+    salesRep: "",
+    exportNotes: "",
+    internalNotes: input.note,
+    paymentRequirement: "terms",
+    paymentMethod: "",
+    paymentDate: "",
+    paymentRef: "",
+    paymentAmount: "",
+    contactName: input.contactName.trim().slice(0, 200),
+    contactEmail: "",
+    contactPhone: "",
+    ebayTransactionFee: "",
+    ebayLabelFee: "",
+    ebayAdFee: "",
+    ebayOrderEarnings: "",
+    lines: input.lines.map((line) => {
+      const qty = qtyText(line.qty);
+      const unitPrice = formatUnitPrice(line.unitPrice);
+      return {
+        lineKind: "product",
+        customerPartNumber: (line.partNumber || line.sku).slice(0, 120),
+        customerDescription: orderDescription(line),
+        qty,
+        unitPrice,
+        condition: line.condition,
+        allocations: line.itemId ? [{ itemId: line.itemId, qty, unitPrice }] : [],
+      };
+    }),
+    notes: [],
+    shipments: [],
+    saveAddressToCustomer: false,
+  };
+}
+
+function orderDescription(line: BuiltQuoteAwardLine): string {
+  return (line.itemName || line.partNumber || line.sku).slice(0, 500);
+}
+
+function qtyText(qty: number): string {
+  return String(Math.round(qty * 100) / 100);
+}
+
+async function linkedQuoteOrder(eventId: string, side: string): Promise<QuoteOrderLink | null> {
+  const supabase = await getSupabase();
+  const [purchase, sales] = await Promise.all([
+    supabase
+      .from("purchase_orders")
+      .select("id, number, status, created_at")
+      .eq("quote_event_id", eventId)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("sales_orders")
+      .select("id, so_number, status, created_at")
+      .eq("quote_event_id", eventId)
+      .neq("status", "cancelled")
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
+  if (purchase.error) {
+    if (quoteReviewsUnavailable(purchase.error)) return null;
+    throw dbError(purchase.error);
+  }
+  if (sales.error) {
+    if (quoteReviewsUnavailable(sales.error)) return null;
+    throw dbError(sales.error);
+  }
+  const purchaseRow = ((purchase.data ?? []) as Row[])[0];
+  const salesRow = ((sales.data ?? []) as Row[])[0];
+  const purchaseLink = purchaseRow ? purchaseOrderLink(purchaseRow) : null;
+  const salesLink = salesRow ? salesOrderLink(salesRow) : null;
+  if (side === "buy") return purchaseLink ?? salesLink;
+  return salesLink ?? purchaseLink;
+}
+
+function purchaseOrderLink(row: Row): QuoteOrderLink {
+  const number = purchaseOrderNumberLabel(row.number == null ? null : String(row.number));
+  const id = text(row.id);
+  return {
+    kind: "purchase",
+    id,
+    status: text(row.status),
+    number,
+    href: `/purchasing/orders/${id}`,
+    label: number === "Draft" ? "Draft purchase order" : number,
+  };
+}
+
+function salesOrderLink(row: Row): QuoteOrderLink {
+  const formatted = formatSalesOrderNumber(row.so_number == null || row.so_number === "" ? null : Number(row.so_number));
+  const id = text(row.id);
+  return {
+    kind: "sales",
+    id,
+    status: text(row.status),
+    number: formatted ?? "Draft",
+    href: `/sales/orders/${id}`,
+    label: formatted ?? "Draft sales order",
+  };
+}
+
 async function saveLines(eventId: string, lines: ParsedQuoteLine[]): Promise<QuoteSaveResult["lines"]> {
   const supabase = await getSupabase();
   const existing = await supabase.from("quote_event_lines").select("id").eq("quote_event_id", eventId);
@@ -578,6 +859,8 @@ async function saveLines(eventId: string, lines: ParsedQuoteLine[]): Promise<Quo
       lead_time: line.leadTime,
       decision: line.decision,
       decision_note: line.decisionNote,
+      award_winner: line.awardWinner,
+      award_qty: line.awardQty,
       updated_at: new Date().toISOString(),
     };
     const written = line.id
@@ -585,12 +868,44 @@ async function saveLines(eventId: string, lines: ParsedQuoteLine[]): Promise<Quo
       : await supabase.from("quote_event_lines").insert(payload).select("id").single();
     if (written.error || !written.data) throw dbError(written.error);
     const lineId = String(written.data.id);
-    saved.push({ key: line.key, id: lineId, bids: await saveBids(lineId, line) });
+    saved.push({ key: line.key, id: lineId, bids: await saveBids(lineId, line), alts: await saveAlts(lineId, line) });
   }
   const kept = new Set(saved.map((line) => line.id));
   const remove = [...existingIds].filter((lineId) => !kept.has(lineId));
   if (remove.length > 0) {
     const deleted = await supabase.from("quote_event_lines").delete().eq("quote_event_id", eventId).in("id", remove);
+    if (deleted.error) throw dbError(deleted.error);
+  }
+  return saved;
+}
+
+async function saveAlts(lineId: string, line: ParsedQuoteLine): Promise<{ key: string; id: string }[]> {
+  const supabase = await getSupabase();
+  const existing = await supabase.from("quote_event_line_alts").select("id").eq("line_id", lineId);
+  if (existing.error) throw dbError(existing.error);
+  const existingIds = new Set((existing.data ?? []).map((row) => String(row.id)));
+  const saved: { key: string; id: string }[] = [];
+  for (const [index, alt] of line.alts.entries()) {
+    const payload = {
+      line_id: lineId,
+      sort_order: index,
+      item_id: alt.itemId,
+      part_number: alt.partNumber,
+      sku: alt.sku,
+      item_name: alt.itemName,
+      unit_price: alt.unitPrice,
+    };
+    const id = alt.id && existingIds.has(alt.id) ? alt.id : null;
+    const written = id
+      ? await supabase.from("quote_event_line_alts").update(payload).eq("id", id).eq("line_id", lineId).select("id").single()
+      : await supabase.from("quote_event_line_alts").insert(payload).select("id").single();
+    if (written.error || !written.data) throw dbError(written.error);
+    saved.push({ key: alt.key, id: String(written.data.id) });
+  }
+  const kept = new Set(saved.map((alt) => alt.id));
+  const remove = [...existingIds].filter((altId) => !kept.has(altId));
+  if (remove.length > 0) {
+    const deleted = await supabase.from("quote_event_line_alts").delete().eq("line_id", lineId).in("id", remove);
     if (deleted.error) throw dbError(deleted.error);
   }
   return saved;
@@ -797,6 +1112,18 @@ function lineDraft(row: Row, context: Map<string, { onHand: number | null; lastB
       qty: quoteQtyText(bid.qty),
       leadTime: text(bid.lead_time),
     }));
+  const alts = rowsOf(row.quote_event_line_alts)
+    .slice()
+    .sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order))
+    .map((alt) => ({
+      key: text(alt.id),
+      id: text(alt.id),
+      itemId: text(alt.item_id),
+      partNumber: text(alt.part_number),
+      sku: text(alt.sku),
+      itemName: text(alt.item_name),
+      unitPrice: moneyInput(asMoney(alt.unit_price)),
+    }));
   return {
     key: text(row.id),
     id: text(row.id),
@@ -813,7 +1140,10 @@ function lineDraft(row: Row, context: Map<string, { onHand: number | null; lastB
     leadTime: text(row.lead_time),
     decision: text(row.decision),
     decisionNote: text(row.decision_note),
+    awardWinner: text(row.award_winner),
+    awardQty: quoteQtyText(row.award_qty),
     bids,
+    alts,
     onHand: side?.onHand ?? null,
     lastBuy: side?.lastBuy ?? "",
     lastSell: side?.lastSell ?? "",
@@ -933,9 +1263,7 @@ function searchNeedle(value: string): string {
 
 function dbError(error: { code?: string; message?: string } | null): Error {
   if (quoteReviewsUnavailable(error)) {
-    return new Error(
-      "Quote reviews are not set up yet. Apply supabase/migrations/20261103180000_quote_events.sql and supabase/migrations/20261104140000_quote_event_flow.sql.",
-    );
+    return new Error(`Quote reviews are not set up yet. ${QUOTE_REVIEWS_SETUP}`);
   }
   if (error?.code === "23505") return new Error("Those quotes are already linked.");
   if (error?.code === "23514") return new Error("That originator does not match this quote.");
