@@ -21,9 +21,9 @@ export default async function NewQuoteReviewPage() {
   if (!access.canEdit) {
     return (
       <main className="page so-page ds">
-        <p className="muted">You can view quote reviews. Creating and editing is limited to admin and staff.</p>
+        <p className="muted">You can view quote requests. Creating and editing is limited to admin and staff.</p>
         <p>
-          <Link href={QUOTE_REVIEWS_PATH}>Back to quote reviews</Link>
+          <Link href={QUOTE_REVIEWS_PATH}>Back to quote requests</Link>
         </p>
       </main>
     );

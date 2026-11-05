@@ -15,6 +15,8 @@ export function QuotePartyPicker({
   placeholder,
   disabled,
   groups,
+  pending = false,
+  onQuery,
   onChange,
 }: {
   label: string;
@@ -22,6 +24,8 @@ export function QuotePartyPicker({
   placeholder: string;
   disabled: boolean;
   groups: QuotePartyGroup[];
+  pending?: boolean;
+  onQuery?: (query: string) => void;
   onChange: (value: string) => void;
 }) {
   const listId = useId();
@@ -103,6 +107,7 @@ export function QuotePartyPicker({
           setQuery(next);
           setOpen(true);
           setActive(-1);
+          onQuery?.(next);
           if (next.trim() === "") onChange("");
         }}
         onBlur={() => {
@@ -117,7 +122,7 @@ export function QuotePartyPicker({
       {open && !disabled ? (
         <ul className="combo-menu" id={listId} role="listbox">
           {query.trim() === "" ? <li className="combo-empty">Type a name.</li> : null}
-          {query.trim() !== "" && flat.length === 0 ? <li className="combo-empty">No matches.</li> : null}
+          {query.trim() !== "" && flat.length === 0 ? <li className="combo-empty">{pending ? "Searching…" : "No matches."}</li> : null}
           {shown.map((group) => (
             <li key={group.label}>
               {groups.length > 1 ? <span className="qr-party-group">{group.label}</span> : null}

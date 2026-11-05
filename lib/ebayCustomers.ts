@@ -12,6 +12,14 @@ export const EBAY_MEMBER_EMAIL_SUFFIX = "@members.ebay.com";
  * True when the email is an eBay member address, or the display name is the
  * order-pull customer. A company whose name merely contains "ebay" stays.
  */
+/**
+ * PostgREST `or` filter: drop the eBay order customer and @members.ebay.com mailboxes.
+ * A name that only contains "ebay" is not matched here.
+ */
+export function quoteCustomerEbayOrFilter(): string {
+  return `primary_email.is.null,primary_email.not.ilike."%${EBAY_MEMBER_EMAIL_SUFFIX}"`;
+}
+
 export function isEbaySourcedCustomer(input: {
   displayName?: string | null;
   primaryEmail?: string | null;

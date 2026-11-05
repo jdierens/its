@@ -10957,6 +10957,45 @@ select.qr-fit {
   margin-bottom: 0.35rem;
 }
 
+/* List and action labels stay sentence case, the same as sales orders.
+   A heading's uppercase must not leak onto these buttons. */
+.qr-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.qr-savebar {
+  margin-bottom: 0.85rem;
+}
+
+.qr-savebar .qr-save,
+.qr-lines .qr-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.qr-list-actions .button,
+.qr-list-actions button,
+.qr-filters .button,
+.qr-filters button,
+.qr-savebar .button,
+.qr-savebar button,
+.qr-related .button,
+.qr-related button,
+.qr-lines .button,
+.qr-lines button,
+.qr-bidder-strip .button,
+.qr-bidder-strip button,
+.qr-prospect .button,
+.qr-prospect button,
+.qr-hits button {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .qr-list-scroll,
 .qr-scroll {
   overflow-x: auto;

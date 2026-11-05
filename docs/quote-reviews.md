@@ -1,12 +1,12 @@
-# Quote reviews
+# Quote requests
 
-A quote review is one list, reviewed as one event. Pricing office (`/pricing`) is still the placeholder for selling prices. Quote reviews are **Pricing > Quote reviews** (`/pricing/quotes`).
+A quote request is one list, reviewed as one event. Pricing office (`/pricing`) is still the placeholder for selling prices. Quote requests are **Pricing > Quote requests** (`/pricing/quotes`). The address stays `/pricing/quotes`.
 
-Apply `supabase/migrations/20261103180000_quote_events.sql`, then `supabase/migrations/20261104140000_quote_event_flow.sql`, then `supabase/migrations/20261105040000_quote_line_alts_and_awards.sql`, by hand. Deploying does not run them. Apply the latest file with this release. Until the quote tables exist, the page says they are missing and does not write.
+Apply `supabase/migrations/20261103180000_quote_events.sql`, then `supabase/migrations/20261104140000_quote_event_flow.sql`, then `supabase/migrations/20261105040000_quote_line_alts_and_awards.sql`, then `supabase/migrations/20261105060000_quote_won_partial.sql`, by hand. Deploying does not run them. Apply the latest file with this release. Until the quote tables exist, the page says they are missing and does not write. Until the won-partial file is applied, awarding only some lines cannot store that status.
 
 ## Who can open it
 
-Quote reviews are prices. Viewing uses `can_view_financials`. Creating and editing uses `can_edit_financials`, which is admin and staff. `read_only` can view and cannot edit. A pricing officer can view and cannot edit unless that person is also admin or staff. Warehouse manager and warehouse clerk do not open the page. There is no separate clerk role that can see these prices. Status can be changed in either direction. Nothing on the event is locked.
+Quote requests are prices. Viewing uses `can_view_financials`. Creating and editing uses `can_edit_financials`, which is admin and staff. `read_only` can view and cannot edit. A pricing officer can view and cannot edit unless that person is also admin or staff. Warehouse manager and warehouse clerk do not open the page. There is no separate clerk role that can see these prices. Status can be changed in either direction. Nothing on the event is locked.
 
 ## Two axes
 
@@ -31,11 +31,11 @@ Each row on the list is one `quote_events` row.
 - `received_on` is when the list was received or created. `due_on` is optional. A due date before the received date saves, and the page says so.
 - `originator_kind` is `customer`, `prospect`, `vendor`, or `dds`.
 - Inbound sell requires `customer_id` or `prospect_id`. Inbound buy requires `vendor_id`. Outbound sets `originator_kind` to `dds`. An outbound sell may also name a customer or a prospect. An outbound buy may also name a vendor.
-- The customer and vendor fields are type-to-filter lists. The customer list hides eBay-sourced customers: `primary_email` ending in `@members.ebay.com` (QuickBooks buyer cards from eBay’s anonymized mailbox), and the customer named `eBay Customer` (the one record the order pull uses). A display name that only contains “ebay”, such as a reseller, stays. Those rows are not deleted. A quote that already points at one still shows that customer. Search on the quote list still matches them.
+- The customer and vendor fields are type-to-filter lists. Each keystroke asks the server for names that contain that text, a short list, instead of loading the customer table. The customer search hides eBay-sourced customers in the query: `primary_email` ending in `@members.ebay.com` (QuickBooks buyer cards from eBay’s anonymized mailbox), and the customer named `eBay Customer` (the one record the order pull uses). A display name that only contains “ebay”, such as a reseller, stays. Those rows are not deleted. A quote that already points at one still shows that customer. Search on the quote list still matches them, including names past the first thousand.
 - `counterparty_name` is the contact. The company comes from the customer, vendor, or prospect, so the list does not depend on the notes.
 - `quote_prospects` is a light company that is not a customer yet. New prospect on the quote saves one. It is not a QuickBooks customer. Pick the customer later, once the company exists.
 - `channel` is `whatsapp`, `email`, `sheet`, or `other`.
-- `status` is `open`, `reviewing`, `bid_sent`, `won`, `lost`, or `passed`.
+- `status` is `open`, `reviewing`, `bid_sent`, `won`, `won_partial`, `lost`, or `passed`. Won partial means some lines were awarded and some were not.
 - `reference` is the short name of the list. It is not a generated number.
 - `currency` is the currency for our prices and other bids. It defaults to USD.
 
@@ -65,9 +65,11 @@ An empty line is dropped on save. A quote can be saved with no lines. A bad pric
 
 Award sits under the line detail. Check the lines that won, or use Award every line. Each awarded line names who won it, DDS or a bidder on that line, and the quantity. The quantity can be less than the request. DDS uses the primary item and the DDS unit. A bidder uses that bidder’s unit. A bidder SKU that differs from the primary is ordered as that SKU, without the primary item.
 
-Create draft purchase order on a buy, or create draft sales order on a sell. Only the awarded lines are copied. The vendor or customer is the quote’s party. A prospect is not a customer yet, so a sell needs a customer first. Prices and quantities come from the award. The draft’s internal note names the quote, and `purchase_orders.quote_event_id` or `sales_orders.quote_event_id` stores the link. The purchase-order draft is warehouse, Net 30, and unnumbered. The sales-order draft leaves channel, terms, and payment blank. Neither draft is approved.
+Create draft purchase order on a buy, or create draft sales order on a sell. Only the awarded lines are copied. The vendor or customer is the quote’s party. A prospect is not a customer yet, so a sell needs a customer first. Prices and quantities come from the award. The draft’s internal note names the quote request, and `purchase_orders.quote_event_id` or `sales_orders.quote_event_id` stores the link. The purchase-order draft is warehouse, Net 30, and unnumbered. The sales-order draft leaves channel, terms, and payment blank. Neither draft is approved.
 
-Doing it again does not create a second order. The page opens the draft, or names the purchase order or sales order that is already linked, until that order is cancelled. When every line is awarded, status becomes won. A partial award leaves status as it is, and the lines that were not awarded stay on the quote.
+Creating that draft, or opening the one that already exists, leaves this page for `/purchasing/orders/<id>` or `/sales/orders/<id>`. The quote header and the award section show that order number, or Draft PO / Draft SO when it has no number, as a link, until the order is cancelled. When every line is awarded, status becomes won. When only some lines are awarded, status becomes won partial. The lines that were not awarded stay on the quote.
+
+Save sits at the top of the quote and again under the lines. It stays disabled until the header or lines differ from the last save, and it shows Unsaved changes. Ctrl or Cmd+S saves. Leaving by a link, browser back, or a trackpad swipe asks before those edits are discarded.
 
 ## Related quotes
 
@@ -85,6 +87,6 @@ Hong Li is an outbound sell related response-to the Mainstream inbound buy. His 
 
 ## Out of scope
 
-Sheet and photo import is not on this page. Files are not stored on a quote review. Purchase orders and sales orders keep their own PDFs. An award creates a draft only. The page does not change cost or inventory. Prospects are not a full contacts book. Competing bidder rows do not have their own alternative SKUs. Alternatives belong to the DDS response line.
+Sheet and photo import is not on this page. Files are not stored on a quote request. Purchase orders and sales orders keep their own PDFs. An award creates a draft only. The page does not change cost or inventory. Prospects are not a full contacts book. Competing bidder rows do not have their own alternative SKUs. Alternatives belong to the DDS response line.
 
 Row level security is on for the quote tables, including `quote_prospects`, with no anon or authenticated policy. Only `service_role` can read or write them. That is the same grant `price_quotes` has after the lockdown. The server checks `can_view_financials` and `can_edit_financials` before it uses that role.

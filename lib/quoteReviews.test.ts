@@ -31,9 +31,14 @@ import {
   quoteExtension,
   quoteFlowLabel,
   quoteLeadTime,
+  quoteAwardStatus,
+  quoteCounterpartyMessage,
+  quoteEditSnapshot,
   quoteOrderKind,
+  quoteOrderLinkLabel,
   quoteOrderNote,
   quoteOrderReuseMessage,
+  quoteStatusLabel,
   quoteReplyExtension,
   quoteReviewsUnavailable,
   relationForNewFlow,
@@ -58,13 +63,13 @@ test("quote review access follows financial capabilities", () => {
   assert.deepEqual(quoteReviewAccessForRole(null, false), { canEdit: true, canView: true });
 });
 
-test("quote reviews sit under Pricing and keep their own pages", () => {
-  assert.equal(pageMetaFor("/pricing/quotes").title, "Quote reviews");
+test("quote requests sit under Pricing and keep their own pages", () => {
+  assert.equal(pageMetaFor("/pricing/quotes").title, "Quote requests");
   assert.deepEqual(
     pageMetaFor("/pricing/quotes/new").crumbs.map((crumb) => crumb.label),
-    ["Pricing", "Quote reviews", "New quote review"],
+    ["Pricing", "Quote requests", "New quote request"],
   );
-  assert.equal(pageMetaFor("/pricing/quotes/abc").title, "Quote review");
+  assert.equal(pageMetaFor("/pricing/quotes/abc").title, "Quote request");
 });
 
 test("canonical quote types name the side, the direction, and who is picked", () => {
@@ -592,6 +597,88 @@ test("a partial award keeps the won lines and a buy becomes a purchase order", (
   assert.equal(bidder.lines[0]?.sku, "200");
   assert.equal(bidder.lines[0]?.unitPrice, 9.5);
   assert.equal(bidder.lines[0]?.itemName, "Substitute");
+});
+
+test("an inbound sell without a customer or prospect is refused before save", () => {
+  assert.equal(
+    quoteCounterpartyMessage({
+      side: "sell",
+      direction: "inbound",
+      originatorKind: "customer",
+      vendorId: "",
+      customerId: "",
+      prospectId: "",
+    }),
+    "Inbound Sell Request starts with a customer or a prospect.",
+  );
+  assert.equal(
+    quoteCounterpartyMessage({
+      side: "buy",
+      direction: "inbound",
+      originatorKind: "vendor",
+      vendorId: "",
+      customerId: "",
+      prospectId: "",
+    }),
+    "Inbound Buy Request starts with a vendor.",
+  );
+  assert.equal(
+    quoteCounterpartyMessage({
+      side: "sell",
+      direction: "inbound",
+      originatorKind: "customer",
+      vendorId: "",
+      customerId: CUSTOMER,
+      prospectId: "",
+    }),
+    null,
+  );
+  const missing = saveInput({ customerId: "" });
+  const parsed = parseQuoteSave(missing);
+  assert.equal(parsed.ok, false);
+  if (parsed.ok) return;
+  assert.equal(parsed.message, "Inbound Sell Request starts with a customer or a prospect.");
+});
+
+test("a partial award is won partial and the order link names a draft or a number", () => {
+  assert.equal(quoteAwardStatus(true), "won");
+  assert.equal(quoteAwardStatus(false), "won_partial");
+  assert.equal(quoteStatusLabel("won_partial"), "Won partial");
+  assert.equal(isQuoteDueSoon({ dueOn: "2026-11-01", status: "won_partial", today: "2026-11-03" }), false);
+  assert.equal(quoteOrderLinkLabel("purchase", "Draft"), "Draft PO");
+  assert.equal(quoteOrderLinkLabel("purchase", "PO6304"), "PO6304");
+  assert.equal(quoteOrderLinkLabel("sales", "Draft"), "Draft SO");
+  assert.equal(quoteOrderLinkLabel("sales", "SO27766"), "SO27766");
+  const saved = saveInput();
+  const baseline = quoteEditSnapshot(saved);
+  assert.equal(JSON.stringify(quoteEditSnapshot(saved)), JSON.stringify(baseline));
+  assert.notEqual(JSON.stringify(quoteEditSnapshot({ ...saved, reference: "Other list" })), JSON.stringify(baseline));
+  const withBlank = saveInput();
+  withBlank.lines = [
+    ...withBlank.lines,
+    {
+      key: "empty",
+      id: "",
+      itemId: "",
+      partNumber: "",
+      sku: "",
+      itemName: "",
+      condition: "",
+      qty: "",
+      targetPrice: "",
+      specialRequirements: "",
+      replyQty: "",
+      unitPrice: "",
+      leadTime: "",
+      decision: "",
+      decisionNote: "",
+      awardWinner: "",
+      awardQty: "",
+      bids: [],
+      alts: [],
+    },
+  ];
+  assert.equal(JSON.stringify(quoteEditSnapshot(withBlank)), JSON.stringify(baseline));
 });
 
 test("awarding the same quote again points at the order that already exists", () => {

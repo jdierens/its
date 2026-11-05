@@ -1,11 +1,14 @@
+import { canonicalize } from "@/lib/formDirty";
 import { asMoney, formatMoney, parseMoney } from "@/lib/pricing/quotes";
 
 export const QUOTE_REVIEWS_PATH = "/pricing/quotes";
 
 export const QUOTE_REVIEWS_MIGRATION = "supabase/migrations/20261105040000_quote_line_alts_and_awards.sql";
 
+export const QUOTE_WON_PARTIAL_MIGRATION = "supabase/migrations/20261105060000_quote_won_partial.sql";
+
 export const QUOTE_REVIEWS_SETUP =
-  "Quote reviews need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, and supabase/migrations/20261105040000_quote_line_alts_and_awards.sql. Deploying does not run them.";
+  "Quote requests need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, supabase/migrations/20261105040000_quote_line_alts_and_awards.sql, and supabase/migrations/20261105060000_quote_won_partial.sql. Deploying does not run them.";
 
 export const DUE_SOON_DAYS = 7;
 
@@ -17,6 +20,16 @@ export const QUOTE_ALT_LIMIT = 8;
 
 /** How many names a quote party picker shows while someone is typing. */
 export const QUOTE_PARTY_LIMIT = 12;
+
+/** Quote-list originator search. Wider than the picker, still not the whole customer table. */
+export const QUOTE_LIST_PARTY_LIMIT = 100;
+
+/** ilike pattern for a party name. Null when the query is empty after stripping wildcards. */
+export function quotePartyNamePattern(query: string): string | null {
+  const needle = query.trim().replace(/[%_,()"\\]/g, "").slice(0, 80);
+  if (!needle) return null;
+  return `%${needle}%`;
+}
 
 /** Award winner stored for the DDS response. A bidder stores that bidder's name. */
 export const DDS_AWARD = "dds";
@@ -52,6 +65,7 @@ export const QUOTE_STATUSES = [
   { id: "reviewing", label: "Reviewing" },
   { id: "bid_sent", label: "Bid sent" },
   { id: "won", label: "Won" },
+  { id: "won_partial", label: "Won partial" },
   { id: "lost", label: "Lost" },
   { id: "passed", label: "Passed" },
 ] as const;
@@ -472,6 +486,31 @@ export function quoteStatusLabel(value: string): string {
   return quoteOptionLabel(QUOTE_STATUSES, value);
 }
 
+/** Missing customer, prospect, or vendor for this quote type. Null when the party already fits. */
+export function quoteCounterpartyMessage(input: {
+  side: string;
+  direction: string;
+  originatorKind: string;
+  vendorId: string;
+  customerId: string;
+  prospectId: string;
+}): string | null {
+  if (!isQuoteSide(input.side) || !isQuoteDirection(input.direction) || !isQuoteOriginatorKind(input.originatorKind)) return null;
+  return originatorPartyError({
+    side: input.side,
+    direction: input.direction,
+    originatorKind: input.originatorKind,
+    vendorId: optionalId(input.vendorId),
+    customerId: optionalId(input.customerId),
+    prospectId: optionalId(input.prospectId),
+  });
+}
+
+function optionalId(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 export function quoteRelationLabel(value: string): string {
   return quoteOptionLabel(QUOTE_RELATIONS, value);
 }
@@ -668,6 +707,7 @@ export function quoteStatusTone(status: string): string {
     case "bid_sent":
       return "draft";
     case "won":
+    case "won_partial":
       return "received";
     case "lost":
       return "cancelled";
@@ -724,9 +764,31 @@ export function quoteOrderKind(side: string): "purchase" | "sales" {
   return side === "buy" ? "purchase" : "sales";
 }
 
+/** Link text for the order created from a quote request. An unnumbered draft says Draft PO or Draft SO. */
+export function quoteOrderLinkLabel(kind: "purchase" | "sales", number: string): string {
+  const trimmed = number.trim();
+  if (!trimmed || trimmed.toLowerCase() === "draft") return kind === "purchase" ? "Draft PO" : "Draft SO";
+  return trimmed;
+}
+
+/** Every awarded line is won. A partial award is won partial. */
+export function quoteAwardStatus(coversAll: boolean): "won" | "won_partial" {
+  return coversAll ? "won" : "won_partial";
+}
+
+/**
+ * Saved fields only. An empty line or an empty bid does not count.
+ * A value the save would reject stays dirty until it matches the last save.
+ */
+export function quoteEditSnapshot(input: QuoteSaveInput): unknown {
+  const parsed = parseQuoteSave(input);
+  if (!parsed.ok) return { invalid: true, input: canonicalize(input) };
+  return canonicalize(parsed.value);
+}
+
 export function quoteOrderNote(input: { reference: string; id: string }): string {
-  const name = input.reference.trim() || "Quote review";
-  return `Drafted from quote review ${name} (${QUOTE_REVIEWS_PATH}/${input.id}).`;
+  const name = input.reference.trim() || "Quote request";
+  return `Drafted from quote request ${name} (${QUOTE_REVIEWS_PATH}/${input.id}).`;
 }
 
 /** Second click, or a later award, while a non-cancelled order is already linked. */
@@ -1090,7 +1152,7 @@ export function summarizeQuoteLines(lines: QuoteLineSummary[]): QuoteTotals {
 
 export function parseQuoteSave(input: QuoteSaveInput): QuoteParse {
   if (input.lines.length > QUOTE_LINE_LIMIT) {
-    return { ok: false, message: `A quote review can hold ${QUOTE_LINE_LIMIT} lines.` };
+    return { ok: false, message: `A quote request can hold ${QUOTE_LINE_LIMIT} lines.` };
   }
   const reference = clip(input.reference, 200);
   if (reference.error) return { ok: false, message: "The list name is too long." };

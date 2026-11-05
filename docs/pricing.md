@@ -22,4 +22,4 @@ The page lists which providers ran, how many quotes they returned, and any error
 
 `price_quotes`, `item_transactions`, and `app_settings` hold prices, the sales window, and the label templates. `label_template_item` is the item template. `label_template` is the older key and is still read when the new one is missing. They are not credentials. Row level security stays off on them in the original pricing migration. After `20261021050000_lock_down_public_access.sql`, those tables are locked to `service_role` like the rest of `public`.
 
-A whole list is a quote review, not a row on this panel. Side is buy or sell, and direction is inbound or outbound. See [quote reviews](quote-reviews.md). `price_quotes.quote_event_line_id` can point one observation at a line on that review. It stays null until something writes it, and this panel does not.
+A whole list is a quote request, not a row on this panel. Side is buy or sell, and direction is inbound or outbound. See [quote requests](quote-reviews.md). `price_quotes.quote_event_line_id` can point one observation at a line on that request. It stays null until something writes it, and this panel does not.

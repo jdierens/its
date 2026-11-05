@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QuoteFitInput } from "@/components/QuoteFitInput";
 import { QuotePartyPicker } from "@/components/QuotePartyPicker";
 import { errorText } from "@/lib/errors";
-import { createQuoteProspect } from "@/lib/quoteReviewsServer";
+import { createQuoteProspect, searchQuoteCustomers, searchQuoteVendors } from "@/lib/quoteReviewsServer";
 import { originatorPicker, type OriginatorIds, type QuotePartyOption } from "@/lib/quoteReviews";
 
 export function QuoteOriginatorFields({
@@ -22,6 +22,8 @@ export function QuoteOriginatorFields({
   onOriginator,
   onContact,
   onProspect,
+  onCustomer,
+  onVendor,
 }: {
   side: string;
   direction: string;
@@ -37,6 +39,8 @@ export function QuoteOriginatorFields({
   onOriginator: (next: OriginatorIds) => void;
   onContact: (contact: string) => void;
   onProspect: (prospect: QuotePartyOption) => void;
+  onCustomer?: (party: QuotePartyOption) => void;
+  onVendor?: (party: QuotePartyOption) => void;
 }) {
   const picker = originatorPicker(side, direction);
   const [adding, setAdding] = useState(false);
@@ -44,7 +48,43 @@ export function QuoteOriginatorFields({
   const [person, setPerson] = useState("");
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState("");
+  const [partyQuery, setPartyQuery] = useState("");
+  const [hits, setHits] = useState<QuotePartyOption[] | null>(null);
+  const [remembered, setRemembered] = useState<QuotePartyOption[]>([]);
+  const [pending, setPending] = useState(false);
   const customersAndProspects = picker.party === "customer";
+
+  useEffect(() => {
+    setHits(null);
+  }, [customersAndProspects]);
+
+  useEffect(() => {
+    const trimmed = partyQuery.trim();
+    if (!trimmed) {
+      setHits(null);
+      setPending(false);
+      return;
+    }
+    setPending(true);
+    let cancel = false;
+    const handle = window.setTimeout(() => {
+      const run = customersAndProspects ? searchQuoteCustomers(trimmed) : searchQuoteVendors(trimmed);
+      void run
+        .then((rows) => {
+          if (!cancel) setHits(rows);
+        })
+        .catch(() => {
+          if (!cancel) setHits([]);
+        })
+        .finally(() => {
+          if (!cancel) setPending(false);
+        });
+    }, 200);
+    return () => {
+      cancel = true;
+      window.clearTimeout(handle);
+    };
+  }, [customersAndProspects, partyQuery]);
   const partyValue = customersAndProspects
     ? prospectId
       ? `prospect:${prospectId}`
@@ -54,6 +94,9 @@ export function QuoteOriginatorFields({
     : vendorId
       ? `vendor:${vendorId}`
       : "";
+
+  const pinned = mergeParties(remembered, customersAndProspects ? customers : vendors);
+  const foundParties = mergeParties(hits ?? [], pinned);
 
   function choose(value: string) {
     const dds = picker.kind === "dds";
@@ -67,7 +110,10 @@ export function QuoteOriginatorFields({
       return;
     }
     const [kind, id] = value.split(":");
+    const picked = foundParties.find((party) => party.id === id) ?? prospects.find((party) => party.id === id);
+    if (picked && kind !== "prospect") setRemembered((current) => mergeParties(current, [picked]));
     if (kind === "vendor") {
+      if (picked) onVendor?.(picked);
       onOriginator({ originatorKind: dds ? "dds" : "vendor", vendorId: id ?? "", customerId: "", prospectId: "" });
       return;
     }
@@ -75,6 +121,7 @@ export function QuoteOriginatorFields({
       onOriginator({ originatorKind: dds ? "dds" : "prospect", vendorId: "", customerId: "", prospectId: id ?? "" });
       return;
     }
+    if (picked) onCustomer?.(picked);
     onOriginator({ originatorKind: dds ? "dds" : "customer", vendorId: "", customerId: id ?? "", prospectId: "" });
   }
 
@@ -118,13 +165,15 @@ export function QuoteOriginatorFields({
           value={partyValue}
           placeholder={customersAndProspects ? "Type a customer or prospect" : "Type a vendor"}
           disabled={disabled}
+          pending={pending}
+          onQuery={setPartyQuery}
           groups={
             customersAndProspects
               ? [
-                  { label: "Customers", options: customers.map((party) => ({ value: `customer:${party.id}`, name: party.name })) },
+                  { label: "Customers", options: foundParties.map((party) => ({ value: `customer:${party.id}`, name: party.name })) },
                   { label: "Prospects", options: prospects.map((party) => ({ value: `prospect:${party.id}`, name: party.name })) },
                 ]
-              : [{ label: "Vendors", options: vendors.map((party) => ({ value: `vendor:${party.id}`, name: party.name })) }]
+              : [{ label: "Vendors", options: foundParties.map((party) => ({ value: `vendor:${party.id}`, name: party.name })) }]
           }
           onChange={choose}
         />
@@ -161,4 +210,9 @@ export function QuoteOriginatorFields({
       ) : null}
     </>
   );
+}
+
+function mergeParties(hits: QuotePartyOption[], pinned: QuotePartyOption[]): QuotePartyOption[] {
+  const seen = new Set(hits.map((party) => party.id));
+  return [...hits, ...pinned.filter((party) => !seen.has(party.id))];
 }

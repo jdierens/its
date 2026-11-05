@@ -32,7 +32,7 @@ export default async function QuoteReviewPage({ params }: { params: Promise<{ id
     }
     if (detail.status === "missing") notFound();
     const [vendors, customers, prospects, choices] = await Promise.all([
-      listQuoteVendors(),
+      listQuoteVendors({ keepIds: detail.draft.vendorId ? [detail.draft.vendorId] : [] }),
       listQuoteCustomers({ keepIds: detail.draft.customerId ? [detail.draft.customerId] : [] }),
       listQuoteProspects(),
       listQuoteReviewChoices(id),

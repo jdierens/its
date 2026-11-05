@@ -59,13 +59,13 @@ export default async function QuoteReviewsPage({
         The type is Inbound Buy Request, Inbound Sell Request, Outbound Sell Request, or Outbound Buy Offer. Buy wins as a purchase order. Sell wins as a sales order. Sheet and photo import is not on this page.
       </p>
       {access.canEdit ? (
-        <p>
+        <p className="qr-list-actions">
           <Link className="button" href={`${QUOTE_REVIEWS_PATH}/new`}>
-            New quote review
+            New quote request
           </Link>
         </p>
       ) : (
-        <p className="muted">You can view quote reviews. Creating and editing is limited to admin and staff.</p>
+        <p className="muted">You can view quote requests. Creating and editing is limited to admin and staff.</p>
       )}
       <form className="qr-filters" method="get">
         <label>
@@ -112,7 +112,11 @@ export default async function QuoteReviewsPage({
         <button className="button secondary" type="submit">
           Filter
         </button>
-        {filtering ? <Link href={QUOTE_REVIEWS_PATH}>Clear</Link> : null}
+        {filtering ? (
+          <Link className="button secondary" href={QUOTE_REVIEWS_PATH}>
+            Clear
+          </Link>
+        ) : null}
       </form>
       {problem ? (
         <p className="banner error" role="alert">
@@ -128,7 +132,7 @@ export default async function QuoteReviewsPage({
         <p className="hint">Showing the latest 500 quotes. Narrow the filters to see an older list.</p>
       ) : null}
       {result && !result.unavailable && result.rows.length === 0 ? (
-        <p className="muted">{filtering ? "No quote reviews match." : "No quote reviews yet."}</p>
+        <p className="muted">{filtering ? "No quote requests match." : "No quote requests yet."}</p>
       ) : null}
       {result && result.rows.length > 0 ? (
         <>
