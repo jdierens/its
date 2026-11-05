@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { QuoteDocument } from "@/components/QuoteDocument";
 import { errorText } from "@/lib/errors";
-import { originatorDisplay, QUOTE_REVIEWS_PATH, QUOTE_REVIEWS_SETUP } from "@/lib/quoteReviews";
+import { originatorDisplay, quoteCalendarDay, QUOTE_REVIEWS_PATH, QUOTE_REVIEWS_SETUP } from "@/lib/quoteReviews";
 import { listQuoteCustomers, listQuoteProspects, listQuoteVendors, loadQuoteReview } from "@/lib/quoteReviewsServer";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ export default async function QuotePrintPage({ params }: { params: Promise<{ id:
       prospects.find((party) => party.id === draft.prospectId)?.name ||
       "";
     const party = originatorDisplay({ kind: draft.originatorKind, company, contact: draft.counterpartyName });
-    return <QuoteDocument draft={draft} offers={detail.offers} party={party === "—" ? "" : party} />;
+    return <QuoteDocument draft={draft} party={party === "—" ? "" : party} exportedOn={quoteCalendarDay()} />;
   } catch (error) {
     return (
       <main className="page so-page ds">

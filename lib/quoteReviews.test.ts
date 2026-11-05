@@ -75,7 +75,7 @@ test("quote requests sit under Pricing and keep their own pages", () => {
     ["Pricing", "Quote requests", "New quote request"],
   );
   assert.equal(pageMetaFor("/pricing/quotes/abc").title, "Quote request");
-  assert.equal(pageMetaFor("/pricing/quotes/abc/print").title, "Print quote");
+  assert.equal(pageMetaFor("/pricing/quotes/abc/print").title, "Export PDF");
 });
 
 test("canonical quote types name the side, the direction, and who is picked", () => {

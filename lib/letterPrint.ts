@@ -36,9 +36,9 @@ export const PICK_TICKET_PRINT = {
   rootSelector: "main.pick-page",
 } as const;
 
-/** Quote comparison is wider than a portrait sheet, same paper as the pick ticket. */
+/** Quote export is the DDS bid and FMP sheet. Six columns fit the portrait letter. */
 export const QUOTE_DOCUMENT_PRINT = {
-  orientation: "landscape",
+  orientation: "portrait",
   rootSelector: ".cust-doc-page",
   fragmentSelector: ".cust-doc",
 } as const;
