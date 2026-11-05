@@ -5,12 +5,12 @@ import { CUSTOMER_DOCUMENT_COMPANY, CUSTOMER_DOCUMENT_LOGO } from "@/lib/custome
 import { formatDataDate } from "@/lib/formatDate";
 import { QUOTE_DOCUMENT_PRINT } from "@/lib/letterPrint";
 import {
-  quoteExportLines,
+  quoteExportDocument,
   quoteExportMoney,
+  quoteExportPercent,
   quoteExportQtyText,
-  quoteExportTotals,
 } from "@/lib/quoteExport";
-import { QUOTE_REVIEWS_PATH, quoteFlowLabel, quoteMoneyText, type QuoteReviewDraft } from "@/lib/quoteReviews";
+import { QUOTE_REVIEWS_PATH, quoteFlowLabel, quoteMoneyText, quotePrintNoteLine, type QuoteReviewDraft } from "@/lib/quoteReviews";
 
 export function QuoteDocument({
   draft,
@@ -23,12 +23,11 @@ export function QuoteDocument({
 }) {
   const company = CUSTOMER_DOCUMENT_COMPANY;
   const currency = draft.currency || "USD";
-  const rows = quoteExportLines(draft.lines);
-  const totals = quoteExportTotals(rows);
+  const sheet = quoteExportDocument(draft);
   const due = draft.dueOn.trim();
 
   return (
-    <main className="cust-doc-page ds">
+    <main className="cust-doc-page quote-doc-page ds">
       <LetterPrint
         orientation={QUOTE_DOCUMENT_PRINT.orientation}
         rootSelector={QUOTE_DOCUMENT_PRINT.rootSelector}
@@ -38,7 +37,7 @@ export function QuoteDocument({
         <Link href={`${QUOTE_REVIEWS_PATH}/${draft.id}`}>Back to quote request</Link>
         <PrintDocumentButton />
       </div>
-      <article className="cust-doc">
+      <article className="cust-doc quote-doc">
         <header className="cust-doc-top">
           <img className="cust-doc-logo" src={CUSTOMER_DOCUMENT_LOGO} alt="" />
           <div className="cust-doc-company">
@@ -66,35 +65,69 @@ export function QuoteDocument({
             <tr>
               <th>Name</th>
               <th className="num">Qty</th>
-              <th className="num">Bid unit</th>
-              <th className="num">Bid ext</th>
-              <th className="num">FMP unit</th>
-              <th className="num">FMP ext</th>
+              {sheet.columns.map((column) => (
+                <th className="num" key={column.key} title={column.caption || undefined}>
+                  {column.header}
+                  {column.caption ? <span className="quote-doc-ext">{column.caption}</span> : null}
+                </th>
+              ))}
+              {sheet.showProfit ? (
+                <>
+                  <th className="num">FGP$</th>
+                  <th className="num">FGP%</th>
+                </>
+              ) : null}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
-              <tr key={`${row.sku}-${row.name}-${index}`}>
+            {sheet.rows.map((row, index) => (
+              <tr key={`${row.name}-${index}`}>
                 <td>{row.name || "—"}</td>
                 <td className="num">{row.qty || "—"}</td>
-                <td className="num">{quoteMoneyText(row.bidUnit, currency) || "—"}</td>
-                <td className="num">{quoteExportMoney(row.bidExt, currency) || "—"}</td>
-                <td className="num">{quoteMoneyText(row.fmpUnit, currency) || "—"}</td>
-                <td className="num">{quoteExportMoney(row.fmpExt, currency) || "—"}</td>
+                {row.prices.map((price, priceIndex) => {
+                  const ext = quoteExportMoney(price.ext, currency);
+                  return (
+                    <td className="num" key={sheet.columns[priceIndex]?.key ?? priceIndex}>
+                      {quoteMoneyText(price.unit, currency) || "—"}
+                      {ext ? <span className="quote-doc-ext">{ext}</span> : null}
+                    </td>
+                  );
+                })}
+                {sheet.showProfit ? (
+                  <>
+                    <td className="num">{quoteExportMoney(row.fgpDollars, currency) || "—"}</td>
+                    <td className="num">{quoteExportPercent(row.fgpRatio) || "—"}</td>
+                  </>
+                ) : null}
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr>
               <td>Total</td>
-              <td className="num">{quoteExportQtyText(totals.qty) || "—"}</td>
-              <td />
-              <td className="num">{quoteExportMoney(totals.bidExt, currency) || "—"}</td>
-              <td />
-              <td className="num">{quoteExportMoney(totals.fmpExt, currency) || "—"}</td>
+              <td className="num">{quoteExportQtyText(sheet.totals.qty) || "—"}</td>
+              {sheet.totals.exts.map((amount, index) => (
+                <td className="num" key={sheet.columns[index]?.key ?? index}>
+                  {quoteExportMoney(amount, currency) || "—"}
+                </td>
+              ))}
+              {sheet.showProfit ? (
+                <>
+                  <td className="num">{quoteExportMoney(sheet.totals.fgp.dollars, currency) || "—"}</td>
+                  <td className="num">{quoteExportPercent(sheet.totals.fgp.ratio) || "—"}</td>
+                </>
+              ) : null}
             </tr>
           </tfoot>
         </table>
+        {sheet.notes.length > 0 ? (
+          <section className="quote-doc-notes">
+            <h2>Bid notes</h2>
+            {sheet.notes.map((note) => (
+              <p key={`${note.code}-${note.name}`}>{quotePrintNoteLine(note)}</p>
+            ))}
+          </section>
+        ) : null}
       </article>
     </main>
   );

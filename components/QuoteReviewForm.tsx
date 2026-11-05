@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Save, Trash2 } from "lucide-react";
+import { FileDown, FileSpreadsheet, Save, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { QuoteFitInput } from "@/components/QuoteFitInput";
 import { QuoteFlowMarks } from "@/components/QuoteFlowMarks";
@@ -24,6 +24,7 @@ import { formatMoney } from "@/lib/pricing/quotes";
 import { createQuoteOrderDraft, saveQuoteReview, searchQuoteItems, type QuoteOrderDraftResult } from "@/lib/quoteReviewsServer";
 import {
   DDS_AWARD,
+  QUOTE_BIDDER_CLASSES,
   QUOTE_CHANNELS,
   QUOTE_DECISIONS,
   QUOTE_DIRECTIONS,
@@ -39,6 +40,7 @@ import {
   quoteCounterpartyMessage,
   quoteEditSnapshot,
   quoteBidderList,
+  quoteBidderClassShort,
   quoteBidders,
   quoteColumnCaption,
   quoteColumnCodeInput,
@@ -63,7 +65,7 @@ import {
 type EditorAlt = QuoteAltDraft & { hits: QuoteItemHit[]; findNote: string };
 type EditorLine = Omit<QuoteLineDraft, "alts"> & { alts: EditorAlt[]; hits: QuoteItemHit[]; findNote: string };
 
-const LINE_COLUMNS = 15;
+const LINE_COLUMNS = 14;
 
 function quotePayloadFrom(header: QuoteReviewDraft, lines: EditorLine[]) {
   return {
@@ -96,7 +98,6 @@ function quotePayloadFrom(header: QuoteReviewDraft, lines: EditorLine[]) {
       specialRequirements: line.specialRequirements,
       replyQty: line.replyQty,
       unitPrice: line.unitPrice,
-      fspUnit: line.fspUnit,
       leadTime: line.leadTime,
       decision: line.decision,
       decisionNote: line.decisionNote,
@@ -114,6 +115,7 @@ function quotePayloadFrom(header: QuoteReviewDraft, lines: EditorLine[]) {
         leadTime: bid.leadTime,
         columnCode: bid.columnCode,
         bidNote: bid.bidNote,
+        bidderClass: bid.bidderClass,
       })),
       alts: line.alts.map((alt) => ({
         key: alt.key,
@@ -195,8 +197,8 @@ export function QuoteReviewForm({
   const [prospects, setProspects] = useState(initialProspects);
   const [lines, setLines] = useState<EditorLine[]>(() => (draft.lines.length > 0 ? draft.lines.map(toEditor) : [toEditor(blankQuoteLine())]));
   const [baseline, setBaseline] = useState(() => quoteEditSnapshot(quotePayloadFrom(draft, lines)));
-  const [savedFlash, setSavedFlash] = useState(false);
   const [bidderName, setBidderName] = useState("");
+  const [bidderClass, setBidderClass] = useState("cmp");
   const [selectedBidder, setSelectedBidder] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [finding, setFinding] = useState<string | null>(null);
@@ -214,18 +216,12 @@ export function QuoteReviewForm({
   const currentSnapshot = quoteEditSnapshot(quotePayloadFrom(header, lines));
   const dirty = isDirty(currentSnapshot, baseline);
   const canSave = canEdit && dirty && !saving && !awarding;
-  const saveStatus = saving ? "Saving…" : dirty ? "Unsaved changes" : savedFlash ? "Saved" : "";
+  const saveStatus = saving ? "Saving…" : dirty ? "Unsaved changes" : "All changes saved";
   const canSaveRef = useRef(canSave);
   const dirtyRef = useRef(dirty);
   const saveRef = useRef<() => void>(() => undefined);
   canSaveRef.current = canSave;
   dirtyRef.current = dirty;
-
-  useEffect(() => {
-    if (!savedFlash || dirty || saving) return;
-    const timer = window.setTimeout(() => setSavedFlash(false), 1600);
-    return () => window.clearTimeout(timer);
-  }, [savedFlash, dirty, saving]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -314,11 +310,14 @@ export function QuoteReviewForm({
       const targets = hosts.length > 0 ? hosts : current.slice(0, 1);
       const keys = new Set(targets.map((line) => line.key));
       return current.map((line) =>
-        keys.has(line.key) ? { ...line, bids: [...line.bids, { ...blankQuoteBid(name), key: crypto.randomUUID() }] } : line,
+        keys.has(line.key)
+          ? { ...line, bids: [...line.bids, { ...blankQuoteBid(name), key: crypto.randomUUID(), bidderClass }] }
+          : line,
       );
     });
     setSelectedBidder(name);
     setBidderName("");
+    setBidderClass("cmp");
   }
 
   function removeBidder(name: string) {
@@ -340,7 +339,17 @@ export function QuoteReviewForm({
         if (index < 0) {
           return {
             ...line,
-            bids: [...line.bids, { ...blankQuoteBid(name), key: crypto.randomUUID(), columnCode: profile.columnCode, bidNote: profile.bidNote, ...patch }],
+            bids: [
+              ...line.bids,
+              {
+                ...blankQuoteBid(name),
+                key: crypto.randomUUID(),
+                columnCode: profile.columnCode,
+                bidNote: profile.bidNote,
+                bidderClass: profile.bidderClass,
+                ...patch,
+              },
+            ],
           };
         }
         return { ...line, bids: line.bids.map((bid, bidIndex) => (bidIndex === index ? { ...bid, ...patch } : bid)) };
@@ -348,7 +357,7 @@ export function QuoteReviewForm({
     });
   }
 
-  function patchBidderProfile(name: string, patch: { columnCode?: string; bidNote?: string }) {
+  function patchBidderProfile(name: string, patch: { columnCode?: string; bidNote?: string; bidderClass?: string }) {
     setLines((current) =>
       current.map((line) => ({
         ...line,
@@ -394,7 +403,6 @@ export function QuoteReviewForm({
     setHeader(nextHeader);
     setLines(nextLines);
     setBaseline(quoteEditSnapshot(quotePayloadFrom(nextHeader, nextLines)));
-    setSavedFlash(true);
   }
 
   function validationMessage(): string | null {
@@ -536,20 +544,19 @@ export function QuoteReviewForm({
                 {orderLink ? <QuoteOrderLink link={orderLink} /> : null}
               </div>
               <span className="hint" role="status">
-                {saveStatus || "Save keeps the header and lines."}
+                {saveStatus}
               </span>
             </div>
             <div className="so-sticky-actions">
               <QuoteExportButtons id={header.id} exporting={exporting} onExportXls={() => void onExportXls()} />
               <button
-                className="button qr-save"
+                className="so-icon-action"
                 type="submit"
                 disabled={!canSave}
                 aria-label="Save"
                 title={canSave ? "Save (Ctrl/Cmd+S)" : "No unsaved changes"}
               >
                 <Save size={18} strokeWidth={1.75} aria-hidden />
-                {saving ? "Saving…" : "Save"}
               </button>
             </div>
           </div>
@@ -692,11 +699,13 @@ export function QuoteReviewForm({
             canEdit={canEdit}
             entries={bidderEntries}
             bidderName={bidderName}
+            bidderClass={bidderClass}
             activeBidder={activeBidder}
             lines={lines}
             ddsColumnCode={header.ddsColumnCode}
             ddsBidNote={header.ddsBidNote}
             onBidderName={setBidderName}
+            onBidderClass={setBidderClass}
             onSelect={setSelectedBidder}
             onAdd={addBidder}
             onRemove={removeBidder}
@@ -716,7 +725,7 @@ export function QuoteReviewForm({
             ) : null}
           </div>
           <p className="hint">
-            Request on the left. The primary SKU is the DDS response. FSP unit is the forecasted sales price, separate from DDS unit. Alternatives are other SKUs for that same request. An empty lead time means in stock.
+            Request on the left. The primary SKU is the DDS response. A forecasted sales price is added as a bidder, the same way as a competitive bid. Alternatives are other SKUs for that same request. An empty lead time means in stock.
           </p>
           <div className="qr-scroll">
             <table>
@@ -726,7 +735,7 @@ export function QuoteReviewForm({
                   <th className="qr-request" colSpan={5}>
                     Request
                   </th>
-                  <th className="qr-dds" colSpan={8}>
+                  <th className="qr-dds" colSpan={7}>
                     DDS response
                   </th>
                   <th />
@@ -745,7 +754,6 @@ export function QuoteReviewForm({
                     {ddsHead.label}
                     {ddsHead.caption ? <span className="qr-context">{ddsHead.caption}</span> : null}
                   </th>
-                  <th className="num">FSP unit</th>
                   <th>Lead time</th>
                   <th>Notes</th>
                   <th>Decision</th>
@@ -938,39 +946,48 @@ function QuoteExportButtons({
 }) {
   return (
     <span className="qr-exports" role="group" aria-label="Export quote">
-      <button type="button" className="button secondary" disabled={exporting} onClick={onExportXls}>
-        {exporting ? "Exporting…" : "Export XLS"}
+      <button
+        type="button"
+        className="so-icon-action"
+        disabled={exporting}
+        aria-label="Export XLS"
+        title={exporting ? "Exporting…" : "Export XLS"}
+        onClick={onExportXls}
+      >
+        <FileSpreadsheet size={18} strokeWidth={1.75} aria-hidden />
       </button>
       {id ? (
-        <Link className="button secondary" href={`${QUOTE_REVIEWS_PATH}/${id}/print`}>
-          Export PDF
+        <Link className="button so-icon-action" href={`${QUOTE_REVIEWS_PATH}/${id}/print`} aria-label="Export PDF" title="Export PDF">
+          <FileDown size={18} strokeWidth={1.75} aria-hidden />
         </Link>
       ) : (
-        <button type="button" className="button secondary" disabled title="Save the quote before exporting a PDF">
-          Export PDF
+        <button type="button" className="so-icon-action" disabled aria-label="Export PDF" title="Save the quote before exporting a PDF">
+          <FileDown size={18} strokeWidth={1.75} aria-hidden />
         </button>
       )}
     </span>
   );
 }
 
-function bidderProfile(lines: EditorLine[], name: string): { columnCode: string; bidNote: string } {
+function bidderProfile(lines: EditorLine[], name: string): { columnCode: string; bidNote: string; bidderClass: string } {
   for (const line of lines) {
     const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
-    if (bid) return { columnCode: bid.columnCode, bidNote: bid.bidNote };
+    if (bid) return { columnCode: bid.columnCode, bidNote: bid.bidNote, bidderClass: bid.bidderClass || "cmp" };
   }
-  return { columnCode: "", bidNote: "" };
+  return { columnCode: "", bidNote: "", bidderClass: "cmp" };
 }
 
 function BidderStrip({
   canEdit,
   entries,
   bidderName,
+  bidderClass,
   activeBidder,
   lines,
   ddsColumnCode,
   ddsBidNote,
   onBidderName,
+  onBidderClass,
   onSelect,
   onAdd,
   onRemove,
@@ -982,18 +999,20 @@ function BidderStrip({
   canEdit: boolean;
   entries: QuoteBidderListEntry[];
   bidderName: string;
+  bidderClass: string;
   activeBidder: string | null;
   lines: EditorLine[];
   ddsColumnCode: string;
   ddsBidNote: string;
   onBidderName: (name: string) => void;
+  onBidderClass: (value: string) => void;
   onSelect: (name: string) => void;
   onAdd: () => void;
   onRemove: (name: string) => void;
   onPatch: (lineKey: string, name: string, patch: Partial<QuoteLineDraft["bids"][number]>) => void;
   onDdsColumnCode: (value: string) => void;
   onDdsBidNote: (value: string) => void;
-  onBidderProfile: (name: string, patch: { columnCode?: string; bidNote?: string }) => void;
+  onBidderProfile: (name: string, patch: { columnCode?: string; bidNote?: string; bidderClass?: string }) => void;
 }) {
   const activeProfile = activeBidder ? bidderProfile(lines, activeBidder) : null;
   const activeHead = activeBidder ? quoteColumnCaption(activeProfile?.columnCode ?? "", activeBidder) : null;
@@ -1037,7 +1056,7 @@ function BidderStrip({
               title={entry.name}
               onClick={() => onSelect(entry.name)}
             >
-              {bidderButtonLabel(index + 1, entry.name, bidderProfile(lines, entry.name).columnCode)}
+              {bidderButtonLabel(index + 1, entry.name, bidderProfile(lines, entry.name))}
             </button>
           ) : (
             <Link key={`related:${entry.id}`} href={`${QUOTE_REVIEWS_PATH}/${entry.otherId}`} className="button secondary qr-bidder">
@@ -1050,6 +1069,13 @@ function BidderStrip({
       {canEdit ? (
         <div className="qr-bid">
           <QuoteFitInput floor={6} cap={24} aria-label="New bidder" placeholder="Bidder" value={bidderName} onChange={(event) => onBidderName(event.target.value)} />
+          <select className="qr-fit" aria-label="Bidder class" value={bidderClass} onChange={(event) => onBidderClass(event.target.value)}>
+            {QUOTE_BIDDER_CLASSES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
           <button type="button" className="button secondary" onClick={onAdd}>
             Add bidder
           </button>
@@ -1058,7 +1084,22 @@ function BidderStrip({
       {activeBidder ? (
         <div className="qr-bidder-detail">
           <div className="qr-line-bar">
-            <h3>{activeBidder}</h3>
+            <div className="qr-bid">
+              <h3>{activeBidder}</h3>
+              <select
+                className="qr-fit"
+                aria-label={`${activeBidder} class`}
+                value={activeProfile?.bidderClass || "cmp"}
+                disabled={!canEdit}
+                onChange={(event) => onBidderProfile(activeBidder, { bidderClass: event.target.value })}
+              >
+                {QUOTE_BIDDER_CLASSES.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {canEdit ? (
               <button type="button" className="button secondary" onClick={() => onRemove(activeBidder)}>
                 Remove bidder
@@ -1090,7 +1131,9 @@ function BidderStrip({
               />
             </label>
           </div>
-          <p className="hint">This party’s reply. DDS unit and DDS ext stay on the DDS column. An empty lead time means in stock. The comment is for the whole bid.</p>
+          <p className="hint">
+            This party’s reply. The unit and extension use the same fields as every other bidder. DDS stays on the DDS column. An empty lead time means in stock. The comment is for the whole bid.
+          </p>
           <div className="qr-scroll">
             <table>
               <thead>
@@ -1194,9 +1237,10 @@ function BidderStrip({
   );
 }
 
-function bidderButtonLabel(index: number, name: string, code: string): string {
-  const head = quoteColumnCaption(code, name);
-  return head.caption ? `${index}. ${head.label} · ${name}` : `${index}. ${name}`;
+function bidderButtonLabel(index: number, name: string, profile: { columnCode: string; bidderClass: string }): string {
+  const head = quoteColumnCaption(profile.columnCode, name);
+  const who = head.caption ? `${head.label} · ${name}` : name;
+  return `${index}. ${who} · ${quoteBidderClassShort(profile.bidderClass)}`;
 }
 
 function lineHasRequest(line: QuoteLineDraft): boolean {
@@ -1234,7 +1278,6 @@ function LineRows({
 }) {
   const number = index + 1;
   const ddsExt = quoteReplyExtension(line.qty, line.replyQty, line.unitPrice);
-  const fspExt = quoteReplyExtension(line.qty, line.replyQty, line.fspUnit);
   const [findingAlt, setFindingAlt] = useState<string | null>(null);
 
   function patchAlt(key: string, patch: Partial<EditorAlt>) {
@@ -1316,15 +1359,6 @@ function LineRows({
             </span>
           ) : null}
           {best != null ? <span className="qr-context">Best {formatMoney(best)}</span> : null}
-        </td>
-        <td className="num" data-label="FSP unit">
-          <QuoteFitInput floor={5} cap={12} className="num" inputMode="decimal" aria-label={`FSP unit for line ${number}`} value={line.fspUnit} disabled={!canEdit} onChange={(event) => onPatch({ fspUnit: event.target.value })} />
-          {fspExt ? (
-            <span className="qr-context">
-              <span className="sr-only">FSP ext </span>
-              {fspExt}
-            </span>
-          ) : null}
         </td>
         <td data-label="Lead time">
           <QuoteFitInput floor={8} cap={18} aria-label={`Lead time for line ${number}`} placeholder={quoteLeadTime("")} value={line.leadTime} disabled={!canEdit} onChange={(event) => onPatch({ leadTime: event.target.value })} />
