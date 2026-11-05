@@ -13,6 +13,10 @@ import {
   isShippedPickStatus,
   pickCatchUpNote,
   pickFinishStatus,
+  pickSaveState,
+  PICK_SAVE_SAVED,
+  PICK_SAVE_SAVING,
+  PICK_SAVE_UNSAVED,
   pickOwnership,
   pickQtyError,
   pickQueueFromJson,
@@ -142,6 +146,33 @@ describe("finish", () => {
     assert.equal(pickFinishStatus([line(3)], 0), null);
     assert.match(finishBlockMessage([line(3)], 0) ?? "", /more picked than ordered/);
     assert.equal(finishBlockMessage([line(2)], 1), "A pick is no longer on a line. Undo it before finishing.");
+  });
+
+  it("enables finish only when the open pick can be saved", () => {
+    assert.deepEqual(pickSaveState({ editable: true, pickStatus: "open", blocked: false, finishing: false }), {
+      dirty: true,
+      hint: PICK_SAVE_UNSAVED,
+    });
+    assert.deepEqual(pickSaveState({ editable: true, pickStatus: "open", blocked: false, finishing: true }), {
+      dirty: true,
+      hint: PICK_SAVE_SAVING,
+    });
+    assert.deepEqual(pickSaveState({ editable: true, pickStatus: "open", blocked: true, finishing: false }), {
+      dirty: false,
+      hint: PICK_SAVE_SAVED,
+    });
+    assert.deepEqual(pickSaveState({ editable: true, pickStatus: "picked", blocked: false, finishing: false }), {
+      dirty: false,
+      hint: PICK_SAVE_SAVED,
+    });
+    assert.deepEqual(pickSaveState({ editable: true, pickStatus: "short", blocked: false, finishing: false }), {
+      dirty: false,
+      hint: PICK_SAVE_SAVED,
+    });
+    assert.deepEqual(pickSaveState({ editable: false, pickStatus: "open", blocked: false, finishing: false }), {
+      dirty: false,
+      hint: PICK_SAVE_SAVED,
+    });
   });
 });
 
