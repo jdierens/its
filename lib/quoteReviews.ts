@@ -11,8 +11,10 @@ export const QUOTE_FSP_MIGRATION = "supabase/migrations/20261105155000_quote_lin
 
 export const QUOTE_COLUMN_MIGRATION = "supabase/migrations/20261105180000_quote_bid_columns.sql";
 
+export const QUOTE_BIDDER_CLASS_MIGRATION = "supabase/migrations/20261105195000_quote_bidder_classes.sql";
+
 export const QUOTE_REVIEWS_SETUP =
-  "Quote requests need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, supabase/migrations/20261105040000_quote_line_alts_and_awards.sql, supabase/migrations/20261105060000_quote_won_partial.sql, supabase/migrations/20261105155000_quote_line_fsp.sql, and supabase/migrations/20261105180000_quote_bid_columns.sql. Deploying does not run them.";
+  "Quote requests need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, supabase/migrations/20261105040000_quote_line_alts_and_awards.sql, supabase/migrations/20261105060000_quote_won_partial.sql, supabase/migrations/20261105155000_quote_line_fsp.sql, supabase/migrations/20261105180000_quote_bid_columns.sql, and supabase/migrations/20261105195000_quote_bidder_classes.sql. Deploying does not run them.";
 
 export const DUE_SOON_DAYS = 7;
 
@@ -83,6 +85,13 @@ export const QUOTE_DECISIONS = [
   { id: "counter", label: "Counter" },
 ] as const;
 
+/** A price reference other than DDS. DDS stays on the quote. FSP is one of these, not a line field. */
+export const QUOTE_BIDDER_CLASSES = [
+  { id: "cmp", label: "Competitive bidder", short: "CMP" },
+  { id: "mkt", label: "Market estimate", short: "MKT" },
+  { id: "fsp", label: "Forecasted sales price", short: "FSP" },
+] as const;
+
 export const QUOTE_RELATIONS = [
   { id: "same_list", label: "Same list" },
   { id: "forwarded_for_pricing", label: "Forwarded for pricing" },
@@ -96,6 +105,7 @@ export type QuoteOriginatorKind = (typeof QUOTE_ORIGINATORS)[number]["id"];
 export type QuoteChannel = (typeof QUOTE_CHANNELS)[number]["id"];
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number]["id"];
 export type QuoteDecision = (typeof QUOTE_DECISIONS)[number]["id"];
+export type QuoteBidderClass = (typeof QUOTE_BIDDER_CLASSES)[number]["id"];
 export type QuoteRelationType = (typeof QUOTE_RELATIONS)[number]["id"];
 
 const OPEN_STATUSES: readonly QuoteStatus[] = ["open", "reviewing", "bid_sent"];
@@ -114,6 +124,7 @@ export type QuoteBidInput = {
   leadTime: string;
   columnCode?: string;
   bidNote?: string;
+  bidderClass?: string;
 };
 
 export type QuoteAltInput = {
@@ -139,7 +150,6 @@ export type QuoteLineInput = {
   specialRequirements: string;
   replyQty: string;
   unitPrice: string;
-  fspUnit: string;
   leadTime: string;
   decision: string;
   decisionNote: string;
@@ -181,13 +191,15 @@ export type ParsedQuoteBid = {
   leadTime: string | null;
   columnCode: string | null;
   bidNote: string | null;
+  bidderClass: QuoteBidderClass;
 };
 
-/** One competing bidder on the quote. The code and note are not stored per line. */
+/** One competing bidder on the quote. The code, class, and note are not stored per line. */
 export type ParsedQuoteBidder = {
   name: string;
   columnCode: string | null;
   bidNote: string | null;
+  bidderClass: QuoteBidderClass;
 };
 
 export type ParsedQuoteAlt = {
@@ -213,7 +225,6 @@ export type ParsedQuoteLine = {
   specialRequirements: string | null;
   replyQty: number | null;
   unitPrice: number | null;
-  fspUnit: number | null;
   leadTime: string | null;
   decision: QuoteDecision | null;
   decisionNote: string | null;
@@ -286,6 +297,7 @@ export type QuoteBidDraft = {
   leadTime: string;
   columnCode: string;
   bidNote: string;
+  bidderClass: string;
 };
 
 export type QuoteAltDraft = {
@@ -311,7 +323,6 @@ export type QuoteLineDraft = {
   specialRequirements: string;
   replyQty: string;
   unitPrice: string;
-  fspUnit: string;
   leadTime: string;
   decision: string;
   decisionNote: string;
@@ -428,6 +439,7 @@ export function blankQuoteBid(name = ""): QuoteBidDraft {
     leadTime: "",
     columnCode: "",
     bidNote: "",
+    bidderClass: "cmp",
   };
 }
 
@@ -457,7 +469,6 @@ export function blankQuoteLine(): QuoteLineDraft {
     specialRequirements: "",
     replyQty: "",
     unitPrice: "",
-    fspUnit: "",
     leadTime: "",
     decision: "",
     decisionNote: "",
@@ -952,6 +963,30 @@ export function quoteColumnCodeInput(value: string): string {
  * Empty is allowed. A value has to be exactly 3 letters or digits.
  * Stored uppercase so the column heading matches the database check.
  */
+export function isQuoteBidderClass(value: string): value is QuoteBidderClass {
+  return QUOTE_BIDDER_CLASSES.some((item) => item.id === value);
+}
+
+export function quoteBidderClassShort(value: string): string {
+  return QUOTE_BIDDER_CLASSES.find((item) => item.id === value)?.short ?? "CMP";
+}
+
+/** Empty means a competitive bidder. DDS is not a class stored on a bidder row. */
+export function parseQuoteBidderClass(value: string | undefined): { ok: true; value: QuoteBidderClass } | { ok: false; message: string } {
+  const text = (value ?? "").trim().toLowerCase();
+  if (!text) return { ok: true, value: "cmp" };
+  if (isQuoteBidderClass(text)) return { ok: true, value: text };
+  return { ok: false, message: "Choose a bidder class." };
+}
+
+/**
+ * FSP extensions use the reply quantity when it is filled in, the same quantity as DDS.
+ * Competitive and market bids use the request quantity.
+ */
+export function quoteBidderExtKind(bidderClass: string): "dds" | "bid" {
+  return bidderClass === "fsp" ? "dds" : "bid";
+}
+
 export function parseQuoteColumnCode(
   value: string,
   label: string,
@@ -1120,13 +1155,12 @@ export function suggestedRelatedFlow(
   return { side: "sell", direction: "inbound", relationType: "response_to" };
 }
 
-/** Request identity copied onto a related quote. DDS unit, FSP, lead time, decisions, and bids are not copied. */
+/** Request identity copied onto a related quote. DDS unit, lead time, decisions, and bids are not copied. */
 export function linesForRelatedEvent(
   lines: (Omit<QuoteLineIdentity, "targetPrice" | "specialRequirements"> & {
     targetPrice?: string;
     specialRequirements?: string;
     unitPrice?: string;
-    fspUnit?: string;
     decision?: string;
     decisionNote?: string;
     leadTime?: string;
@@ -1496,8 +1530,6 @@ function parseLine(
   if (!replyQty.ok) return { ok: false, message: `Line ${number} reply: ${replyQty.message}` };
   const unitPrice = parseMoney(line.unitPrice);
   if (!unitPrice.ok) return { ok: false, message: `Line ${number}: ${unitPrice.message}` };
-  const fspUnit = parseMoney(line.fspUnit);
-  if (!fspUnit.ok) return { ok: false, message: `Line ${number} FSP: ${fspUnit.message}` };
   const targetPrice = parseMoney(line.targetPrice);
   if (!targetPrice.ok) return { ok: false, message: `Line ${number} target: ${targetPrice.message}` };
   const decision = line.decision.trim();
@@ -1533,7 +1565,6 @@ function parseLine(
       qty.qty != null ||
       replyQty.qty != null ||
       unitPrice.amount != null ||
-      fspUnit.amount != null ||
       targetPrice.amount != null ||
       leadTime.value ||
       decision ||
@@ -1560,7 +1591,6 @@ function parseLine(
       specialRequirements: requirements.value,
       replyQty: replyQty.qty,
       unitPrice: unitPrice.amount,
-      fspUnit: fspUnit.amount,
       leadTime: leadTime.value,
       decision: decision ? (decision as QuoteDecision) : null,
       decisionNote: decisionNote.value,
@@ -1630,6 +1660,8 @@ function parseBid(
   if (note.error) return { ok: false, message: `A bid note on line ${lineNumber} is too long.` };
   const columnCode = parseQuoteColumnCode(bid.columnCode ?? "", name.value || "bid");
   if (!columnCode.ok) return columnCode;
+  const bidderClass = parseQuoteBidderClass(bid.bidderClass);
+  if (!bidderClass.ok) return bidderClass;
   const bidNote = clip(bid.bidNote ?? "", QUOTE_BID_NOTE_LIMIT);
   if (bidNote.error) {
     return { ok: false, message: name.value ? `The ${name.value} comment is too long.` : "A comment is too long." };
@@ -1672,6 +1704,7 @@ function parseBid(
       leadTime: leadTime.value,
       columnCode: columnCode.value,
       bidNote: bidNote.value,
+      bidderClass: bidderClass.value,
     },
   };
 }
@@ -1686,7 +1719,7 @@ function bidderProfilesFromLines(
       const key = bid.bidderName.toLowerCase();
       const existing = byName.get(key);
       if (!existing) {
-        const profile = { name: bid.bidderName, columnCode: bid.columnCode, bidNote: bid.bidNote };
+        const profile = { name: bid.bidderName, columnCode: bid.columnCode, bidNote: bid.bidNote, bidderClass: bid.bidderClass };
         byName.set(key, profile);
         bidders.push(profile);
         continue;
@@ -1696,6 +1729,9 @@ function bidderProfilesFromLines(
       }
       if (existing.bidNote !== bid.bidNote) {
         return { ok: false, message: `${existing.name} has two different comments.` };
+      }
+      if (existing.bidderClass !== bid.bidderClass) {
+        return { ok: false, message: `${existing.name} has two different classes.` };
       }
     }
   }

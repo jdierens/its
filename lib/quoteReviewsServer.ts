@@ -302,7 +302,7 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
   const lines = await supabase
     .from("quote_event_lines")
     .select(
-      "id, sort_order, item_id, part_number, sku, item_name, condition, qty, target_price, special_requirements, reply_qty, our_unit_price, fsp_unit, lead_time, decision, decision_note, award_winner, award_qty, quote_event_bids(id, sort_order, bidder_name, unit_price, note, sku, item_name, qty, lead_time), quote_event_line_alts(id, sort_order, item_id, part_number, sku, item_name, unit_price)",
+      "id, sort_order, item_id, part_number, sku, item_name, condition, qty, target_price, special_requirements, reply_qty, our_unit_price, lead_time, decision, decision_note, award_winner, award_qty, quote_event_bids(id, sort_order, bidder_name, unit_price, note, sku, item_name, qty, lead_time), quote_event_line_alts(id, sort_order, item_id, part_number, sku, item_name, unit_price)",
     )
     .eq("quote_event_id", id)
     .order("sort_order");
@@ -313,7 +313,7 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
   const lineRows = ((lines.data ?? []) as Row[]).slice().sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order));
   const bidderRows = await supabase
     .from("quote_event_bidders")
-    .select("bidder_name, column_code, bid_note, sort_order")
+    .select("bidder_name, column_code, bid_note, bidder_class, sort_order")
     .eq("quote_event_id", id)
     .order("sort_order");
   if (bidderRows.error) {
@@ -958,7 +958,6 @@ async function saveLines(eventId: string, lines: ParsedQuoteLine[]): Promise<Quo
       special_requirements: line.specialRequirements,
       reply_qty: line.replyQty,
       our_unit_price: line.unitPrice,
-      fsp_unit: line.fspUnit,
       lead_time: line.leadTime,
       decision: line.decision,
       decision_note: line.decisionNote,
@@ -1048,7 +1047,10 @@ async function saveBids(lineId: string, line: ParsedQuoteLine): Promise<{ key: s
   return saved;
 }
 
-async function saveBidders(eventId: string, bidders: { name: string; columnCode: string | null; bidNote: string | null }[]): Promise<void> {
+async function saveBidders(
+  eventId: string,
+  bidders: { name: string; columnCode: string | null; bidNote: string | null; bidderClass: string }[],
+): Promise<void> {
   const supabase = await getSupabase();
   const existing = await supabase.from("quote_event_bidders").select("id, bidder_name").eq("quote_event_id", eventId);
   if (existing.error) throw dbError(existing.error);
@@ -1061,6 +1063,7 @@ async function saveBidders(eventId: string, bidders: { name: string; columnCode:
       bidder_name: bidder.name,
       column_code: bidder.columnCode,
       bid_note: bidder.bidNote,
+      bidder_class: bidder.bidderClass,
       sort_order: index,
     };
     const id = byName.get(bidder.name.toLowerCase());
@@ -1256,6 +1259,7 @@ function lineDraft(
         leadTime: text(bid.lead_time),
         columnCode: text(profile?.column_code),
         bidNote: text(profile?.bid_note),
+        bidderClass: text(profile?.bidder_class) === "mkt" || text(profile?.bidder_class) === "fsp" ? text(profile?.bidder_class) : "cmp",
       };
     });
   const alts = rowsOf(row.quote_event_line_alts)
@@ -1283,7 +1287,6 @@ function lineDraft(
     specialRequirements: text(row.special_requirements),
     replyQty: quoteQtyText(row.reply_qty),
     unitPrice: moneyInput(asMoney(row.our_unit_price)),
-    fspUnit: moneyInput(asMoney(row.fsp_unit)),
     leadTime: text(row.lead_time),
     decision: text(row.decision),
     decisionNote: text(row.decision_note),

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   offerUnit,
+  quoteBidderExtKind,
   quoteBidders,
   quoteColumnCaption,
   quoteExtText,
@@ -31,7 +32,6 @@ export function QuotePriceOverview({
       line.qty.trim() ||
       line.condition.trim() ||
       line.unitPrice.trim() ||
-      line.fspUnit.trim() ||
       line.bids.some((bid) => bid.unitPrice.trim() || bid.bidderName.trim()),
   );
   if (visible.length === 0) {
@@ -51,7 +51,7 @@ export function QuotePriceOverview({
   return (
     <div className="card qr-lines qr-overview">
       <h2>Overview</h2>
-      <p className="hint">Every price on the list, side by side. A column code, when set, is the heading, and the name stays under it. FSP is the forecasted sales price, separate from the DDS bid. The extension sits under the unit. The total row sums those extensions. Related quotes add their own columns.</p>
+      <p className="hint">Every price on the list, side by side. A column code, when set, is the heading, and the name stays under it. A forecasted sales price is a bidder, the same as a competitive bid. The extension sits under the unit. The total row sums those extensions. Related quotes add their own columns.</p>
       <div className="qr-scroll">
         <table>
           <thead>
@@ -61,9 +61,6 @@ export function QuotePriceOverview({
               <th className="num">Qty</th>
               <th>Condition</th>
               <ColumnHeading code={ddsColumnCode} fallback="DDS unit" identity="DDS" />
-              <th className="num" title="Forecasted sales price">
-                FSP unit
-              </th>
               {local.map((name) => {
                 const code = lines.flatMap((line) => line.bids).find((bid) => bid.bidderName.trim().toLowerCase() === name.toLowerCase())?.columnCode ?? "";
                 return <ColumnHeading key={name} code={code} fallback={name} identity={name} />;
@@ -76,7 +73,6 @@ export function QuotePriceOverview({
           <tbody>
             {visible.map((line) => {
               const ddsExt = quoteExtText(quoteOverviewExt(line, line.unitPrice, "dds"), currency);
-              const fspExt = quoteExtText(quoteOverviewExt(line, line.fspUnit, "dds"), currency);
               return (
                 <tr key={line.key || `${line.partNumber}-${line.sku}`}>
                   <td>{line.partNumber || "—"}</td>
@@ -87,14 +83,10 @@ export function QuotePriceOverview({
                     <span>{quoteMoneyText(line.unitPrice, currency) || "—"}</span>
                     {ddsExt ? <span className="qr-context">{ddsExt}</span> : null}
                   </td>
-                  <td className="num">
-                    <span>{quoteMoneyText(line.fspUnit, currency) || "—"}</span>
-                    {fspExt ? <span className="qr-context">{fspExt}</span> : null}
-                  </td>
                   {local.map((name) => {
                     const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
                     const unit = bid?.unitPrice ?? "";
-                    const ext = quoteExtText(quoteOverviewExt(line, unit, "bid"), currency);
+                    const ext = quoteExtText(quoteOverviewExt(line, unit, quoteBidderExtKind(bid?.bidderClass ?? "cmp")), currency);
                     return (
                       <td className="num" key={name}>
                         <span>{quoteMoneyText(unit, currency) || "—"}</span>
@@ -127,12 +119,6 @@ export function QuotePriceOverview({
                   currency,
                 ) || "—"}
               </td>
-              <td className="num" data-label="FSP">
-                {quoteExtTotal(
-                  visible.map((line) => quoteOverviewExt(line, line.fspUnit, "dds")),
-                  currency,
-                ) || "—"}
-              </td>
               {local.map((name) => {
                 const code = lines.flatMap((line) => line.bids).find((bid) => bid.bidderName.trim().toLowerCase() === name.toLowerCase())?.columnCode ?? "";
                 return (
@@ -140,7 +126,7 @@ export function QuotePriceOverview({
                   {quoteExtTotal(
                     visible.map((line) => {
                       const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
-                      return quoteOverviewExt(line, bid?.unitPrice ?? "", "bid");
+                      return quoteOverviewExt(line, bid?.unitPrice ?? "", quoteBidderExtKind(bid?.bidderClass ?? "cmp"));
                     }),
                     currency,
                   ) || "—"}

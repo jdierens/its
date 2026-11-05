@@ -36,9 +36,9 @@ export const PICK_TICKET_PRINT = {
   rootSelector: "main.pick-page",
 } as const;
 
-/** Quote export is the DDS bid and FMP sheet. Six columns fit the portrait letter. */
+/** Quote export is one column per bidder, plus margin when DDS and FSP are both priced. Landscape fits that table. */
 export const QUOTE_DOCUMENT_PRINT = {
-  orientation: "portrait",
+  orientation: "landscape",
   rootSelector: ".cust-doc-page",
   fragmentSelector: ".cust-doc",
 } as const;

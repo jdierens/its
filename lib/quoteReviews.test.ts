@@ -28,6 +28,7 @@ import {
   parseRelatedQuote,
   quoteBidderList,
   quoteBidders,
+  quoteBidderExtKind,
   quoteColumnCaption,
   quoteColumnCodeInput,
   quoteColumnHead,
@@ -694,28 +695,54 @@ test("a partial award is won partial and the order link names a draft or a numbe
   assert.equal(JSON.stringify(quoteEditSnapshot(withBlank)), JSON.stringify(baseline));
 });
 
-test("FSP stays separate from the DDS unit and uses the same extension", () => {
-  const saved = parseQuoteSave(saveInput({ dueOn: "" }, { qty: "470", unitPrice: "58", fspUnit: "70" }));
+test("an FSP bidder is a price reference with a column code", () => {
+  function priced(name: string, unit: string, bidderClass: string, columnCode = ""): QuoteLineInput["bids"][number] {
+    return {
+      key: name,
+      id: "",
+      bidderName: name,
+      unitPrice: unit,
+      note: "",
+      sku: "",
+      itemName: "",
+      qty: "",
+      leadTime: "",
+      bidderClass,
+      columnCode,
+    };
+  }
+
+  const saved = parseQuoteSave(
+    saveInput({ dueOn: "" }, { qty: "470", unitPrice: "58", bids: [priced("Forecast", "70", "fsp", "sal")] }),
+  );
   assert.equal(saved.ok, true);
   if (!saved.ok) return;
   assert.equal(saved.value.lines[0]?.unitPrice, 58);
-  assert.equal(saved.value.lines[0]?.fspUnit, 70);
+  assert.equal(saved.value.lines[0]?.bids[0]?.unitPrice, 70);
+  assert.equal(saved.value.bidders[0]?.bidderClass, "fsp");
+  assert.equal(saved.value.bidders[0]?.columnCode, "SAL");
   assert.equal(quoteReplyExtension("470", "", "70"), "$32,900");
   assert.equal(quoteReplyExtension("470", "10", "70"), "$700");
   assert.equal(quoteReplyExtension("4569", "", "215"), "$982,335");
+  assert.equal(quoteBidderExtKind("fsp"), "dds");
+  assert.equal(quoteBidderExtKind("cmp"), "bid");
 
-  const bad = parseQuoteSave(saveInput({ dueOn: "" }, { fspUnit: "nope" }));
+  const bad = parseQuoteSave(saveInput({ dueOn: "" }, { bids: [priced("Forecast", "70", "nope")] }));
   assert.equal(bad.ok, false);
-  if (!bad.ok) assert.match(bad.message, /FSP/);
+  if (!bad.ok) assert.match(bad.message, /class/);
 
   const onlyFsp = parseQuoteSave(
-    saveInput({ dueOn: "" }, { partNumber: "", qty: "", targetPrice: "", specialRequirements: "", unitPrice: "", fspUnit: "215" }),
+    saveInput(
+      { dueOn: "" },
+      { partNumber: "", qty: "", targetPrice: "", specialRequirements: "", unitPrice: "", bids: [priced("Forecast", "215", "FSP")] },
+    ),
   );
   assert.equal(onlyFsp.ok, true);
   if (!onlyFsp.ok) return;
   assert.equal(onlyFsp.value.lines.length, 1);
-  assert.equal(onlyFsp.value.lines[0]?.fspUnit, 215);
   assert.equal(onlyFsp.value.lines[0]?.unitPrice, null);
+  assert.equal(onlyFsp.value.lines[0]?.bids[0]?.unitPrice, 215);
+  assert.equal(onlyFsp.value.bidders[0]?.bidderClass, "fsp");
 });
 
 test("a column code is 3 letters or digits and the print lists comments that have text", () => {
@@ -746,7 +773,7 @@ test("a column code is 3 letters or digits and the print lists comments that hav
       ["Quiet", "QET", null],
     ],
   );
-  assert.equal(saved.value.lines[0]?.fspUnit, null);
+  assert.equal(saved.value.bidders[0]?.bidderClass, "cmp");
   const notes = quotePrintNotes({
     ddsColumnCode: saved.value.ddsColumnCode ?? "",
     ddsBidNote: saved.value.ddsBidNote ?? "",
