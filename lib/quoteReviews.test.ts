@@ -153,6 +153,7 @@ test("a related quote copies the request and leaves the reply behind", () => {
       targetPrice: " 9 ",
       specialRequirements: " firmware ",
       unitPrice: "10.00",
+      fspUnit: "70",
       leadTime: "2 weeks",
       replyQty: "1",
       decision: "bid",
@@ -182,6 +183,7 @@ test("a related quote copies the request and leaves the reply behind", () => {
     },
   ]);
   assert.equal("unitPrice" in copied[0], false);
+  assert.equal("fspUnit" in copied[0], false);
   assert.deepEqual(suggestedRelatedFlow("buy", "inbound"), {
     side: "sell",
     direction: "outbound",
@@ -307,6 +309,7 @@ function saveInput(patch: Partial<QuoteSaveInput> = {}, linePatch: Partial<Quote
         specialRequirements: "new date code",
         replyQty: "",
         unitPrice: "",
+        fspUnit: "",
         leadTime: "",
         decision: "",
         decisionNote: "",
@@ -339,6 +342,7 @@ test("saving a quote drops an empty line and warns when the due date is earlier"
         specialRequirements: "",
         replyQty: "",
         unitPrice: "",
+        fspUnit: "",
         leadTime: "",
         decision: "",
         decisionNote: "",
@@ -669,6 +673,7 @@ test("a partial award is won partial and the order link names a draft or a numbe
       specialRequirements: "",
       replyQty: "",
       unitPrice: "",
+      fspUnit: "",
       leadTime: "",
       decision: "",
       decisionNote: "",
@@ -679,6 +684,30 @@ test("a partial award is won partial and the order link names a draft or a numbe
     },
   ];
   assert.equal(JSON.stringify(quoteEditSnapshot(withBlank)), JSON.stringify(baseline));
+});
+
+test("FSP stays separate from the DDS unit and uses the same extension", () => {
+  const saved = parseQuoteSave(saveInput({ dueOn: "" }, { qty: "470", unitPrice: "58", fspUnit: "70" }));
+  assert.equal(saved.ok, true);
+  if (!saved.ok) return;
+  assert.equal(saved.value.lines[0]?.unitPrice, 58);
+  assert.equal(saved.value.lines[0]?.fspUnit, 70);
+  assert.equal(quoteReplyExtension("470", "", "70"), "$32,900");
+  assert.equal(quoteReplyExtension("470", "10", "70"), "$700");
+  assert.equal(quoteReplyExtension("4569", "", "215"), "$982,335");
+
+  const bad = parseQuoteSave(saveInput({ dueOn: "" }, { fspUnit: "nope" }));
+  assert.equal(bad.ok, false);
+  if (!bad.ok) assert.match(bad.message, /FSP/);
+
+  const onlyFsp = parseQuoteSave(
+    saveInput({ dueOn: "" }, { partNumber: "", qty: "", targetPrice: "", specialRequirements: "", unitPrice: "", fspUnit: "215" }),
+  );
+  assert.equal(onlyFsp.ok, true);
+  if (!onlyFsp.ok) return;
+  assert.equal(onlyFsp.value.lines.length, 1);
+  assert.equal(onlyFsp.value.lines[0]?.fspUnit, 215);
+  assert.equal(onlyFsp.value.lines[0]?.unitPrice, null);
 });
 
 test("awarding the same quote again points at the order that already exists", () => {

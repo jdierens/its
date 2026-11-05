@@ -7,8 +7,10 @@ export const QUOTE_REVIEWS_MIGRATION = "supabase/migrations/20261105040000_quote
 
 export const QUOTE_WON_PARTIAL_MIGRATION = "supabase/migrations/20261105060000_quote_won_partial.sql";
 
+export const QUOTE_FSP_MIGRATION = "supabase/migrations/20261105155000_quote_line_fsp.sql";
+
 export const QUOTE_REVIEWS_SETUP =
-  "Quote requests need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, supabase/migrations/20261105040000_quote_line_alts_and_awards.sql, and supabase/migrations/20261105060000_quote_won_partial.sql. Deploying does not run them.";
+  "Quote requests need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, supabase/migrations/20261105040000_quote_line_alts_and_awards.sql, supabase/migrations/20261105060000_quote_won_partial.sql, and supabase/migrations/20261105155000_quote_line_fsp.sql. Deploying does not run them.";
 
 export const DUE_SOON_DAYS = 7;
 
@@ -130,6 +132,7 @@ export type QuoteLineInput = {
   specialRequirements: string;
   replyQty: string;
   unitPrice: string;
+  fspUnit: string;
   leadTime: string;
   decision: string;
   decisionNote: string;
@@ -192,6 +195,7 @@ export type ParsedQuoteLine = {
   specialRequirements: string | null;
   replyQty: number | null;
   unitPrice: number | null;
+  fspUnit: number | null;
   leadTime: string | null;
   decision: QuoteDecision | null;
   decisionNote: string | null;
@@ -284,6 +288,7 @@ export type QuoteLineDraft = {
   specialRequirements: string;
   replyQty: string;
   unitPrice: string;
+  fspUnit: string;
   leadTime: string;
   decision: string;
   decisionNote: string;
@@ -425,6 +430,7 @@ export function blankQuoteLine(): QuoteLineDraft {
     specialRequirements: "",
     replyQty: "",
     unitPrice: "",
+    fspUnit: "",
     leadTime: "",
     decision: "",
     decisionNote: "",
@@ -1008,12 +1014,13 @@ export function suggestedRelatedFlow(
   return { side: "sell", direction: "inbound", relationType: "response_to" };
 }
 
-/** Request identity copied onto a related quote. Prices, lead time, decisions, and bids are not copied. */
+/** Request identity copied onto a related quote. DDS unit, FSP, lead time, decisions, and bids are not copied. */
 export function linesForRelatedEvent(
   lines: (Omit<QuoteLineIdentity, "targetPrice" | "specialRequirements"> & {
     targetPrice?: string;
     specialRequirements?: string;
     unitPrice?: string;
+    fspUnit?: string;
     decision?: string;
     decisionNote?: string;
     leadTime?: string;
@@ -1370,6 +1377,8 @@ function parseLine(
   if (!replyQty.ok) return { ok: false, message: `Line ${number} reply: ${replyQty.message}` };
   const unitPrice = parseMoney(line.unitPrice);
   if (!unitPrice.ok) return { ok: false, message: `Line ${number}: ${unitPrice.message}` };
+  const fspUnit = parseMoney(line.fspUnit);
+  if (!fspUnit.ok) return { ok: false, message: `Line ${number} FSP: ${fspUnit.message}` };
   const targetPrice = parseMoney(line.targetPrice);
   if (!targetPrice.ok) return { ok: false, message: `Line ${number} target: ${targetPrice.message}` };
   const decision = line.decision.trim();
@@ -1405,6 +1414,7 @@ function parseLine(
       qty.qty != null ||
       replyQty.qty != null ||
       unitPrice.amount != null ||
+      fspUnit.amount != null ||
       targetPrice.amount != null ||
       leadTime.value ||
       decision ||
@@ -1431,6 +1441,7 @@ function parseLine(
       specialRequirements: requirements.value,
       replyQty: replyQty.qty,
       unitPrice: unitPrice.amount,
+      fspUnit: fspUnit.amount,
       leadTime: leadTime.value,
       decision: decision ? (decision as QuoteDecision) : null,
       decisionNote: decisionNote.value,

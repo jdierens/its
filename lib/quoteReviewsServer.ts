@@ -302,7 +302,7 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
   const lines = await supabase
     .from("quote_event_lines")
     .select(
-      "id, sort_order, item_id, part_number, sku, item_name, condition, qty, target_price, special_requirements, reply_qty, our_unit_price, lead_time, decision, decision_note, award_winner, award_qty, quote_event_bids(id, sort_order, bidder_name, unit_price, note, sku, item_name, qty, lead_time), quote_event_line_alts(id, sort_order, item_id, part_number, sku, item_name, unit_price)",
+      "id, sort_order, item_id, part_number, sku, item_name, condition, qty, target_price, special_requirements, reply_qty, our_unit_price, fsp_unit, lead_time, decision, decision_note, award_winner, award_qty, quote_event_bids(id, sort_order, bidder_name, unit_price, note, sku, item_name, qty, lead_time), quote_event_line_alts(id, sort_order, item_id, part_number, sku, item_name, unit_price)",
     )
     .eq("quote_event_id", id)
     .order("sort_order");
@@ -916,6 +916,7 @@ async function saveLines(eventId: string, lines: ParsedQuoteLine[]): Promise<Quo
       special_requirements: line.specialRequirements,
       reply_qty: line.replyQty,
       our_unit_price: line.unitPrice,
+      fsp_unit: line.fspUnit,
       lead_time: line.leadTime,
       decision: line.decision,
       decision_note: line.decisionNote,
@@ -1197,6 +1198,7 @@ function lineDraft(row: Row, context: Map<string, { onHand: number | null; lastB
     specialRequirements: text(row.special_requirements),
     replyQty: quoteQtyText(row.reply_qty),
     unitPrice: moneyInput(asMoney(row.our_unit_price)),
+    fspUnit: moneyInput(asMoney(row.fsp_unit)),
     leadTime: text(row.lead_time),
     decision: text(row.decision),
     decisionNote: text(row.decision_note),
