@@ -11084,6 +11084,18 @@ select.qr-fit {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem 1rem;
+  align-items: center;
+}
+
+.qr-exports {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.qr-exports .button {
+  width: auto;
 }
 
 .qr-bid-meta {
@@ -11104,36 +11116,8 @@ select.qr-fit {
   min-height: 2.5rem;
 }
 
-.quote-doc-page .cust-doc-tools {
-  max-width: 11in;
-}
-
-.cust-doc.quote-doc {
-  width: 11in;
-}
-
 .quote-doc-who {
-  margin-top: 8px;
-}
-
-.quote-doc-ext {
-  display: block;
-  font-size: 9px;
-}
-
-.quote-doc-notes {
-  margin-top: 12px;
-}
-
-.quote-doc-notes h2 {
-  margin: 0 0 4px;
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.quote-doc-notes p {
-  margin: 0 0 3px;
-  white-space: pre-wrap;
+  margin: 8px 0 0;
 }
 
 .qr-bidder-strip {

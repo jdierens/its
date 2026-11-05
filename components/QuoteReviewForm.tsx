@@ -10,6 +10,7 @@ import { QuoteOriginatorFields } from "@/components/QuoteOriginatorFields";
 import { QuotePriceOverview } from "@/components/QuotePriceOverview";
 import { QuoteReviewRelated } from "@/components/QuoteReviewRelated";
 import { errorText } from "@/lib/errors";
+import { quoteExportFilename, quoteExportLines, quoteExportWorkbook } from "@/lib/quoteExport";
 import {
   bindUnsavedBackGuard,
   isDirty,
@@ -204,6 +205,7 @@ export function QuoteReviewForm({
   const [problem, setProblem] = useState("");
   const [orderLink, setOrderLink] = useState<QuoteOrderLink | null>(order);
   const [awarding, setAwarding] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     setOrderLink(order);
@@ -497,6 +499,28 @@ export function QuoteReviewForm({
       ? vendorChoices.find((party) => party.id === header.vendorId)?.name
       : prospects.find((party) => party.id === header.prospectId)?.name;
 
+  async function onExportXls() {
+    setExporting(true);
+    setProblem("");
+    try {
+      const bytes = await quoteExportWorkbook(quoteExportLines(lines));
+      const copy = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(copy).set(bytes);
+      const url = URL.createObjectURL(
+        new Blob([copy], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = quoteExportFilename(header.reference);
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setProblem(errorText(error));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function rememberParty(current: QuotePartyOption[], party: QuotePartyOption): QuotePartyOption[] {
     return current.some((item) => item.id === party.id) ? current : [...current, party];
   }
@@ -516,6 +540,7 @@ export function QuoteReviewForm({
               </span>
             </div>
             <div className="so-sticky-actions">
+              <QuoteExportButtons id={header.id} exporting={exporting} onExportXls={() => void onExportXls()} />
               <button
                 className="button qr-save"
                 type="submit"
@@ -531,7 +556,7 @@ export function QuoteReviewForm({
         ) : null}
         <p className="qr-back">
           <Link href={QUOTE_REVIEWS_PATH}>Back to quote requests</Link>
-          {header.id ? <Link href={`${QUOTE_REVIEWS_PATH}/${header.id}/print`}>Print quote</Link> : null}
+          {canEdit ? null : <QuoteExportButtons id={header.id} exporting={exporting} onExportXls={() => void onExportXls()} />}
         </p>
         {problem ? (
           <p className="banner error" role="alert">
@@ -899,6 +924,33 @@ function QuoteOrderLink({ link }: { link: QuoteOrderLink }) {
       {link.label}
       {extra}
     </Link>
+  );
+}
+
+function QuoteExportButtons({
+  id,
+  exporting,
+  onExportXls,
+}: {
+  id: string | null;
+  exporting: boolean;
+  onExportXls: () => void;
+}) {
+  return (
+    <span className="qr-exports" role="group" aria-label="Export quote">
+      <button type="button" className="button secondary" disabled={exporting} onClick={onExportXls}>
+        {exporting ? "Exporting…" : "Export XLS"}
+      </button>
+      {id ? (
+        <Link className="button secondary" href={`${QUOTE_REVIEWS_PATH}/${id}/print`}>
+          Export PDF
+        </Link>
+      ) : (
+        <button type="button" className="button secondary" disabled title="Save the quote before exporting a PDF">
+          Export PDF
+        </button>
+      )}
+    </span>
   );
 }
 

@@ -375,11 +375,11 @@ export function pageMetaFor(pathname: string): PageMeta {
 
   if (/^\/pricing\/quotes\/[^/]+\/print$/.test(pathname)) {
     return {
-      title: "Print quote",
+      title: "Export PDF",
       crumbs: [
         { label: "Pricing" },
         { label: "Quote requests", href: "/pricing/quotes" },
-        { label: "Print quote" },
+        { label: "Export PDF" },
       ],
     };
   }
