@@ -33,7 +33,7 @@ export default async function QuoteReviewPage({ params }: { params: Promise<{ id
     if (detail.status === "missing") notFound();
     const [vendors, customers, prospects, choices] = await Promise.all([
       listQuoteVendors(),
-      listQuoteCustomers(),
+      listQuoteCustomers({ keepIds: detail.draft.customerId ? [detail.draft.customerId] : [] }),
       listQuoteProspects(),
       listQuoteReviewChoices(id),
     ]);
@@ -48,6 +48,7 @@ export default async function QuoteReviewPage({ params }: { params: Promise<{ id
           relations={detail.relations}
           choices={choices}
           offers={detail.offers}
+          order={detail.order}
         />
       </main>
     );

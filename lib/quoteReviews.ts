@@ -2,16 +2,24 @@ import { asMoney, formatMoney, parseMoney } from "@/lib/pricing/quotes";
 
 export const QUOTE_REVIEWS_PATH = "/pricing/quotes";
 
-export const QUOTE_REVIEWS_MIGRATION = "supabase/migrations/20261104140000_quote_event_flow.sql";
+export const QUOTE_REVIEWS_MIGRATION = "supabase/migrations/20261105040000_quote_line_alts_and_awards.sql";
 
 export const QUOTE_REVIEWS_SETUP =
-  "Quote reviews need supabase/migrations/20261103180000_quote_events.sql and supabase/migrations/20261104140000_quote_event_flow.sql. Deploying does not run them.";
+  "Quote reviews need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, and supabase/migrations/20261105040000_quote_line_alts_and_awards.sql. Deploying does not run them.";
 
 export const DUE_SOON_DAYS = 7;
 
 export const QUOTE_LINE_LIMIT = 500;
 
 export const QUOTE_BID_LIMIT = 12;
+
+export const QUOTE_ALT_LIMIT = 8;
+
+/** How many names a quote party picker shows while someone is typing. */
+export const QUOTE_PARTY_LIMIT = 12;
+
+/** Award winner stored for the DDS response. A bidder stores that bidder's name. */
+export const DDS_AWARD = "dds";
 
 export const QUOTE_LEAD_TIME_DEFAULT = "In stock";
 
@@ -85,6 +93,16 @@ export type QuoteBidInput = {
   leadTime: string;
 };
 
+export type QuoteAltInput = {
+  key: string;
+  id: string;
+  itemId: string;
+  partNumber: string;
+  sku: string;
+  itemName: string;
+  unitPrice: string;
+};
+
 export type QuoteLineInput = {
   key: string;
   id: string;
@@ -101,7 +119,10 @@ export type QuoteLineInput = {
   leadTime: string;
   decision: string;
   decisionNote: string;
+  awardWinner: string;
+  awardQty: string;
   bids: QuoteBidInput[];
+  alts: QuoteAltInput[];
 };
 
 export type QuoteSaveInput = {
@@ -134,6 +155,16 @@ export type ParsedQuoteBid = {
   leadTime: string | null;
 };
 
+export type ParsedQuoteAlt = {
+  key: string;
+  id: string | null;
+  itemId: string | null;
+  partNumber: string | null;
+  sku: string | null;
+  itemName: string | null;
+  unitPrice: number | null;
+};
+
 export type ParsedQuoteLine = {
   key: string;
   id: string | null;
@@ -150,7 +181,10 @@ export type ParsedQuoteLine = {
   leadTime: string | null;
   decision: QuoteDecision | null;
   decisionNote: string | null;
+  awardWinner: string | null;
+  awardQty: number | null;
   bids: ParsedQuoteBid[];
+  alts: ParsedQuoteAlt[];
 };
 
 export type ParsedQuote = {
@@ -213,6 +247,16 @@ export type QuoteBidDraft = {
   leadTime: string;
 };
 
+export type QuoteAltDraft = {
+  key: string;
+  id: string;
+  itemId: string;
+  partNumber: string;
+  sku: string;
+  itemName: string;
+  unitPrice: string;
+};
+
 export type QuoteLineDraft = {
   key: string;
   id: string;
@@ -229,10 +273,22 @@ export type QuoteLineDraft = {
   leadTime: string;
   decision: string;
   decisionNote: string;
+  awardWinner: string;
+  awardQty: string;
   bids: QuoteBidDraft[];
+  alts: QuoteAltDraft[];
   onHand: number | null;
   lastBuy: string;
   lastSell: string;
+};
+
+export type QuoteOrderLink = {
+  kind: "purchase" | "sales";
+  id: string;
+  status: string;
+  number: string;
+  href: string;
+  label: string;
 };
 
 export type QuoteReviewDraft = {
@@ -329,6 +385,18 @@ export function blankQuoteBid(name = ""): QuoteBidDraft {
   };
 }
 
+export function blankQuoteAlt(): QuoteAltDraft {
+  return {
+    key: "",
+    id: "",
+    itemId: "",
+    partNumber: "",
+    sku: "",
+    itemName: "",
+    unitPrice: "",
+  };
+}
+
 export function blankQuoteLine(): QuoteLineDraft {
   return {
     key: "",
@@ -346,7 +414,10 @@ export function blankQuoteLine(): QuoteLineDraft {
     leadTime: "",
     decision: "",
     decisionNote: "",
+    awardWinner: "",
+    awardQty: "",
     bids: [],
+    alts: [],
     onHand: null,
     lastBuy: "",
     lastSell: "",
@@ -640,6 +711,121 @@ export function counterpartyLabel(vendorName: string, counterpartyName: string):
   const name = counterpartyName.trim();
   if (vendor && name && vendor.toLowerCase() !== name.toLowerCase()) return `${vendor} (${name})`;
   return vendor || name || "—";
+}
+
+/** Names matching the typed text, capped so the menu stays a short list. */
+export function filterQuoteParties<T extends { name: string }>(parties: T[], query: string, limit = QUOTE_PARTY_LIMIT): T[] {
+  const needle = query.trim().toLowerCase();
+  const matched = needle ? parties.filter((party) => party.name.toLowerCase().includes(needle)) : parties;
+  return matched.slice(0, Math.max(1, limit));
+}
+
+export function quoteOrderKind(side: string): "purchase" | "sales" {
+  return side === "buy" ? "purchase" : "sales";
+}
+
+export function quoteOrderNote(input: { reference: string; id: string }): string {
+  const name = input.reference.trim() || "Quote review";
+  return `Drafted from quote review ${name} (${QUOTE_REVIEWS_PATH}/${input.id}).`;
+}
+
+/** Second click, or a later award, while a non-cancelled order is already linked. */
+export function quoteOrderReuseMessage(input: { kind: "purchase" | "sales"; status: string; number: string }): string {
+  const noun = input.kind === "purchase" ? "purchase order" : "sales order";
+  const label = input.number.trim();
+  if (input.status === "draft" || !label || label === "Draft") {
+    return `This quote already has a draft ${noun}. Open that draft instead of creating another.`;
+  }
+  return `This quote already has ${label}. A second ${noun} was not created.`;
+}
+
+export type QuoteAwardBuildLine = {
+  id: string;
+  partNumber: string | null;
+  sku: string | null;
+  itemName: string | null;
+  itemId: string | null;
+  condition: string | null;
+  unitPrice: number | null;
+  awardWinner: string | null;
+  awardQty: number | null;
+  bids: { bidderName: string; unitPrice: number | null; sku: string | null; itemName: string | null }[];
+};
+
+export type BuiltQuoteAwardLine = {
+  itemId: string | null;
+  partNumber: string;
+  sku: string;
+  itemName: string;
+  condition: "New" | "Used" | "";
+  qty: number;
+  unitPrice: number;
+};
+
+/**
+ * Lines marked won, using the DDS response or the named bidder.
+ * A bidder SKU that differs from the primary leaves the primary item unmatched
+ * on the order line. coversAll is true when every saved line is awarded.
+ */
+export function buildQuoteAward(
+  lines: QuoteAwardBuildLine[],
+): { ok: true; lines: BuiltQuoteAwardLine[]; coversAll: boolean } | { ok: false; message: string } {
+  const awarded: BuiltQuoteAwardLine[] = [];
+  for (const [index, line] of lines.entries()) {
+    const number = index + 1;
+    const winner = (line.awardWinner ?? "").trim();
+    if (!winner) continue;
+    const qty = line.awardQty;
+    if (qty == null || !(qty > 0)) return { ok: false, message: `Enter the awarded quantity on line ${number}.` };
+
+    let unit = line.unitPrice;
+    let sku = (line.sku ?? "").trim();
+    let name = (line.itemName ?? "").trim();
+    let itemId = line.itemId;
+    let part = (line.partNumber ?? "").trim();
+    if (winner.toLowerCase() === DDS_AWARD) {
+      if (unit == null) return { ok: false, message: `Line ${number} needs a DDS unit price before it can be awarded.` };
+    } else {
+      const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === winner.toLowerCase());
+      if (!bid) return { ok: false, message: `Line ${number} awards ${winner}, and that bidder is not on the line.` };
+      if (bid.unitPrice == null) {
+        return { ok: false, message: `Line ${number} needs a unit price from ${winner} before it can be awarded.` };
+      }
+      unit = bid.unitPrice;
+      const bidSku = (bid.sku ?? "").trim();
+      const bidName = (bid.itemName ?? "").trim();
+      if (bidSku && bidSku.toLowerCase() !== sku.toLowerCase()) {
+        sku = bidSku;
+        itemId = null;
+        if (!part) part = bidSku;
+      } else if (bidSku) {
+        sku = bidSku;
+      }
+      if (bidName) name = bidName;
+    }
+    if (!itemId && !part && !sku && !name) {
+      return { ok: false, message: `Line ${number} needs an item, part, or name before it can be awarded.` };
+    }
+    awarded.push({
+      itemId,
+      partNumber: part,
+      sku,
+      itemName: name,
+      condition: canonicalCondition(line.condition ?? ""),
+      qty,
+      unitPrice: unit,
+    });
+  }
+  if (awarded.length === 0) return { ok: false, message: "Choose the lines that won." };
+  if (awarded.length > 100) return { ok: false, message: "An award can have at most 100 lines." };
+  return { ok: true, lines: awarded, coversAll: lines.length > 0 && lines.every((line) => Boolean((line.awardWinner ?? "").trim())) };
+}
+
+function canonicalCondition(value: string): "New" | "Used" | "" {
+  const text = value.trim().toLowerCase();
+  if (text === "new") return "New";
+  if (text === "used") return "Used";
+  return "";
 }
 
 export function quoteEventLabel(input: { reference: string; counterparty: string; receivedOn: string }): string {
@@ -1129,12 +1315,23 @@ function parseLine(
     return { ok: false, message: `Choose a decision on line ${number}.` };
   }
 
+  if ((line.alts ?? []).length > QUOTE_ALT_LIMIT) {
+    return { ok: false, message: `Line ${number} can hold ${QUOTE_ALT_LIMIT} alternative SKUs.` };
+  }
   const bids: ParsedQuoteBid[] = [];
   for (const bid of line.bids) {
     const parsedBid = parseBid(bid, number);
     if (!parsedBid.ok) return parsedBid;
     if (parsedBid.bid) bids.push(parsedBid.bid);
   }
+  const alts: ParsedQuoteAlt[] = [];
+  for (const alt of line.alts ?? []) {
+    const parsedAlt = parseAlt(alt, number);
+    if (!parsedAlt.ok) return parsedAlt;
+    if (parsedAlt.alt) alts.push(parsedAlt.alt);
+  }
+  const award = parseAward(line, number, bids);
+  if (!award.ok) return award;
 
   const hasContent = Boolean(
     itemId.value ||
@@ -1150,7 +1347,9 @@ function parseLine(
       leadTime.value ||
       decision ||
       decisionNote.value ||
-      bids.length > 0,
+      bids.length > 0 ||
+      alts.length > 0 ||
+      award.winner,
   );
   if (!hasContent) return { ok: true, line: null };
   if (!line.key.trim()) return { ok: false, message: `Line ${number} could not be saved.` };
@@ -1173,7 +1372,58 @@ function parseLine(
       leadTime: leadTime.value,
       decision: decision ? (decision as QuoteDecision) : null,
       decisionNote: decisionNote.value,
+      awardWinner: award.winner,
+      awardQty: award.qty,
       bids,
+      alts,
+    },
+  };
+}
+
+function parseAward(
+  line: QuoteLineInput,
+  lineNumber: number,
+  bids: ParsedQuoteBid[],
+): { ok: true; winner: string | null; qty: number | null } | { ok: false; message: string } {
+  const winnerText = (line.awardWinner ?? "").trim();
+  const qty = parseQuoteQty(line.awardQty ?? "");
+  if (!qty.ok) return { ok: false, message: `Line ${lineNumber} award: ${qty.message}` };
+  if (!winnerText && qty.qty == null) return { ok: true, winner: null, qty: null };
+  if (!winnerText) return { ok: false, message: `Choose who won line ${lineNumber}.` };
+  if (qty.qty == null || !(qty.qty > 0)) return { ok: false, message: `Enter the awarded quantity on line ${lineNumber}.` };
+  if (winnerText.toLowerCase() === DDS_AWARD) return { ok: true, winner: DDS_AWARD, qty: qty.qty };
+  const bid = bids.find((item) => item.bidderName.toLowerCase() === winnerText.toLowerCase());
+  if (!bid) return { ok: false, message: `Line ${lineNumber} awards ${winnerText}, and that bidder is not on the line.` };
+  return { ok: true, winner: bid.bidderName, qty: qty.qty };
+}
+
+function parseAlt(
+  alt: QuoteAltInput,
+  lineNumber: number,
+): { ok: true; alt: ParsedQuoteAlt | null } | { ok: false; message: string } {
+  const itemId = optionalUuid(alt.itemId, `An alternative on line ${lineNumber} is linked to an item that was not found.`);
+  if (!itemId.ok) return itemId;
+  const id = optionalUuid(alt.id, `An alternative on line ${lineNumber} was not found.`);
+  if (!id.ok) return id;
+  const partNumber = clip(alt.partNumber, 120);
+  if (partNumber.error) return { ok: false, message: `An alternative part on line ${lineNumber} is too long.` };
+  const sku = clip(alt.sku, 80);
+  if (sku.error) return { ok: false, message: `An alternative SKU on line ${lineNumber} is too long.` };
+  const itemName = clip(alt.itemName, 300);
+  if (itemName.error) return { ok: false, message: `An alternative name on line ${lineNumber} is too long.` };
+  const unitPrice = parseMoney(alt.unitPrice);
+  if (!unitPrice.ok) return { ok: false, message: `Line ${lineNumber} alternative: ${unitPrice.message}` };
+  if (!itemId.value && !partNumber.value && !sku.value && !itemName.value) return { ok: true, alt: null };
+  return {
+    ok: true,
+    alt: {
+      key: alt.key || sku.value || partNumber.value || itemName.value || "alt",
+      id: id.value,
+      itemId: itemId.value,
+      partNumber: partNumber.value,
+      sku: sku.value,
+      itemName: itemName.value,
+      unitPrice: unitPrice.amount,
     },
   };
 }

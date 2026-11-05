@@ -6,6 +6,8 @@ import {
   addCalendarDays,
   bestCompetingUnit,
   bestQuotedUnit,
+  buildQuoteAward,
+  filterQuoteParties,
   quoteFieldChars,
   quoteLineBestIsHigh,
   counterpartyLabel,
@@ -29,6 +31,9 @@ import {
   quoteExtension,
   quoteFlowLabel,
   quoteLeadTime,
+  quoteOrderKind,
+  quoteOrderNote,
+  quoteOrderReuseMessage,
   quoteReplyExtension,
   quoteReviewsUnavailable,
   relationForNewFlow,
@@ -300,7 +305,10 @@ function saveInput(patch: Partial<QuoteSaveInput> = {}, linePatch: Partial<Quote
         leadTime: "",
         decision: "",
         decisionNote: "",
+        awardWinner: "",
+        awardQty: "",
         bids: [{ key: "b", id: "", bidderName: "", unitPrice: "", note: "", sku: "", itemName: "", qty: "", leadTime: "" }],
+        alts: [],
         ...linePatch,
       },
     ],
@@ -329,7 +337,10 @@ test("saving a quote drops an empty line and warns when the due date is earlier"
         leadTime: "",
         decision: "",
         decisionNote: "",
+        awardWinner: "",
+        awardQty: "",
         bids: [],
+        alts: [],
       },
     ],
   });
@@ -461,4 +472,131 @@ test("a missing quote table or prospect table is recognized and another missing 
     quoteReviewsUnavailable({ code: "PGRST205", message: "Could not find the table 'public.vendors' in the schema cache" }),
     false,
   );
+  assert.equal(
+    quoteReviewsUnavailable({
+      code: "PGRST205",
+      message: "Could not find the table 'public.quote_event_line_alts' in the schema cache",
+    }),
+    true,
+  );
+  assert.equal(
+    quoteReviewsUnavailable({
+      code: "PGRST204",
+      message: "Could not find the 'quote_event_id' column of 'purchase_orders' in the schema cache",
+    }),
+    true,
+  );
+});
+
+test("the party picker filters by name and stays a short list", () => {
+  const parties = [
+    { id: "1", name: "BrightStar Systems LLC" },
+    { id: "2", name: "Globaltek" },
+    { id: "3", name: "Acme Bright" },
+  ];
+  assert.deepEqual(
+    filterQuoteParties(parties, "bright").map((party) => party.name),
+    ["BrightStar Systems LLC", "Acme Bright"],
+  );
+  assert.equal(filterQuoteParties(parties, "").length, 3);
+  assert.equal(filterQuoteParties(Array.from({ length: 20 }, (_, index) => ({ id: String(index), name: `N${index}` })), "n").length, 12);
+});
+
+test("a response line keeps the primary item and optional alternative SKUs", () => {
+  const saved = parseQuoteSave(
+    saveInput({ dueOn: "" }, {
+      itemId: "11111111-1111-4111-8111-111111111111",
+      sku: "107314",
+      unitPrice: "225",
+      alts: [
+        { key: "alt-empty", id: "", itemId: "", partNumber: "", sku: "", itemName: "", unitPrice: "" },
+        {
+          key: "alt-1",
+          id: "",
+          itemId: "22222222-2222-4222-8222-222222222222",
+          partNumber: "MTA18ASF2G72PDZ-2G6",
+          sku: "107315",
+          itemName: "16G substitute",
+          unitPrice: "70",
+        },
+      ],
+    }),
+  );
+  assert.equal(saved.ok, true);
+  if (!saved.ok) return;
+  assert.equal(saved.value.lines[0]?.itemId, "11111111-1111-4111-8111-111111111111");
+  assert.equal(saved.value.lines[0]?.sku, "107314");
+  assert.equal(saved.value.lines[0]?.alts.length, 1);
+  assert.equal(saved.value.lines[0]?.alts[0]?.sku, "107315");
+  assert.equal(saved.value.lines[0]?.alts[0]?.unitPrice, 70);
+  assert.equal(saved.value.lines[0]?.awardWinner, null);
+});
+
+test("a partial award keeps the won lines and a buy becomes a purchase order", () => {
+  const item = "11111111-1111-4111-8111-111111111111";
+  const built = buildQuoteAward([
+    {
+      id: "line-1",
+      partNumber: "MTA72ASS8G72LZ-2G9",
+      sku: "107314",
+      itemName: "64G",
+      itemId: item,
+      condition: "used",
+      unitPrice: 225,
+      awardWinner: "dds",
+      awardQty: 100,
+      bids: [{ bidderName: "LNT", unitPrice: 230, sku: "ALT-1", itemName: "Other" }],
+    },
+    {
+      id: "line-2",
+      partNumber: "M393A2K43CB2-CTD",
+      sku: "96049",
+      itemName: "16G",
+      itemId: "22222222-2222-4222-8222-222222222222",
+      condition: "New",
+      unitPrice: 83.25,
+      awardWinner: null,
+      awardQty: null,
+      bids: [],
+    },
+  ]);
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  assert.equal(built.coversAll, false);
+  assert.equal(built.lines.length, 1);
+  assert.equal(built.lines[0]?.itemId, item);
+  assert.equal(built.lines[0]?.qty, 100);
+  assert.equal(built.lines[0]?.unitPrice, 225);
+  assert.equal(built.lines[0]?.condition, "Used");
+  assert.equal(quoteOrderKind("buy"), "purchase");
+  assert.equal(quoteOrderKind("sell"), "sales");
+
+  const bidder = buildQuoteAward([
+    {
+      id: "line-1",
+      partNumber: "ABC",
+      sku: "100",
+      itemName: "Primary",
+      itemId: item,
+      condition: "",
+      unitPrice: 10,
+      awardWinner: "LNT",
+      awardQty: 4,
+      bids: [{ bidderName: "LNT", unitPrice: 9.5, sku: "200", itemName: "Substitute" }],
+    },
+  ]);
+  assert.equal(bidder.ok, true);
+  if (!bidder.ok) return;
+  assert.equal(bidder.coversAll, true);
+  assert.equal(bidder.lines[0]?.itemId, null);
+  assert.equal(bidder.lines[0]?.sku, "200");
+  assert.equal(bidder.lines[0]?.unitPrice, 9.5);
+  assert.equal(bidder.lines[0]?.itemName, "Substitute");
+});
+
+test("awarding the same quote again points at the order that already exists", () => {
+  assert.match(quoteOrderReuseMessage({ kind: "purchase", status: "draft", number: "Draft" }), /draft purchase order/);
+  assert.match(quoteOrderReuseMessage({ kind: "purchase", status: "open", number: "PO6304" }), /PO6304/);
+  assert.match(quoteOrderReuseMessage({ kind: "sales", status: "draft", number: "Draft" }), /draft sales order/);
+  assert.match(quoteOrderNote({ reference: "Mainstream", id: "859880a7-9563-488a-aa01-f0e0d2ad2bd8" }), /Mainstream/);
 });
