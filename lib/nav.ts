@@ -373,6 +373,17 @@ export function pageMetaFor(pathname: string): PageMeta {
     };
   }
 
+  if (/^\/pricing\/quotes\/[^/]+\/print$/.test(pathname)) {
+    return {
+      title: "Print quote",
+      crumbs: [
+        { label: "Pricing" },
+        { label: "Quote requests", href: "/pricing/quotes" },
+        { label: "Print quote" },
+      ],
+    };
+  }
+
   if (pathname === "/vendors/new") {
     return {
       title: "New vendor",

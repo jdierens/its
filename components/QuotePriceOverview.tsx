@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import {
   offerUnit,
   quoteBidders,
+  quoteColumnCaption,
   quoteExtText,
   quoteExtTotal,
   quoteMoneyText,
@@ -14,11 +15,13 @@ export function QuotePriceOverview({
   lines,
   offers,
   currency,
+  ddsColumnCode,
   children,
 }: {
   lines: QuoteLineDraft[];
   offers: QuoteOfferColumn[];
   currency: string;
+  ddsColumnCode: string;
   children?: ReactNode;
 }) {
   const visible = lines.filter(
@@ -48,7 +51,7 @@ export function QuotePriceOverview({
   return (
     <div className="card qr-lines qr-overview">
       <h2>Overview</h2>
-      <p className="hint">Every price on the list, side by side. FSP is the forecasted sales price, separate from the DDS bid. The extension sits under the unit. The total row sums those extensions. Related quotes add their own columns.</p>
+      <p className="hint">Every price on the list, side by side. A column code, when set, is the heading, and the name stays under it. FSP is the forecasted sales price, separate from the DDS bid. The extension sits under the unit. The total row sums those extensions. Related quotes add their own columns.</p>
       <div className="qr-scroll">
         <table>
           <thead>
@@ -57,17 +60,16 @@ export function QuotePriceOverview({
               <th>SKU</th>
               <th className="num">Qty</th>
               <th>Condition</th>
-              <th className="num">DDS unit</th>
-              <th className="num">FSP unit</th>
-              {local.map((name) => (
-                <th className="num" key={name}>
-                  {name}
-                </th>
-              ))}
+              <ColumnHeading code={ddsColumnCode} fallback="DDS unit" identity="DDS" />
+              <th className="num" title="Forecasted sales price">
+                FSP unit
+              </th>
+              {local.map((name) => {
+                const code = lines.flatMap((line) => line.bids).find((bid) => bid.bidderName.trim().toLowerCase() === name.toLowerCase())?.columnCode ?? "";
+                return <ColumnHeading key={name} code={code} fallback={name} identity={name} />;
+              })}
               {related.map((column) => (
-                <th className="num" key={column.id}>
-                  {column.label}
-                </th>
+                <ColumnHeading key={column.id} code={column.columnCode ?? ""} fallback={column.label} identity={column.title || column.label} />
               ))}
             </tr>
           </thead>
@@ -119,7 +121,7 @@ export function QuotePriceOverview({
               <td colSpan={4} data-label="">
                 Total
               </td>
-              <td className="num" data-label="DDS">
+              <td className="num" data-label={quoteColumnCaption(ddsColumnCode, "DDS unit", "DDS").label}>
                 {quoteExtTotal(
                   visible.map((line) => quoteOverviewExt(line, line.unitPrice, "dds")),
                   currency,
@@ -131,8 +133,10 @@ export function QuotePriceOverview({
                   currency,
                 ) || "—"}
               </td>
-              {local.map((name) => (
-                <td className="num" data-label={name} key={name}>
+              {local.map((name) => {
+                const code = lines.flatMap((line) => line.bids).find((bid) => bid.bidderName.trim().toLowerCase() === name.toLowerCase())?.columnCode ?? "";
+                return (
+                <td className="num" data-label={quoteColumnCaption(code, name).label} key={name}>
                   {quoteExtTotal(
                     visible.map((line) => {
                       const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
@@ -141,9 +145,10 @@ export function QuotePriceOverview({
                     currency,
                   ) || "—"}
                 </td>
-              ))}
+                );
+              })}
               {related.map((column) => (
-                <td className="num" data-label={column.label} key={column.id}>
+                <td className="num" data-label={quoteColumnCaption(column.columnCode ?? "", column.label, column.title || column.label).label} key={column.id}>
                   {quoteExtTotal(
                     visible.map((line) => quoteOverviewExt(line, offerUnit(column, line.partNumber, line.sku), "bid")),
                     currency,
@@ -156,5 +161,15 @@ export function QuotePriceOverview({
       </div>
       {children}
     </div>
+  );
+}
+
+function ColumnHeading({ code, fallback, identity }: { code: string; fallback: string; identity: string }) {
+  const head = quoteColumnCaption(code, fallback, identity);
+  return (
+    <th className="num" title={head.caption ? head.title : undefined}>
+      {head.label}
+      {head.caption ? <span className="qr-context">{head.caption}</span> : null}
+    </th>
   );
 }

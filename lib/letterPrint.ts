@@ -36,6 +36,13 @@ export const PICK_TICKET_PRINT = {
   rootSelector: "main.pick-page",
 } as const;
 
+/** Quote comparison is wider than a portrait sheet, same paper as the pick ticket. */
+export const QUOTE_DOCUMENT_PRINT = {
+  orientation: "landscape",
+  rootSelector: ".cust-doc-page",
+  fragmentSelector: ".cust-doc",
+} as const;
+
 export function letterMarginDeclaration(orientation: LetterOrientation): string {
   const margin = LETTER_MARGIN_IN[orientation];
   return `${margin.top}in ${margin.right}in ${margin.bottom}in ${margin.left}in`;

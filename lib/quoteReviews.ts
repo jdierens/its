@@ -9,14 +9,19 @@ export const QUOTE_WON_PARTIAL_MIGRATION = "supabase/migrations/20261105060000_q
 
 export const QUOTE_FSP_MIGRATION = "supabase/migrations/20261105155000_quote_line_fsp.sql";
 
+export const QUOTE_COLUMN_MIGRATION = "supabase/migrations/20261105180000_quote_bid_columns.sql";
+
 export const QUOTE_REVIEWS_SETUP =
-  "Quote requests need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, supabase/migrations/20261105040000_quote_line_alts_and_awards.sql, supabase/migrations/20261105060000_quote_won_partial.sql, and supabase/migrations/20261105155000_quote_line_fsp.sql. Deploying does not run them.";
+  "Quote requests need supabase/migrations/20261103180000_quote_events.sql, supabase/migrations/20261104140000_quote_event_flow.sql, supabase/migrations/20261105040000_quote_line_alts_and_awards.sql, supabase/migrations/20261105060000_quote_won_partial.sql, supabase/migrations/20261105155000_quote_line_fsp.sql, and supabase/migrations/20261105180000_quote_bid_columns.sql. Deploying does not run them.";
 
 export const DUE_SOON_DAYS = 7;
 
 export const QUOTE_LINE_LIMIT = 500;
 
 export const QUOTE_BID_LIMIT = 12;
+
+/** Bid-level note. A line decision_note and a line bid note stay separate. */
+export const QUOTE_BID_NOTE_LIMIT = 500;
 
 export const QUOTE_ALT_LIMIT = 8;
 
@@ -107,6 +112,8 @@ export type QuoteBidInput = {
   itemName: string;
   qty: string;
   leadTime: string;
+  columnCode?: string;
+  bidNote?: string;
 };
 
 export type QuoteAltInput = {
@@ -157,6 +164,8 @@ export type QuoteSaveInput = {
   dueOn: string;
   currency: string;
   notes: string;
+  ddsColumnCode: string;
+  ddsBidNote: string;
   lines: QuoteLineInput[];
 };
 
@@ -170,6 +179,15 @@ export type ParsedQuoteBid = {
   itemName: string | null;
   qty: number | null;
   leadTime: string | null;
+  columnCode: string | null;
+  bidNote: string | null;
+};
+
+/** One competing bidder on the quote. The code and note are not stored per line. */
+export type ParsedQuoteBidder = {
+  name: string;
+  columnCode: string | null;
+  bidNote: string | null;
 };
 
 export type ParsedQuoteAlt = {
@@ -220,6 +238,9 @@ export type ParsedQuote = {
   dueOn: string | null;
   currency: string;
   notes: string | null;
+  ddsColumnCode: string | null;
+  ddsBidNote: string | null;
+  bidders: ParsedQuoteBidder[];
   lines: ParsedQuoteLine[];
 };
 
@@ -263,6 +284,8 @@ export type QuoteBidDraft = {
   itemName: string;
   qty: string;
   leadTime: string;
+  columnCode: string;
+  bidNote: string;
 };
 
 export type QuoteAltDraft = {
@@ -326,6 +349,8 @@ export type QuoteReviewDraft = {
   dueOn: string;
   currency: string;
   notes: string;
+  ddsColumnCode: string;
+  ddsBidNote: string;
   lines: QuoteLineDraft[];
 };
 
@@ -401,6 +426,8 @@ export function blankQuoteBid(name = ""): QuoteBidDraft {
     itemName: "",
     qty: "",
     leadTime: "",
+    columnCode: "",
+    bidNote: "",
   };
 }
 
@@ -463,6 +490,8 @@ export function blankQuoteDraft(today: string): QuoteReviewDraft {
     dueOn: "",
     currency: "USD",
     notes: "",
+    ddsColumnCode: "",
+    ddsBidNote: "",
     lines: [line],
   };
 }
@@ -588,6 +617,9 @@ export function quoteFlowHint(side: string, direction: string): string {
 export type QuoteOfferColumn = {
   id: string;
   label: string;
+  /** Party name when the heading is a column code. */
+  title?: string;
+  columnCode?: string;
   prices: { matchKey: string; unitPrice: string }[];
 };
 
@@ -909,6 +941,80 @@ export function quoteLeadTime(value: string): string {
   return trimmed || QUOTE_LEAD_TIME_DEFAULT;
 }
 
+const COLUMN_CODE_VALUE = /^[A-Z0-9]{3}$/;
+
+/** Keep letters and digits, uppercase, at most 3. An unfinished code stays in the field until save. */
+export function quoteColumnCodeInput(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3);
+}
+
+/**
+ * Empty is allowed. A value has to be exactly 3 letters or digits.
+ * Stored uppercase so the column heading matches the database check.
+ */
+export function parseQuoteColumnCode(
+  value: string,
+  label: string,
+): { ok: true; value: string | null } | { ok: false; message: string } {
+  const trimmed = value.trim();
+  if (!trimmed) return { ok: true, value: null };
+  const code = trimmed.toUpperCase();
+  if (!COLUMN_CODE_VALUE.test(code)) {
+    return { ok: false, message: `The ${label} column code is 3 letters or digits.` };
+  }
+  return { ok: true, value: code };
+}
+
+/**
+ * The compact heading is the code when one is set. Otherwise it is the fallback
+ * (DDS unit, or the bidder name). title is who the column is.
+ */
+export function quoteColumnHead(code: string, fallback: string, identity = fallback): { label: string; title: string } {
+  const labelFallback = fallback.trim() || "DDS";
+  const who = identity.trim() || labelFallback;
+  const parsed = code.trim().toUpperCase();
+  if (COLUMN_CODE_VALUE.test(parsed)) return { label: parsed, title: who };
+  return { label: labelFallback, title: who };
+}
+
+/** Short name under a code heading. Empty when the heading is already that name. */
+export function quoteColumnCaption(code: string, fallback: string, identity = fallback): { label: string; title: string; caption: string } {
+  const head = quoteColumnHead(code, fallback, identity);
+  const coded = COLUMN_CODE_VALUE.test(code.trim().toUpperCase());
+  return { ...head, caption: coded && head.label !== head.title ? quoteOfferHeading(head.title) : "" };
+}
+
+export type QuotePrintNote = { code: string; name: string; note: string };
+
+/** Bid notes that have text, in column order. Empty notes are omitted. */
+export function quotePrintNotes(input: {
+  ddsColumnCode: string;
+  ddsBidNote: string;
+  lines: { bids: { bidderName: string; columnCode?: string; bidNote?: string }[] }[];
+}): QuotePrintNote[] {
+  const notes: QuotePrintNote[] = [];
+  const ddsNote = input.ddsBidNote.trim();
+  if (ddsNote) {
+    notes.push({ code: quoteColumnHead(input.ddsColumnCode, "DDS").label, name: "DDS", note: ddsNote });
+  }
+  for (const name of quoteBidders(input.lines)) {
+    const bids = input.lines.flatMap((line) =>
+      line.bids.filter((bid) => bid.bidderName.trim().toLowerCase() === name.toLowerCase()),
+    );
+    const note = bids.map((bid) => (bid.bidNote ?? "").trim()).find((value) => value) ?? "";
+    if (!note) continue;
+    const code = bids.map((bid) => bid.columnCode ?? "").find((value) => value.trim()) ?? "";
+    notes.push({ code: quoteColumnHead(code, name).label, name, note });
+  }
+  return notes;
+}
+
+/** One line under the printed bid table. The code matches the column heading. */
+export function quotePrintNoteLine(note: QuotePrintNote): string {
+  const who = note.code.toLowerCase() === note.name.toLowerCase() ? note.code : `${note.code} · ${note.name}`;
+  return `${who} — ${note.note}`;
+}
+
 /** Bidder names in first-seen order. The strip under the overview uses this order. */
 export function quoteBidders(lines: { bids: { bidderName: string }[] }[]): string[] {
   const names: string[] = [];
@@ -1193,6 +1299,10 @@ export function parseQuoteSave(input: QuoteSaveInput): QuoteParse {
   if (partyError) return { ok: false, message: partyError };
   const currency = (input.currency.trim() || "USD").toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) return { ok: false, message: "Currency is a 3-letter code." };
+  const ddsColumnCode = parseQuoteColumnCode(input.ddsColumnCode ?? "", "DDS");
+  if (!ddsColumnCode.ok) return ddsColumnCode;
+  const ddsBidNote = clip(input.ddsBidNote ?? "", QUOTE_BID_NOTE_LIMIT);
+  if (ddsBidNote.error) return { ok: false, message: "The DDS comment is too long." };
 
   const lines: ParsedQuoteLine[] = [];
   for (const [index, line] of input.lines.entries()) {
@@ -1205,6 +1315,10 @@ export function parseQuoteSave(input: QuoteSaveInput): QuoteParse {
   if (due.value && received.value && due.value < received.value) {
     warnings.push("Due date is before the received date. You can still save.");
   }
+  const profiles = bidderProfilesFromLines(lines);
+  if (!profiles.ok) return profiles;
+  const clash = columnCodesClash(ddsColumnCode.value, profiles.bidders);
+  if (clash) return { ok: false, message: clash };
 
   return {
     ok: true,
@@ -1224,6 +1338,9 @@ export function parseQuoteSave(input: QuoteSaveInput): QuoteParse {
       dueOn: due.value,
       currency,
       notes: notes.value,
+      ddsColumnCode: ddsColumnCode.value,
+      ddsBidNote: ddsBidNote.value,
+      bidders: profiles.bidders,
       lines,
     },
   };
@@ -1280,6 +1397,8 @@ export function parseRelatedQuote(input: QuoteRelatedInput): { ok: true; value: 
     dueOn: input.dueOn,
     currency: "USD",
     notes: "",
+    ddsColumnCode: "",
+    ddsBidNote: "",
     lines: [],
   });
   if (!header.ok) return header;
@@ -1509,6 +1628,12 @@ function parseBid(
   if (name.error) return { ok: false, message: `A bidder name on line ${lineNumber} is too long.` };
   const note = clip(bid.note, 300);
   if (note.error) return { ok: false, message: `A bid note on line ${lineNumber} is too long.` };
+  const columnCode = parseQuoteColumnCode(bid.columnCode ?? "", name.value || "bid");
+  if (!columnCode.ok) return columnCode;
+  const bidNote = clip(bid.bidNote ?? "", QUOTE_BID_NOTE_LIMIT);
+  if (bidNote.error) {
+    return { ok: false, message: name.value ? `The ${name.value} comment is too long.` : "A comment is too long." };
+  }
   const sku = clip(bid.sku, 80);
   if (sku.error) return { ok: false, message: `A bidder SKU on line ${lineNumber} is too long.` };
   const itemName = clip(bid.itemName, 300);
@@ -1526,7 +1651,9 @@ function parseBid(
     !sku.value &&
     !itemName.value &&
     qty.qty == null &&
-    !leadTime.value;
+    !leadTime.value &&
+    !columnCode.value &&
+    !bidNote.value;
   if (empty) return { ok: true, bid: null };
   if (!name.value) return { ok: false, message: `Name the competing bidder on line ${lineNumber}.` };
   const id = optionalUuid(bid.id, `A competing bid on line ${lineNumber} was not found.`);
@@ -1543,8 +1670,48 @@ function parseBid(
       itemName: itemName.value,
       qty: qty.qty,
       leadTime: leadTime.value,
+      columnCode: columnCode.value,
+      bidNote: bidNote.value,
     },
   };
+}
+
+function bidderProfilesFromLines(
+  lines: ParsedQuoteLine[],
+): { ok: true; bidders: ParsedQuoteBidder[] } | { ok: false; message: string } {
+  const bidders: ParsedQuoteBidder[] = [];
+  const byName = new Map<string, ParsedQuoteBidder>();
+  for (const line of lines) {
+    for (const bid of line.bids) {
+      const key = bid.bidderName.toLowerCase();
+      const existing = byName.get(key);
+      if (!existing) {
+        const profile = { name: bid.bidderName, columnCode: bid.columnCode, bidNote: bid.bidNote };
+        byName.set(key, profile);
+        bidders.push(profile);
+        continue;
+      }
+      if (existing.columnCode !== bid.columnCode) {
+        return { ok: false, message: `${existing.name} has two different column codes.` };
+      }
+      if (existing.bidNote !== bid.bidNote) {
+        return { ok: false, message: `${existing.name} has two different comments.` };
+      }
+    }
+  }
+  return { ok: true, bidders };
+}
+
+function columnCodesClash(ddsCode: string | null, bidders: ParsedQuoteBidder[]): string | null {
+  const used = new Map<string, string>();
+  if (ddsCode) used.set(ddsCode, "DDS");
+  for (const bidder of bidders) {
+    if (!bidder.columnCode) continue;
+    const owner = used.get(bidder.columnCode);
+    if (owner) return `Column code ${bidder.columnCode} is already used by ${owner}.`;
+    used.set(bidder.columnCode, bidder.name);
+  }
+  return null;
 }
 
 function clip(value: string, max: number): { value: string | null; error: boolean } {

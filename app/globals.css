@@ -10770,6 +10770,8 @@ button.so-new-order svg,
 
   html.letter-portrait .cust-doc-page,
   html.letter-portrait-paged .cust-doc-page,
+  html.letter-landscape .cust-doc-page,
+  html.letter-landscape-paged .cust-doc-page,
   html.letter-landscape .pick-page,
   html.letter-landscape-paged .pick-page {
     max-width: none !important;
@@ -11078,6 +11080,62 @@ select.qr-fit {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+.qr-back {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+}
+
+.qr-bid-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(12rem, 1fr);
+  gap: 0.45rem 0.75rem;
+  align-items: start;
+}
+
+.qr-bid-meta label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.qr-bid-comment textarea {
+  width: 100%;
+  min-height: 2.5rem;
+}
+
+.quote-doc-page .cust-doc-tools {
+  max-width: 11in;
+}
+
+.cust-doc.quote-doc {
+  width: 11in;
+}
+
+.quote-doc-who {
+  margin-top: 8px;
+}
+
+.quote-doc-ext {
+  display: block;
+  font-size: 9px;
+}
+
+.quote-doc-notes {
+  margin-top: 12px;
+}
+
+.quote-doc-notes h2 {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.quote-doc-notes p {
+  margin: 0 0 3px;
+  white-space: pre-wrap;
+}
+
 .qr-bidder-strip {
   display: grid;
   gap: 0.55rem;
@@ -11322,7 +11380,8 @@ select.qr-fit {
 
 @media (max-width: 800px) {
   .qr-filters,
-  .qr-head {
+  .qr-head,
+  .qr-bid-meta {
     display: grid;
     grid-template-columns: 1fr;
   }
