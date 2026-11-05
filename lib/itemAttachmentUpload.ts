@@ -36,14 +36,16 @@ async function putSignedUpload(signedUrl: string, file: Blob): Promise<void> {
 /** Uploads each PDF straight to Storage, then records the row. Bytes stay off the server action. */
 export async function uploadItemAttachments(itemId: string, kind: string, files: File[]): Promise<void> {
   for (const file of files) {
-    const ticket = await withDeadline(
+    const reserved = await withDeadline(
       reserveItemAttachmentUpload(itemId, { name: file.name, type: file.type, size: file.size, kind }),
       SAVE_MS,
       SAVE_TIMEOUT,
     );
+    if (!reserved.ok) throw new Error(reserved.message);
+    const ticket = reserved.ticket;
     try {
       await putSignedUpload(ticket.signedUrl, file);
-      await withDeadline(
+      const saved = await withDeadline(
         commitItemAttachmentUpload({
           itemId,
           id: ticket.id,
@@ -55,6 +57,7 @@ export async function uploadItemAttachments(itemId: string, kind: string, files:
         SAVE_MS,
         SAVE_TIMEOUT,
       );
+      if (!saved.ok) throw new Error(saved.message);
     } catch (error) {
       await discardItemAttachmentUpload(ticket.path).catch(() => undefined);
       throw error;

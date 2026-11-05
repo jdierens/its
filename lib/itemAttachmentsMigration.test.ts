@@ -17,3 +17,11 @@ test("item documents are a private service-role bucket", () => {
   assert.equal(sql.includes("to anon"), false);
   assert.equal(sql.includes("to authenticated"), false);
 });
+
+test("item documents accept a 25 MB PDF", () => {
+  const sql = readFileSync(new URL("../supabase/migrations/20261105044500_item_pdf_limit.sql", import.meta.url), "utf8");
+  assert.match(sql, /item-documents/);
+  assert.match(sql, /item_attachments_size_check/);
+  assert.match(sql, /byte_size <= 26214400/);
+  assert.match(sql, /file_size_limit = 26214400/);
+});

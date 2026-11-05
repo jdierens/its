@@ -22,12 +22,12 @@ export function itemAttachmentKindLabel(value: string): string {
 }
 
 export const ITEM_DOCUMENT_BUCKET = "item-documents";
-export const ITEM_PDF_LIMIT = 10 * 1024 * 1024;
+export const ITEM_PDF_LIMIT = 25 * 1024 * 1024;
 export const ITEM_ATTACHMENT_LIMIT = 20;
 
 export function itemPdfFileError(file: { name: string; type: string; size: number }): string | null {
   if (!Number.isFinite(file.size) || file.size <= 0) return "Choose a PDF.";
-  if (file.size > ITEM_PDF_LIMIT) return "A PDF must be 10 MB or smaller.";
+  if (file.size > ITEM_PDF_LIMIT) return "A PDF must be 25 MB or smaller.";
   const pdfName = file.name.toLowerCase().endsWith(".pdf");
   const pdfType = file.type === "application/pdf" || file.type === "";
   if (!pdfName || !pdfType) return "Attachments are PDF files.";
