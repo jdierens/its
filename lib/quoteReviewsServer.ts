@@ -290,7 +290,7 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
   const event = await supabase
     .from("quote_events")
     .select(
-      "id, received_on, due_on, vendor_id, customer_id, prospect_id, counterparty_name, channel, direction, side, originator_kind, status, reference, notes, currency, updated_at",
+      "id, received_on, due_on, vendor_id, customer_id, prospect_id, counterparty_name, channel, direction, side, originator_kind, status, reference, notes, currency, dds_column_code, dds_bid_note, updated_at",
     )
     .eq("id", id)
     .maybeSingle();
@@ -311,9 +311,21 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
     throw new Error(errorText(lines.error));
   }
   const lineRows = ((lines.data ?? []) as Row[]).slice().sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order));
+  const bidderRows = await supabase
+    .from("quote_event_bidders")
+    .select("bidder_name, column_code, bid_note, sort_order")
+    .eq("quote_event_id", id)
+    .order("sort_order");
+  if (bidderRows.error) {
+    if (quoteReviewsUnavailable(bidderRows.error)) return { status: "unavailable" };
+    throw new Error(errorText(bidderRows.error));
+  }
   const context = await itemContext(lineRows.map((row) => text(row.item_id)).filter(Boolean));
   const header = event.data as Row;
   const relations = await relationsFor(id);
+  const profiles = new Map(
+    ((bidderRows.data ?? []) as Row[]).map((row) => [text(row.bidder_name).trim().toLowerCase(), row]),
+  );
   return {
     status: "ok",
     draft: {
@@ -332,7 +344,9 @@ export async function loadQuoteReview(id: string): Promise<QuoteDetailResult> {
       dueOn: text(header.due_on),
       currency: text(header.currency) || "USD",
       notes: text(header.notes),
-      lines: lineRows.map((row) => lineDraft(row, context)),
+      ddsColumnCode: text(header.dds_column_code),
+      ddsBidNote: text(header.dds_bid_note),
+      lines: lineRows.map((row) => lineDraft(row, context, profiles)),
     },
     relations,
     offers: await relatedOfferColumns(relations),
@@ -344,11 +358,24 @@ async function relatedOfferColumns(relations: QuoteRelationView[]): Promise<Quot
   if (relations.length === 0) return [];
   const ids = relations.map((relation) => relation.otherId).filter((id) => UUID.test(id));
   if (ids.length === 0) return [];
-  const listed = await (await getSupabase())
+  const supabase = await getSupabase();
+  const listed = await supabase
     .from("quote_event_lines")
     .select("quote_event_id, sort_order, part_number, sku, our_unit_price, quote_event_bids(sort_order, bidder_name, unit_price)")
     .in("quote_event_id", ids);
   if (listed.error) throw dbError(listed.error);
+  const eventCodes = await supabase.from("quote_events").select("id, dds_column_code").in("id", ids);
+  if (eventCodes.error) throw dbError(eventCodes.error);
+  const bidderCodes = await supabase.from("quote_event_bidders").select("quote_event_id, bidder_name, column_code").in("quote_event_id", ids);
+  if (bidderCodes.error) throw dbError(bidderCodes.error);
+  const ddsCodeByEvent = new Map(((eventCodes.data ?? []) as Row[]).map((row) => [text(row.id), text(row.dds_column_code)]));
+  const bidderCodeByEvent = new Map<string, Map<string, string>>();
+  for (const row of (bidderCodes.data ?? []) as Row[]) {
+    const eventId = text(row.quote_event_id);
+    const names = bidderCodeByEvent.get(eventId) ?? new Map<string, string>();
+    names.set(text(row.bidder_name).trim().toLowerCase(), text(row.column_code));
+    bidderCodeByEvent.set(eventId, names);
+  }
   const byEvent = new Map<string, Row[]>();
   for (const row of (listed.data ?? []) as Row[]) {
     const eventId = text(row.quote_event_id);
@@ -366,7 +393,13 @@ async function relatedOfferColumns(relations: QuoteRelationView[]): Promise<Quot
       return [{ matchKey, unitPrice: unit }];
     });
     if (ddsPrices.length > 0) {
-      columns.push({ id: `dds:${relation.otherId}`, label: quoteOfferHeading(relation.otherLabel), prices: ddsPrices });
+      columns.push({
+        id: `dds:${relation.otherId}`,
+        label: quoteOfferHeading(relation.otherLabel),
+        title: relation.otherLabel,
+        columnCode: ddsCodeByEvent.get(relation.otherId) ?? "",
+        prices: ddsPrices,
+      });
     }
     const bidderNames: string[] = [];
     const seen = new Set<string>();
@@ -388,7 +421,13 @@ async function relatedOfferColumns(relations: QuoteRelationView[]): Promise<Quot
         return [{ matchKey, unitPrice: unit }];
       });
       if (prices.length === 0) continue;
-      columns.push({ id: `bid:${relation.otherId}:${name.toLowerCase()}`, label: name, prices });
+      columns.push({
+        id: `bid:${relation.otherId}:${name.toLowerCase()}`,
+        label: name,
+        title: name,
+        columnCode: bidderCodeByEvent.get(relation.otherId)?.get(name.toLowerCase()) ?? "",
+        prices,
+      });
     }
   }
   return columns;
@@ -444,6 +483,8 @@ export async function saveQuoteReview(id: string | null, input: QuoteSaveInput):
     due_on: parsed.value.dueOn,
     currency: parsed.value.currency,
     notes: parsed.value.notes,
+    dds_column_code: parsed.value.ddsColumnCode,
+    dds_bid_note: parsed.value.ddsBidNote,
   };
   let eventId = id;
   if (!eventId) {
@@ -457,6 +498,7 @@ export async function saveQuoteReview(id: string | null, input: QuoteSaveInput):
   }
   try {
     const lines = await saveLines(eventId, parsed.value.lines);
+    await saveBidders(eventId, parsed.value.bidders);
     return { ok: true, id: eventId, warnings: parsed.warnings, lines };
   } catch (error) {
     if (!id) await supabase.from("quote_events").delete().eq("id", eventId);
@@ -1006,6 +1048,39 @@ async function saveBids(lineId: string, line: ParsedQuoteLine): Promise<{ key: s
   return saved;
 }
 
+async function saveBidders(eventId: string, bidders: { name: string; columnCode: string | null; bidNote: string | null }[]): Promise<void> {
+  const supabase = await getSupabase();
+  const existing = await supabase.from("quote_event_bidders").select("id, bidder_name").eq("quote_event_id", eventId);
+  if (existing.error) throw dbError(existing.error);
+  const rows = (existing.data ?? []) as Row[];
+  const byName = new Map(rows.map((row) => [text(row.bidder_name).trim().toLowerCase(), text(row.id)]));
+  const kept = new Set<string>();
+  for (const [index, bidder] of bidders.entries()) {
+    const payload = {
+      quote_event_id: eventId,
+      bidder_name: bidder.name,
+      column_code: bidder.columnCode,
+      bid_note: bidder.bidNote,
+      sort_order: index,
+    };
+    const id = byName.get(bidder.name.toLowerCase());
+    if (id) {
+      const updated = await supabase.from("quote_event_bidders").update(payload).eq("id", id).eq("quote_event_id", eventId).select("id").single();
+      if (updated.error || !updated.data) throw dbError(updated.error);
+      kept.add(id);
+    } else {
+      const inserted = await supabase.from("quote_event_bidders").insert(payload).select("id").single();
+      if (inserted.error || !inserted.data) throw dbError(inserted.error);
+      kept.add(String(inserted.data.id));
+    }
+  }
+  const remove = rows.map((row) => text(row.id)).filter((id) => id && !kept.has(id));
+  if (remove.length > 0) {
+    const deleted = await supabase.from("quote_event_bidders").delete().eq("quote_event_id", eventId).in("id", remove);
+    if (deleted.error) throw dbError(deleted.error);
+  }
+}
+
 async function lineSummaries(ids: string[]): Promise<Map<string, ReturnType<typeof summarizeQuoteLines>>> {
   const map = new Map<string, ReturnType<typeof summarizeQuoteLines>>();
   if (ids.length === 0) return map;
@@ -1156,23 +1231,33 @@ async function itemContext(ids: string[]): Promise<Map<string, { onHand: number 
   return map;
 }
 
-function lineDraft(row: Row, context: Map<string, { onHand: number | null; lastBuy: string; lastSell: string }>): QuoteLineDraft {
+function lineDraft(
+  row: Row,
+  context: Map<string, { onHand: number | null; lastBuy: string; lastSell: string }>,
+  profiles: Map<string, Row> = new Map(),
+): QuoteLineDraft {
   const itemId = text(row.item_id);
   const side = itemId ? context.get(itemId) : undefined;
   const bids = rowsOf(row.quote_event_bids)
     .slice()
     .sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order))
-    .map((bid) => ({
-      key: text(bid.id),
-      id: text(bid.id),
-      bidderName: text(bid.bidder_name),
-      unitPrice: moneyInput(asMoney(bid.unit_price)),
-      note: text(bid.note),
-      sku: text(bid.sku),
-      itemName: text(bid.item_name),
-      qty: quoteQtyText(bid.qty),
-      leadTime: text(bid.lead_time),
-    }));
+    .map((bid) => {
+      const bidderName = text(bid.bidder_name);
+      const profile = profiles.get(bidderName.trim().toLowerCase());
+      return {
+        key: text(bid.id),
+        id: text(bid.id),
+        bidderName,
+        unitPrice: moneyInput(asMoney(bid.unit_price)),
+        note: text(bid.note),
+        sku: text(bid.sku),
+        itemName: text(bid.item_name),
+        qty: quoteQtyText(bid.qty),
+        leadTime: text(bid.lead_time),
+        columnCode: text(profile?.column_code),
+        bidNote: text(profile?.bid_note),
+      };
+    });
   const alts = rowsOf(row.quote_event_line_alts)
     .slice()
     .sort((a, b) => numberOf(a.sort_order) - numberOf(b.sort_order))

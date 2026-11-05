@@ -39,6 +39,8 @@ import {
   quoteEditSnapshot,
   quoteBidderList,
   quoteBidders,
+  quoteColumnCaption,
+  quoteColumnCodeInput,
   quoteDirectionLabel,
   quoteFlowHint,
   quoteLeadTime,
@@ -78,6 +80,8 @@ function quotePayloadFrom(header: QuoteReviewDraft, lines: EditorLine[]) {
     dueOn: header.dueOn,
     currency: header.currency,
     notes: header.notes,
+    ddsColumnCode: header.ddsColumnCode,
+    ddsBidNote: header.ddsBidNote,
     lines: lines.map((line) => ({
       key: line.key,
       id: line.id,
@@ -107,6 +111,8 @@ function quotePayloadFrom(header: QuoteReviewDraft, lines: EditorLine[]) {
         itemName: bid.itemName,
         qty: bid.qty,
         leadTime: bid.leadTime,
+        columnCode: bid.columnCode,
+        bidNote: bid.bidNote,
       })),
       alts: line.alts.map((alt) => ({
         key: alt.key,
@@ -269,6 +275,7 @@ export function QuoteReviewForm({
       ? "Due date is before the received date. You can still save."
       : "";
   const bidders = quoteBidders(lines);
+  const ddsHead = quoteColumnCaption(header.ddsColumnCode, "DDS unit", "DDS");
   const bidderEntries = quoteBidderList(lines, relations);
   const activeBidder = selectedBidder && bidders.some((name) => name.toLowerCase() === selectedBidder.toLowerCase()) ? selectedBidder : null;
 
@@ -323,13 +330,28 @@ export function QuoteReviewForm({
   }
 
   function patchBidder(lineKey: string, name: string, patch: Partial<QuoteLineDraft["bids"][number]>) {
-    setLines((current) =>
-      current.map((line) => {
+    setLines((current) => {
+      const profile = bidderProfile(current, name);
+      return current.map((line) => {
         if (line.key !== lineKey) return line;
         const index = line.bids.findIndex((bid) => bid.bidderName.trim().toLowerCase() === name.toLowerCase());
-        if (index < 0) return { ...line, bids: [...line.bids, { ...blankQuoteBid(name), key: crypto.randomUUID(), ...patch }] };
+        if (index < 0) {
+          return {
+            ...line,
+            bids: [...line.bids, { ...blankQuoteBid(name), key: crypto.randomUUID(), columnCode: profile.columnCode, bidNote: profile.bidNote, ...patch }],
+          };
+        }
         return { ...line, bids: line.bids.map((bid, bidIndex) => (bidIndex === index ? { ...bid, ...patch } : bid)) };
-      }),
+      });
+    });
+  }
+
+  function patchBidderProfile(name: string, patch: { columnCode?: string; bidNote?: string }) {
+    setLines((current) =>
+      current.map((line) => ({
+        ...line,
+        bids: line.bids.map((bid) => (bid.bidderName.trim().toLowerCase() === name.toLowerCase() ? { ...bid, ...patch } : bid)),
+      })),
     );
   }
 
@@ -507,8 +529,9 @@ export function QuoteReviewForm({
             </div>
           </div>
         ) : null}
-        <p>
+        <p className="qr-back">
           <Link href={QUOTE_REVIEWS_PATH}>Back to quote requests</Link>
+          {header.id ? <Link href={`${QUOTE_REVIEWS_PATH}/${header.id}/print`}>Print quote</Link> : null}
         </p>
         {problem ? (
           <p className="banner error" role="alert">
@@ -639,18 +662,23 @@ export function QuoteReviewForm({
             </p>
           ) : null}
         </div>
-        <QuotePriceOverview lines={lines} offers={offers} currency={header.currency || "USD"}>
+        <QuotePriceOverview lines={lines} offers={offers} currency={header.currency || "USD"} ddsColumnCode={header.ddsColumnCode}>
           <BidderStrip
             canEdit={canEdit}
             entries={bidderEntries}
             bidderName={bidderName}
             activeBidder={activeBidder}
             lines={lines}
+            ddsColumnCode={header.ddsColumnCode}
+            ddsBidNote={header.ddsBidNote}
             onBidderName={setBidderName}
             onSelect={setSelectedBidder}
             onAdd={addBidder}
             onRemove={removeBidder}
             onPatch={patchBidder}
+            onDdsColumnCode={(ddsColumnCode) => setHeader((current) => ({ ...current, ddsColumnCode }))}
+            onDdsBidNote={(ddsBidNote) => setHeader((current) => ({ ...current, ddsBidNote }))}
+            onBidderProfile={patchBidderProfile}
           />
         </QuotePriceOverview>
         <div className="card qr-lines qr-detail">
@@ -688,7 +716,10 @@ export function QuoteReviewForm({
                   <th>Primary SKU</th>
                   <th>Name</th>
                   <th className="num">Qty</th>
-                  <th className="num">DDS unit</th>
+                  <th className="num" title={ddsHead.caption ? ddsHead.title : undefined}>
+                    {ddsHead.label}
+                    {ddsHead.caption ? <span className="qr-context">{ddsHead.caption}</span> : null}
+                  </th>
                   <th className="num">FSP unit</th>
                   <th>Lead time</th>
                   <th>Notes</th>
@@ -871,32 +902,77 @@ function QuoteOrderLink({ link }: { link: QuoteOrderLink }) {
   );
 }
 
+function bidderProfile(lines: EditorLine[], name: string): { columnCode: string; bidNote: string } {
+  for (const line of lines) {
+    const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
+    if (bid) return { columnCode: bid.columnCode, bidNote: bid.bidNote };
+  }
+  return { columnCode: "", bidNote: "" };
+}
+
 function BidderStrip({
   canEdit,
   entries,
   bidderName,
   activeBidder,
   lines,
+  ddsColumnCode,
+  ddsBidNote,
   onBidderName,
   onSelect,
   onAdd,
   onRemove,
   onPatch,
+  onDdsColumnCode,
+  onDdsBidNote,
+  onBidderProfile,
 }: {
   canEdit: boolean;
   entries: QuoteBidderListEntry[];
   bidderName: string;
   activeBidder: string | null;
   lines: EditorLine[];
+  ddsColumnCode: string;
+  ddsBidNote: string;
   onBidderName: (name: string) => void;
   onSelect: (name: string) => void;
   onAdd: () => void;
   onRemove: (name: string) => void;
   onPatch: (lineKey: string, name: string, patch: Partial<QuoteLineDraft["bids"][number]>) => void;
+  onDdsColumnCode: (value: string) => void;
+  onDdsBidNote: (value: string) => void;
+  onBidderProfile: (name: string, patch: { columnCode?: string; bidNote?: string }) => void;
 }) {
+  const activeProfile = activeBidder ? bidderProfile(lines, activeBidder) : null;
+  const activeHead = activeBidder ? quoteColumnCaption(activeProfile?.columnCode ?? "", activeBidder) : null;
   return (
     <div className="qr-bidder-strip">
       <h3>Bidders</h3>
+      <div className="qr-bid-meta">
+        <label>
+          DDS code
+          <QuoteFitInput
+            floor={3}
+            cap={3}
+            maxLength={3}
+            aria-label="DDS column code"
+            value={ddsColumnCode}
+            disabled={!canEdit}
+            onChange={(event) => onDdsColumnCode(quoteColumnCodeInput(event.target.value))}
+          />
+        </label>
+        <label className="qr-bid-comment">
+          DDS comment
+          <textarea
+            rows={2}
+            aria-label="DDS bid comment"
+            value={ddsBidNote}
+            disabled={!canEdit}
+            placeholder="Printed under the bid table."
+            onChange={(event) => onDdsBidNote(event.target.value)}
+          />
+        </label>
+      </div>
       {entries.length === 0 ? <p className="muted">No other responses yet.</p> : null}
       <div className="qr-bidders" role="list">
         {entries.map((entry, index) =>
@@ -906,9 +982,10 @@ function BidderStrip({
               type="button"
               className="button secondary qr-bidder"
               aria-pressed={activeBidder?.toLowerCase() === entry.name.toLowerCase()}
+              title={entry.name}
               onClick={() => onSelect(entry.name)}
             >
-              {index + 1}. {entry.name}
+              {bidderButtonLabel(index + 1, entry.name, bidderProfile(lines, entry.name).columnCode)}
             </button>
           ) : (
             <Link key={`related:${entry.id}`} href={`${QUOTE_REVIEWS_PATH}/${entry.otherId}`} className="button secondary qr-bidder">
@@ -936,7 +1013,32 @@ function BidderStrip({
               </button>
             ) : null}
           </div>
-          <p className="hint">This party’s reply. DDS unit and DDS ext stay on the DDS column. An empty lead time means in stock.</p>
+          <div className="qr-bid-meta">
+            <label>
+              Column code
+              <QuoteFitInput
+                floor={3}
+                cap={3}
+                maxLength={3}
+                aria-label={`${activeBidder} column code`}
+                value={activeProfile?.columnCode ?? ""}
+                disabled={!canEdit}
+                onChange={(event) => onBidderProfile(activeBidder, { columnCode: quoteColumnCodeInput(event.target.value) })}
+              />
+            </label>
+            <label className="qr-bid-comment">
+              Bid comment
+              <textarea
+                rows={2}
+                aria-label={`${activeBidder} bid comment`}
+                value={activeProfile?.bidNote ?? ""}
+                disabled={!canEdit}
+                placeholder="Printed under the bid table."
+                onChange={(event) => onBidderProfile(activeBidder, { bidNote: event.target.value })}
+              />
+            </label>
+          </div>
+          <p className="hint">This party’s reply. DDS unit and DDS ext stay on the DDS column. An empty lead time means in stock. The comment is for the whole bid.</p>
           <div className="qr-scroll">
             <table>
               <thead>
@@ -946,7 +1048,9 @@ function BidderStrip({
                   <th>SKU</th>
                   <th>Name</th>
                   <th className="num">Qty</th>
-                  <th className="num">Unit</th>
+                  <th className="num" title={activeHead?.caption ? activeBidder ?? undefined : undefined}>
+                    {activeHead?.caption ? activeHead.label : "Unit"}
+                  </th>
                   <th>Lead time</th>
                   <th>Notes</th>
                 </tr>
@@ -1036,6 +1140,11 @@ function BidderStrip({
       ) : null}
     </div>
   );
+}
+
+function bidderButtonLabel(index: number, name: string, code: string): string {
+  const head = quoteColumnCaption(code, name);
+  return head.caption ? `${index}. ${head.label} · ${name}` : `${index}. ${name}`;
 }
 
 function lineHasRequest(line: QuoteLineDraft): boolean {

@@ -28,6 +28,11 @@ import {
   parseRelatedQuote,
   quoteBidderList,
   quoteBidders,
+  quoteColumnCaption,
+  quoteColumnCodeInput,
+  quoteColumnHead,
+  quotePrintNoteLine,
+  quotePrintNotes,
   quoteExtension,
   quoteFlowLabel,
   quoteLeadTime,
@@ -70,6 +75,7 @@ test("quote requests sit under Pricing and keep their own pages", () => {
     ["Pricing", "Quote requests", "New quote request"],
   );
   assert.equal(pageMetaFor("/pricing/quotes/abc").title, "Quote request");
+  assert.equal(pageMetaFor("/pricing/quotes/abc/print").title, "Print quote");
 });
 
 test("canonical quote types name the side, the direction, and who is picked", () => {
@@ -295,6 +301,8 @@ function saveInput(patch: Partial<QuoteSaveInput> = {}, linePatch: Partial<Quote
     dueOn: "2026-11-01",
     currency: "usd",
     notes: "",
+    ddsColumnCode: "",
+    ddsBidNote: "",
     lines: [
       {
         key: "a",
@@ -708,6 +716,69 @@ test("FSP stays separate from the DDS unit and uses the same extension", () => {
   assert.equal(onlyFsp.value.lines.length, 1);
   assert.equal(onlyFsp.value.lines[0]?.fspUnit, 215);
   assert.equal(onlyFsp.value.lines[0]?.unitPrice, null);
+});
+
+test("a column code is 3 letters or digits and the print lists comments that have text", () => {
+  assert.equal(quoteColumnCodeInput("h p-e1"), "HPE");
+  assert.equal(quoteColumnCodeInput("abcd"), "ABC");
+  assert.deepEqual(quoteColumnHead("hpe", "DDS unit", "DDS"), { label: "HPE", title: "DDS" });
+  assert.deepEqual(quoteColumnHead("", "DDS unit", "DDS"), { label: "DDS unit", title: "DDS" });
+  assert.equal(quoteColumnCaption("HPE", "Acme").caption, "Acme");
+  assert.equal(quoteColumnCaption("", "Acme").caption, "");
+
+  function bid(name: string, patch: Partial<QuoteLineInput["bids"][number]> = {}): QuoteLineInput["bids"][number] {
+    return { key: name, id: "", bidderName: name, unitPrice: "10", note: "", sku: "", itemName: "", qty: "", leadTime: "", ...patch };
+  }
+
+  const saved = parseQuoteSave(
+    saveInput({ dueOn: "", ddsColumnCode: "hpe", ddsBidNote: "DDS proposed HPE bid per Jan 2026-11-05." }, {
+      bids: [bid("Acme", { columnCode: "acm", bidNote: "Their bid." }), bid("Quiet", { columnCode: "qet", bidNote: "  " })],
+    }),
+  );
+  assert.equal(saved.ok, true);
+  if (!saved.ok) return;
+  assert.equal(saved.value.ddsColumnCode, "HPE");
+  assert.equal(saved.value.ddsBidNote, "DDS proposed HPE bid per Jan 2026-11-05.");
+  assert.deepEqual(
+    saved.value.bidders.map((bidder) => [bidder.name, bidder.columnCode, bidder.bidNote]),
+    [
+      ["Acme", "ACM", "Their bid."],
+      ["Quiet", "QET", null],
+    ],
+  );
+  assert.equal(saved.value.lines[0]?.fspUnit, null);
+  const notes = quotePrintNotes({
+    ddsColumnCode: saved.value.ddsColumnCode ?? "",
+    ddsBidNote: saved.value.ddsBidNote ?? "",
+    lines: saved.value.lines,
+  });
+  assert.deepEqual(notes.map(quotePrintNoteLine), [
+    "HPE · DDS — DDS proposed HPE bid per Jan 2026-11-05.",
+    "ACM · Acme — Their bid.",
+  ]);
+
+  const short = parseQuoteSave(saveInput({ dueOn: "", ddsColumnCode: "HP" }));
+  assert.equal(short.ok, false);
+  if (!short.ok) assert.match(short.message, /3 letters or digits/);
+
+  const clash = parseQuoteSave(saveInput({ dueOn: "", ddsColumnCode: "ACM" }, { bids: [bid("Acme", { columnCode: "acm" })] }));
+  assert.equal(clash.ok, false);
+  if (!clash.ok) assert.match(clash.message, /already used by DDS/);
+
+  const pair = parseQuoteSave(saveInput({ dueOn: "" }, { bids: [bid("Acme", { columnCode: "ABC" }), bid("Other", { columnCode: "abc" })] }));
+  assert.equal(pair.ok, false);
+  if (!pair.ok) assert.match(pair.message, /already used by Acme/);
+
+  const base = saveInput({ dueOn: "" }).lines[0];
+  const split = parseQuoteSave({
+    ...saveInput({ dueOn: "" }),
+    lines: [
+      { ...base, bids: [bid("Acme", { columnCode: "ACM", bidNote: "one" })] },
+      { ...base, key: "second", partNumber: "ZZ-2", bids: [bid("Acme", { columnCode: "ACM", bidNote: "two" })] },
+    ],
+  });
+  assert.equal(split.ok, false);
+  if (!split.ok) assert.match(split.message, /two different comments/);
 });
 
 test("awarding the same quote again points at the order that already exists", () => {
