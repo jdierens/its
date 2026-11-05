@@ -60,7 +60,7 @@ import {
 type EditorAlt = QuoteAltDraft & { hits: QuoteItemHit[]; findNote: string };
 type EditorLine = Omit<QuoteLineDraft, "alts"> & { alts: EditorAlt[]; hits: QuoteItemHit[]; findNote: string };
 
-const LINE_COLUMNS = 14;
+const LINE_COLUMNS = 15;
 
 function quotePayloadFrom(header: QuoteReviewDraft, lines: EditorLine[]) {
   return {
@@ -91,6 +91,7 @@ function quotePayloadFrom(header: QuoteReviewDraft, lines: EditorLine[]) {
       specialRequirements: line.specialRequirements,
       replyQty: line.replyQty,
       unitPrice: line.unitPrice,
+      fspUnit: line.fspUnit,
       leadTime: line.leadTime,
       decision: line.decision,
       decisionNote: line.decisionNote,
@@ -662,7 +663,7 @@ export function QuoteReviewForm({
             ) : null}
           </div>
           <p className="hint">
-            Request on the left. The primary SKU is the DDS response. Alternatives are other SKUs for that same request. An empty lead time means in stock.
+            Request on the left. The primary SKU is the DDS response. FSP unit is the forecasted sales price, separate from DDS unit. Alternatives are other SKUs for that same request. An empty lead time means in stock.
           </p>
           <div className="qr-scroll">
             <table>
@@ -672,7 +673,7 @@ export function QuoteReviewForm({
                   <th className="qr-request" colSpan={5}>
                     Request
                   </th>
-                  <th className="qr-dds" colSpan={7}>
+                  <th className="qr-dds" colSpan={8}>
                     DDS response
                   </th>
                   <th />
@@ -688,6 +689,7 @@ export function QuoteReviewForm({
                   <th>Name</th>
                   <th className="num">Qty</th>
                   <th className="num">DDS unit</th>
+                  <th className="num">FSP unit</th>
                   <th>Lead time</th>
                   <th>Notes</th>
                   <th>Decision</th>
@@ -1071,6 +1073,7 @@ function LineRows({
 }) {
   const number = index + 1;
   const ddsExt = quoteReplyExtension(line.qty, line.replyQty, line.unitPrice);
+  const fspExt = quoteReplyExtension(line.qty, line.replyQty, line.fspUnit);
   const [findingAlt, setFindingAlt] = useState<string | null>(null);
 
   function patchAlt(key: string, patch: Partial<EditorAlt>) {
@@ -1152,6 +1155,15 @@ function LineRows({
             </span>
           ) : null}
           {best != null ? <span className="qr-context">Best {formatMoney(best)}</span> : null}
+        </td>
+        <td className="num" data-label="FSP unit">
+          <QuoteFitInput floor={5} cap={12} className="num" inputMode="decimal" aria-label={`FSP unit for line ${number}`} value={line.fspUnit} disabled={!canEdit} onChange={(event) => onPatch({ fspUnit: event.target.value })} />
+          {fspExt ? (
+            <span className="qr-context">
+              <span className="sr-only">FSP ext </span>
+              {fspExt}
+            </span>
+          ) : null}
         </td>
         <td data-label="Lead time">
           <QuoteFitInput floor={8} cap={18} aria-label={`Lead time for line ${number}`} placeholder={quoteLeadTime("")} value={line.leadTime} disabled={!canEdit} onChange={(event) => onPatch({ leadTime: event.target.value })} />

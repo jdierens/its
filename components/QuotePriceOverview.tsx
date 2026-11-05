@@ -22,7 +22,14 @@ export function QuotePriceOverview({
   children?: ReactNode;
 }) {
   const visible = lines.filter(
-    (line) => line.partNumber.trim() || line.sku.trim() || line.qty.trim() || line.condition.trim() || line.unitPrice.trim() || line.bids.some((bid) => bid.unitPrice.trim() || bid.bidderName.trim()),
+    (line) =>
+      line.partNumber.trim() ||
+      line.sku.trim() ||
+      line.qty.trim() ||
+      line.condition.trim() ||
+      line.unitPrice.trim() ||
+      line.fspUnit.trim() ||
+      line.bids.some((bid) => bid.unitPrice.trim() || bid.bidderName.trim()),
   );
   if (visible.length === 0) {
     if (!children) return null;
@@ -41,7 +48,7 @@ export function QuotePriceOverview({
   return (
     <div className="card qr-lines qr-overview">
       <h2>Overview</h2>
-      <p className="hint">Every price on the list, side by side. The extension sits under the unit. The total row sums those extensions. Related quotes add their own columns.</p>
+      <p className="hint">Every price on the list, side by side. FSP is the forecasted sales price, separate from the DDS bid. The extension sits under the unit. The total row sums those extensions. Related quotes add their own columns.</p>
       <div className="qr-scroll">
         <table>
           <thead>
@@ -51,6 +58,7 @@ export function QuotePriceOverview({
               <th className="num">Qty</th>
               <th>Condition</th>
               <th className="num">DDS unit</th>
+              <th className="num">FSP unit</th>
               {local.map((name) => (
                 <th className="num" key={name}>
                   {name}
@@ -66,6 +74,7 @@ export function QuotePriceOverview({
           <tbody>
             {visible.map((line) => {
               const ddsExt = quoteExtText(quoteOverviewExt(line, line.unitPrice, "dds"), currency);
+              const fspExt = quoteExtText(quoteOverviewExt(line, line.fspUnit, "dds"), currency);
               return (
                 <tr key={line.key || `${line.partNumber}-${line.sku}`}>
                   <td>{line.partNumber || "—"}</td>
@@ -75,6 +84,10 @@ export function QuotePriceOverview({
                   <td className="num">
                     <span>{quoteMoneyText(line.unitPrice, currency) || "—"}</span>
                     {ddsExt ? <span className="qr-context">{ddsExt}</span> : null}
+                  </td>
+                  <td className="num">
+                    <span>{quoteMoneyText(line.fspUnit, currency) || "—"}</span>
+                    {fspExt ? <span className="qr-context">{fspExt}</span> : null}
                   </td>
                   {local.map((name) => {
                     const bid = line.bids.find((item) => item.bidderName.trim().toLowerCase() === name.toLowerCase());
@@ -109,6 +122,12 @@ export function QuotePriceOverview({
               <td className="num" data-label="DDS">
                 {quoteExtTotal(
                   visible.map((line) => quoteOverviewExt(line, line.unitPrice, "dds")),
+                  currency,
+                ) || "—"}
+              </td>
+              <td className="num" data-label="FSP">
+                {quoteExtTotal(
+                  visible.map((line) => quoteOverviewExt(line, line.fspUnit, "dds")),
                   currency,
                 ) || "—"}
               </td>
