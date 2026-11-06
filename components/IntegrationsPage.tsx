@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Building, Cable, Contact, List, Plug, RefreshCw, Unplug } from "lucide-react";
 import { PageToolbar, ToolbarButton, ToolbarSeparator } from "@/components/PageToolbar";
+import { errorText } from "@/lib/errors";
 import { isDirty } from "@/lib/formDirty";
 import { actionProblem, errorDetail, readActionBody, recoverOrderPullMessage, type ActionBody } from "@/lib/clientActionError";
 import { RECONNECT_MESSAGE as EBAY_RECONNECT_MESSAGE } from "@/lib/ebay/messages";
@@ -129,7 +130,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
     let cancelled = false;
     load()
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load integrations.");
+        if (!cancelled) setError(errorText(err, "Could not load integrations."));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -227,7 +228,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
       await load();
     } catch (err) {
       setResults([]);
-      setError(err instanceof Error ? err.message : "Sync failed.");
+      setError(errorText(err, "Sync failed."));
     } finally {
       setBusy(null);
     }
@@ -244,7 +245,7 @@ export function IntegrationsPage({ focus = "overview" }: { focus?: IntegrationFo
       setNotice("QuickBooks disconnected.");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Disconnect failed.");
+      setError(errorText(err, "Disconnect failed."));
     } finally {
       setBusy(null);
     }

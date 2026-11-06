@@ -5,6 +5,7 @@ import { chunkPhaseUnavailable } from "@/lib/qbo/logShape";
 import { connectionStatus } from "@/lib/qbo/oauth";
 import { getSupabase } from "@/lib/supabase";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,7 +42,7 @@ export async function GET() {
       realmId = status.realmId;
       expiresAt = status.expiresAt;
     } catch (error) {
-      message = error instanceof Error ? error.message : "Could not read the QuickBooks connection.";
+      message = errorText(error, "Could not read the QuickBooks connection.");
     }
   }
 

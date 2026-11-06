@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { integrationDenied } from "@/lib/integrationAccess";
 import { runSync } from "@/lib/qbo/sync";
 import { parseSyncRequest } from "@/lib/qbo/syncOptions";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     const report = await runSync(parsed.value);
     return NextResponse.json(report);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "QuickBooks sync failed.";
+    const message = errorText(error, "QuickBooks sync failed.");
     const status = message.includes("already running") ? 409 : 400;
     return NextResponse.json({ entities: [], message }, { status });
   }

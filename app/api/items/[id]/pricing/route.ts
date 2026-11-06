@@ -3,6 +3,7 @@ import { collapseLabel } from "@/lib/itemFields";
 import { collectPriceQuotes } from "@/lib/pricing/providers";
 import { flagOutliers } from "@/lib/pricing/quotes";
 import { requireCapability } from "@/lib/actorAccess";
+import { errorText } from "@/lib/errors";
 import { getSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -19,14 +20,14 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   try {
     await requireCapability("can_edit_financials");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "You cannot change prices or orders.";
+    const message = errorText(error, "You cannot change prices or orders.");
     const status = message === "Sign in required." ? 401 : 403;
     return NextResponse.json({ message }, { status });
   }
 
   const supabase = await getSupabase();
   const item = await supabase.from("items").select("id, part_number, model").eq("id", id).maybeSingle();
-  if (item.error) return NextResponse.json({ message: item.error.message }, { status: 400 });
+  if (item.error) return NextResponse.json({ message: errorText(item.error) }, { status: 400 });
   if (!item.data) return NextResponse.json({ message: "That item was not found." }, { status: 404 });
 
   const query = collapseLabel(String(item.data.part_number ?? "")) || collapseLabel(String(item.data.model ?? "")) || "";
@@ -61,11 +62,11 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
         outlier: quote.outlier,
       })),
     );
-    if (inserted.error) return NextResponse.json({ message: inserted.error.message }, { status: 400 });
+    if (inserted.error) return NextResponse.json({ message: errorText(inserted.error) }, { status: 400 });
   }
 
   const marked = await supabase.from("items").update({ pricing_checked_at: capturedAt }).eq("id", id);
-  if (marked.error) return NextResponse.json({ message: marked.error.message }, { status: 400 });
+  if (marked.error) return NextResponse.json({ message: errorText(marked.error) }, { status: 400 });
 
   return NextResponse.json({
     checkedAt: capturedAt,

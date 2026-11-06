@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { applyLegacyLogSeed } from "@/lib/ebay/orders";
 import { actorCan } from "@/lib/actorAccess";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
       message: result.message,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The log map could not be applied.";
+    const message = errorText(error, "The log map could not be applied.");
     return NextResponse.json({ ok: false, message }, { status: 400 });
   }
 }

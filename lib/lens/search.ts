@@ -1,5 +1,6 @@
 import { getSupabase } from "@/lib/supabase";
 import type { LensCandidate } from "@/lib/lens/rank";
+import { errorText } from "@/lib/errors";
 
 type CandidateRow = {
   id: string;
@@ -22,7 +23,7 @@ type CandidateRow = {
 export async function findLensCandidates(needles: string[]): Promise<LensCandidate[]> {
   if (needles.length === 0) return [];
   const { data, error } = await (await getSupabase()).rpc("lens_item_candidates", { p_needles: needles });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   return ((data ?? []) as CandidateRow[]).map(toCandidate);
 }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { integrationDenied } from "@/lib/integrationAccess";
 import { disconnectEbay } from "@/lib/ebay/oauth";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,7 +13,7 @@ export async function POST() {
     await disconnectEbay();
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "eBay could not be disconnected.";
+    const message = errorText(error, "eBay could not be disconnected.");
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
 }

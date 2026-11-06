@@ -4,6 +4,7 @@ import { basicAuthHeader, readQboConfig, type QboConfig } from "@/lib/qbo/config
 import { writeSyncLog } from "@/lib/qbo/log";
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 export type QboConnection = {
   id: string;
@@ -35,7 +36,7 @@ export async function loadConnection(): Promise<QboConnection | null> {
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   return data as QboConnection | null;
 }
 
@@ -135,7 +136,7 @@ export async function disconnectQuickBooks(): Promise<void> {
   }
 
   const { error } = await admin.from("qbo_connection").delete().eq("id", current.id);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
 }
 
 export async function authorizationRedirect(config: QboConfig, state: string): Promise<string> {
@@ -194,7 +195,7 @@ async function revokeToken(
       intuitTid,
     };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Revoke failed.", intuitTid: null };
+    return { ok: false, message: errorText(error, "Revoke failed."), intuitTid: null };
   }
 }
 
@@ -207,7 +208,7 @@ async function flagReconnect(
     .from("qbo_connection")
     .update({ needs_reconnect: true, updated_at: new Date().toISOString() })
     .eq("id", row.id);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   await writeSyncLog({
     entity: "connection",
     direction: "oauth",
@@ -219,9 +220,9 @@ async function flagReconnect(
 
 async function replaceConnection(admin: SupabaseClient, tokens: TokenSet, realmId: string): Promise<void> {
   const removed = await admin.from("qbo_connection").delete().not("realm_id", "is", null);
-  if (removed.error) throw new Error(removed.error.message);
+  if (removed.error) throw new Error(errorText(removed.error));
   const inserted = await admin.from("qbo_connection").insert(tokenRow(tokens, realmId));
-  if (inserted.error) throw new Error(inserted.error.message);
+  if (inserted.error) throw new Error(errorText(inserted.error));
 }
 
 async function updateConnection(
@@ -236,7 +237,7 @@ async function updateConnection(
     .eq("id", id)
     .select(CONNECTION_COLUMNS)
     .single();
-  if (updated.error) throw new Error(updated.error.message);
+  if (updated.error) throw new Error(errorText(updated.error));
   return updated.data as QboConnection;
 }
 

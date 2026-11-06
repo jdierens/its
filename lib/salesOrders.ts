@@ -687,7 +687,7 @@ export async function loadSalesOrder(id: string): Promise<SalesOrderView | null>
 
 async function itemIdForSku(sku: string): Promise<string | null> {
   const { data, error } = await (await getSupabase()).from("items").select("id, sku").ilike("sku", sku).limit(5);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   const wanted = sku.trim().toLowerCase();
   const hit = (data ?? []).find((row) => String(row.sku ?? "").trim().toLowerCase() === wanted);
   return hit ? String(hit.id) : null;

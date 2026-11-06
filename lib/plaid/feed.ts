@@ -28,6 +28,7 @@ import {
   type TransactionRow,
 } from "@/lib/plaid/types";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 const ITEM_COLUMNS =
   "id, item_id, access_token, environment, institution_id, institution_name, status, error_code, error_message, transactions_cursor, transactions_update_status, consent_expiration_time, webhook_url, connected_by, connected_at, last_synced_at";
@@ -99,7 +100,7 @@ export async function plaidStatus(deniedMessage: string | null): Promise<PlaidSt
     if (exposesSecret(status)) throw new Error("Bank feed status included a secret.");
     return status;
   } catch (error) {
-    return { ...base, message: error instanceof Error ? error.message : "Could not read bank feeds." };
+    return { ...base, message: errorText(error, "Could not read bank feeds.") };
   }
 }
 
@@ -221,7 +222,7 @@ export async function disconnectItem(id: string): Promise<string> {
     }
   }
   const { error } = await plaidDb().from("plaid_items").delete().eq("id", item.id);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   const message = `Disconnected ${name}.`;
   await writeLog({ entity: "item", direction: "remove", status: "ok", message, detail: { itemId: item.item_id } });
   return message;
@@ -508,7 +509,7 @@ async function upsertAccounts(itemId: string, accounts: AccountBase[]): Promise<
     })),
     { onConflict: "plaid_item_id,account_id" },
   );
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
 }
 
 async function applyTransactions(itemId: string, transactions: MappedTransaction[], removed: string[]): Promise<void> {
@@ -534,7 +535,7 @@ async function applyTransactions(itemId: string, transactions: MappedTransaction
       })),
       { onConflict: "transaction_id" },
     );
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(errorText(error));
   }
   if (removed.length > 0) {
     const { error } = await plaidDb()
@@ -542,7 +543,7 @@ async function applyTransactions(itemId: string, transactions: MappedTransaction
       .delete()
       .eq("plaid_item_id", itemId)
       .in("transaction_id", removed);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(errorText(error));
   }
 }
 

@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { EbayListingMatchFilter } from "@/lib/ebay/listingsBrowser";
+import { errorText } from "@/lib/errors";
 import { prefersFileShare } from "@/lib/export/download";
 
 const STORAGE_KEY = "its.ebayListingsExport";
@@ -92,7 +93,7 @@ export function EbayListingsExport({
       if (!result?.url) throw new Error("Google did not return a spreadsheet link.");
       window.open(result.url, "_blank", "noopener,noreferrer");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed.");
+      setError(errorText(err, "Export failed."));
     } finally {
       setBusy(false);
     }
@@ -172,7 +173,7 @@ export function EbayListingsExport({
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed.");
+      setError(errorText(err, "Export failed."));
     } finally {
       setBusy(false);
     }

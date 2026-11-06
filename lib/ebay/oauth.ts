@@ -6,6 +6,7 @@ import { ebayRead } from "@/lib/ebay/http";
 import { writeEbayLog } from "@/lib/ebay/log";
 import { RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 export type EbayConnection = {
   id: string;
@@ -42,7 +43,7 @@ export async function loadConnection(): Promise<EbayConnection | null> {
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   return data as EbayConnection | null;
 }
 
@@ -185,7 +186,7 @@ export async function disconnectEbay(): Promise<void> {
   const current = await loadConnection();
   if (!current) return;
   const { error } = await admin.from("ebay_connection").delete().eq("id", current.id);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   await writeEbayLog({
     entity: "connection",
     direction: "oauth",
@@ -232,7 +233,7 @@ async function flagReconnect(
     .from("ebay_connection")
     .update({ needs_reconnect: true, updated_at: new Date().toISOString() })
     .eq("id", row.id);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   await writeEbayLog({
     entity: "connection",
     direction: "oauth",
@@ -256,7 +257,7 @@ async function replaceConnection(
   username: string | null,
 ): Promise<void> {
   const removed = await admin.from("ebay_connection").delete().not("id", "is", null);
-  if (removed.error) throw new Error(removed.error.message);
+  if (removed.error) throw new Error(errorText(removed.error));
   const now = Date.now();
   const inserted = await admin.from("ebay_connection").insert({
     ...tokenFields(tokens, now),
@@ -266,7 +267,7 @@ async function replaceConnection(
     scopes: EBAY_SCOPES,
     connected_at: new Date(now).toISOString(),
   });
-  if (inserted.error) throw new Error(inserted.error.message);
+  if (inserted.error) throw new Error(errorText(inserted.error));
 }
 
 async function updateConnection(
@@ -290,7 +291,7 @@ async function updateConnection(
     .eq("id", current.id)
     .select(CONNECTION_COLUMNS)
     .single();
-  if (updated.error) throw new Error(updated.error.message);
+  if (updated.error) throw new Error(errorText(updated.error));
   return updated.data as EbayConnection;
 }
 

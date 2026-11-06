@@ -3,6 +3,7 @@ import { ReconnectError } from "@/lib/ebay/auth";
 import { pullActiveListings } from "@/lib/ebay/listings";
 import { RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { actorCan } from "@/lib/actorAccess";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,7 +20,7 @@ export async function POST() {
     if (error instanceof ReconnectError) {
       return NextResponse.json({ ok: false, message: RECONNECT_MESSAGE }, { status: 409 });
     }
-    const message = error instanceof Error ? error.message : "eBay listings pull failed.";
+    const message = errorText(error, "eBay listings pull failed.");
     return NextResponse.json({ ok: false, message }, { status: 400 });
   }
 }

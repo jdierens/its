@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { plaidActor } from "@/lib/plaid/actor";
 import { exchangePublicToken } from "@/lib/plaid/feed";
 import { isPublicToken } from "@/lib/plaid/ids";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     const saved = await exchangePublicToken(publicToken, actor.email);
     return NextResponse.json({ ok: true, id: saved.id });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not connect the bank.";
+    const message = errorText(error, "Could not connect the bank.");
     return NextResponse.json({ message }, { status: 400 });
   }
 }

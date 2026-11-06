@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { backfillLegacySoNumbers } from "@/lib/ebay/orders";
 import { actorCan } from "@/lib/actorAccess";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function POST() {
       message: result.message,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Legacy SO numbers could not be assigned.";
+    const message = errorText(error, "Legacy SO numbers could not be assigned.");
     return NextResponse.json({ ok: false, message }, { status: 400 });
   }
 }

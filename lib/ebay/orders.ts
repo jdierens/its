@@ -58,6 +58,7 @@ import { parsePackLabel } from "@/lib/ebay/packs";
 import { forceRefreshAccessToken, validAccessToken } from "@/lib/ebay/oauth";
 import { escapeLike } from "@/lib/labelLookup";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 const MIGRATION = "Apply supabase/migrations/20261025020829_ebay_order_pull.sql before pulling eBay orders.";
 const MAP_MIGRATION = "Apply supabase/migrations/20261025073000_ebay_legacy_so_match.sql before assigning legacy SO numbers.";
@@ -363,7 +364,7 @@ export async function cancelMatchingEbayOrder(
   id: string,
 ): Promise<"cancelled" | "skipped" | "left"> {
   const row = await admin.from("sales_orders").select("status").eq("id", id).maybeSingle();
-  if (row.error) throw new Error(row.error.message);
+  if (row.error) throw new Error(errorText(row.error));
   if (!row.data) return "left";
   const status = String(row.data.status ?? "");
   const decision = ebayCancelDecision(status);
@@ -526,7 +527,7 @@ function supabaseStore(
               "id, status, so_number, ebay_order_id, ebay_sales_record_ref, order_date, ship_to, bill_to, buyer, payment_status, payment_method, payment_date, ebay_transaction_fee, ebay_order_earnings, currency, terms, incoterms",
             )
             .in(column, chunk);
-          if (error) throw new Error(error.message);
+          if (error) throw new Error(errorText(error));
           for (const row of data ?? []) rows.set(String(row.id), row);
         }
       }
@@ -538,7 +539,7 @@ function supabaseStore(
           .from("so_events")
           .select("sales_order_id, operator_id, operator_label")
           .in("sales_order_id", chunk);
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(errorText(error));
         for (const event of data ?? []) {
           const key = String(event.sales_order_id);
           const list = events.get(key) ?? [];
@@ -561,7 +562,7 @@ function supabaseStore(
           .from("so_lines")
           .select("id, sales_order_id, line_no, line_kind, customer_part_number, customer_description, qty, unit_price, ext_price")
           .in("sales_order_id", chunk);
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(errorText(error));
         for (const line of data ?? []) {
           lineRows.push(line);
           const key = String(line.sales_order_id);
@@ -577,7 +578,7 @@ function supabaseStore(
       )) {
         if (chunk.length === 0) continue;
         const { data, error } = await admin.from("so_line_allocations").select("so_line_id, item_id, qty").in("so_line_id", chunk);
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(errorText(error));
         for (const allocation of data ?? []) {
           const key = String(allocation.so_line_id);
           const list = allocationsByLine.get(key) ?? [];
@@ -638,14 +639,14 @@ function supabaseStore(
       const found: { id: string; sku: string }[] = [];
       for (const chunk of chunks(wanted, 100)) {
         const exact = await admin.from("items").select("id, sku").in("sku", chunk);
-        if (exact.error) throw new Error(exact.error.message);
+        if (exact.error) throw new Error(errorText(exact.error));
         for (const row of exact.data ?? []) found.push({ id: String(row.id), sku: String(row.sku ?? "") });
       }
       const have = new Set(found.map((row) => row.sku));
       for (const chunk of chunks(wanted.filter((sku) => !have.has(sku)), 40)) {
         const filter = chunk.map((sku) => `sku.ilike."${escapeLike(sku).replace(/"/g, '""')}"`).join(",");
         const loose = await admin.from("items").select("id, sku").or(filter);
-        if (loose.error) throw new Error(loose.error.message);
+        if (loose.error) throw new Error(errorText(loose.error));
         for (const row of loose.data ?? []) found.push({ id: String(row.id), sku: String(row.sku ?? "") });
       }
       return found;
@@ -658,7 +659,7 @@ function supabaseStore(
         const { data, error } = await admin.from("ebay_legacy_order_map").select("ebay_order_id, so_number").in("ebay_order_id", chunk);
         if (error) {
           if (tableMissing(error, "ebay_legacy_order_map")) return [];
-          throw new Error(error.message);
+          throw new Error(errorText(error));
         }
         for (const row of data ?? []) {
           const soNumber = typeof row.so_number === "number" ? row.so_number : Number(row.so_number);
@@ -671,7 +672,7 @@ function supabaseStore(
       for (const chunk of chunks(numbers, 100)) {
         if (chunk.length === 0) continue;
         const { data, error } = await admin.from("sales_orders").select("so_number").in("so_number", chunk);
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(errorText(error));
         for (const row of data ?? []) {
           const soNumber = typeof row.so_number === "number" ? row.so_number : Number(row.so_number);
           if (Number.isSafeInteger(soNumber)) taken.add(soNumber);
@@ -839,7 +840,7 @@ function supabaseStore(
       for (const chunk of chunks(ids, 100)) {
         if (chunk.length === 0) continue;
         const { data, error } = await admin.from("sales_orders").select("id, ebay_order_id, ebay_label_fee").in("ebay_order_id", chunk);
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(errorText(error));
         for (const row of data ?? []) {
           const orderId = row.ebay_order_id == null ? "" : String(row.ebay_order_id);
           const next = fees.get(orderId) ?? 0;
@@ -869,7 +870,7 @@ function supabaseStore(
           .in("status", [...EBAY_CANCELLABLE_STATUSES])
           .order("id", { ascending: true })
           .range(from, from + pageSize - 1);
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(errorText(error));
         const batch = data ?? [];
         for (const row of batch) {
           const ebayOrderId = row.ebay_order_id == null ? "" : String(row.ebay_order_id).trim();
@@ -885,7 +886,7 @@ function supabaseStore(
     },
     async setWatermark(iso) {
       const { error } = await admin.from("ebay_order_seed").update({ orders_watermark: iso }).eq("id", 1);
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(errorText(error));
     },
   };
 }
@@ -902,7 +903,7 @@ async function syncEbayShipments(
     if (chunk.length === 0) continue;
     const ids = [...new Set(chunk.map((group) => group.ebayOrderId))];
     const { data, error } = await admin.from("sales_orders").select("id, status, ship_date, ebay_order_id").in("ebay_order_id", ids);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(errorText(error));
     const orders = new Map<string, { id: string; status: string; shipDate: string | null }>();
     for (const row of data ?? []) {
       const ebayOrderId = row.ebay_order_id == null ? "" : String(row.ebay_order_id);
@@ -919,7 +920,7 @@ async function syncEbayShipments(
     for (const idChunk of chunks(orderIds, 100)) {
       if (idChunk.length === 0) continue;
       const rows = await admin.from("so_shipments").select("id, sales_order_id, awb, carrier, ship_date, ebay_tracking_pushed_at").in("sales_order_id", idChunk);
-      if (rows.error) throw new Error(rows.error.message);
+      if (rows.error) throw new Error(errorText(rows.error));
       for (const row of rows.data ?? []) {
         const salesOrderId = String(row.sales_order_id);
         const list = stored.get(salesOrderId) ?? [];
@@ -1038,10 +1039,10 @@ async function writeShippedStatus(
 /** A draft that already has a ship date and tracking must not stay approved after it receives an SO number. */
 async function markEbayOrderShippedIfTracked(admin: SupabaseClient, id: string): Promise<boolean> {
   const order = await admin.from("sales_orders").select("status, ship_date").eq("id", id).maybeSingle();
-  if (order.error) throw new Error(order.error.message);
+  if (order.error) throw new Error(errorText(order.error));
   if (!order.data) return false;
   const shipments = await admin.from("so_shipments").select("awb").eq("sales_order_id", id);
-  if (shipments.error) throw new Error(shipments.error.message);
+  if (shipments.error) throw new Error(errorText(shipments.error));
   const hasTracking = (shipments.data ?? []).some((row) => row.awb != null && trackingKey(String(row.awb)) !== "");
   const status = String(order.data.status ?? "");
   const next = ebayStatusAfterShipments({ status, shipDate: datePrefix(order.data.ship_date), hasTracking });
@@ -1134,7 +1135,7 @@ async function readSeed(admin: SupabaseClient): Promise<SeedState> {
   const { data, error } = await admin.from("ebay_order_seed").select("id, orders_watermark").eq("id", 1).maybeSingle();
   if (error) {
     if (tableMissing(error, "ebay_order_seed")) return { missingTable: true, seeded: false, watermark: null };
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   return {
     missingTable: false,
@@ -1151,7 +1152,7 @@ async function ebayCustomer(admin: SupabaseClient): Promise<{ id: string }> {
     .eq("qbo_id", EBAY_ORDER_CUSTOMER_QBO_ID)
     .eq("active", true)
     .limit(2);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   if (!data || data.length !== 1) {
     throw new Error("The eBay Customer record was not found. No sales orders were created.");
   }
@@ -1186,7 +1187,7 @@ export async function orderPullSummary(): Promise<OrderPullSummary> {
   }
   if (error) {
     if (tableMissing(error, "ebay_order_seed")) return emptyOrderPullSummary(false);
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   if (!data) return emptyOrderPullSummary(true);
   const assigned = !assignedKnown || data.assigned == null ? null : Number(data.assigned);
@@ -1358,7 +1359,7 @@ export async function pullEbayOrders(): Promise<OrderPullResult> {
       cancelSkipped: result.cancelSkipped,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "eBay order pull failed.";
+    const message = errorText(error, "eBay order pull failed.");
     await writeEbayLog({
       entity: "orders",
       direction: "read",
@@ -1385,7 +1386,7 @@ export async function applyLegacyLogSeed(csv: string): Promise<SeedPlan & { mess
       .from("sales_orders")
       .select("id, so_number, ebay_order_id, ebay_sales_record_ref")
       .in("so_number", chunk);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(errorText(error));
     for (const row of data ?? []) {
       const soNumber = typeof row.so_number === "number" ? row.so_number : Number(row.so_number);
       if (!Number.isSafeInteger(soNumber)) continue;
@@ -1421,7 +1422,7 @@ export async function applyLegacyLogSeed(csv: string): Promise<SeedPlan & { mess
   const assigned = numbered.assigned;
   await advanceSoCounter(admin, plan.assignments.map((row) => row.soNumber));
   const current = await admin.from("ebay_order_seed").select("orders_watermark").eq("id", 1).maybeSingle();
-  if (current.error) throw new Error(current.error.message);
+  if (current.error) throw new Error(errorText(current.error));
   const saved = await admin.from("ebay_order_seed").upsert({
     id: 1,
     applied_at: new Date().toISOString(),
@@ -1434,7 +1435,7 @@ export async function applyLegacyLogSeed(csv: string): Promise<SeedPlan & { mess
   });
   if (saved.error) {
     if (/assigned|ebay_legacy_order_map/i.test(saved.error.message ?? "")) throw new Error(MAP_MIGRATION);
-    throw new Error(saved.error.message);
+    throw new Error(errorText(saved.error));
   }
   const conflicts = plan.conflicts + (plan.assigned - assigned);
   const shippedNote = numbered.shipped
@@ -1459,7 +1460,7 @@ export async function backfillLegacySoNumbers(): Promise<{ assigned: number; con
   const stored = await admin.from("ebay_legacy_order_map").select("ebay_order_id, so_number, sales_record_ref");
   if (stored.error) {
     if (tableMissing(stored.error, "ebay_legacy_order_map")) throw new Error(MAP_MIGRATION);
-    throw new Error(stored.error.message);
+    throw new Error(errorText(stored.error));
   }
   const map = (stored.data ?? [])
     .map((row) => {
@@ -1480,7 +1481,7 @@ export async function backfillLegacySoNumbers(): Promise<{ assigned: number; con
   const existing: ExistingSeedOrder[] = [];
   for (const chunk of chunks([...new Set(map.map((row) => row.soNumber))], 200)) {
     const { data, error } = await admin.from("sales_orders").select("id, so_number, ebay_order_id, ebay_sales_record_ref").in("so_number", chunk);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(errorText(error));
     for (const row of data ?? []) {
       const soNumber = typeof row.so_number === "number" ? row.so_number : Number(row.so_number);
       if (!Number.isSafeInteger(soNumber)) continue;
@@ -1524,7 +1525,7 @@ async function loadSeedDrafts(admin: SupabaseClient, ebayOrderIds: string[]): Pr
       .from("sales_orders")
       .select("id, status, so_number, ebay_order_id, ebay_sales_record_ref")
       .in("ebay_order_id", chunk);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(errorText(error));
     for (const row of data ?? []) {
       const soNumber = row.so_number == null || row.so_number === "" ? null : Number(row.so_number);
       drafts.push({
@@ -1551,14 +1552,14 @@ async function replaceLegacyMap(admin: SupabaseClient, map: LegacyMapEntry[]): P
     );
     if (saved.error) {
       if (tableMissing(saved.error, "ebay_legacy_order_map")) throw new Error(MAP_MIGRATION);
-      throw new Error(saved.error.message);
+      throw new Error(errorText(saved.error));
     }
   }
   const keep = new Set(map.map((row) => row.ebayOrderId));
   const current = await admin.from("ebay_legacy_order_map").select("ebay_order_id");
   if (current.error) {
     if (tableMissing(current.error, "ebay_legacy_order_map")) throw new Error(MAP_MIGRATION);
-    throw new Error(current.error.message);
+    throw new Error(errorText(current.error));
   }
   const stale = (current.data ?? [])
     .map((row) => String(row.ebay_order_id ?? ""))
@@ -1566,7 +1567,7 @@ async function replaceLegacyMap(admin: SupabaseClient, map: LegacyMapEntry[]): P
   for (const chunk of chunks(stale, 200)) {
     if (chunk.length === 0) continue;
     const removed = await admin.from("ebay_legacy_order_map").delete().in("ebay_order_id", chunk);
-    if (removed.error) throw new Error(removed.error.message);
+    if (removed.error) throw new Error(errorText(removed.error));
   }
 }
 

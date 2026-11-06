@@ -402,7 +402,7 @@ export function ItemsTable() {
         setError(null);
         return saved.updatedAt;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Save failed.";
+        const message = errorText(err, "Save failed.");
         if (isConflictMessage(message)) {
           const fresh = await fetchListedItem(item.id).catch(() => null);
           if (fresh) {

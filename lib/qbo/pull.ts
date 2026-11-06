@@ -1,5 +1,6 @@
 import { RECONNECT_MESSAGE } from "@/lib/qbo/messages";
 import { formatEntityResult, type EntityCounts, type SyncDirection, type SyncEntity } from "@/lib/qbo/syncOptions";
+import { errorText } from "@/lib/errors";
 
 export const PAGE_SIZE = 100;
 export const PAGES_PER_CHUNK = 2;
@@ -160,7 +161,7 @@ async function postChunk(
     try {
       response = await post(body);
     } catch (error) {
-      lastMessage = error instanceof Error ? error.message : "Sync failed.";
+      lastMessage = errorText(error, "Sync failed.");
       continue;
     }
     const message = response.body.message || lastMessage;

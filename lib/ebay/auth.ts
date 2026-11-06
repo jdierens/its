@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { errorText } from "@/lib/errors";
 
 const MAX_TOKEN_ATTEMPTS = 3;
 
@@ -81,7 +82,7 @@ export async function requestToken(input: {
       });
     } catch (error) {
       lastError = new TokenRequestError(
-        error instanceof Error ? error.message : "eBay token request failed.",
+        errorText(error, "eBay token request failed."),
         null,
         0,
         null,

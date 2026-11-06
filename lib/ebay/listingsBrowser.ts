@@ -7,6 +7,7 @@ import { escapeLike } from "@/lib/labelLookup";
 import { primaryStoragePath } from "@/lib/imageOrder";
 import { ITEM_IMAGE_BUCKET } from "@/lib/imageFiles";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 export const EBAY_LISTINGS_PAGE_SIZE = 50;
 const ITEM_LOOKUP_LIMIT = 40;
@@ -144,14 +145,14 @@ export async function searchItemsToMatch(query: string): Promise<EbayMatchItem[]
     admin.from("items").select("id, sku, name").or(`sku.ilike.${quoted},name.ilike.${quoted}`).order("sku").limit(MATCH_SEARCH_LIMIT),
     itemIdsMatchingAlnum(admin, trimmed, { columns: ["sku", "name"], limit: MATCH_SEARCH_LIMIT }),
   ]);
-  if (selected.error) throw new Error(selected.error.message);
+  if (selected.error) throw new Error(errorText(selected.error));
   const ilikeRows = [...(selected.data ?? [])];
   const seen = new Set(ilikeRows.flatMap((row) => (typeof row.id === "string" ? [row.id] : [])));
   const missing = alnumIds.filter((id) => !seen.has(id));
   const rows = [...ilikeRows];
   if (missing.length > 0) {
     const extra = await admin.from("items").select("id, sku, name").in("id", missing);
-    if (extra.error) throw new Error(extra.error.message);
+    if (extra.error) throw new Error(errorText(extra.error));
     rows.unshift(...(extra.data ?? []));
   }
   const items: EbayMatchItem[] = [];
@@ -177,10 +178,10 @@ export async function matchEbayListing(listingId: string, itemId: string): Promi
     if (listingsTableMissing(listing.error)) {
       return { ok: false, status: 400, message: "The listings table is not in the database yet." };
     }
-    throw new Error(listing.error.message);
+    throw new Error(errorText(listing.error));
   }
   const item = await admin.from("items").select("id").eq("id", itemId).maybeSingle();
-  if (item.error) throw new Error(item.error.message);
+  if (item.error) throw new Error(errorText(item.error));
   const decision = matchListingDecision({
     listingFound: Boolean(listing.data),
     listingItemId: typeof listing.data?.item_id === "string" ? listing.data.item_id : null,
@@ -234,7 +235,7 @@ async function selectListingPage(
   const counted = await listingQuery(admin, parsed, itemIds, "id", { count: "exact", head: true });
   if (counted.error) {
     if (listingsTableMissing(counted.error)) return "missing";
-    throw new Error(counted.error.message);
+    throw new Error(errorText(counted.error));
   }
   const omit = { picture: false, pack: false, manual: false };
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -249,7 +250,7 @@ async function selectListingPage(
     }
     if (!relaxListingColumns(omit, selected.error)) {
       if (listingsTableMissing(selected.error)) return "missing";
-      throw new Error(selected.error.message);
+      throw new Error(errorText(selected.error));
     }
   }
   throw new Error("eBay listings could not be read.");
@@ -277,7 +278,7 @@ async function selectAllListingRows(
       }
       if (from === 0 && relaxListingColumns(omit, selected.error)) continue;
       if (listingsTableMissing(selected.error)) return "missing";
-      throw new Error(selected.error.message);
+      throw new Error(errorText(selected.error));
     }
     if (!batch) throw new Error("eBay listings could not be read.");
     rows.push(...batch);
@@ -420,9 +421,9 @@ async function updateUnmatchedListing(admin: SupabaseClient, listingId: string, 
     .select("id");
   if (withFlag.error && listingsColumnMissing(withFlag.error, "matched_manually")) {
     const plain = await admin.from("ebay_listings").update({ item_id: itemId }).eq("id", listingId).is("item_id", null).select("id");
-    if (plain.error) throw new Error(plain.error.message);
+    if (plain.error) throw new Error(errorText(plain.error));
     return (plain.data ?? []).length > 0;
   }
-  if (withFlag.error) throw new Error(withFlag.error.message);
+  if (withFlag.error) throw new Error(errorText(withFlag.error));
   return (withFlag.data ?? []).length > 0;
 }

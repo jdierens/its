@@ -8,6 +8,7 @@ import { actorCan } from "@/lib/actorAccess";
 import { integrationDenied } from "@/lib/integrationAccess";
 import { getSupabase } from "@/lib/supabase";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -57,17 +58,17 @@ export async function GET(request: NextRequest) {
       ebayUserId = status.ebayUserId;
       expiresAt = status.expiresAt;
     } catch (error) {
-      message = error instanceof Error ? error.message : "Could not read the eBay connection.";
+      message = errorText(error, "Could not read the eBay connection.");
     }
     try {
       listings = await listingsSummary();
     } catch (error) {
-      if (!message) message = error instanceof Error ? error.message : "Could not read eBay listings.";
+      if (!message) message = errorText(error, "Could not read eBay listings.");
     }
     try {
       orders = await orderPullSummary();
     } catch (error) {
-      if (!message) message = error instanceof Error ? error.message : "Could not read the eBay order pull.";
+      if (!message) message = errorText(error, "Could not read the eBay order pull.");
     }
   }
 

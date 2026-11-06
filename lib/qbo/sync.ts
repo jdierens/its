@@ -35,6 +35,7 @@ import {
 } from "@/lib/qbo/pull";
 import { emptyCounts, formatEntityResult, type EntityCounts, type SyncOptions } from "@/lib/qbo/syncOptions";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 const OVERLAP_MS = 2 * 60 * 1000;
 
@@ -135,7 +136,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
         counts.errors += 1;
         const progress = await readCursor(admin, kind).catch(() => null);
         const where = progress?.start_position ? ` before position ${progress.start_position}` : "";
-        const reason = error instanceof Error ? error.message : "QuickBooks sync failed.";
+        const reason = errorText(error, "QuickBooks sync failed.");
         failureMessage = `${qboEntityName(kind)} ${direction} failed${where}. Run sync again to continue. ${reason}`;
         failureDetail = { ...callDetail(error), startPosition: progress?.start_position ?? null };
       }
@@ -167,7 +168,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
     }
     return { entities: results, message: results.map((result) => formatEntityResult(result.entity, result)).join(" ") };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "QuickBooks sync failed.";
+    const message = errorText(error, "QuickBooks sync failed.");
     const intuitTid =
       error instanceof ReconnectError || error instanceof TokenRequestError
         ? error.intuitTid
@@ -214,7 +215,7 @@ async function pushKind(
     .from(tableFor(kind))
     .select(SELECT_COLUMNS)
     .in("sync_status", ["local", "pending", "error"]);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   for (const row of (data ?? []) as ContactRecord[]) {
     await pushOne(admin, config, realmId, box, kind, row, counts);
   }
@@ -277,7 +278,7 @@ async function pushOne(
       kind,
       row,
       counts,
-      error instanceof Error ? error.message : "The QuickBooks response could not be saved.",
+      errorText(error, "The QuickBooks response could not be saved."),
     );
   }
 }
@@ -340,7 +341,7 @@ async function resolveStale(
       kind,
       row,
       counts,
-      error instanceof Error ? error.message : "The refetched QuickBooks record could not be saved.",
+      errorText(error, "The refetched QuickBooks record could not be saved."),
     );
   }
 }
@@ -573,7 +574,7 @@ async function applyIncoming(
       entity: kind,
       direction: "pull",
       status: "error",
-      message: error instanceof Error ? error.message : "A QuickBooks record could not be mapped.",
+      message: errorText(error, "A QuickBooks record could not be mapped."),
       detail: { qboId },
     });
     return 0;
@@ -787,7 +788,7 @@ async function findByQboId(
     .select(SELECT_COLUMNS)
     .eq("qbo_id", qboId)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   return (data as ContactRecord | null) ?? null;
 }
 
@@ -822,7 +823,7 @@ async function readCursor(admin: SupabaseClient, kind: ContactKind): Promise<Sto
       const legacy = await legacyCursor(admin);
       return { ...EMPTY_STORED, cdc_since: legacy };
     }
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   if (!data) {
     const legacy = await legacyCursor(admin);
@@ -866,7 +867,7 @@ async function saveProgress(
     },
     { onConflict: "entity" },
   );
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
 }
 
 async function legacyCursor(admin: SupabaseClient): Promise<string | null> {
@@ -879,7 +880,7 @@ async function legacyCursor(admin: SupabaseClient): Promise<string | null> {
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   return data?.started_at ?? null;
 }
 
@@ -898,14 +899,14 @@ async function saveCursor(admin: SupabaseClient, kind: ContactKind, pullStartedA
     },
     { onConflict: "entity" },
   );
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
 }
 
 async function touchLastSync(admin: SupabaseClient, kind: ContactKind, startedAt: string): Promise<void> {
   const existing = await admin.from("qbo_sync_cursor").select("cdc_since").eq("entity", kind).maybeSingle();
   if (existing.error) {
     if (missingCursorTable(existing.error.message)) return;
-    throw new Error(existing.error.message);
+    throw new Error(errorText(existing.error));
   }
   const { error } = await admin.from("qbo_sync_cursor").upsert(
     {
@@ -916,7 +917,7 @@ async function touchLastSync(admin: SupabaseClient, kind: ContactKind, startedAt
     },
     { onConflict: "entity" },
   );
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
 }
 
 function missingCursorTable(message: string): boolean {

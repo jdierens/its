@@ -4,6 +4,7 @@ import { Download } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ItemsIconButton } from "@/components/ItemsIconButton";
+import { errorText } from "@/lib/errors";
 import { prefersFileShare } from "@/lib/export/download";
 
 type Columns = "all" | "visible";
@@ -143,7 +144,7 @@ export function ItemExportMenu({
       window.open(result.url, "_blank", "noopener,noreferrer");
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed.");
+      setError(errorText(err, "Export failed."));
     } finally {
       setBusy(false);
     }
@@ -224,7 +225,7 @@ export function ItemExportMenu({
       window.setTimeout(() => URL.revokeObjectURL(url), 1500);
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed.");
+      setError(errorText(err, "Export failed."));
     } finally {
       setBusy(false);
     }

@@ -5,6 +5,7 @@ import { writeEbayLog } from "@/lib/ebay/log";
 import { CSRF_MESSAGE } from "@/lib/ebay/messages";
 import { integrationDenied } from "@/lib/integrationAccess";
 import { exchangeCode } from "@/lib/ebay/oauth";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
   try {
     await exchangeCode(code);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "eBay connection failed.";
+    const message = errorText(error, "eBay connection failed.");
     return fail(request, message);
   }
 

@@ -2,6 +2,7 @@ import { receiptFlagsForPrep, receivePrepKind } from "@/lib/receivingLine";
 import { receiptChangeSummary, receiptSearchQuery } from "@/lib/receivingScan";
 import { originQtyInput, parseReceiptDate, type ReceivingEntry } from "@/lib/receivingSettings";
 import { parseReceivingBinCode } from "@/lib/stockReceive";
+import { errorText } from "@/lib/errors";
 
 const BIN_CODE_MESSAGE = "A bin code is five digits, a hyphen, and B, C, or P.";
 
@@ -105,7 +106,7 @@ export function planReceiptEdit(entry: ReceivingEntry, patch: ReceiptPatch, conf
   try {
     receivedOn = parseReceiptDate(patch.receivedOn ?? entry.receivedOn.slice(0, 10));
   } catch (error) {
-    return { action: "invalid", message: error instanceof Error ? error.message : "Enter a receiving date." };
+    return { action: "invalid", message: errorText(error, "Enter a receiving date.") };
   }
   const project = text(patch.project ?? entry.project);
   const incomingTag = text(patch.incomingTag ?? entry.incomingBin);

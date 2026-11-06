@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { searchItemsToMatch } from "@/lib/ebay/listingsBrowser";
 import { actorCan } from "@/lib/actorAccess";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
     const items = await searchItemsToMatch(query);
     return NextResponse.json({ ok: true, items });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Item search failed.";
+    const message = errorText(error, "Item search failed.");
     return NextResponse.json({ ok: false, message }, { status: 400 });
   }
 }

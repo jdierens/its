@@ -3,6 +3,7 @@ import { ReconnectError } from "@/lib/ebay/auth";
 import { RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { integrationDenied } from "@/lib/integrationAccess";
 import { testConnection } from "@/lib/ebay/oauth";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +18,7 @@ export async function POST() {
     if (error instanceof ReconnectError) {
       return NextResponse.json({ ok: false, message: RECONNECT_MESSAGE }, { status: 409 });
     }
-    const message = error instanceof Error ? error.message : "eBay connection test failed.";
+    const message = errorText(error, "eBay connection test failed.");
     return NextResponse.json({ ok: false, message }, { status: 400 });
   }
 }

@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { plaidSchemaMissing } from "@/lib/plaid/errors";
 import type { AccountRow, ItemRow, TransactionRow } from "@/lib/plaid/types";
 import { requireServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 export function plaidDb(): SupabaseClient {
   return requireServiceSupabase();
@@ -16,7 +17,7 @@ export async function listItems(): Promise<{ rows: ItemRow[]; missing: boolean }
     .order("connected_at", { ascending: false });
   if (error) {
     if (plaidSchemaMissing(error)) return { rows: [], missing: true };
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   return { rows: (data ?? []) as ItemRow[], missing: false };
 }
@@ -31,7 +32,7 @@ export async function loadItem(id: string): Promise<ItemRow | null> {
     .maybeSingle();
   if (error) {
     if (plaidSchemaMissing(error)) throw new Error("Apply the Plaid migration before connecting a bank.");
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   return (data as ItemRow | null) ?? null;
 }
@@ -46,7 +47,7 @@ export async function loadItemByPlaidId(itemId: string): Promise<ItemRow | null>
     .maybeSingle();
   if (error) {
     if (plaidSchemaMissing(error)) return null;
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   return (data as ItemRow | null) ?? null;
 }
@@ -62,7 +63,7 @@ export async function listAccounts(itemIds: string[]): Promise<AccountRow[]> {
     .order("name", { ascending: true });
   if (error) {
     if (plaidSchemaMissing(error)) return [];
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   return (data ?? []) as AccountRow[];
 }
@@ -77,7 +78,7 @@ export async function listRecentTransactions(limit: number): Promise<Transaction
     .limit(limit);
   if (error) {
     if (plaidSchemaMissing(error)) return [];
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   return (data ?? []) as TransactionRow[];
 }

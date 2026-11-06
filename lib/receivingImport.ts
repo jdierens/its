@@ -9,6 +9,7 @@ import {
 } from "@/lib/receivingSettings";
 import { parseReceivingBinCode, specialReceivingBin } from "@/lib/stockReceive";
 import { SERIAL_MAX_LENGTH, cooProblem, normalizeCooCode, normalizeSerial } from "@/lib/stockUnits";
+import { errorText } from "@/lib/errors";
 
 export const RECEIVING_IMPORT_MIGRATION = "supabase/migrations/20261029040000_receiving_import.sql";
 
@@ -391,7 +392,7 @@ export function prepareReceivingImport(
       try {
         receivedOn = normalizeImportDate(rawDate);
       } catch (cause) {
-        error = takeError(error, cause instanceof Error ? cause.message : "Enter a receiving date.");
+        error = takeError(error, errorText(cause, "Enter a receiving date."));
       }
     }
 
