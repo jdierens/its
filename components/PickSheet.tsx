@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Printer, Trash2 } from "lucide-react";
+import { Plus, Printer, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from "react";
 import { usePageMeta } from "@/components/AppShell";
@@ -25,6 +25,7 @@ import {
 } from "@/lib/pickActions";
 import { fetchCountries, type Country } from "@/lib/countries";
 import { errorText } from "@/lib/errors";
+import { isSaveShortcut } from "@/lib/formDirty";
 import { countryResolutionMessage, resolveCountry, type CountryResolution } from "@/lib/itemFields";
 import { PICK_TICKET_PRINT, prepareLetterPrint } from "@/lib/letterPrint";
 import { SALES_ORDER_REFERENCE_LABEL } from "@/lib/salesOrderDraft";
@@ -63,6 +64,7 @@ import {
   parsePickQty,
   pickCatchUpNote,
   pickedAfterShipNote,
+  pickSaveState,
   pickSheetEditable,
   pickTargetForBin,
   serialProblem,
@@ -94,12 +96,14 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const [stageScan, setStageScan] = useState("");
   const [replaceId, setReplaceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pasteReport, setPasteReport] = useState<SerialPasteReport | null>(null);
   const [pendingUnknown, setPendingUnknown] = useState<PendingUnknown | null>(null);
   const [serialNotice, setSerialNotice] = useState<string | null>(null);
   const applyingPaste = useRef(false);
   const loadGen = useRef(0);
+  const finishingRef = useRef(false);
   const editable = pickSheetEditable({ canPick, status: sheet.status, pickStatus: sheet.pickStatus });
   const catchUp = sheet.pickStatus === "open" ? pickCatchUpNote(sheet.status) : null;
   const stayedShipped =
@@ -121,6 +125,16 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
           sheet.orphans.length,
         )
       : null);
+  const save = pickSaveState({
+    editable,
+    pickStatus: sheet.pickStatus,
+    blocked: Boolean(balanceWarning),
+    finishing,
+  });
+  const canFinish = save.dirty && !busy && !finishing;
+  const canFinishRef = useRef(canFinish);
+  const finishRef = useRef<() => void>(() => undefined);
+  canFinishRef.current = canFinish;
   const title = sheet.soNumber ? `Pick SO${sheet.soNumber}` : "Pick sheet";
   const activePull =
     pull && (serialText[pull.allocationId] ?? "").trim().toLowerCase() === pull.serial.trim().toLowerCase() ? pull : null;
@@ -136,6 +150,18 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       cancel = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!editable) return;
+    function onKey(event: KeyboardEvent) {
+      if (!isSaveShortcut(event)) return;
+      event.preventDefault();
+      if (!canFinishRef.current) return;
+      finishRef.current();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editable]);
 
   usePageMeta({
     title,
@@ -181,6 +207,21 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
       setBusy(false);
     }
   }
+
+  async function onFinish() {
+    if (finishingRef.current || !canFinishRef.current) return;
+    finishingRef.current = true;
+    setFinishing(true);
+    try {
+      await run(() => finishPick(sheet.orderId));
+    } finally {
+      finishingRef.current = false;
+      setFinishing(false);
+    }
+  }
+  finishRef.current = () => {
+    void onFinish();
+  };
 
   async function pickQty(allocationId: string, binId: string, amount: number) {
     await run(() =>
@@ -487,9 +528,43 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
   const showSerials = editable || serialRows.length > 0;
   const ticketLines = sheet.lines.filter((line) => !omitPickTicketSku(line.sku));
 
+  const finishTitle = save.dirty ? "Finish pick (Ctrl/Cmd+S)" : "No unsaved changes";
+
   return (
     <main className="page pick-page ds">
       <LetterPrint orientation={PICK_TICKET_PRINT.orientation} rootSelector={PICK_TICKET_PRINT.rootSelector} />
+      {editable ? (
+        <div className="so-sticky pick-savebar no-print">
+          <div className="so-sticky-lead">
+            <div className="so-identity">
+              <span className="sku">{title}</span>
+              <SalesOrderStageNav
+                orderId={sheet.orderId}
+                status={sheet.status}
+                pickStatus={sheet.pickStatus}
+                numbered={sheet.soNumber != null}
+                current="pick"
+              />
+            </div>
+            <span className="hint" role="status">
+              {save.hint}
+            </span>
+          </div>
+          <div className="so-sticky-actions">
+            <button
+              id="pick-finish"
+              className="so-icon-action"
+              type="button"
+              disabled={!canFinish}
+              aria-label="Finish pick"
+              title={finishTitle}
+              onClick={() => void onFinish()}
+            >
+              <Save size={18} strokeWidth={1.75} aria-hidden />
+            </button>
+          </div>
+        </div>
+      ) : null}
       <header className="pick-head">
         <div>
           <div className="pick-title">
@@ -917,13 +992,6 @@ export function PickSheet({ initial, canPick }: { initial: PickSheetModel; canPi
         <p className="banner warn" role="status">
           {balanceWarning}
         </p>
-      ) : null}
-      {editable && sheet.pickStatus === "open" ? (
-        <div className="pick-finish no-print">
-          <button id="pick-finish" type="button" disabled={busy || Boolean(balanceWarning)} onClick={() => void run(() => finishPick(sheet.orderId))}>
-            Finish pick
-          </button>
-        </div>
       ) : null}
 
       <p className="pick-links no-print">

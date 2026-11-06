@@ -295,6 +295,28 @@ export function pickFinishStatus(
   return lines.some((line) => line.picked < line.ordered) ? "short" : "picked";
 }
 
+/** Sticky hint on the pick sheet. Same words as a quote request. */
+export const PICK_SAVE_UNSAVED = "Unsaved changes";
+export const PICK_SAVE_SAVED = "All changes saved";
+export const PICK_SAVE_SAVING = "Saving…";
+
+/**
+ * Finish is the save. The icon is enabled only when that finish can run.
+ * A finished list, or an open list that is still out of balance, has nothing to save.
+ */
+export function pickSaveState(input: {
+  editable: boolean;
+  pickStatus: string | null;
+  blocked: boolean;
+  finishing: boolean;
+}): { dirty: boolean; hint: string } {
+  const dirty = input.editable && input.pickStatus === "open" && !input.blocked;
+  return {
+    dirty,
+    hint: input.finishing ? PICK_SAVE_SAVING : dirty ? PICK_SAVE_UNSAVED : PICK_SAVE_SAVED,
+  };
+}
+
 /** Already shipped. Picking must not move this status. */
 export function isShippedPickStatus(status: string): boolean {
   return status === "shipped" || status === "partially_shipped";

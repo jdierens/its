@@ -10329,6 +10329,50 @@ button.so-new-order svg,
   align-items: start;
 }
 
+.pick-savebar {
+  align-items: center;
+}
+
+/* Title and stage control sit in the sticky bar. The ticket still prints
+   the heading, and the page-count measure still includes it. */
+@media screen {
+  .pick-page:has(.pick-savebar) .pick-head .pick-title {
+    display: none;
+  }
+
+  .letter-measure.pick-page .pick-head .pick-title {
+    display: flex !important;
+  }
+}
+
+.pick-savebar .hint {
+  margin: 0;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.pick-page .pick-savebar button.so-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.pick-page .pick-savebar button.so-icon-action:disabled {
+  background-color: var(--surface-muted);
+  background-image: none;
+  color: var(--muted);
+  opacity: 1;
+}
+
+.pick-page .pick-savebar button.so-icon-action:disabled svg {
+  color: var(--muted);
+  stroke: currentColor;
+}
+
 .pick-title {
   display: flex;
   flex-wrap: wrap;
