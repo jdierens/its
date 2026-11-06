@@ -18,15 +18,17 @@ import {
 } from "@/lib/packActions";
 import { errorText } from "@/lib/errors";
 import {
+  explainPackEdit,
   formatBinSize,
   formatPackQty,
-  isShippedPackStatus,
   packAssignmentLabel,
   packAssignQtyText,
   packCatchUpNote,
   packagingTypeError,
   packedAfterShipNote,
+  packFinishVisible,
   packRoom,
+  packSheetEditable,
   parseInches,
   parsePackQty,
   parsePackWeight,
@@ -55,9 +57,21 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busyRef = useRef(false);
-  const editing = canPack && sheet.editable;
-  const catchUp = editing ? packCatchUpNote(sheet.status) : null;
+  const editing = packSheetEditable({
+    canPack,
+    status: sheet.status,
+    packedAt: sheet.packedAt,
+    serverEditable: sheet.editable,
+    pickStatus: sheet.pickStatus,
+  });
+  const showFinish = editing && packFinishVisible({
+    status: sheet.status,
+    packedAt: sheet.packedAt,
+    finishBlock: sheet.finishBlock,
+  });
+  const catchUp = editing && !sheet.packedAt ? packCatchUpNote(sheet.status) : null;
   const stayedShipped = sheet.packedAt ? packedAfterShipNote(sheet.status) : null;
+  const correction = editing && !sheet.finishBlock ? " Bins, weights, and quantities can still be corrected." : "";
   const progress = sheetPackProgress(sheet.lines);
   const title = sheet.soNumber ? `Pack SO${sheet.soNumber}` : "Pack";
   const selectedType = sheet.types.find((row) => row.id === typeId) ?? sheet.types[0] ?? null;
@@ -80,7 +94,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
       setSheet(await action());
       return true;
     } catch (cause) {
-      setError(errorText(cause));
+      setError(explainPackEdit(errorText(cause)));
       return false;
     } finally {
       busyRef.current = false;
@@ -241,14 +255,15 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
           {error}
         </p>
       ) : null}
-      {sheet.status === "packed" ? (
+      {sheet.status === "packed" && !sheet.finishBlock ? (
         <p className="banner ok" role="status">
-          Packed. <Link href="/warehouse/ship">Shipping</Link> is next. Carrier labels and rate shopping are not on this screen.
+          Packed.{correction} <Link href="/warehouse/ship">Shipping</Link> is next. Carrier labels and rate shopping are not on this screen.
         </p>
       ) : null}
-      {stayedShipped ? (
+      {stayedShipped && !sheet.finishBlock ? (
         <p className="banner ok" role="status">
           {stayedShipped}
+          {correction}
         </p>
       ) : null}
       {catchUp ? (
@@ -256,7 +271,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
           {catchUp}
         </p>
       ) : null}
-      {canPack && !editing && sheet.finishBlock && isShippedPackStatus(sheet.status) ? (
+      {sheet.finishBlock && !showFinish ? (
         <p className="muted">{sheet.finishBlock}</p>
       ) : null}
       {!canPack ? <p className="muted">You can look at this sheet. Packing is turned off for this sign-in.</p> : null}
@@ -608,7 +623,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
         ) : null}
       </section>
 
-      {editing ? (
+      {showFinish ? (
         <div className="pick-finish">
           <button
             id="pack-finish"
