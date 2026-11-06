@@ -18,6 +18,7 @@ import {
   packRoom,
   packSheetFromJson,
   shippedOrderNeedsPack,
+  packAssignmentLabel,
   parsePackQty,
   parsePackWeight,
   shipQueueFromJson,
@@ -74,6 +75,8 @@ describe("pack complete", () => {
     pallet.weightLb = 210;
     assert.equal(packCompleteBlock([line], [box(6.5), pallet]), null);
     assert.equal(shippingBinLabel("pallet", 2), "Pallet 2");
+    assert.equal(packAssignmentLabel("box", 1, 8), "8 in Box 1");
+    assert.equal(packAssignmentLabel("pallet", 2, 3), "3 in Pallet 2");
     assert.equal(formatBinSize({ lengthIn: 48, widthIn: 40, heightIn: 48 }), "48 × 40 × 48 in");
 
     line.packed = 6;

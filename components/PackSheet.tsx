@@ -21,6 +21,7 @@ import {
   formatBinSize,
   formatPackQty,
   isShippedPackStatus,
+  packAssignmentLabel,
   packCatchUpNote,
   packagingTypeError,
   packedAfterShipNote,
@@ -416,7 +417,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
                       {line.assignments.length > 0 ? (
                         <span className="pick-planned">
                           {line.assignments
-                            .map((row) => `${shippingBinLabel(row.kind, row.binNumber)} ${formatPackQty(row.qty)}`)
+                            .map((row) => packAssignmentLabel(row.kind, row.binNumber, row.qty))
                             .join(", ")}
                         </span>
                       ) : null}
@@ -451,7 +452,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
                         "—"
                       ) : (
                         line.assignments
-                          .map((row) => `${shippingBinLabel(row.kind, row.binNumber)} ${formatPackQty(row.qty)}`)
+                          .map((row) => packAssignmentLabel(row.kind, row.binNumber, row.qty))
                           .join(", ")
                       )}
                     </td>
