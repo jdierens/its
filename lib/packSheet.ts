@@ -64,8 +64,9 @@ export type PackSheetModel = {
   /** When packing finished. Null until finish, including on a shipped order that is still being packed. */
   packedAt: string | null;
   /**
-   * Bins, quantities, weights, and finish are allowed.
-   * An older sheet omits this and only a packing order stays editable.
+   * Server flag: bins and quantities can be saved.
+   * An older sheet omits this and only a packing order is treated as open.
+   * The sheet still offers corrections after finish. See packSheetEditable.
    */
   editable: boolean;
   customer: string;
@@ -280,6 +281,47 @@ export function packedAfterShipNote(status: string): string | null {
   if (status === "shipped") return "Packed. This order stays shipped.";
   if (status === "partially_shipped") return "Packed. This order stays partially shipped.";
   return null;
+}
+
+export const PACK_EDIT_MIGRATION = "supabase/migrations/20261106010000_pack_edit_after_finish.sql";
+
+/**
+ * Bins, weights, heights, and quantities stay editable after Finish.
+ * Packing, packed, and a shipped catch-up can be corrected. Cancelled, invoiced,
+ * and closed stay locked. A database that has not applied the migration still
+ * says editable false; the sheet offers the correction and names that file if the save is refused.
+ */
+export function packSheetEditable(input: {
+  canPack: boolean;
+  status: string;
+  packedAt: string | null;
+  serverEditable: boolean;
+  pickStatus: "open" | "picked" | "short" | null;
+}): boolean {
+  if (!input.canPack) return false;
+  if (input.serverEditable) return true;
+  if (input.pickStatus !== "picked" && input.pickStatus !== "short") return false;
+  if (input.status === "packed") return true;
+  if (isShippedPackStatus(input.status) && input.packedAt) return true;
+  return false;
+}
+
+/** Finish is the open step. A complete finished pack hides it until a correction reopens the sheet. */
+export function packFinishVisible(input: {
+  status: string;
+  packedAt: string | null;
+  finishBlock: string | null;
+}): boolean {
+  if (input.status === "packing") return true;
+  if (isShippedPackStatus(input.status) && !input.packedAt) return true;
+  if (input.status === "packed" || isShippedPackStatus(input.status)) return Boolean(input.finishBlock);
+  return false;
+}
+
+/** A finished pack refuses edits until that migration is applied. Say so next to the action. */
+export function explainPackEdit(message: string): string {
+  if (!message.includes("Packing is closed on this sales order.")) return message;
+  return `${message} Apply ${PACK_EDIT_MIGRATION} before a finished pack can be corrected.`;
 }
 
 export function sheetPackProgress(lines: readonly { picked: number; packed: number }[]): { picked: number; packed: number } {

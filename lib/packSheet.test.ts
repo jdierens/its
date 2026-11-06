@@ -5,6 +5,7 @@ import { NAV_GROUPS, pageMetaFor } from "./nav.ts";
 import { packAccessForRole } from "./packAccess.ts";
 import {
   defaultPackAssignQty,
+  explainPackEdit,
   formatBinSize,
   isPackLine,
   isShippedPackStatus,
@@ -14,10 +15,12 @@ import {
   packagingTypeError,
   packagingTypeMeasures,
   packedAfterShipNote,
+  packFinishVisible,
   packQtyError,
   packQueueFromJson,
   packQueueLabel,
   packRoom,
+  packSheetEditable,
   packSheetFromJson,
   shippedOrderNeedsPack,
   packAssignmentLabel,
@@ -31,6 +34,7 @@ import {
 const sql = readFileSync(new URL("../supabase/migrations/20261028233000_sales_order_packing.sql", import.meta.url), "utf8");
 const shippedSql = readFileSync(new URL("../supabase/migrations/20261102143000_pack_shipped_orders.sql", import.meta.url), "utf8");
 const packSheetUi = readFileSync(new URL("../components/PackSheet.tsx", import.meta.url), "utf8");
+const editSql = readFileSync(new URL("../supabase/migrations/20261106010000_pack_edit_after_finish.sql", import.meta.url), "utf8");
 
 describe("what gets packed", () => {
   it("packs picked product and kit lines and leaves services, freight, and unpicked lines out", () => {
@@ -301,7 +305,7 @@ describe("shipped orders that still need a pack", () => {
     assert.equal(packCatchUpNote("packing"), null);
   });
 
-  it("opens bins on a shipped order that has no packed_at and closes them after finish", () => {
+  it("opens bins on a shipped order that has no packed_at and stays editable after finish", () => {
     const open = packSheetFromJson({
       ...base,
       status: "shipped",
@@ -311,6 +315,7 @@ describe("shipped orders that still need a pack", () => {
     });
     assert.equal(open.editable, true);
     assert.equal(open.packedAt, null);
+    assert.equal(packFinishVisible({ status: open.status, packedAt: open.packedAt, finishBlock: open.finishBlock }), true);
     assert.equal(packCatchUpNote(open.status), "This order already shipped. Packing records the bins and leaves the ship record in place.");
     assert.equal(packedAfterShipNote(open.status), "Packed. This order stays shipped.");
 
@@ -318,12 +323,13 @@ describe("shipped orders that still need a pack", () => {
       ...base,
       status: "shipped",
       packed_at: "2026-11-02T16:00:00Z",
-      editable: false,
+      editable: true,
       finish_block: null,
     });
     assert.equal(done.status, "shipped");
-    assert.equal(done.editable, false);
+    assert.equal(done.editable, true);
     assert.equal(done.packedAt, "2026-11-02T16:00:00Z");
+    assert.equal(packFinishVisible({ status: done.status, packedAt: done.packedAt, finishBlock: done.finishBlock }), false);
 
     const partial = packSheetFromJson({
       ...base,
@@ -335,10 +341,14 @@ describe("shipped orders that still need a pack", () => {
     assert.equal(partial.editable, true);
     assert.match(packCatchUpNote(partial.status) ?? "", /partially shipped/);
     assert.equal(packedAfterShipNote(partial.status), "Packed. This order stays partially shipped.");
+    assert.equal(
+      packFinishVisible({ status: partial.status, packedAt: partial.packedAt, finishBlock: partial.finishBlock }),
+      true,
+    );
   });
 
   it("does not treat cancelled, invoiced, or closed as an open pack", () => {
-    for (const status of ["cancelled", "invoiced", "closed", "packed"]) {
+    for (const status of ["cancelled", "invoiced", "closed"]) {
       const sheet = packSheetFromJson({
         ...base,
         status,
@@ -349,7 +359,133 @@ describe("shipped orders that still need a pack", () => {
       assert.equal(sheet.editable, false, status);
       assert.equal(packCatchUpNote(status), null, status);
       assert.equal(isShippedPackStatus(status), false, status);
+      assert.equal(
+        packSheetEditable({
+          canPack: true,
+          status,
+          packedAt: null,
+          serverEditable: false,
+          pickStatus: "picked",
+        }),
+        false,
+        status,
+      );
     }
+  });
+});
+
+describe("editing a finished pack", () => {
+  it("stays editable after finish and shows Finish again when the sheet is reopened", () => {
+    assert.equal(
+      packSheetEditable({
+        canPack: true,
+        status: "packed",
+        packedAt: "2026-11-05T12:00:00Z",
+        serverEditable: true,
+        pickStatus: "picked",
+      }),
+      true,
+    );
+    assert.equal(
+      packSheetEditable({
+        canPack: true,
+        status: "packed",
+        packedAt: "2026-11-05T12:00:00Z",
+        serverEditable: false,
+        pickStatus: "picked",
+      }),
+      true,
+    );
+    assert.equal(
+      packSheetEditable({
+        canPack: true,
+        status: "shipped",
+        packedAt: "2026-11-05T12:00:00Z",
+        serverEditable: false,
+        pickStatus: "short",
+      }),
+      true,
+    );
+    assert.equal(
+      packSheetEditable({
+        canPack: true,
+        status: "partially_shipped",
+        packedAt: "2026-11-05T12:00:00Z",
+        serverEditable: true,
+        pickStatus: "picked",
+      }),
+      true,
+    );
+    assert.equal(
+      packSheetEditable({
+        canPack: true,
+        status: "packing",
+        packedAt: null,
+        serverEditable: true,
+        pickStatus: "picked",
+      }),
+      true,
+    );
+    assert.equal(
+      packSheetEditable({
+        canPack: false,
+        status: "packed",
+        packedAt: "2026-11-05T12:00:00Z",
+        serverEditable: true,
+        pickStatus: "picked",
+      }),
+      false,
+    );
+    assert.equal(
+      packSheetEditable({
+        canPack: true,
+        status: "shipped",
+        packedAt: null,
+        serverEditable: false,
+        pickStatus: "picked",
+      }),
+      false,
+    );
+    assert.equal(
+      packSheetEditable({
+        canPack: true,
+        status: "shipped",
+        packedAt: "2026-11-05T12:00:00Z",
+        serverEditable: false,
+        pickStatus: "open",
+      }),
+      false,
+    );
+
+    assert.equal(packFinishVisible({ status: "packing", packedAt: null, finishBlock: null }), true);
+    assert.equal(packFinishVisible({ status: "packing", packedAt: null, finishBlock: "Box 1 needs a weight." }), true);
+    assert.equal(packFinishVisible({ status: "shipped", packedAt: null, finishBlock: "Line 1 106614 still has 1 to pack." }), true);
+    assert.equal(packFinishVisible({ status: "packed", packedAt: "2026-11-05T12:00:00Z", finishBlock: null }), false);
+    assert.equal(packFinishVisible({ status: "shipped", packedAt: "2026-11-05T12:00:00Z", finishBlock: null }), false);
+    assert.equal(
+      packFinishVisible({
+        status: "packed",
+        packedAt: "2026-11-05T12:00:00Z",
+        finishBlock: "Line 1 106614 still has 3 to pack.",
+      }),
+      true,
+    );
+    assert.equal(
+      packFinishVisible({
+        status: "shipped",
+        packedAt: null,
+        finishBlock: null,
+      }),
+      true,
+    );
+  });
+
+  it("names the migration when a finished pack still refuses the save", () => {
+    assert.match(
+      explainPackEdit("Packing is closed on this sales order."),
+      /20261106010000_pack_edit_after_finish\.sql/,
+    );
+    assert.equal(explainPackEdit("Enter a weight in pounds."), "Enter a weight in pounds.");
   });
 });
 
@@ -425,5 +561,56 @@ describe("shipped orders on the pack queue", () => {
     assert.equal(packQueueLabel("partially_shipped"), "Partially shipped");
     assert.equal(packQueueLabel("packing"), "Packing");
     assert.equal(packQueueLabel("picking"), "Picked");
+  });
+});
+
+describe("edit a finished pack", () => {
+  function branch(marker: string, end: string): string {
+    const start = editSql.indexOf(marker);
+    assert.notEqual(start, -1, marker);
+    const next = editSql.indexOf(end, start + marker.length);
+    assert.notEqual(next, -1, `${marker} ${end}`);
+    return editSql.slice(start, next);
+  }
+
+  it("keeps a finished pack writable and reopens it without un-shipping", () => {
+    assert.match(editSql, /Apply by hand/);
+    assert.match(editSql, /Deploying does not run this file/);
+    assert.match(editSql, /fxsbpreasbdalwthyzvk/);
+    assert.match(editSql, /p_status in \('packing', 'packed', 'shipped', 'partially_shipped'\)/);
+    assert.doesNotMatch(
+      editSql.slice(editSql.indexOf("function public.so_packing_writable"), editSql.indexOf("comment on function public.so_packing_writable")),
+      /p_packed_at is null/,
+    );
+    assert.match(editSql, /so_reopen_finished_pack/);
+    assert.match(editSql, /so_sync_finished_pack/);
+    assert.match(editSql, /so_packages_sync_finished_pack/);
+    assert.match(editSql, /so_package_contents_sync_finished_pack/);
+    assert.match(editSql, /set status = 'packing'/);
+    assert.match(editSql, /packed_at = null/);
+    assert.match(editSql, /when public\.so_packing_writable\(v_order\.status, v_order\.packed_at\)/);
+    assert.match(editSql, /Already finished and still complete/);
+    assert.doesNotMatch(editSql, /grant execute on function public\.so_packing_writable/);
+    assert.doesNotMatch(editSql, /grant execute on function public\.so_reopen_finished_pack/);
+    assert.doesNotMatch(editSql, /grant execute on function public\.so_sync_finished_pack/);
+    assert.match(editSql, /revoke all on function public\.so_packing_writable\(text, timestamptz\) from public, anon, authenticated/);
+    assert.match(editSql, /revoke all on function public\.so_reopen_finished_pack\(uuid\) from public, anon, authenticated/);
+    assert.match(editSql, /revoke all on function public\.so_sync_finished_pack\(\) from public, anon, authenticated/);
+    assert.match(editSql, /grant execute on function public\.finish_sales_order_pack\(uuid, text, uuid\) to service_role/);
+    assert.doesNotMatch(editSql, /grant .+ to anon/);
+    assert.doesNotMatch(editSql, /ship_date\s*=/);
+    assert.doesNotMatch(editSql, /(?:update|insert|delete)\s+(?:from\s+)?public\.so_shipments/i);
+
+    const stayed = branch("-- shipped catch-up stays shipped", "\n  end if;");
+    assert.match(stayed, /packed_at = null/);
+    assert.doesNotMatch(stayed, /status =/);
+    assert.doesNotMatch(stayed, /ship_date/);
+
+    const finished = branch("-- shipped catch-up finish", "\n  elsif");
+    assert.match(finished, /packed_at = now\(\)/);
+    assert.match(finished, /v_status,\s*\n\s*v_status/);
+    assert.doesNotMatch(finished, /status =/);
+    assert.doesNotMatch(finished, /ship_date/);
+    assert.match(editSql, /'packing',\s*\n\s*'packed'/);
   });
 });
