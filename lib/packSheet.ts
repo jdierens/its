@@ -140,6 +140,17 @@ export function packRoom(picked: number, packed: number, alreadyInBin: number): 
   return Math.max(0, picked - packed + alreadyInBin);
 }
 
+/** Assign field before the packer types. One unit when the line still has room, never the remainder. */
+export function defaultPackAssignQty(room: number): string {
+  if (!Number.isFinite(room) || room < 1) return "";
+  return "1";
+}
+
+/** Text Assign submits. Undefined means the field was left alone. An empty string was cleared on purpose. */
+export function packAssignQtyText(typed: string | undefined, room: number): string {
+  return typed ?? defaultPackAssignQty(room);
+}
+
 export function packQtyError(qty: number, room: number): string | null {
   if (!Number.isInteger(qty) || qty < 1) return "Enter a whole number of at least 1.";
   if (room < 1) return "That line is already packed.";
