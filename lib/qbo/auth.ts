@@ -1,3 +1,5 @@
+import { errorText } from "@/lib/errors";
+
 const DISCOVERY_URL = {
   sandbox: "https://developer.api.intuit.com/.well-known/openid_sandbox_configuration",
   production: "https://developer.api.intuit.com/.well-known/openid_configuration",
@@ -119,7 +121,7 @@ export async function requestToken(input: {
       });
     } catch (error) {
       lastError = new TokenRequestError(
-        error instanceof Error ? error.message : "QuickBooks token request failed.",
+        errorText(error, "QuickBooks token request failed."),
         null,
         0,
         null,

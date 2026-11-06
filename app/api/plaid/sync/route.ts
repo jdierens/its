@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { plaidActor } from "@/lib/plaid/actor";
 import { syncAll, syncItem } from "@/lib/plaid/feed";
 import { isUuid } from "@/lib/plaid/ids";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     const reports = itemId ? [await syncItem(itemId)] : await syncAll();
     return NextResponse.json({ ok: true, reports });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Bank sync failed.";
+    const message = errorText(error, "Bank sync failed.");
     return NextResponse.json({ message }, { status: 400 });
   }
 }

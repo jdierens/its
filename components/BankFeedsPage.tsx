@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Plug, RefreshCw } from "lucide-react";
 import { usePlaidLink } from "react-plaid-link";
 import { PageToolbar, ToolbarButton } from "@/components/PageToolbar";
+import { errorText } from "@/lib/errors";
 import { formatMoney } from "@/lib/pricing/quotes";
 import type { PlaidItemView, PlaidStatus } from "@/lib/plaid/types";
 
@@ -35,7 +36,7 @@ export function BankFeedsPage() {
     let cancelled = false;
     load()
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load bank feeds.");
+        if (!cancelled) setError(errorText(err, "Could not load bank feeds."));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -73,7 +74,7 @@ export function BankFeedsPage() {
       setLinkToken(body.linkToken);
       setAutoOpen(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start Plaid Link.");
+      setError(errorText(err, "Could not start Plaid Link."));
       setBusy(null);
     }
   }
@@ -100,7 +101,7 @@ export function BankFeedsPage() {
       setNotice("Bank connected.");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect the bank.");
+      setError(errorText(err, "Could not connect the bank."));
     } finally {
       setBusy(null);
     }
@@ -130,7 +131,7 @@ export function BankFeedsPage() {
       setNotice(body.reports?.map((report) => report.message).join(" ") || body.message || "Sync finished.");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Bank sync failed.");
+      setError(errorText(err, "Bank sync failed."));
     } finally {
       setBusy(null);
     }
@@ -152,7 +153,7 @@ export function BankFeedsPage() {
       setNotice(body.message || "Disconnected.");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not disconnect the bank.");
+      setError(errorText(err, "Could not disconnect the bank."));
     } finally {
       setBusy(null);
     }
@@ -172,7 +173,7 @@ export function BankFeedsPage() {
       if (!response.ok) throw new Error(body.message || "Could not fire the sandbox webhook.");
       setNotice(body.message || "Plaid queued a sandbox webhook.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not fire the sandbox webhook.");
+      setError(errorText(err, "Could not fire the sandbox webhook."));
     } finally {
       setBusy(null);
     }

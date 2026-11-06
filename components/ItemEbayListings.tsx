@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ebayItemUrl } from "@/lib/ebay/itemUrl";
+import { errorText } from "@/lib/errors";
 import { ebayViewForItem } from "@/lib/ebay/listings";
 import { packMark } from "@/lib/ebay/packs";
 import { getSupabase } from "@/lib/supabase";
@@ -64,7 +65,7 @@ export async function ItemEbayListings({ itemId }: { itemId: string }) {
       </section>
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not load eBay listings.";
+    const message = errorText(error, "Could not load eBay listings.");
     if (/sign in required|SUPABASE_SERVICE_ROLE_KEY/i.test(message)) return null;
     return (
       <section className="page" id="item-ebay">

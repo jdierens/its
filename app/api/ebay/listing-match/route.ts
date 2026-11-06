@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { matchEbayListing } from "@/lib/ebay/listingsBrowser";
 import { actorCan } from "@/lib/actorAccess";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
     if (!result.ok) return NextResponse.json({ ok: false, message: result.message }, { status: result.status });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "That listing could not be matched.";
+    const message = errorText(error, "That listing could not be matched.");
     return NextResponse.json({ ok: false, message }, { status: 400 });
   }
 }

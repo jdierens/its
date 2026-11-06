@@ -6,6 +6,7 @@ import { allowLensCaller } from "@/lib/lens/limit";
 import { lensPrompt, parseLensReading } from "@/lib/lens/parse";
 import { lensNeedles, rankLensMatches } from "@/lib/lens/rank";
 import { findLensCandidates, loadTaxonomyNames } from "@/lib/lens/search";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
     const matches = rankLensMatches(reading, await findLensCandidates(lensNeedles(reading)));
     return NextResponse.json({ configured: true, model, reading, matches, gemini });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Lens could not read those photos.";
+    const message = errorText(error, "Lens could not read those photos.");
     const gemini = error instanceof GeminiRequestError
       ? geminiFacts({
           imageBytes,

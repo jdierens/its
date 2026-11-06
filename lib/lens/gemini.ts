@@ -1,5 +1,6 @@
 import { decodedBase64Bytes, type LensImage } from "@/lib/lens/images";
 import { lensResponseSchema } from "@/lib/lens/parse";
+import { errorText } from "@/lib/errors";
 
 export const GEMINI_TIMEOUT_MS = 50_000;
 export const GEMINI_MAX_OUTPUT_TOKENS = 1024;
@@ -137,11 +138,11 @@ export type GeminiFailure = {
 
 export function geminiFailure(error: unknown): GeminiFailure {
   const name = error && typeof error === "object" && "name" in error ? String((error as { name: unknown }).name) : "";
-  const message = error instanceof Error ? error.message : "";
+  const message = errorText(error, "");
   const cause = error && typeof error === "object" && "cause" in error ? (error as { cause?: unknown }).cause : undefined;
   const causeName = cause && typeof cause === "object" && "name" in cause ? String((cause as { name: unknown }).name) : "";
   const causeCode = cause && typeof cause === "object" && "code" in cause ? String((cause as { code?: unknown }).code ?? "") : "";
-  const causeMessage = cause instanceof Error ? cause.message : "";
+  const causeMessage = errorText(cause, "");
   return {
     name,
     message: publicGeminiText(message, 180),

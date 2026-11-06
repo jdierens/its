@@ -21,6 +21,7 @@ import {
 import { writeEbayLog } from "@/lib/ebay/log";
 import { forceRefreshAccessToken, validAccessToken } from "@/lib/ebay/oauth";
 import { getServiceSupabase } from "@/lib/supabaseAdmin";
+import { errorText } from "@/lib/errors";
 
 const MAX_PAGES = 500;
 const UPSERT_CHUNK = 200;
@@ -227,7 +228,7 @@ export async function pullActiveListings(): Promise<ListingsPullResult> {
     return { active: result.active, unmatched: result.unmatched, ended: result.ended, fetchedAt: result.fetchedAt };
   } catch (error) {
     const trading = error instanceof TradingCallError ? error : null;
-    const message = error instanceof Error ? error.message : "eBay listings pull failed.";
+    const message = errorText(error, "eBay listings pull failed.");
     await writeEbayLog({
       entity: "listings",
       direction: "read",
@@ -248,21 +249,21 @@ export async function listingsSummary(): Promise<ListingsSummary> {
     .eq("listing_status", "Active");
   if (active.error) {
     if (listingsTableMissing(active.error)) return { available: false, active: null, unmatched: null, fetchedAt: null };
-    throw new Error(active.error.message);
+    throw new Error(errorText(active.error));
   }
   const unmatched = await admin
     .from("ebay_listings")
     .select("id", { count: "exact", head: true })
     .eq("listing_status", "Active")
     .is("item_id", null);
-  if (unmatched.error) throw new Error(unmatched.error.message);
+  if (unmatched.error) throw new Error(errorText(unmatched.error));
   const latest = await admin
     .from("ebay_listings")
     .select("fetched_at")
     .order("fetched_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (latest.error) throw new Error(latest.error.message);
+  if (latest.error) throw new Error(errorText(latest.error));
   const fetchedAt = latest.data && typeof latest.data.fetched_at === "string" ? latest.data.fetched_at : null;
   return { available: true, active: active.count ?? 0, unmatched: unmatched.count ?? 0, fetchedAt };
 }
@@ -276,7 +277,7 @@ export async function itemIdsMatchingEbayItemId(supabase: SupabaseClient, patter
     .limit(1000);
   if (error) {
     if (listingsTableMissing(error)) return [];
-    throw new Error(error.message);
+    throw new Error(errorText(error));
   }
   const ids = new Set<string>();
   for (const row of data ?? []) {
@@ -351,7 +352,7 @@ async function selectActiveListings(
       }
       if (selected.error) {
         if (listingsTableMissing(selected.error)) return "missing";
-        throw new Error(selected.error.message);
+        throw new Error(errorText(selected.error));
       }
       for (const row of selected.data ?? []) {
         if (typeof row.item_id !== "string" || typeof row.ebay_item_id !== "string") continue;
@@ -378,7 +379,7 @@ async function selectActiveListingsWithoutPack(
       .limit(1000);
     if (selected.error) {
       if (listingsTableMissing(selected.error)) return "missing";
-      throw new Error(selected.error.message);
+      throw new Error(errorText(selected.error));
     }
     for (const row of selected.data ?? []) {
       if (typeof row.item_id === "string" && typeof row.ebay_item_id === "string") {
@@ -405,7 +406,7 @@ async function loadKitEdges(supabase: SupabaseClient, startIds: string[]): Promi
         .in("component_item_id", chunk);
       if (selected.error) {
         if (kitTableMissing(selected.error)) return null;
-        throw new Error(selected.error.message);
+        throw new Error(errorText(selected.error));
       }
       for (const row of selected.data ?? []) {
         if (typeof row.kit_item_id !== "string" || typeof row.component_item_id !== "string") continue;
@@ -422,7 +423,7 @@ async function itemSkus(supabase: SupabaseClient, itemIds: string[]): Promise<Ma
   const skus = new Map<string, string>();
   for (const chunk of chunks(itemIds, SKU_CHUNK)) {
     const selected = await supabase.from("items").select("id, sku").in("id", chunk);
-    if (selected.error) throw new Error(selected.error.message);
+    if (selected.error) throw new Error(errorText(selected.error));
     for (const row of selected.data ?? []) {
       if (typeof row.id === "string" && typeof row.sku === "string" && row.sku.trim()) skus.set(row.id, row.sku.trim());
     }
@@ -478,7 +479,7 @@ function supabaseStore(admin: SupabaseClient): ListingsStore {
         .update({ listing_status: "Ended" }, { count: "exact" })
         .eq("listing_status", "Active")
         .lt("fetched_at", fetchedAt);
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(errorText(error));
       return count ?? 0;
     },
   };
@@ -505,7 +506,7 @@ async function manualItemIdsFor(
     }
     if (selected.error) {
       if (listingsTableMissing(selected.error)) return found;
-      throw new Error(selected.error.message);
+      throw new Error(errorText(selected.error));
     }
     for (const row of selected.data ?? []) {
       if (typeof row.ebay_item_id !== "string" || typeof row.item_id !== "string") continue;
@@ -526,7 +527,7 @@ async function upsertListingChunk(admin: SupabaseClient, chunk: ListingWrite[], 
     if (!omit.pack && packColumnsMissing(error)) omit.pack = true;
     if (!omit.picture && listingsColumnMissing(error, "picture_url")) omit.picture = true;
     if (!omit.manual && listingsColumnMissing(error, "matched_manually")) omit.manual = true;
-    if (`${omit.pack}:${omit.picture}:${omit.manual}` === before) throw new Error(error.message);
+    if (`${omit.pack}:${omit.picture}:${omit.manual}` === before) throw new Error(errorText(error));
   }
   throw new Error("eBay listings could not be saved.");
 }
@@ -536,7 +537,7 @@ async function itemsForSkus(admin: SupabaseClient, skus: readonly string[]): Pro
   const found: { id: string; sku: string }[] = [];
   for (const chunk of chunks(wanted, SKU_CHUNK)) {
     const exact = await admin.from("items").select("id, sku").in("sku", chunk);
-    if (exact.error) throw new Error(exact.error.message);
+    if (exact.error) throw new Error(errorText(exact.error));
     for (const row of exact.data ?? []) {
       if (typeof row.id === "string") found.push({ id: row.id, sku: String(row.sku ?? "") });
     }
@@ -546,7 +547,7 @@ async function itemsForSkus(admin: SupabaseClient, skus: readonly string[]): Pro
   for (const chunk of chunks(missing, 40)) {
     const filter = chunk.map((sku) => `sku.ilike.${quoteExact(sku)}`).join(",");
     const loose = await admin.from("items").select("id, sku").or(filter);
-    if (loose.error) throw new Error(loose.error.message);
+    if (loose.error) throw new Error(errorText(loose.error));
     for (const row of loose.data ?? []) {
       if (typeof row.id === "string") found.push({ id: row.id, sku: String(row.sku ?? "") });
     }

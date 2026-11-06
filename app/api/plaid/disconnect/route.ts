@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { plaidActor } from "@/lib/plaid/actor";
 import { disconnectItem } from "@/lib/plaid/feed";
 import { isUuid } from "@/lib/plaid/ids";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
     const message = await disconnectItem(id);
     return NextResponse.json({ ok: true, message });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not disconnect the bank.";
+    const message = errorText(error, "Could not disconnect the bank.");
     return NextResponse.json({ message }, { status: 400 });
   }
 }

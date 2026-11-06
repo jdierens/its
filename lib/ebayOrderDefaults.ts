@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { INCOTERMS } from "@/lib/salesOrderDraft";
 import { EBAY_SALES_REP_SETTING_KEY, ebaySalesRepFromSetting } from "@/lib/ebaySalesRep";
+import { errorText } from "@/lib/errors";
 
 /** app_settings key. Not a credential. */
 export const EBAY_PAYMENT_TERMS_SETTING_KEY = "ebay_default_payment_terms";
@@ -53,7 +54,7 @@ export async function readEbayDraftDefaults(client: SupabaseClient): Promise<Eba
     .from("app_settings")
     .select("key, value")
     .in("key", [EBAY_SALES_REP_SETTING_KEY, EBAY_PAYMENT_TERMS_SETTING_KEY, EBAY_INCOTERMS_SETTING_KEY]);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   const values = new Map<string, string | null>();
   for (const row of data ?? []) {
     values.set(String(row.key), typeof row.value === "string" ? row.value : null);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { plaidActor } from "@/lib/plaid/actor";
 import { fireSandboxWebhook } from "@/lib/plaid/feed";
 import { isUuid } from "@/lib/plaid/ids";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
     const message = await fireSandboxWebhook(id);
     return NextResponse.json({ ok: true, message });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not fire the sandbox webhook.";
+    const message = errorText(error, "Could not fire the sandbox webhook.");
     return NextResponse.json({ message }, { status: 400 });
   }
 }

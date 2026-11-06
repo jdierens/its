@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { plaidActor } from "@/lib/plaid/actor";
 import { createLinkToken } from "@/lib/plaid/feed";
 import { isUuid } from "@/lib/plaid/ids";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const token = await createLinkToken({ itemId });
     return NextResponse.json(token);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not start Plaid Link.";
+    const message = errorText(error, "Could not start Plaid Link.");
     const status = message.startsWith("Add Plaid credentials") ? 503 : 400;
     return NextResponse.json({ message }, { status });
   }

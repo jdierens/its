@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { errorText } from "@/lib/errors";
 
 /** app_settings key. Not a credential. */
 export const EBAY_SALES_REP_SETTING_KEY = "ebay_default_sales_rep";
@@ -37,7 +38,7 @@ export async function readEbayDefaultSalesRep(client: SupabaseClient): Promise<s
     .select("value")
     .eq("key", EBAY_SALES_REP_SETTING_KEY)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   const value = data && typeof data.value === "string" ? data.value : null;
   return ebaySalesRepFromSetting(value);
 }

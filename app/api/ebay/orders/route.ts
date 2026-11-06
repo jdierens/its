@@ -3,6 +3,7 @@ import { ReconnectError } from "@/lib/ebay/auth";
 import { RECONNECT_MESSAGE } from "@/lib/ebay/messages";
 import { orderPullMessage, pullEbayOrders, SeedRequiredError } from "@/lib/ebay/orders";
 import { actorCan } from "@/lib/actorAccess";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,7 +25,7 @@ export async function POST() {
     if (error instanceof ReconnectError) {
       return NextResponse.json({ ok: false, message: RECONNECT_MESSAGE }, { status: 409 });
     }
-    const message = error instanceof Error ? error.message : "eBay order pull failed.";
+    const message = errorText(error, "eBay order pull failed.");
     const status = error instanceof SeedRequiredError ? 409 : 400;
     return NextResponse.json({ ok: false, message }, { status });
   }

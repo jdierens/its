@@ -22,7 +22,7 @@ export async function previewPurchaseLines(input: { fileName: string; fileBase64
   try {
     table = readTabularFile(input.fileName || "lines.csv", bytes);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Could not read the file.", rows: [] };
+    return { error: errorText(error, "Could not read the file."), rows: [] };
   }
   const mapped = mapImportSheet(table);
   if (mapped.error) return mapped;

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { QueryField } from "@/components/QueryField";
+import { errorText } from "@/lib/errors";
 import { usePageMeta } from "@/components/AppShell";
 import {
   clearSearchFilters,
@@ -56,7 +57,7 @@ export function ItemAttributeSearch() {
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted || requestId.current !== id) return;
-        setError(reason instanceof Error ? reason.message : "Search failed.");
+        setError(errorText(reason, "Search failed."));
       })
       .finally(() => {
         if (requestId.current === id) setLoading(false);

@@ -1,6 +1,7 @@
 import { omitPickTicketSku, pickSheetPlace } from "@/lib/pickSheet";
 import { salesOrderBuyerTotal, type QboInvoiceFacts, type SalesOrderStageInput } from "@/lib/salesOrderStageIcons";
 import { getSupabase } from "@/lib/supabase";
+import { errorText } from "@/lib/errors";
 
 /**
  * Stage facts for the sales-order icon strip.
@@ -185,7 +186,7 @@ async function loadLineFacts(
     const plain = await supabase.from("so_lines").select("sales_order_id, ext_price, line_kind").in("sales_order_id", slice);
     if (plain.error) {
       if (relationMissing(plain.error)) return [];
-      throw new Error(plain.error.message);
+      throw new Error(errorText(plain.error));
     }
     return asRows(plain.data);
   });
@@ -228,7 +229,7 @@ async function loadPickLists(
       .neq("status", "cancelled");
     if (error) {
       if (relationMissing(error)) return [];
-      throw new Error(error.message);
+      throw new Error(errorText(error));
     }
     return asRows(data);
   });
@@ -246,7 +247,7 @@ async function loadPickQty(
     const { data, error } = await supabase.from("so_picks").select("pick_list_id, allocation_id, qty_picked").in("pick_list_id", slice).gt("qty_picked", 0);
     if (error) {
       if (relationMissing(error)) return [];
-      throw new Error(error.message);
+      throw new Error(errorText(error));
     }
     return asRows(data);
   });
@@ -260,7 +261,7 @@ async function loadPackages(supabase: Awaited<ReturnType<typeof getSupabase>>, i
     const { data, error } = await supabase.from("so_packages").select("sales_order_id").in("sales_order_id", slice);
     if (error) {
       if (relationMissing(error)) return [];
-      throw new Error(error.message);
+      throw new Error(errorText(error));
     }
     return asRows(data);
   });
@@ -272,7 +273,7 @@ async function loadShipments(supabase: Awaited<ReturnType<typeof getSupabase>>, 
     const { data, error } = await supabase.from("so_shipments").select("sales_order_id, awb, ship_date").in("sales_order_id", slice);
     if (error) {
       if (relationMissing(error)) return [];
-      throw new Error(error.message);
+      throw new Error(errorText(error));
     }
     return asRows(data);
   });
@@ -292,7 +293,7 @@ async function loadApprovals(supabase: Awaited<ReturnType<typeof getSupabase>>, 
     const { data, error } = await supabase.from("so_events").select("sales_order_id").in("sales_order_id", slice).eq("event", "approved");
     if (error) {
       if (relationMissing(error)) return [];
-      throw new Error(error.message);
+      throw new Error(errorText(error));
     }
     return asRows(data);
   });
@@ -309,7 +310,7 @@ async function loadQboLinks(supabase: Awaited<ReturnType<typeof getSupabase>>, i
       .eq("source", "qbo_import");
     if (error) {
       if (relationMissing(error)) return [];
-      throw new Error(error.message);
+      throw new Error(errorText(error));
     }
     return asRows(data);
   });

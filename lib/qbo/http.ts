@@ -1,3 +1,5 @@
+import { errorText } from "@/lib/errors";
+
 const MIN_GAP_MS = 180;
 const MAX_ATTEMPTS = 4;
 
@@ -47,7 +49,7 @@ export async function qboRequest<T>(options: {
         signal: AbortSignal.timeout(30_000),
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "QuickBooks request failed.";
+      const message = errorText(error, "QuickBooks request failed.");
       last = { ok: false, status: 0, message, code: null, intuitTid: null, refreshed: authRetried };
       if (attempt < MAX_ATTEMPTS) {
         await sleep(500 * attempt);

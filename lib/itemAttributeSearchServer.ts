@@ -212,8 +212,8 @@ async function searchWithFunctions(
     }),
   ]);
   if (missingSearchFunction(listed.error) || missingSearchFunction(facets.error)) return null;
-  if (listed.error) throw new Error(listed.error.message);
-  if (facets.error) throw new Error(facets.error.message);
+  if (listed.error) throw new Error(errorText(listed.error));
+  if (facets.error) throw new Error(errorText(facets.error));
   const rows = (listed.data ?? []) as Record<string, unknown>[];
   let total = rows.length > 0 ? numberValue(rows[0]?.total_count) : 0;
   if (rows.length === 0 && offset > 0) {
@@ -223,7 +223,7 @@ async function searchWithFunctions(
       p_limit: 1,
       p_offset: 0,
     });
-    if (probe.error) throw new Error(probe.error.message);
+    if (probe.error) throw new Error(errorText(probe.error));
     const probeRows = (probe.data ?? []) as Record<string, unknown>[];
     total = probeRows.length > 0 ? numberValue(probeRows[0]?.total_count) : 0;
   }
@@ -381,7 +381,7 @@ async function loadAttributes(supabase: SupabaseClient, itemIds: string[]): Prom
     const chunk = itemIds.slice(index, index + 200);
     if (chunk.length === 0) continue;
     const { data, error } = await supabase.from("item_attributes").select("item_id, attribute_id, value").in("item_id", chunk);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(errorText(error));
     for (const row of data ?? []) {
       rows.push({
         itemId: String(row.item_id),
@@ -410,7 +410,7 @@ async function loadListedValues(supabase: SupabaseClient, attributeIds: string[]
     .from("attribute_values")
     .select("attribute_id, value, sort_order")
     .in("attribute_id", attributeIds);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   for (const row of data ?? []) {
     const id = String(row.attribute_id);
     const list = grouped.get(id) ?? [];
@@ -429,7 +429,7 @@ async function findPartSeed(supabase: SupabaseClient, part: string): Promise<See
     .select("id, sku, part_number, oem_part_number, model, taxonomy_id")
     .or(`part_number.ilike.${quoted},oem_part_number.ilike.${quoted},model.ilike.${quoted}`)
     .limit(50);
-  if (exact.error) throw new Error(exact.error.message);
+  if (exact.error) throw new Error(errorText(exact.error));
   let candidates = ((exact.data ?? []) as PartRow[]).filter((row) => partRank(row, norm) < 9);
   if (candidates.length === 0) candidates = await scanPartColumns(supabase, norm);
   candidates.sort((left, right) => partRank(left, norm) - partRank(right, norm) || text(left.sku).localeCompare(text(right.sku)));
@@ -456,7 +456,7 @@ async function findPartSeed(supabase: SupabaseClient, part: string): Promise<See
     .order("captured_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (quote.error) throw new Error(quote.error.message);
+  if (quote.error) throw new Error(errorText(quote.error));
   const taxonomyId = quote.data?.taxonomy_id ? String(quote.data.taxonomy_id) : "";
   const embedded = embeddedTaxonomy(quote.data?.taxonomies);
   if (!taxonomyId || !embedded?.shortCode) return null;
@@ -498,7 +498,7 @@ async function scanPartColumns(supabase: SupabaseClient, norm: string): Promise<
           .select("id, sku, part_number, oem_part_number, model, taxonomy_id")
           .order("id")
           .range(start, start + pageSize - 1);
-        if (error) throw new Error(error.message);
+        if (error) throw new Error(errorText(error));
         return (data ?? []) as PartRow[];
       }),
     );
@@ -526,8 +526,8 @@ async function loadSeedAttributes(
       .eq("taxonomy_id", taxonomyId),
     supabase.from("item_attributes").select("attribute_id, value").eq("item_id", itemId),
   ]);
-  if (links.error) throw new Error(links.error.message);
-  if (saved.error) throw new Error(saved.error.message);
+  if (links.error) throw new Error(errorText(links.error));
+  if (saved.error) throw new Error(errorText(saved.error));
   const byId = new Map<string, { name: string; usesList: boolean; dataType: FieldRow["dataType"] }>();
   for (const link of links.data ?? []) {
     const attribute = embeddedAttribute(link.attributes);
@@ -544,7 +544,7 @@ async function loadSeedAttributes(
 
 async function taxonomyIdentity(supabase: SupabaseClient, id: string) {
   const { data, error } = await supabase.from("taxonomies").select("id, name, short_code").eq("id", id).maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   if (!data?.short_code) return null;
   return { id: String(data.id), name: text(data.name), shortCode: text(data.short_code).toUpperCase() };
 }
@@ -555,7 +555,7 @@ async function loadTaxonomies(supabase: SupabaseClient): Promise<TaxonomyRow[]> 
     .select("id, name, short_code, sort_order, taxonomy_attributes(sort_order, attributes(id, name, label, data_type, unit, uses_list))")
     .order("sort_order")
     .order("name");
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(errorText(error));
   return ((data ?? []) as Record<string, unknown>[]).flatMap((row) => {
     const shortCode = text(row.short_code).toUpperCase();
     if (!shortCode) return [];
@@ -588,7 +588,7 @@ async function fetchPages(
   const pageSize = 1000;
   for (let from = 0; from < 20000; from += pageSize) {
     const { data, error } = await load(from, from + pageSize - 1);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(errorText(error));
     const page = (data ?? []) as Record<string, unknown>[];
     rows.push(...page);
     if (page.length < pageSize) break;

@@ -5,6 +5,7 @@ import { writeSyncLog } from "@/lib/qbo/log";
 import { CSRF_MESSAGE } from "@/lib/qbo/messages";
 import { integrationDenied } from "@/lib/integrationAccess";
 import { exchangeCode } from "@/lib/qbo/oauth";
+import { errorText } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
   try {
     await exchangeCode(code, realmId);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "QuickBooks connection failed.";
+    const message = errorText(error, "QuickBooks connection failed.");
     return fail(request, message);
   }
 
