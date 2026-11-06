@@ -33,6 +33,13 @@ export type PackAssignment = {
   qty: number;
 };
 
+/** A serial recorded on the pick. packageId is the bin it is packed in, or null while it is still unpacked. */
+export type PackSerial = {
+  id: string;
+  serial: string;
+  packageId: string | null;
+};
+
 export type PackLine = {
   allocationId: string;
   lineNo: number;
@@ -43,6 +50,7 @@ export type PackLine = {
   picked: number;
   packed: number;
   assignments: PackAssignment[];
+  serials: PackSerial[];
 };
 
 export type ShippingBin = {
@@ -124,6 +132,180 @@ export function shippingBinLabel(kind: PackKind, number: number): string {
 /** Quantity and bin stay in words so "Box 1" and qty 8 cannot read as box 18. */
 export function packAssignmentLabel(kind: PackKind, binNumber: number, qty: number): string {
   return `${formatPackQty(qty)} in ${shippingBinLabel(kind, binNumber)}`;
+}
+
+/** Quantity on a package row. The bin is the row, so the SKU carries the identity. */
+export function packContentLabel(qty: number, sku: string): string {
+  return `${formatPackQty(qty)} × ${sku}`;
+}
+
+/** A packed serial keeps the picked SKU beside it. The SKU comes from the pick, not from the scan. */
+export function packSerialLabel(serial: string, sku: string): string {
+  return `${serial} · ${sku}`;
+}
+
+/** One piece at a time. The unpacked remainder is not the default quantity. */
+export const PACK_ADD_QTY = "1";
+
+export const PACK_SAVE_UNSAVED = "Unsaved changes";
+export const PACK_SAVE_SAVED = "All changes saved";
+export const PACK_SAVE_SAVING = "Saving…";
+
+/**
+ * Finish is the save. The icon is enabled only when finish can run.
+ * A finished pack, or a pack that is still short a weight or a quantity, has nothing to finish.
+ */
+export function packSaveState(input: {
+  editable: boolean;
+  packedAt: string | null;
+  finishBlock: string | null;
+  finishing: boolean;
+}): { dirty: boolean; hint: string } {
+  const dirty = input.editable && input.packedAt == null && !input.finishBlock;
+  return {
+    dirty,
+    hint: input.finishing ? PACK_SAVE_SAVING : dirty ? PACK_SAVE_UNSAVED : PACK_SAVE_SAVED,
+  };
+}
+
+export function orderHasPackSerials(lines: readonly PackLine[]): boolean {
+  return lines.some((line) => line.serials.length > 0);
+}
+
+export function packageContentQty(binId: string, lines: readonly PackLine[]): number {
+  return lines.reduce((sum, line) => {
+    const row = line.assignments.find((assignment) => assignment.binId === binId);
+    return sum + (row && row.qty > 0 ? row.qty : 0);
+  }, 0);
+}
+
+/** A package row is complete when it has a size, a weight, and contents. It stays editable. */
+export function packageRowStatus(
+  bin: { kind: PackKind; weightLb: number | null; heightIn: number | null },
+  contentQty: number,
+): "Complete" | "Needs a height" | "Needs a weight" | "Needs contents" {
+  if (bin.heightIn == null || bin.heightIn <= 0) return "Needs a height";
+  if (bin.weightLb == null || bin.weightLb <= 0) return "Needs a weight";
+  if (contentQty <= 0) return "Needs contents";
+  return "Complete";
+}
+
+export type PackContentChip =
+  | {
+      kind: "item";
+      assignmentId: string;
+      allocationId: string;
+      sku: string;
+      qty: number;
+      label: string;
+    }
+  | {
+      kind: "serial";
+      serialId: string;
+      allocationId: string;
+      sku: string;
+      serial: string;
+      label: string;
+    };
+
+/** Item quantity that is not already represented by a serial in this bin, then each serial. */
+export function packageContentChips(binId: string, lines: readonly PackLine[]): PackContentChip[] {
+  const chips: PackContentChip[] = [];
+  for (const line of lines) {
+    const assignment = line.assignments.find((row) => row.binId === binId && row.qty > 0);
+    const serials = line.serials.filter((row) => row.packageId === binId);
+    const itemQty = (assignment?.qty ?? 0) - serials.length;
+    if (assignment && itemQty > 0) {
+      chips.push({
+        kind: "item",
+        assignmentId: assignment.id,
+        allocationId: line.allocationId,
+        sku: line.sku,
+        qty: itemQty,
+        label: packContentLabel(itemQty, line.sku),
+      });
+    }
+    for (const serial of serials) {
+      chips.push({
+        kind: "serial",
+        serialId: serial.id,
+        allocationId: line.allocationId,
+        sku: line.sku,
+        serial: serial.serial,
+        label: packSerialLabel(serial.serial, line.sku),
+      });
+    }
+  }
+  return chips;
+}
+
+export function unpackedRemainder(lines: readonly PackLine[]): string[] {
+  return lines.flatMap((line) => {
+    const room = packRoom(line.picked, line.packed, 0);
+    if (room <= 0) return [];
+    return [packContentLabel(room, line.sku)];
+  });
+}
+
+/**
+ * Resolves a serial to the picked line that recorded it.
+ * An unknown serial is refused. The SKU is the picked item, never a new one.
+ */
+export function packSerialMatch(
+  lines: readonly PackLine[],
+  raw: string,
+): { ok: true; allocationId: string; serialId: string; sku: string } | { ok: false; message: string } {
+  const serial = raw.trim();
+  if (!serial) return { ok: false, message: "Enter a serial." };
+  const hits: { line: PackLine; serial: PackSerial }[] = [];
+  for (const line of lines) {
+    for (const row of line.serials) {
+      if (row.serial.trim().toLowerCase() === serial.toLowerCase()) hits.push({ line, serial: row });
+    }
+  }
+  if (hits.length === 0) return { ok: false, message: "That serial is not on this pick." };
+  if (hits.length > 1) return { ok: false, message: "That serial matches more than one picked item." };
+  const hit = hits[0];
+  if (!hit) return { ok: false, message: "That serial is not on this pick." };
+  if (hit.serial.packageId) {
+    const assignment = hit.line.assignments.find((row) => row.binId === hit.serial.packageId);
+    const where = assignment ? shippingBinLabel(assignment.kind, assignment.binNumber) : "a package";
+    return { ok: false, message: `That serial is already in ${where}.` };
+  }
+  if (packRoom(hit.line.picked, hit.line.packed, 0) < 1) {
+    return { ok: false, message: "That line is already packed." };
+  }
+  return { ok: true, allocationId: hit.line.allocationId, serialId: hit.serial.id, sku: hit.line.sku };
+}
+
+/**
+ * Same gate the duplicate function enforces.
+ * A complete box can be copied only while the unpacked pick still has each quantity.
+ */
+export function duplicatePackBlock(
+  bin: {
+    id: string;
+    kind: PackKind;
+    number: number;
+    weightLb: number | null;
+    heightIn: number | null;
+  },
+  lines: readonly PackLine[],
+): string | null {
+  const label = shippingBinLabel(bin.kind, bin.number);
+  if (bin.weightLb == null || bin.weightLb <= 0) return `${label} needs a weight before it can be duplicated.`;
+  if (bin.heightIn == null || bin.heightIn <= 0) return `${label} needs a height before it can be duplicated.`;
+  const rows = lines.flatMap((line) => {
+    const assignment = line.assignments.find((row) => row.binId === bin.id && row.qty > 0);
+    if (!assignment) return [];
+    return [{ sku: line.sku, qty: assignment.qty, picked: line.picked, packed: line.packed }];
+  });
+  if (rows.length === 0) return `${label} needs contents before it can be duplicated.`;
+  for (const row of rows) {
+    const room = packRoom(row.picked, row.packed, 0);
+    if (room < row.qty) return `Only ${formatPackQty(room)} of ${row.sku} can go in the next bin.`;
+  }
+  return null;
 }
 
 export function formatInches(value: number | null): string {
@@ -403,6 +585,20 @@ function bins(value: unknown): ShippingBin[] {
   });
 }
 
+function packSerials(value: unknown): PackSerial[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw new Error("Unexpected pack sheet.");
+  return value.map((entry) => {
+    const row = record(entry);
+    if (!row || typeof row.id !== "string" || typeof row.serial !== "string") throw new Error("Unexpected pack sheet.");
+    return {
+      id: row.id,
+      serial: row.serial,
+      packageId: textOrNull(row.package_id),
+    };
+  });
+}
+
 function assignments(value: unknown): PackAssignment[] {
   if (!Array.isArray(value)) throw new Error("Unexpected pack sheet.");
   return value.map((entry) => {
@@ -453,6 +649,7 @@ export function packSheetFromJson(value: unknown): PackSheetModel {
         picked: qty(line.picked),
         packed: qty(line.packed),
         assignments: assignments(line.assignments),
+        serials: packSerials(line.serials),
       };
     }),
   };

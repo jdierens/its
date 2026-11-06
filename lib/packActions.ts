@@ -21,10 +21,11 @@ import { operatorInitials } from "@/lib/stockAccess";
 import { getSupabase } from "@/lib/supabase";
 
 const MIGRATION = "supabase/migrations/20261028233000_sales_order_packing.sql";
+const ROW_MIGRATION = "supabase/migrations/20261106150000_pack_row_packages.sql";
 
-function raisePack(error: { code?: string; message?: string } | null): never {
+function raisePack(error: { code?: string; message?: string } | null, migration = MIGRATION): never {
   if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
-    throw new Error(`Apply ${MIGRATION} before packing can be saved.`);
+    throw new Error(`Apply ${migration} before packing can be saved.`);
   }
   throw new Error(errorText(error));
 }
@@ -193,6 +194,57 @@ export async function removePackAssignment(contentId: string): Promise<PackSheet
     p_operator: who.operator,
   });
   if (error) raisePack(error);
+  return sheet(data);
+}
+
+export async function releasePackItemQty(contentId: string): Promise<PackSheetModel> {
+  await assertPacker();
+  const who = await actor();
+  const { data, error } = await (await getSupabase()).rpc("release_pack_item_qty", {
+    p_content: contentId,
+    p_initials: who.initials,
+    p_operator: who.operator,
+  });
+  if (error) raisePack(error, ROW_MIGRATION);
+  return sheet(data);
+}
+
+export async function assignPackSerial(input: { packageId: string; serial: string }): Promise<PackSheetModel> {
+  await assertPacker();
+  const serial = input.serial.trim();
+  if (!serial) throw new Error("Enter a serial.");
+  const who = await actor();
+  const { data, error } = await (await getSupabase()).rpc("assign_pack_serial", {
+    p_package: input.packageId,
+    p_serial: serial,
+    p_initials: who.initials,
+    p_operator: who.operator,
+  });
+  if (error) raisePack(error, ROW_MIGRATION);
+  return sheet(data);
+}
+
+export async function removePackSerial(unitId: string): Promise<PackSheetModel> {
+  await assertPacker();
+  const who = await actor();
+  const { data, error } = await (await getSupabase()).rpc("remove_pack_serial", {
+    p_unit: unitId,
+    p_initials: who.initials,
+    p_operator: who.operator,
+  });
+  if (error) raisePack(error, ROW_MIGRATION);
+  return sheet(data);
+}
+
+export async function duplicateShippingBin(packageId: string): Promise<PackSheetModel> {
+  await assertPacker();
+  const who = await actor();
+  const { data, error } = await (await getSupabase()).rpc("duplicate_shipping_bin", {
+    p_package: packageId,
+    p_initials: who.initials,
+    p_operator: who.operator,
+  });
+  if (error) raisePack(error, ROW_MIGRATION);
   return sheet(data);
 }
 
