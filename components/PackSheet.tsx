@@ -9,7 +9,6 @@ import {
   addPackagingType,
   addShippingBin,
   assignPackQty,
-  assignPackSerial,
   duplicateShippingBin,
   finishPack,
   releasePackItemQty,
@@ -27,7 +26,6 @@ import {
   explainPackEdit,
   formatBinSize,
   formatPackQty,
-  orderHasPackSerials,
   packAssignmentLabel,
   packBoxSummary,
   packCatchUpNote,
@@ -40,7 +38,6 @@ import {
   packPackedSerials,
   packSaveState,
   packSerialLabel,
-  packSerialMatch,
   packSheetEditable,
   parseInches,
   parsePackWeight,
@@ -72,8 +69,6 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
   const [catalogLength, setCatalogLength] = useState("");
   const [catalogWidth, setCatalogWidth] = useState("");
   const [catalogHeight, setCatalogHeight] = useState("");
-  const [serialText, setSerialText] = useState("");
-  const [serialBinId, setSerialBinId] = useState(initial.bins[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,8 +94,6 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
   const creatingType = typeId === NEW_PACKAGING_TYPE || !sheet.types.some((row) => row.id === typeId);
   const selectedType = sheet.types.find((row) => row.id === typeId) ?? null;
   const needsPalletHeight = creatingType ? typeKind === "pallet" : selectedType?.kind === "pallet";
-  const serialsAvailable = orderHasPackSerials(sheet.lines);
-  const serialPackageId = sheet.bins.some((bin) => bin.id === serialBinId) ? serialBinId : sheet.bins[0]?.id ?? "";
   const packedSerials = packPackedSerials(sheet.lines);
   const liveBlock = packCompleteBlock(
     sheet.lines.map((line) => ({
@@ -345,15 +338,6 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
     void run(() => releasePackItemQty(action.contentId));
   }
 
-  async function onAddSerial(binId: string, serial: string): Promise<boolean> {
-    const match = packSerialMatch(sheet.lines, serial);
-    if (!match.ok) {
-      setError(match.message);
-      return false;
-    }
-    return run(() => assignPackSerial({ packageId: binId, serial }));
-  }
-
   const finishTitle = save.dirty ? "Finish packing (Ctrl/Cmd+S)" : "No unsaved changes";
 
   return (
@@ -501,94 +485,30 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
               })}
             </tbody>
           </table>
-          {serialsAvailable ? (
-            <div className="pack-serials">
-              {packedSerials.length > 0 ? (
-                <ul className="pack-serial-list">
-                  {packedSerials.map((row) => {
-                    const bin = sheet.bins.find((candidate) => candidate.id === row.binId);
-                    const where = bin ? shippingBinLabel(bin.kind, bin.number) : "a package";
-                    return (
-                      <li key={row.serialId}>
-                        <span>{packSerialLabel(row.serial, row.sku)} · {where}</span>
-                        {editing ? (
-                          <button
-                            type="button"
-                            className="secondary icon-button"
-                            aria-label={`Remove ${row.serial} from ${where}`}
-                            title={`Remove ${row.serial} from ${where}`}
-                            disabled={busy}
-                            onClick={() => void run(() => removePackSerial(row.serialId))}
-                          >
-                            <Trash2 size={16} strokeWidth={1.75} aria-hidden />
-                          </button>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-              {editing && sheet.bins.length > 0 ? (
-                <div className="pack-add">
-                  <label>
-                    Serial
-                    <input
-                      aria-label="Serial"
-                      value={serialText}
-                      list="pack-overview-serials"
-                      onChange={(event) => setSerialText(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
-                        if (!serialPackageId || serialText.trim().length === 0) return;
-                        void onAddSerial(serialPackageId, serialText).then((saved) => {
-                          if (saved) setSerialText("");
-                        });
-                      }}
-                    />
-                  </label>
-                  <datalist id="pack-overview-serials">
-                    {sheet.lines.flatMap((line) =>
-                      line.serials
-                        .filter((serial) => serial.packageId == null)
-                        .map((serial) => (
-                          <option key={serial.id} value={serial.serial}>
-                            {line.sku}
-                          </option>
-                        )),
-                    )}
-                  </datalist>
-                  <label>
-                    Package
-                    <select
-                      aria-label="Package for serial"
-                      value={serialPackageId}
-                      onChange={(event) => setSerialBinId(event.target.value)}
-                    >
-                      {sheet.bins.map((bin) => (
-                        <option key={bin.id} value={bin.id}>
-                          {shippingBinLabel(bin.kind, bin.number)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className="secondary icon-button"
-                    aria-label="Add serial"
-                    title="Add serial"
-                    disabled={busy || !serialPackageId || serialText.trim().length === 0}
-                    onClick={() => {
-                      void onAddSerial(serialPackageId, serialText).then((saved) => {
-                        if (saved) setSerialText("");
-                      });
-                    }}
-                  >
-                    <Plus size={16} strokeWidth={1.75} aria-hidden />
-                  </button>
-                </div>
-              ) : null}
-            </div>
+          {packedSerials.length > 0 ? (
+            <ul className="pack-serial-list">
+              {packedSerials.map((row) => {
+                const bin = sheet.bins.find((candidate) => candidate.id === row.binId);
+                const where = bin ? shippingBinLabel(bin.kind, bin.number) : "a package";
+                return (
+                  <li key={row.serialId}>
+                    <span>{packSerialLabel(row.serial, row.sku)} · {where}</span>
+                    {editing ? (
+                      <button
+                        type="button"
+                        className="secondary icon-button"
+                        aria-label={`Remove ${row.serial} from ${where}`}
+                        title={`Remove ${row.serial} from ${where}`}
+                        disabled={busy}
+                        onClick={() => void run(() => removePackSerial(row.serialId))}
+                      >
+                        <Trash2 size={16} strokeWidth={1.75} aria-hidden />
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
           ) : null}
         </section>
       ) : null}

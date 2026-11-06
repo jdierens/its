@@ -1041,8 +1041,8 @@ describe("pack sheet ui", () => {
     assert.match(packSheetUi, /aria-label=\{`Duplicate \$\{label\}`\}/);
     assert.match(packSheetUi, /packSheetEditable\(/);
     assert.match(packSheetUi, /explainPackEdit\(/);
-    assert.match(packSheetUi, /orderHasPackSerials/);
-    assert.match(packSheetUi, /assignPackSerial/);
+    assert.match(packSheetUi, /removePackSerial/);
+    assert.match(packSheetUi, /packPackedSerials/);
     assert.match(packSheetUi, /aria-label="Pack overview"/);
     assert.match(packSheetUi, /<th className="sku">SKU<\/th>/);
     assert.match(packSheetUi, /<th>Name<\/th>\s*<th className="num">Picked<\/th>\s*<th className="num">Remaining<\/th>/);
@@ -1059,6 +1059,9 @@ describe("pack sheet ui", () => {
     assert.doesNotMatch(packSheetUi, /Add contents to/);
     assert.doesNotMatch(packSheetUi, /PACK_ADD_QTY/);
     assert.doesNotMatch(packSheetUi, /Serial — none on this pick/);
+    assert.doesNotMatch(packSheetUi, /Add by/);
+    assert.doesNotMatch(packSheetUi, /aria-label="Add serial"/);
+    assert.doesNotMatch(packSheetUi, /assignPackSerial/);
     assert.doesNotMatch(packSheetUi, /Picked lines/);
     assert.doesNotMatch(packSheetUi, /formatPackQty\(room\)/);
     assert.doesNotMatch(packSheetUi, /Assign \$\{line\.sku\}/);
