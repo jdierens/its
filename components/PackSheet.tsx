@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Plus, Save, Trash2 } from "lucide-react";
+import { Check, Copy, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { usePageMeta } from "@/components/AppShell";
@@ -16,6 +16,7 @@ import {
   removePackSerial,
   removeShippingBin,
   retirePackagingType,
+  setPackItemContent,
   setShippingBinHeight,
   setShippingBinWeight,
 } from "@/lib/packActions";
@@ -36,17 +37,23 @@ import {
   packageRowStatus,
   packagingTypeError,
   packedAfterShipNote,
+  packContentItemChoices,
+  packContentMergeNote,
+  packContentSerialNote,
   packFinishVisible,
+  packOverview,
   packRoom,
   packSaveState,
   packSerialMatch,
   packSheetEditable,
   parseInches,
+  parsePackContentEdit,
   parsePackQty,
   parsePackWeight,
   sheetPackProgress,
   shippingBinLabel,
   unpackedRemainder,
+  type PackContentChip,
   type PackagingType,
   type PackLine,
   type PackSheetModel,
@@ -332,6 +339,37 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
     return run(() => assignPackQty({ packageId: binId, allocationId: line.allocationId, qty: parsed.qty }));
   }
 
+  async function onEditItem(
+    contentId: string,
+    allocationId: string,
+    itemQty: number,
+    nextAllocationId: string,
+    qtyText: string,
+  ): Promise<boolean> {
+    const parsed = parsePackContentEdit({
+      lines: sheet.lines,
+      allocationId,
+      itemQty,
+      nextAllocationId,
+      qtyText,
+    });
+    if (!parsed.ok) {
+      setError(parsed.message);
+      return false;
+    }
+    if (parsed.unchanged) {
+      setError(null);
+      return true;
+    }
+    return run(() =>
+      setPackItemContent({
+        contentId,
+        allocationId: parsed.allocationId,
+        qty: parsed.qty,
+      }),
+    );
+  }
+
   async function onAddSerial(binId: string, serial: string): Promise<boolean> {
     const match = packSerialMatch(sheet.lines, serial);
     if (!match.ok) {
@@ -427,6 +465,52 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
       {sheet.finishBlock ? <p className="muted">{sheet.finishBlock}</p> : null}
       {!canPack ? <p className="muted">You can look at this sheet. Packing is turned off for this sign-in.</p> : null}
 
+      {sheet.lines.length > 0 ? (
+        <section className="card pick-table-wrap">
+          <h2>Overview</h2>
+          <table className="pick-sheet pack-overview" aria-label="Pack overview">
+            <thead>
+              <tr>
+                <th className="sku">SKU</th>
+                <th>Name</th>
+                <th className="num">Picked</th>
+                <th className="num">Remaining</th>
+                {sheet.bins.map((bin) => (
+                  <th key={bin.id} className="num">
+                    {shippingBinLabel(bin.kind, bin.number)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {packOverview(sheet.lines, sheet.bins).map((row) => (
+                <tr key={row.allocationId}>
+                  <td className="sku">
+                    {row.sku}
+                    {row.replaced ? <span className="pick-planned">Planned {row.plannedSku}</span> : null}
+                  </td>
+                  <td>{dash(row.name)}</td>
+                  <td className="num">{formatPackQty(row.picked)}</td>
+                  <td className="num">{formatPackQty(row.remaining)}</td>
+                  {row.packedByBin.map((cell) => {
+                    const bin = sheet.bins.find((candidate) => candidate.id === cell.binId);
+                    return (
+                      <td
+                        key={cell.binId}
+                        className="num"
+                        title={bin && cell.qty > 0 ? packAssignmentLabel(bin.kind, bin.number, cell.qty) : undefined}
+                      >
+                        {formatPackQty(cell.qty)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+
       <section className="card pick-table-wrap">
         <h2>Packages</h2>
         {sheet.lines.length === 0 ? (
@@ -508,26 +592,37 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
                           {chips.map((chip) => {
                             const line = sheet.lines.find((row) => row.allocationId === chip.allocationId);
                             const chipTitle = packAssignmentLabel(bin.kind, bin.number, chip.kind === "item" ? chip.qty : 1);
+                            const removeLabel = chip.kind === "item"
+                              ? `Remove ${chip.label} from ${label}`
+                              : `Remove ${chip.serial} from ${label}`;
                             return (
-                              <div key={chip.kind === "item" ? chip.assignmentId : chip.serialId} className="pack-chip">
-                                <span title={chipTitle}>
+                              <div
+                                key={chip.kind === "item" ? chip.assignmentId : chip.serialId}
+                                className={editing && chip.kind === "item" ? "pack-chip is-editing" : "pack-chip"}
+                              >
+                                <span className="pack-chip-read" title={chipTitle}>
                                   {chip.label}
-                                  {line?.replaced ? <span className="pick-planned">Planned {line.plannedSku}</span> : null}
                                 </span>
+                                {editing && chip.kind === "item" ? (
+                                  <ItemContentEditor
+                                    key={`${chip.assignmentId}-${chip.allocationId}-${chip.qty}`}
+                                    bin={bin}
+                                    chip={chip}
+                                    lines={sheet.lines}
+                                    busy={busy}
+                                    onSave={(nextAllocationId, qtyText) =>
+                                      onEditItem(chip.assignmentId, chip.allocationId, chip.qty, nextAllocationId, qtyText)
+                                    }
+                                  />
+                                ) : null}
+                                {line?.replaced ? <span className="pick-planned">Planned {line.plannedSku}</span> : null}
                                 {editing ? (
                                   <button
                                     type="button"
                                     className="secondary icon-button"
-                                    aria-label={
-                                      chip.kind === "item"
-                                        ? `Remove ${chip.label} from ${label}`
-                                        : `Remove ${chip.serial} from ${label}`
-                                    }
-                                    title={
-                                      chip.kind === "item"
-                                        ? `Remove ${chip.label} from ${label}`
-                                        : `Remove ${chip.serial} from ${label}`
-                                    }
+                                    aria-label={removeLabel}
+                                    title={removeLabel}
+                                    data-pack-remove={chip.kind === "item" ? chip.assignmentId : chip.serialId}
                                     disabled={busy}
                                     onClick={() =>
                                       void run(() =>
@@ -716,7 +811,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
         ) : null}
         {editing ? (
           <p className="muted">
-            Add a package, enter the weight, then add unpacked items. A quantity starts at 1. Duplicate copies a complete package.
+            Add a package, enter the weight, then add unpacked items. Adding starts at 1. Change the quantity or the item on a packed line. Duplicate copies a complete package.
           </p>
         ) : null}
         {editing && !sheet.packedAt && sheet.finishBlock ? <p className="muted">{sheet.finishBlock}</p> : null}
@@ -850,6 +945,114 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
         ) : null}
       </p>
     </main>
+  );
+}
+
+function ItemContentEditor({
+  bin,
+  chip,
+  lines,
+  busy,
+  onSave,
+}: {
+  bin: ShippingBin;
+  chip: Extract<PackContentChip, { kind: "item" }>;
+  lines: readonly PackLine[];
+  busy: boolean;
+  onSave: (nextAllocationId: string, qtyText: string) => Promise<boolean>;
+}) {
+  const label = shippingBinLabel(bin.kind, bin.number);
+  const choices = packContentItemChoices(lines, chip.allocationId);
+  const [allocationId, setAllocationId] = useState(chip.allocationId);
+  const [qtyText, setQtyText] = useState(formatPackQty(chip.qty));
+  const saving = useRef(false);
+  const chosen = choices.some((line) => line.allocationId === allocationId) ? allocationId : chip.allocationId;
+  const mergeNote = packContentMergeNote(bin, lines, chosen, chip.allocationId);
+  const serialNote = packContentSerialNote(
+    bin.id,
+    lines.find((line) => line.allocationId === chip.allocationId),
+  );
+
+  function submit() {
+    if (busy || saving.current) return;
+    const dirty = chosen !== chip.allocationId || qtyText.trim() !== formatPackQty(chip.qty);
+    if (!dirty) return;
+    saving.current = true;
+    void onSave(chosen, qtyText).finally(() => {
+      saving.current = false;
+    });
+  }
+
+  return (
+    <div
+      className="pack-chip-edit"
+      role="group"
+      aria-label={`Edit ${chip.label} in ${label}`}
+      onBlur={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) return;
+        if (next instanceof Element && next.getAttribute("data-pack-remove")) return;
+        submit();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <label>
+        Qty
+        <input
+          className="pack-measure pack-content-qty"
+          aria-label={`Quantity of ${chip.sku} in ${label}`}
+          value={qtyText}
+          inputMode="numeric"
+          disabled={busy}
+          onChange={(event) => setQtyText(event.target.value)}
+        />
+      </label>
+      <span className="pack-times" aria-hidden="true">
+        ×
+      </span>
+      <label>
+        Item
+        <select
+          aria-label={`Item for ${chip.sku} in ${label}`}
+          value={chosen}
+          disabled={busy}
+          onChange={(event) => setAllocationId(event.target.value)}
+        >
+          {choices.map((line) => {
+            const unpacked = packRoom(
+              line.picked,
+              line.packed,
+              line.allocationId === chip.allocationId ? chip.qty : 0,
+            );
+            const room =
+              line.allocationId === chip.allocationId ? "" : ` · ${formatPackQty(unpacked)} unpacked`;
+            return (
+              <option key={line.allocationId} value={line.allocationId}>
+                {line.sku}
+                {room}
+                {line.name ? ` · ${line.name}` : ""}
+              </option>
+            );
+          })}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="secondary icon-button"
+        aria-label={`Save ${chip.sku} in ${label}`}
+        title={`Save ${chip.sku} in ${label}`}
+        disabled={busy}
+        onClick={submit}
+      >
+        <Check size={16} strokeWidth={1.75} aria-hidden />
+      </button>
+      {mergeNote ? <p className="muted pack-content-note">{mergeNote}</p> : null}
+      {serialNote ? <p className="muted pack-content-note">{serialNote}</p> : null}
+    </div>
   );
 }
 

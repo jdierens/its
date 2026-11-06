@@ -20,6 +20,11 @@ import {
   packCompleteBlock,
   packageContentChips,
   packageRowStatus,
+  packContentItemChoices,
+  packContentMergeNote,
+  packContentSerialNote,
+  packOverview,
+  parsePackContentEdit,
   packagingTypeError,
   packagingTypeMeasures,
   packedAfterShipNote,
@@ -49,6 +54,7 @@ const shippedSql = readFileSync(new URL("../supabase/migrations/20261102143000_p
 const packSheetUi = readFileSync(new URL("../components/PackSheet.tsx", import.meta.url), "utf8");
 const editSql = readFileSync(new URL("../supabase/migrations/20261106010000_pack_edit_after_finish.sql", import.meta.url), "utf8");
 const rowSql = readFileSync(new URL("../supabase/migrations/20261106150000_pack_row_packages.sql", import.meta.url), "utf8");
+const contentSql = readFileSync(new URL("../supabase/migrations/20261106190000_pack_content_edit.sql", import.meta.url), "utf8");
 
 describe("what gets packed", () => {
   it("packs picked product and kit lines and leaves services, freight, and unpicked lines out", () => {
@@ -812,6 +818,149 @@ describe("package rows", () => {
     assert.equal(finished.lines[0]?.serials[0]?.packageId, "bin-1");
     assert.equal(packedAfterShipNote(finished.status), "Packed. This order stays shipped.");
   });
+
+  it("changes a packed quantity inside the unpacked room and swaps to another unpacked line", () => {
+    const current = packLine({
+      allocationId: "alloc-1",
+      sku: "106703",
+      name: "Widget",
+      picked: 5,
+      packed: 3,
+      assignments: [{ id: "row-1", binId: "bin-1", binNumber: 1, kind: "box", qty: 3 }],
+      serials: [{ id: "unit-1", serial: "SN1", packageId: "bin-1" }],
+    });
+    const other = packLine({
+      allocationId: "alloc-2",
+      sku: "106704",
+      name: "Other",
+      lineNo: 2,
+      picked: 2,
+      packed: 1,
+      assignments: [{ id: "row-2", binId: "bin-2", binNumber: 2, kind: "box", qty: 1 }],
+    });
+    const full = packLine({
+      allocationId: "alloc-3",
+      sku: "106705",
+      name: "Full",
+      lineNo: 3,
+      picked: 4,
+      packed: 4,
+      assignments: [{ id: "row-3", binId: "bin-1", binNumber: 1, kind: "box", qty: 4 }],
+    });
+    const lines = [current, other, full];
+    assert.deepEqual(
+      packContentItemChoices(lines, "alloc-1").map((line) => line.sku),
+      ["106703", "106704"],
+    );
+    assert.deepEqual(parsePackContentEdit({
+      lines,
+      allocationId: "alloc-1",
+      itemQty: 2,
+      nextAllocationId: "alloc-1",
+      qtyText: "4",
+    }), { ok: true, allocationId: "alloc-1", qty: 4, unchanged: false });
+    assert.deepEqual(parsePackContentEdit({
+      lines,
+      allocationId: "alloc-1",
+      itemQty: 2,
+      nextAllocationId: "alloc-1",
+      qtyText: "2",
+    }), { ok: true, allocationId: "alloc-1", qty: 2, unchanged: true });
+    assert.deepEqual(parsePackContentEdit({
+      lines,
+      allocationId: "alloc-1",
+      itemQty: 2,
+      nextAllocationId: "alloc-1",
+      qtyText: "5",
+    }), { ok: false, message: "Only 4 can go in that bin." });
+    assert.deepEqual(parsePackContentEdit({
+      lines,
+      allocationId: "alloc-1",
+      itemQty: 2,
+      nextAllocationId: "alloc-1",
+      qtyText: "0",
+    }), { ok: false, message: "Enter a whole number of at least 1." });
+    assert.deepEqual(parsePackContentEdit({
+      lines,
+      allocationId: "alloc-1",
+      itemQty: 2,
+      nextAllocationId: "alloc-2",
+      qtyText: "1",
+    }), { ok: true, allocationId: "alloc-2", qty: 1, unchanged: false });
+    assert.deepEqual(parsePackContentEdit({
+      lines,
+      allocationId: "alloc-1",
+      itemQty: 2,
+      nextAllocationId: "alloc-2",
+      qtyText: "2",
+    }), { ok: false, message: "Only 1 can go in that bin." });
+    assert.deepEqual(parsePackContentEdit({
+      lines,
+      allocationId: "alloc-1",
+      itemQty: 2,
+      nextAllocationId: "alloc-3",
+      qtyText: "1",
+    }), { ok: false, message: "That line is already packed." });
+    assert.deepEqual(parsePackContentEdit({
+      lines,
+      allocationId: "alloc-1",
+      itemQty: 2,
+      nextAllocationId: "missing",
+      qtyText: "1",
+    }), { ok: false, message: "Choose an item that is still unpacked." });
+    assert.equal(
+      packContentMergeNote({ id: "bin-1", kind: "box", number: 1 }, lines, "alloc-3", "alloc-1"),
+      "Box 1 already has 4 × 106705. This quantity is added to that.",
+    );
+    assert.equal(packContentMergeNote({ id: "bin-1", kind: "box", number: 1 }, lines, "alloc-1", "alloc-1"), null);
+    assert.equal(packContentSerialNote("bin-1", current), "1 serial in this package stays on 106703.");
+    assert.equal(packContentSerialNote("bin-1", other), null);
+  });
+
+  it("lists picked, remaining, and the quantity in each package", () => {
+    const lines = [
+      packLine({
+        allocationId: "alloc-1",
+        sku: "106703",
+        name: "Widget",
+        picked: 8,
+        packed: 5,
+        assignments: [
+          { id: "row-1", binId: "bin-1", binNumber: 1, kind: "box", qty: 1 },
+          { id: "row-2", binId: "bin-2", binNumber: 2, kind: "box", qty: 4 },
+        ],
+      }),
+      packLine({
+        allocationId: "alloc-2",
+        sku: "106704",
+        name: "Other",
+        lineNo: 2,
+        picked: 2,
+        packed: 0,
+      }),
+    ];
+    const bins = [
+      { id: "bin-1", kind: "box" as const, number: 1 },
+      { id: "bin-2", kind: "pallet" as const, number: 2 },
+    ];
+    const rows = packOverview(lines, bins);
+    assert.deepEqual(
+      rows.map((row) => ({
+        sku: row.sku,
+        name: row.name,
+        picked: row.picked,
+        remaining: row.remaining,
+        packed: row.packedByBin.map((cell) => cell.qty),
+      })),
+      [
+        { sku: "106703", name: "Widget", picked: 8, remaining: 3, packed: [1, 4] },
+        { sku: "106704", name: "Other", picked: 2, remaining: 2, packed: [0, 0] },
+      ],
+    );
+    assert.deepEqual(rows[0]?.packedByBin.map((cell) => cell.binId), ["bin-1", "bin-2"]);
+    assert.equal((rows[0]?.remaining ?? 0) + (rows[0]?.packedByBin.reduce((sum, cell) => sum + cell.qty, 0) ?? 0), 8);
+    assert.deepEqual(packOverview(lines, []).map((row) => row.packedByBin), [[], []]);
+  });
 });
 
 describe("pack sheet ui", () => {
@@ -824,9 +973,45 @@ describe("pack sheet ui", () => {
     assert.match(packSheetUi, /packSheetEditable\(/);
     assert.match(packSheetUi, /explainPackEdit\(/);
     assert.match(packSheetUi, /Serial — none on this pick/);
+    assert.match(packSheetUi, /aria-label="Pack overview"/);
+    assert.match(packSheetUi, /<th className="sku">SKU<\/th>/);
+    assert.match(packSheetUi, /<th>Name<\/th>\s*<th className="num">Picked<\/th>\s*<th className="num">Remaining<\/th>/);
+    assert.match(packSheetUi, /packOverview\(sheet\.lines, sheet\.bins\)/);
+    assert.match(packSheetUi, /setPackItemContent/);
+    assert.match(packSheetUi, /parsePackContentEdit/);
+    assert.match(packSheetUi, /aria-label=\{`Quantity of \$\{chip\.sku\} in \$\{label\}`\}/);
+    assert.match(packSheetUi, /aria-label=\{`Item for \$\{chip\.sku\} in \$\{label\}`\}/);
+    assert.match(packSheetUi, /aria-label=\{`Save \$\{chip\.sku\} in \$\{label\}`\}/);
     assert.doesNotMatch(packSheetUi, /Picked lines/);
     assert.doesNotMatch(packSheetUi, /formatPackQty\(room\)/);
     assert.doesNotMatch(packSheetUi, /Assign \$\{line\.sku\}/);
+  });
+});
+
+describe("pack content edit migration", () => {
+  it("sets a loose quantity or moves it onto another picked line and leaves serials and shipped status alone", () => {
+    assert.match(contentSql, /Apply by hand/);
+    assert.match(contentSql, /Deploying does not run this file/);
+    assert.match(contentSql, /fxsbpreasbdalwthyzvk/);
+    assert.match(contentSql, /20261106150000_pack_row_packages\.sql/);
+    assert.match(contentSql, /create or replace function public\.set_pack_item_content/);
+    assert.match(contentSql, /That quantity is packed by serial\. Remove the serial\./);
+    assert.match(contentSql, /Enter a whole number of at least 1\./);
+    assert.match(contentSql, /That line is already packed\./);
+    assert.match(contentSql, /Only %s can go in that bin\./);
+    assert.match(contentSql, /set qty = v_serials \+ p_qty/);
+    assert.match(contentSql, /set qty = v_serials/);
+    assert.match(contentSql, /Serials stay on the item the pick recorded/);
+    assert.doesNotMatch(contentSql, /insert into public\.items/i);
+    assert.doesNotMatch(contentSql, /update public\.so_units/);
+    assert.doesNotMatch(contentSql, /ship_date\s*=/);
+    assert.doesNotMatch(contentSql, /(?:update|insert|delete)\s+(?:from\s+)?public\.so_shipments/i);
+    assert.doesNotMatch(contentSql, /status = 'packed'/);
+    assert.doesNotMatch(contentSql, /status = 'packing'/);
+    assert.match(contentSql, /grant execute on function public\.set_pack_item_content\(uuid, uuid, integer, text, uuid\) to service_role/);
+    assert.match(contentSql, /revoke all on function public\.set_pack_item_content\(uuid, uuid, integer, text, uuid\) from public, anon, authenticated/);
+    assert.doesNotMatch(contentSql, /grant .+ to anon/);
+    assert.doesNotMatch(contentSql, /grant execute on function public\.so_packing_writable/);
   });
 });
 

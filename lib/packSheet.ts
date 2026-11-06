@@ -208,6 +208,102 @@ export type PackContentChip =
       label: string;
     };
 
+export type PackOverviewRow = {
+  allocationId: string;
+  sku: string;
+  name: string;
+  plannedSku: string;
+  replaced: boolean;
+  picked: number;
+  remaining: number;
+  packedByBin: { binId: string; qty: number }[];
+};
+
+/**
+ * One row per picked line. Remaining is still unpacked.
+ * Each package column is the quantity of that line already in that package, including serials.
+ * Column order follows the packages passed in.
+ */
+export function packOverview(
+  lines: readonly PackLine[],
+  bins: readonly { id: string }[],
+): PackOverviewRow[] {
+  return lines.map((line) => ({
+    allocationId: line.allocationId,
+    sku: line.sku,
+    name: line.name,
+    plannedSku: line.plannedSku,
+    replaced: line.replaced,
+    picked: line.picked,
+    remaining: packRoom(line.picked, line.packed, 0),
+    packedByBin: bins.map((bin) => ({
+      binId: bin.id,
+      qty: line.assignments.find((row) => row.binId === bin.id && row.qty > 0)?.qty ?? 0,
+    })),
+  }));
+}
+
+/** The current item, plus any other picked line that can still take a whole unit. */
+export function packContentItemChoices(lines: readonly PackLine[], currentAllocationId: string): PackLine[] {
+  return lines.filter((line) => {
+    if (line.allocationId === currentAllocationId) return true;
+    return packRoom(line.picked, line.packed, 0) >= 1;
+  });
+}
+
+/** Shown before a save that adds onto a quantity of the same item already in the package. */
+export function packContentMergeNote(
+  bin: { id: string; kind: PackKind; number: number },
+  lines: readonly PackLine[],
+  nextAllocationId: string,
+  currentAllocationId: string,
+): string | null {
+  if (nextAllocationId === currentAllocationId) return null;
+  const line = lines.find((row) => row.allocationId === nextAllocationId);
+  const existing = line?.assignments.find((row) => row.binId === bin.id && row.qty > 0);
+  if (!line || !existing) return null;
+  return `${shippingBinLabel(bin.kind, bin.number)} already has ${packContentLabel(existing.qty, line.sku)}. This quantity is added to that.`;
+}
+
+/** Serials stay on the picked item when the loose quantity on the row changes. */
+export function packContentSerialNote(binId: string, line: PackLine | undefined): string | null {
+  if (!line) return null;
+  const count = line.serials.filter((row) => row.packageId === binId).length;
+  if (count < 1) return null;
+  const noun = count === 1 ? "serial" : "serials";
+  const verb = count === 1 ? "stays" : "stay";
+  return `${formatPackQty(count)} ${noun} in this package ${verb} on ${line.sku}.`;
+}
+
+export type PackContentEdit =
+  | { ok: true; allocationId: string; qty: number; unchanged: boolean }
+  | { ok: false; message: string };
+
+/**
+ * Edits the loose quantity on one content row.
+ * The same item can use the quantity already in the row. Another item only has its unpacked remainder.
+ */
+export function parsePackContentEdit(input: {
+  lines: readonly PackLine[];
+  allocationId: string;
+  itemQty: number;
+  nextAllocationId: string;
+  qtyText: string;
+}): PackContentEdit {
+  const next = input.lines.find((line) => line.allocationId === input.nextAllocationId);
+  if (!next) return { ok: false, message: "Choose an item that is still unpacked." };
+  const same = next.allocationId === input.allocationId;
+  const room = packRoom(next.picked, next.packed, same ? input.itemQty : 0);
+  const parsed = parsePackQty(input.qtyText, room);
+  if (!parsed.ok) return parsed;
+  return {
+    ok: true,
+    allocationId: next.allocationId,
+    qty: parsed.qty,
+    unchanged: same && parsed.qty === input.itemQty,
+  };
+}
+
 /** Item quantity that is not already represented by a serial in this bin, then each serial. */
 export function packageContentChips(binId: string, lines: readonly PackLine[]): PackContentChip[] {
   const chips: PackContentChip[] = [];
