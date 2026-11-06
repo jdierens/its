@@ -22,6 +22,7 @@ import {
   formatPackQty,
   isShippedPackStatus,
   packAssignmentLabel,
+  packAssignQtyText,
   packCatchUpNote,
   packagingTypeError,
   packedAfterShipNote,
@@ -117,7 +118,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
       return;
     }
     const room = packRoom(line.picked, line.packed, 0);
-    const typed = qtyText[line.allocationId] ?? (room > 0 ? formatPackQty(room) : "");
+    const typed = packAssignQtyText(qtyText[line.allocationId], room);
     const parsed = parsePackQty(typed, room);
     if (!parsed.ok) {
       setError(parsed.message);
@@ -130,6 +131,10 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
       delete next[line.allocationId];
       return next;
     });
+    if (room - parsed.qty >= 1) {
+      const fieldId = `pack-qty-${line.allocationId}`;
+      queueMicrotask(() => document.getElementById(fieldId)?.focus());
+    }
   }
 
   async function onAddType() {
@@ -439,9 +444,10 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
                             ))}
                           </select>
                           <input
+                            id={`pack-qty-${line.allocationId}`}
                             className="pack-measure"
                             aria-label={`Quantity for ${line.sku}`}
-                            value={qtyText[line.allocationId] ?? (room > 0 ? formatPackQty(room) : "")}
+                            value={packAssignQtyText(qtyText[line.allocationId], room)}
                             inputMode="numeric"
                             onChange={(event) =>
                               setQtyText((current) => ({ ...current, [line.allocationId]: event.target.value }))

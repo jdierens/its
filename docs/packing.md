@@ -4,7 +4,7 @@ Warehouse → Packing lists sales orders whose pick is finished, orders already 
 
 Shipping bins come from a packaging list. A box has a fixed length, width, and height in inches. A pallet copies the base length and width, and the operator enters the height. The list starts with a small box, a medium box, a large box, and a standard pallet. Plus adds another type. The trash icon hides a type. Bins already created from it keep the inches they were given.
 
-Plus on a packaging type adds a shipping bin. A line can be split across bins. Plus on a picked line adds the typed quantity to the chosen bin. The trash icon takes that quantity back out. A weight can be typed on a bin at any time. Finish packing stays off until every picked quantity is in a bin and every bin has a weight. A pallet also needs its height.
+Plus on a packaging type adds a shipping bin. A line can be split across bins. Plus on a picked line adds the quantity in the field to the chosen bin. That field starts at 1 while the line still has room, and it stays at 1 after an assign while more of the line is left. A different whole number, up to what is still unpacked, can be typed instead. The trash icon takes that quantity back out. A weight can be typed on a bin at any time. Finish packing stays off until every picked quantity is in a bin and every bin has a weight. A pallet also needs its height.
 
 Finish packing sets an order that is still packing to packed and stores `packed_at`. Warehouse → Shipping lists those orders. Carrier labels and rate shopping are not on that screen.
 

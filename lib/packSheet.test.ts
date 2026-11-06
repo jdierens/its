@@ -4,9 +4,11 @@ import { describe, it } from "node:test";
 import { NAV_GROUPS, pageMetaFor } from "./nav.ts";
 import { packAccessForRole } from "./packAccess.ts";
 import {
+  defaultPackAssignQty,
   formatBinSize,
   isPackLine,
   isShippedPackStatus,
+  packAssignQtyText,
   packCatchUpNote,
   packCompleteBlock,
   packagingTypeError,
@@ -28,6 +30,7 @@ import {
 
 const sql = readFileSync(new URL("../supabase/migrations/20261028233000_sales_order_packing.sql", import.meta.url), "utf8");
 const shippedSql = readFileSync(new URL("../supabase/migrations/20261102143000_pack_shipped_orders.sql", import.meta.url), "utf8");
+const packSheetUi = readFileSync(new URL("../components/PackSheet.tsx", import.meta.url), "utf8");
 
 describe("what gets packed", () => {
   it("packs picked product and kit lines and leaves services, freight, and unpicked lines out", () => {
@@ -101,6 +104,35 @@ describe("pack complete", () => {
       ),
       "Line 2 107021 still has 3 to pack.",
     );
+  });
+});
+
+describe("assign quantity", () => {
+  it("starts at 1 and does not submit the rest of the line unless that number was typed", () => {
+    const room = packRoom(8, 0, 0);
+    assert.equal(room, 8);
+    assert.equal(defaultPackAssignQty(room), "1");
+    assert.equal(defaultPackAssignQty(1), "1");
+    assert.equal(defaultPackAssignQty(0), "");
+    assert.equal(defaultPackAssignQty(0.4), "");
+
+    const untouched = parsePackQty(packAssignQtyText(undefined, room), room);
+    assert.deepEqual(untouched, { ok: true, qty: 1 });
+    const explicitRemainder = parsePackQty(packAssignQtyText("8", room), room);
+    assert.deepEqual(explicitRemainder, { ok: true, qty: 8 });
+    const cleared = parsePackQty(packAssignQtyText("", room), room);
+    assert.equal(cleared.ok, false);
+
+    const afterOne = packRoom(8, 1, 0);
+    assert.equal(packAssignQtyText(undefined, afterOne), "1");
+    assert.equal(packAssignQtyText(undefined, packRoom(8, 8, 0)), "");
+    assert.equal(parsePackQty("9", room).ok, false);
+    assert.equal(packQtyError(1, 0), "That line is already packed.");
+
+    assert.equal(packSheetUi.split("packAssignQtyText(").length - 1, 2);
+    assert.match(packSheetUi, /delete next\[line\.allocationId\]/);
+    assert.doesNotMatch(packSheetUi, /formatPackQty\(room\)/);
+    assert.doesNotMatch(packSheetUi, /qtyText\[line\.allocationId\] \?\? \(room/);
   });
 });
 
