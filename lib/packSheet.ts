@@ -139,6 +139,22 @@ export function packContentLabel(qty: number, sku: string): string {
   return `${formatPackQty(qty)} × ${sku}`;
 }
 
+export type PackBoxSummaryLine = {
+  allocationId: string;
+  sku: string;
+  qty: number;
+  label: string;
+};
+
+/** Quantities and SKUs already in one package. Same numbers as that package's overview column. */
+export function packBoxSummary(binId: string, lines: readonly PackLine[]): PackBoxSummaryLine[] {
+  return lines.flatMap((line) => {
+    const qty = line.assignments.find((row) => row.binId === binId && row.qty > 0)?.qty ?? 0;
+    if (qty <= 0) return [];
+    return [{ allocationId: line.allocationId, sku: line.sku, qty, label: packContentLabel(qty, line.sku) }];
+  });
+}
+
 /** A packed serial keeps the picked SKU beside it. The SKU comes from the pick, not from the scan. */
 export function packSerialLabel(serial: string, sku: string): string {
   return `${serial} · ${sku}`;

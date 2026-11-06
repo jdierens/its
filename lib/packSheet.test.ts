@@ -42,6 +42,7 @@ import {
   packSheetFromJson,
   shippedOrderNeedsPack,
   packAssignmentLabel,
+  packBoxSummary,
   parsePackQty,
   parsePackWeight,
   shipQueueFromJson,
@@ -961,6 +962,12 @@ describe("package rows", () => {
         { sku: "106704", name: "Other", picked: 2, remaining: 2, packed: [0, 0] },
       ],
     );
+    assert.deepEqual(
+      packBoxSummary("bin-1", lines).map((row) => row.label),
+      ["1 × 106703"],
+    );
+    assert.deepEqual(packBoxSummary("bin-2", lines).map((row) => row.label), ["4 × 106703"]);
+    assert.deepEqual(packBoxSummary("bin-9", lines), []);
     assert.deepEqual(rows[0]?.packedByBin.map((cell) => cell.binId), ["bin-1", "bin-2"]);
     assert.equal((rows[0]?.remaining ?? 0) + (rows[0]?.packedByBin.reduce((sum, cell) => sum + cell.qty, 0) ?? 0), 8);
     assert.deepEqual(packOverview(lines, []).map((row) => row.packedByBin), [[], []]);
@@ -1043,12 +1050,12 @@ describe("pack sheet ui", () => {
     assert.match(packSheetUi, /packMatrixQtyAction/);
     assert.match(packSheetUi, /setPackItemContent/);
     assert.match(packSheetUi, /aria-label=\{`Quantity of \$\{sku\} in \$\{label\}`\}/);
-    assert.match(packSheetUi, /<th>Box<\/th>\s*<th>Type<\/th>\s*<th>Dim<\/th>\s*<th>Weight<\/th>/);
+    assert.match(packSheetUi, /<th>Box<\/th>\s*<th>Type<\/th>\s*<th>Dim<\/th>\s*<th>Weight<\/th>\s*<th>Contents<\/th>/);
+    assert.match(packSheetUi, /packBoxSummary\(bin\.id, sheet\.lines\)/);
     assert.match(packSheetUi, /aria-label=\{`Weight for \$\{label\}`\}/);
     assert.match(packSheetUi, /className="pick-sheet pack-packages"/);
     assert.match(packSheetUi, /className="pack-package"/);
     assert.match(packCss, /\.pick-sheet\.pack-packages tr\.pack-package td \{\s*vertical-align: middle;/);
-    assert.doesNotMatch(packSheetUi, /<th>Contents<\/th>/);
     assert.doesNotMatch(packSheetUi, /Add contents to/);
     assert.doesNotMatch(packSheetUi, /PACK_ADD_QTY/);
     assert.doesNotMatch(packSheetUi, /Serial — none on this pick/);

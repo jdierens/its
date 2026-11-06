@@ -29,6 +29,7 @@ import {
   formatPackQty,
   orderHasPackSerials,
   packAssignmentLabel,
+  packBoxSummary,
   packCatchUpNote,
   packCompleteBlock,
   packagingTypeError,
@@ -604,12 +605,14 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
               <th>Type</th>
               <th>Dim</th>
               <th>Weight</th>
+              <th>Contents</th>
             </tr>
           </thead>
           <tbody>
             {sheet.bins.map((bin) => {
               const label = shippingBinLabel(bin.kind, bin.number);
               const duplicateBlock = duplicatePackBlock(bin, sheet.lines);
+              const summary = packBoxSummary(bin.id, sheet.lines);
               return (
                 <tr key={bin.id} className="pack-package">
                   <td className="pick-code">
@@ -683,12 +686,25 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
                       `${formatPackQty(bin.weightLb)} lb`
                     )}
                   </td>
+                  <td>
+                    {summary.length === 0 ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <div className="pack-contents">
+                        {summary.map((row) => (
+                          <span key={row.allocationId} title={packAssignmentLabel(bin.kind, bin.number, row.qty)}>
+                            {row.label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {editing ? (
               <tr>
-                <td colSpan={4}>
+                <td colSpan={5}>
                   <div className="pack-add">
                     <label>
                       Packaging
