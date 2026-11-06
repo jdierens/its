@@ -5,21 +5,32 @@ import { NAV_GROUPS, pageMetaFor } from "./nav.ts";
 import { packAccessForRole } from "./packAccess.ts";
 import {
   defaultPackAssignQty,
+  duplicatePackBlock,
   explainPackEdit,
   formatBinSize,
   isPackLine,
   isShippedPackStatus,
+  orderHasPackSerials,
+  PACK_ADD_QTY,
+  PACK_SAVE_SAVED,
+  PACK_SAVE_SAVING,
+  PACK_SAVE_UNSAVED,
   packAssignQtyText,
   packCatchUpNote,
   packCompleteBlock,
+  packageContentChips,
+  packageRowStatus,
   packagingTypeError,
   packagingTypeMeasures,
   packedAfterShipNote,
+  packContentLabel,
   packFinishVisible,
   packQtyError,
   packQueueFromJson,
   packQueueLabel,
   packRoom,
+  packSaveState,
+  packSerialMatch,
   packSheetEditable,
   packSheetFromJson,
   shippedOrderNeedsPack,
@@ -28,13 +39,16 @@ import {
   parsePackWeight,
   shipQueueFromJson,
   shippingBinLabel,
+  unpackedRemainder,
   type PackBinCheck,
+  type PackLine,
 } from "./packSheet.ts";
 
 const sql = readFileSync(new URL("../supabase/migrations/20261028233000_sales_order_packing.sql", import.meta.url), "utf8");
 const shippedSql = readFileSync(new URL("../supabase/migrations/20261102143000_pack_shipped_orders.sql", import.meta.url), "utf8");
 const packSheetUi = readFileSync(new URL("../components/PackSheet.tsx", import.meta.url), "utf8");
 const editSql = readFileSync(new URL("../supabase/migrations/20261106010000_pack_edit_after_finish.sql", import.meta.url), "utf8");
+const rowSql = readFileSync(new URL("../supabase/migrations/20261106150000_pack_row_packages.sql", import.meta.url), "utf8");
 
 describe("what gets packed", () => {
   it("packs picked product and kit lines and leaves services, freight, and unpicked lines out", () => {
@@ -133,10 +147,10 @@ describe("assign quantity", () => {
     assert.equal(parsePackQty("9", room).ok, false);
     assert.equal(packQtyError(1, 0), "That line is already packed.");
 
-    assert.equal(packSheetUi.split("packAssignQtyText(").length - 1, 2);
-    assert.match(packSheetUi, /delete next\[line\.allocationId\]/);
+    assert.match(packSheetUi, /PACK_ADD_QTY/);
     assert.doesNotMatch(packSheetUi, /formatPackQty\(room\)/);
     assert.doesNotMatch(packSheetUi, /qtyText\[line\.allocationId\] \?\? \(room/);
+    assert.doesNotMatch(packSheetUi, /Assign \$\{line\.sku\}/);
   });
 });
 
@@ -214,6 +228,7 @@ describe("pack sheet json", () => {
     });
     assert.equal(sheet.lines[0]?.packed, 2);
     assert.equal(sheet.lines[0]?.replaced, true);
+    assert.deepEqual(sheet.lines[0]?.serials, []);
     assert.equal(sheet.bins[0]?.weightLb, null);
     assert.equal(sheet.finishBlock, "Line 1 106683 still has 3 to pack.");
     assert.equal(sheet.packedAt, null);
@@ -612,5 +627,247 @@ describe("edit a finished pack", () => {
     assert.doesNotMatch(finished, /status =/);
     assert.doesNotMatch(finished, /ship_date/);
     assert.match(editSql, /'packing',\s*\n\s*'packed'/);
+  });
+});
+
+function packLine(overrides: Partial<PackLine> & Pick<PackLine, "allocationId" | "sku">): PackLine {
+  return {
+    lineNo: 1,
+    name: "Drive",
+    plannedSku: overrides.sku,
+    replaced: false,
+    picked: 8,
+    packed: 0,
+    assignments: [],
+    serials: [],
+    ...overrides,
+  };
+}
+
+describe("package rows", () => {
+  const box = {
+    id: "bin-1",
+    kind: "box" as const,
+    number: 1,
+    weightLb: 6.5,
+    heightIn: 12,
+  };
+
+  it("starts a quantity at 1 and keeps the bin and the quantity apart", () => {
+    assert.equal(PACK_ADD_QTY, "1");
+    assert.equal(packContentLabel(8, "106683"), "8 × 106683");
+    assert.equal(packAssignmentLabel("box", 1, 8), "8 in Box 1");
+    assert.equal(packageRowStatus({ kind: "box", weightLb: null, heightIn: 12 }, 0), "Needs a weight");
+    assert.equal(packageRowStatus({ kind: "box", weightLb: 4, heightIn: 12 }, 0), "Needs contents");
+    assert.equal(packageRowStatus({ kind: "pallet", weightLb: 4, heightIn: null }, 1), "Needs a height");
+    assert.equal(packageRowStatus(box, 8), "Complete");
+  });
+
+  it("shows one content chip for an item quantity, not one chip per piece", () => {
+    const line = packLine({
+      allocationId: "alloc-1",
+      sku: "106683",
+      picked: 8,
+      packed: 8,
+      assignments: [{ id: "row-1", binId: "bin-1", binNumber: 1, kind: "box", qty: 8 }],
+    });
+    const chips = packageContentChips("bin-1", [line]);
+    assert.equal(chips.length, 1);
+    assert.equal(chips[0]?.kind, "item");
+    assert.equal(chips[0]?.label, "8 × 106683");
+    assert.deepEqual(unpackedRemainder([line]), []);
+  });
+
+  it("lists serials on the package and leaves the item quantity for the pieces that have no serial", () => {
+    const line = packLine({
+      allocationId: "alloc-1",
+      sku: "106683",
+      picked: 8,
+      packed: 5,
+      assignments: [{ id: "row-1", binId: "bin-1", binNumber: 1, kind: "box", qty: 5 }],
+      serials: [
+        { id: "unit-1", serial: "SN1", packageId: "bin-1" },
+        { id: "unit-2", serial: "SN2", packageId: "bin-1" },
+        { id: "unit-3", serial: "SN3", packageId: null },
+      ],
+    });
+    const chips = packageContentChips("bin-1", [line]);
+    assert.deepEqual(
+      chips.map((chip) => chip.label),
+      ["3 × 106683", "SN1 · 106683", "SN2 · 106683"],
+    );
+    assert.equal(orderHasPackSerials([line]), true);
+    assert.equal(orderHasPackSerials([packLine({ allocationId: "alloc-2", sku: "107021" })]), false);
+    assert.deepEqual(unpackedRemainder([line]), ["3 × 106683"]);
+  });
+
+  it("resolves a serial to the picked item and refuses one that is not on the pick", () => {
+    const line = packLine({
+      allocationId: "alloc-1",
+      sku: "106683",
+      picked: 2,
+      packed: 0,
+      serials: [
+        { id: "unit-1", serial: "SN1", packageId: null },
+        { id: "unit-2", serial: "SN2", packageId: "bin-9" },
+      ],
+      assignments: [{ id: "row-9", binId: "bin-9", binNumber: 2, kind: "pallet", qty: 1 }],
+    });
+    assert.deepEqual(packSerialMatch([line], " sn1 "), {
+      ok: true,
+      allocationId: "alloc-1",
+      serialId: "unit-1",
+      sku: "106683",
+    });
+    assert.deepEqual(packSerialMatch([line], "SN2"), {
+      ok: false,
+      message: "That serial is already in Pallet 2.",
+    });
+    assert.deepEqual(packSerialMatch([line], "NOPE"), {
+      ok: false,
+      message: "That serial is not on this pick.",
+    });
+    assert.deepEqual(packSerialMatch([line], "  "), { ok: false, message: "Enter a serial." });
+
+    const packed = packLine({
+      allocationId: "alloc-1",
+      sku: "106683",
+      picked: 1,
+      packed: 1,
+      serials: [{ id: "unit-1", serial: "SN1", packageId: null }],
+    });
+    assert.equal(packSerialMatch([packed], "SN1").ok, false);
+  });
+
+  it("refuses to duplicate a package that is missing a weight, contents, or unpacked quantity", () => {
+    const line = packLine({
+      allocationId: "alloc-1",
+      sku: "106683",
+      picked: 8,
+      packed: 8,
+      assignments: [{ id: "row-1", binId: "bin-1", binNumber: 1, kind: "box", qty: 8 }],
+    });
+    assert.equal(duplicatePackBlock({ ...box, weightLb: null }, [line]), "Box 1 needs a weight before it can be duplicated.");
+    assert.equal(
+      duplicatePackBlock(box, [packLine({ allocationId: "alloc-1", sku: "106683" })]),
+      "Box 1 needs contents before it can be duplicated.",
+    );
+    assert.equal(duplicatePackBlock(box, [line]), "Only 0 of 106683 can go in the next bin.");
+    const open = packLine({
+      ...line,
+      picked: 16,
+      packed: 8,
+    });
+    assert.equal(duplicatePackBlock(box, [open]), null);
+  });
+
+  it("keeps finish as the sticky save and leaves a finished pack editable when the sheet says so", () => {
+    assert.deepEqual(
+      packSaveState({ editable: true, packedAt: null, finishBlock: null, finishing: false }),
+      { dirty: true, hint: PACK_SAVE_UNSAVED },
+    );
+    assert.deepEqual(
+      packSaveState({ editable: true, packedAt: null, finishBlock: "Box 1 needs a weight.", finishing: false }),
+      { dirty: false, hint: PACK_SAVE_SAVED },
+    );
+    assert.deepEqual(
+      packSaveState({ editable: true, packedAt: "2026-11-06T00:00:00Z", finishBlock: null, finishing: false }),
+      { dirty: false, hint: PACK_SAVE_SAVED },
+    );
+    assert.deepEqual(
+      packSaveState({ editable: true, packedAt: null, finishBlock: null, finishing: true }),
+      { dirty: true, hint: PACK_SAVE_SAVING },
+    );
+
+    const finished = packSheetFromJson({
+      order_id: "5e5006b2-cc24-4a64-96fb-b9056c528133",
+      so_number: 27784,
+      status: "shipped",
+      packed_at: "2026-11-06T00:00:00Z",
+      editable: true,
+      customer: "Example",
+      customer_po: null,
+      pick_status: "picked",
+      finish_block: null,
+      handoff: null,
+      types: [],
+      bins: [],
+      lines: [
+        {
+          allocation_id: "alloc-1",
+          line_no: 1,
+          sku: "106683",
+          name: "Drive",
+          planned_sku: "106683",
+          replaced: false,
+          picked: 1,
+          packed: 1,
+          serials: [{ id: "unit-1", serial: "SN1", package_id: "bin-1" }],
+          assignments: [{ id: "row-1", bin_id: "bin-1", bin_number: 1, kind: "box", qty: 1 }],
+        },
+      ],
+    });
+    assert.equal(finished.editable, true);
+    assert.equal(finished.status, "shipped");
+    assert.equal(finished.lines[0]?.serials[0]?.packageId, "bin-1");
+    assert.equal(packedAfterShipNote(finished.status), "Packed. This order stays shipped.");
+  });
+});
+
+describe("pack sheet ui", () => {
+  it("packs from package rows, adds one at a time, and finishes from the sticky save", () => {
+    assert.match(packSheetUi, /aria-label="Finish packing"/);
+    assert.match(packSheetUi, /aria-label="Add package"/);
+    assert.match(packSheetUi, /aria-label=\{`Add contents to \$\{label\}`\}/);
+    assert.match(packSheetUi, /aria-label=\{`Duplicate \$\{label\}`\}/);
+    assert.match(packSheetUi, /PACK_ADD_QTY/);
+    assert.match(packSheetUi, /packSheetEditable\(/);
+    assert.match(packSheetUi, /explainPackEdit\(/);
+    assert.match(packSheetUi, /Serial — none on this pick/);
+    assert.doesNotMatch(packSheetUi, /Picked lines/);
+    assert.doesNotMatch(packSheetUi, /formatPackQty\(room\)/);
+    assert.doesNotMatch(packSheetUi, /Assign \$\{line\.sku\}/);
+  });
+});
+
+describe("pack row migration", () => {
+  it("keeps a finished pack editable, copies a bin, and resolves serials from the pick", () => {
+    assert.match(rowSql, /Apply by hand/);
+    assert.match(rowSql, /Deploying does not run this file/);
+    assert.match(rowSql, /p_status in \('packing', 'packed', 'shipped', 'partially_shipped'\)/);
+    assert.match(rowSql, /packed_at does not lock the sheet/);
+    assert.match(rowSql, /on delete set null/);
+    assert.match(rowSql, /'serials'/);
+    assert.match(rowSql, /That serial is not on this pick\./);
+    assert.match(rowSql, /Does not create an item or a serial\./);
+    assert.match(rowSql, /Already finished and still complete/);
+    assert.match(rowSql, /when public\.so_packing_writable\(v_order\.status, v_order\.packed_at\)/);
+    assert.doesNotMatch(rowSql, /Packing is already finished/);
+    assert.match(rowSql, /needs a weight before it can be duplicated/);
+    assert.match(rowSql, /needs contents before it can be duplicated/);
+    assert.match(rowSql, /Only % of % can go in the next bin\./);
+    assert.doesNotMatch(rowSql, /insert into public\.items/i);
+
+    const writable = rowSql.slice(
+      rowSql.indexOf("create or replace function public.so_packing_writable"),
+      rowSql.indexOf("comment on function public.so_packing_writable"),
+    );
+    assert.match(writable, /'packed'/);
+    assert.doesNotMatch(writable, /p_packed_at is null/);
+
+    const shippedStart = rowSql.indexOf("if v_status in ('shipped', 'partially_shipped') then");
+    const shippedBranch = rowSql.slice(shippedStart, rowSql.indexOf("\n  elsif", shippedStart));
+    assert.match(shippedBranch, /packed_at = now\(\)/);
+    assert.match(shippedBranch, /v_status,\s*v_status/);
+    assert.doesNotMatch(shippedBranch, /status =/);
+    assert.doesNotMatch(shippedBranch, /ship_date/);
+    assert.doesNotMatch(rowSql, /(?:update|insert|delete)\s+(?:from\s+)?public\.so_shipments/i);
+    assert.doesNotMatch(rowSql, /ship_date\s*=/);
+    assert.match(rowSql, /grant execute on function public\.assign_pack_serial\(uuid, text, text, uuid\) to service_role/);
+    assert.match(rowSql, /grant execute on function public\.duplicate_shipping_bin\(uuid, text, uuid\) to service_role/);
+    assert.match(rowSql, /grant execute on function public\.release_pack_item_qty\(uuid, text, uuid\) to service_role/);
+    assert.match(rowSql, /grant execute on function public\.remove_pack_serial\(uuid, text, uuid\) to service_role/);
+    assert.doesNotMatch(rowSql, /grant .+ to anon/);
+    assert.doesNotMatch(rowSql, /grant execute on function public\.so_packing_writable/);
   });
 });

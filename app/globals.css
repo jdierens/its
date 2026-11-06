@@ -10641,6 +10641,57 @@ button.so-new-order svg,
   min-width: 5.5rem;
 }
 
+.pack-contents {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 12rem;
+}
+
+.pack-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pack-chip .pick-planned {
+  margin-left: 0.35rem;
+}
+
+.pack-status {
+  white-space: nowrap;
+}
+
+.pack-status.is-complete {
+  color: var(--ds-ink, var(--ink));
+  font-weight: 650;
+}
+
+.pack-editor-row td {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-bottom: 1px solid var(--ds-line, var(--line));
+}
+
+.pack-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: end;
+  padding: 0.35rem 0.15rem 0.5rem;
+}
+
+.pack-editor label {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.pack-editor select,
+.pack-editor input:not(.pack-measure) {
+  min-width: 10rem;
+}
+
 .pick-page .pick-table-wrap h2 {
   margin: 0 0 0.65rem;
 }
