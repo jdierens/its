@@ -10645,6 +10645,37 @@ button.so-new-order svg,
   vertical-align: middle;
 }
 
+.pack-box-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pack-matrix-qty {
+  width: 4.5rem;
+  min-width: 4.5rem;
+  text-align: right;
+}
+
+.pack-matrix-read {
+  display: none;
+}
+
+.pack-serial-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pack-serial-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .pack-contents {
   display: flex;
   flex-direction: column;
@@ -10706,6 +10737,10 @@ button.so-new-order svg,
 }
 
 @media print {
+  .pack-matrix-read {
+    display: inline;
+  }
+
   .pack-chip.is-editing .pack-chip-read {
     display: inline;
   }

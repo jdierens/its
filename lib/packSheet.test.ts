@@ -23,7 +23,9 @@ import {
   packContentItemChoices,
   packContentMergeNote,
   packContentSerialNote,
+  packMatrixQtyAction,
   packOverview,
+  packPackedSerials,
   parsePackContentEdit,
   packagingTypeError,
   packagingTypeMeasures,
@@ -154,7 +156,8 @@ describe("assign quantity", () => {
     assert.equal(parsePackQty("9", room).ok, false);
     assert.equal(packQtyError(1, 0), "That line is already packed.");
 
-    assert.match(packSheetUi, /PACK_ADD_QTY/);
+    assert.match(packSheetUi, /const shown = formatPackQty\(qty\)/);
+    assert.doesNotMatch(packSheetUi, /PACK_ADD_QTY/);
     assert.doesNotMatch(packSheetUi, /formatPackQty\(room\)/);
     assert.doesNotMatch(packSheetUi, /qtyText\[line\.allocationId\] \?\? \(room/);
     assert.doesNotMatch(packSheetUi, /Assign \$\{line\.sku\}/);
@@ -962,30 +965,93 @@ describe("package rows", () => {
     assert.equal((rows[0]?.remaining ?? 0) + (rows[0]?.packedByBin.reduce((sum, cell) => sum + cell.qty, 0) ?? 0), 8);
     assert.deepEqual(packOverview(lines, []).map((row) => row.packedByBin), [[], []]);
   });
+
+  it("edits a matrix cell in place and leaves serials in the package", () => {
+    const line = packLine({
+      allocationId: "alloc-1",
+      sku: "106703",
+      picked: 5,
+      packed: 3,
+      assignments: [{ id: "row-1", binId: "bin-1", binNumber: 1, kind: "box", qty: 3 }],
+      serials: [{ id: "unit-1", serial: "SN1", packageId: "bin-1" }],
+    });
+    assert.deepEqual(packMatrixQtyAction(line, "bin-1", "4"), {
+      type: "set",
+      contentId: "row-1",
+      allocationId: "alloc-1",
+      looseQty: 3,
+    });
+    assert.deepEqual(packMatrixQtyAction(line, "bin-1", "1"), { type: "release", contentId: "row-1" });
+    assert.deepEqual(packMatrixQtyAction(line, "bin-1", "0"), {
+      type: "error",
+      message: "That quantity is packed by serial. Remove the serial.",
+    });
+    assert.deepEqual(packMatrixQtyAction(line, "bin-1", "3"), { type: "noop" });
+    assert.deepEqual(packMatrixQtyAction(line, "bin-1", "9"), {
+      type: "error",
+      message: "Only 5 can go in that bin.",
+    });
+
+    const open = packLine({
+      allocationId: "alloc-2",
+      sku: "106704",
+      picked: 4,
+      packed: 0,
+    });
+    assert.deepEqual(packMatrixQtyAction(open, "bin-1", "1"), {
+      type: "assign",
+      packageId: "bin-1",
+      allocationId: "alloc-2",
+      qty: 1,
+    });
+    assert.deepEqual(packMatrixQtyAction(open, "bin-1", "0"), { type: "noop" });
+    assert.deepEqual(packMatrixQtyAction(open, "bin-1", ""), { type: "noop" });
+    const full = packLine({ allocationId: "alloc-3", sku: "106705", picked: 2, packed: 2 });
+    assert.deepEqual(packMatrixQtyAction(full, "bin-2", "1"), {
+      type: "error",
+      message: "That line is already packed.",
+    });
+
+    const loose = packLine({
+      allocationId: "alloc-1",
+      sku: "106703",
+      picked: 5,
+      packed: 2,
+      assignments: [{ id: "row-9", binId: "bin-1", binNumber: 1, kind: "box", qty: 2 }],
+    });
+    assert.deepEqual(packMatrixQtyAction(loose, "bin-1", "0"), { type: "release", contentId: "row-9" });
+    assert.deepEqual(
+      packPackedSerials([line]).map((row) => row.serial),
+      ["SN1"],
+    );
+  });
 });
 
 describe("pack sheet ui", () => {
   it("packs from package rows, adds one at a time, and finishes from the sticky save", () => {
     assert.match(packSheetUi, /aria-label="Finish packing"/);
     assert.match(packSheetUi, /aria-label="Add package"/);
-    assert.match(packSheetUi, /aria-label=\{`Add contents to \$\{label\}`\}/);
     assert.match(packSheetUi, /aria-label=\{`Duplicate \$\{label\}`\}/);
-    assert.match(packSheetUi, /PACK_ADD_QTY/);
     assert.match(packSheetUi, /packSheetEditable\(/);
     assert.match(packSheetUi, /explainPackEdit\(/);
-    assert.match(packSheetUi, /Serial — none on this pick/);
+    assert.match(packSheetUi, /orderHasPackSerials/);
+    assert.match(packSheetUi, /assignPackSerial/);
     assert.match(packSheetUi, /aria-label="Pack overview"/);
     assert.match(packSheetUi, /<th className="sku">SKU<\/th>/);
     assert.match(packSheetUi, /<th>Name<\/th>\s*<th className="num">Picked<\/th>\s*<th className="num">Remaining<\/th>/);
     assert.match(packSheetUi, /packOverview\(sheet\.lines, sheet\.bins\)/);
+    assert.match(packSheetUi, /packMatrixQtyAction/);
     assert.match(packSheetUi, /setPackItemContent/);
-    assert.match(packSheetUi, /parsePackContentEdit/);
-    assert.match(packSheetUi, /aria-label=\{`Quantity of \$\{chip\.sku\} in \$\{label\}`\}/);
-    assert.match(packSheetUi, /aria-label=\{`Item for \$\{chip\.sku\} in \$\{label\}`\}/);
-    assert.match(packSheetUi, /aria-label=\{`Save \$\{chip\.sku\} in \$\{label\}`\}/);
+    assert.match(packSheetUi, /aria-label=\{`Quantity of \$\{sku\} in \$\{label\}`\}/);
+    assert.match(packSheetUi, /<th>Box<\/th>\s*<th>Type<\/th>\s*<th>Dim<\/th>\s*<th>Weight<\/th>/);
+    assert.match(packSheetUi, /aria-label=\{`Weight for \$\{label\}`\}/);
     assert.match(packSheetUi, /className="pick-sheet pack-packages"/);
     assert.match(packSheetUi, /className="pack-package"/);
     assert.match(packCss, /\.pick-sheet\.pack-packages tr\.pack-package td \{\s*vertical-align: middle;/);
+    assert.doesNotMatch(packSheetUi, /<th>Contents<\/th>/);
+    assert.doesNotMatch(packSheetUi, /Add contents to/);
+    assert.doesNotMatch(packSheetUi, /PACK_ADD_QTY/);
+    assert.doesNotMatch(packSheetUi, /Serial — none on this pick/);
     assert.doesNotMatch(packSheetUi, /Picked lines/);
     assert.doesNotMatch(packSheetUi, /formatPackQty\(room\)/);
     assert.doesNotMatch(packSheetUi, /Assign \$\{line\.sku\}/);

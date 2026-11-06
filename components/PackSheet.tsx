@@ -1,8 +1,8 @@
 "use client";
 
-import { Check, Copy, Plus, Save, Trash2 } from "lucide-react";
+import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePageMeta } from "@/components/AppShell";
 import { SalesOrderStageNav } from "@/components/SalesOrderStageNav";
 import {
@@ -28,32 +28,23 @@ import {
   formatBinSize,
   formatPackQty,
   orderHasPackSerials,
-  PACK_ADD_QTY,
   packAssignmentLabel,
   packCatchUpNote,
   packCompleteBlock,
-  packageContentChips,
-  packageContentQty,
-  packageRowStatus,
   packagingTypeError,
   packedAfterShipNote,
-  packContentItemChoices,
-  packContentMergeNote,
-  packContentSerialNote,
   packFinishVisible,
+  packMatrixQtyAction,
   packOverview,
-  packRoom,
+  packPackedSerials,
   packSaveState,
+  packSerialLabel,
   packSerialMatch,
   packSheetEditable,
   parseInches,
-  parsePackContentEdit,
-  parsePackQty,
   parsePackWeight,
   sheetPackProgress,
   shippingBinLabel,
-  unpackedRemainder,
-  type PackContentChip,
   type PackagingType,
   type PackLine,
   type PackSheetModel,
@@ -80,7 +71,8 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
   const [catalogLength, setCatalogLength] = useState("");
   const [catalogWidth, setCatalogWidth] = useState("");
   const [catalogHeight, setCatalogHeight] = useState("");
-  const [contentFor, setContentFor] = useState<string | null>(null);
+  const [serialText, setSerialText] = useState("");
+  const [serialBinId, setSerialBinId] = useState(initial.bins[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +99,8 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
   const selectedType = sheet.types.find((row) => row.id === typeId) ?? null;
   const needsPalletHeight = creatingType ? typeKind === "pallet" : selectedType?.kind === "pallet";
   const serialsAvailable = orderHasPackSerials(sheet.lines);
-  const remainder = unpackedRemainder(sheet.lines);
+  const serialPackageId = sheet.bins.some((bin) => bin.id === serialBinId) ? serialBinId : sheet.bins[0]?.id ?? "";
+  const packedSerials = packPackedSerials(sheet.lines);
   const liveBlock = packCompleteBlock(
     sheet.lines.map((line) => ({
       lineNo: line.lineNo,
@@ -324,50 +317,31 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
     void run(() => setShippingBinHeight(bin.id, parsed.inches));
   }
 
-  async function onAddItem(binId: string, allocationId: string, qtyText: string): Promise<boolean> {
-    const line = sheet.lines.find((row) => row.allocationId === allocationId);
-    if (!line) {
-      setError("Choose an item that is still unpacked.");
-      return false;
+  function onMatrixQty(line: PackLine, binId: string, qtyText: string) {
+    const action = packMatrixQtyAction(line, binId, qtyText);
+    if (action.type === "error") {
+      setError(action.message);
+      return;
     }
-    const room = packRoom(line.picked, line.packed, 0);
-    const parsed = parsePackQty(qtyText, room);
-    if (!parsed.ok) {
-      setError(parsed.message);
-      return false;
-    }
-    return run(() => assignPackQty({ packageId: binId, allocationId: line.allocationId, qty: parsed.qty }));
-  }
-
-  async function onEditItem(
-    contentId: string,
-    allocationId: string,
-    itemQty: number,
-    nextAllocationId: string,
-    qtyText: string,
-  ): Promise<boolean> {
-    const parsed = parsePackContentEdit({
-      lines: sheet.lines,
-      allocationId,
-      itemQty,
-      nextAllocationId,
-      qtyText,
-    });
-    if (!parsed.ok) {
-      setError(parsed.message);
-      return false;
-    }
-    if (parsed.unchanged) {
+    if (action.type === "noop") {
       setError(null);
-      return true;
+      return;
     }
-    return run(() =>
-      setPackItemContent({
-        contentId,
-        allocationId: parsed.allocationId,
-        qty: parsed.qty,
-      }),
-    );
+    if (action.type === "assign") {
+      void run(() => assignPackQty({ packageId: action.packageId, allocationId: action.allocationId, qty: action.qty }));
+      return;
+    }
+    if (action.type === "set") {
+      void run(() =>
+        setPackItemContent({
+          contentId: action.contentId,
+          allocationId: action.allocationId,
+          qty: action.looseQty,
+        }),
+      );
+      return;
+    }
+    void run(() => releasePackItemQty(action.contentId));
   }
 
   async function onAddSerial(binId: string, serial: string): Promise<boolean> {
@@ -483,31 +457,138 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
               </tr>
             </thead>
             <tbody>
-              {packOverview(sheet.lines, sheet.bins).map((row) => (
-                <tr key={row.allocationId}>
-                  <td className="sku">
-                    {row.sku}
-                    {row.replaced ? <span className="pick-planned">Planned {row.plannedSku}</span> : null}
-                  </td>
-                  <td>{dash(row.name)}</td>
-                  <td className="num">{formatPackQty(row.picked)}</td>
-                  <td className="num">{formatPackQty(row.remaining)}</td>
-                  {row.packedByBin.map((cell) => {
-                    const bin = sheet.bins.find((candidate) => candidate.id === cell.binId);
-                    return (
-                      <td
-                        key={cell.binId}
-                        className="num"
-                        title={bin && cell.qty > 0 ? packAssignmentLabel(bin.kind, bin.number, cell.qty) : undefined}
-                      >
-                        {formatPackQty(cell.qty)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {packOverview(sheet.lines, sheet.bins).map((row) => {
+                const line = sheet.lines.find((candidate) => candidate.allocationId === row.allocationId);
+                return (
+                  <tr key={row.allocationId}>
+                    <td className="sku">
+                      {row.sku}
+                      {row.replaced ? <span className="pick-planned">Planned {row.plannedSku}</span> : null}
+                    </td>
+                    <td>{dash(row.name)}</td>
+                    <td className="num">{formatPackQty(row.picked)}</td>
+                    <td className="num">{formatPackQty(row.remaining)}</td>
+                    {row.packedByBin.map((cell) => {
+                      const bin = sheet.bins.find((candidate) => candidate.id === cell.binId);
+                      const label = bin ? shippingBinLabel(bin.kind, bin.number) : "package";
+                      return (
+                        <td
+                          key={cell.binId}
+                          className="num"
+                          title={cell.qty > 0 ? packAssignmentLabel(bin?.kind ?? "box", bin?.number ?? 0, cell.qty) : undefined}
+                        >
+                          {editing && line && bin ? (
+                            <>
+                              <span className="pack-matrix-read">{formatPackQty(cell.qty)}</span>
+                              <MatrixQty
+                                key={`${cell.binId}-${cell.qty}`}
+                                sku={row.sku}
+                                label={label}
+                                qty={cell.qty}
+                                busy={busy}
+                                onCommit={(qtyText) => onMatrixQty(line, cell.binId, qtyText)}
+                              />
+                            </>
+                          ) : (
+                            formatPackQty(cell.qty)
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          {serialsAvailable ? (
+            <div className="pack-serials">
+              {packedSerials.length > 0 ? (
+                <ul className="pack-serial-list">
+                  {packedSerials.map((row) => {
+                    const bin = sheet.bins.find((candidate) => candidate.id === row.binId);
+                    const where = bin ? shippingBinLabel(bin.kind, bin.number) : "a package";
+                    return (
+                      <li key={row.serialId}>
+                        <span>{packSerialLabel(row.serial, row.sku)} · {where}</span>
+                        {editing ? (
+                          <button
+                            type="button"
+                            className="secondary icon-button"
+                            aria-label={`Remove ${row.serial} from ${where}`}
+                            title={`Remove ${row.serial} from ${where}`}
+                            disabled={busy}
+                            onClick={() => void run(() => removePackSerial(row.serialId))}
+                          >
+                            <Trash2 size={16} strokeWidth={1.75} aria-hidden />
+                          </button>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {editing && sheet.bins.length > 0 ? (
+                <div className="pack-add">
+                  <label>
+                    Serial
+                    <input
+                      aria-label="Serial"
+                      value={serialText}
+                      list="pack-overview-serials"
+                      onChange={(event) => setSerialText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        if (!serialPackageId || serialText.trim().length === 0) return;
+                        void onAddSerial(serialPackageId, serialText).then((saved) => {
+                          if (saved) setSerialText("");
+                        });
+                      }}
+                    />
+                  </label>
+                  <datalist id="pack-overview-serials">
+                    {sheet.lines.flatMap((line) =>
+                      line.serials
+                        .filter((serial) => serial.packageId == null)
+                        .map((serial) => (
+                          <option key={serial.id} value={serial.serial}>
+                            {line.sku}
+                          </option>
+                        )),
+                    )}
+                  </datalist>
+                  <label>
+                    Package
+                    <select
+                      aria-label="Package for serial"
+                      value={serialPackageId}
+                      onChange={(event) => setSerialBinId(event.target.value)}
+                    >
+                      {sheet.bins.map((bin) => (
+                        <option key={bin.id} value={bin.id}>
+                          {shippingBinLabel(bin.kind, bin.number)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary icon-button"
+                    aria-label="Add serial"
+                    title="Add serial"
+                    disabled={busy || !serialPackageId || serialText.trim().length === 0}
+                    onClick={() => {
+                      void onAddSerial(serialPackageId, serialText).then((saved) => {
+                        if (saved) setSerialText("");
+                      });
+                    }}
+                  >
+                    <Plus size={16} strokeWidth={1.75} aria-hidden />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -516,148 +597,26 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
         {sheet.lines.length === 0 ? (
           <p className="muted">Nothing picked is waiting to pack. Freight and service lines stay off this sheet.</p>
         ) : null}
-        {sheet.bins.length === 0 ? (
-          <p className="muted">No packages yet. Add a box or a pallet, then put unpacked items in it.</p>
-        ) : null}
         <table className="pick-sheet pack-packages">
           <thead>
             <tr>
-              <th>Package</th>
+              <th>Box</th>
               <th>Type</th>
-              <th>Size</th>
+              <th>Dim</th>
               <th>Weight</th>
-              <th>Contents</th>
-              <th>Status</th>
-              {editing ? <th /> : null}
             </tr>
           </thead>
           <tbody>
             {sheet.bins.map((bin) => {
               const label = shippingBinLabel(bin.kind, bin.number);
-              const chips = packageContentChips(bin.id, sheet.lines);
-              const status = packageRowStatus(bin, packageContentQty(bin.id, sheet.lines));
               const duplicateBlock = duplicatePackBlock(bin, sheet.lines);
-              const open = contentFor === bin.id;
               return (
-                <Fragment key={bin.id}>
-                  <tr className="pack-package">
-                    <td className="pick-code">{label}</td>
-                    <td>{bin.typeName}</td>
-                    <td className="pick-code">
-                      {bin.kind === "pallet" && editing ? (
-                        <span className="pick-qty-cell">
-                          {formatPackQty(bin.lengthIn)} × {formatPackQty(bin.widthIn)} ×
-                          <input
-                            key={`${bin.id}-h-${bin.heightIn ?? ""}`}
-                            className="pack-measure"
-                            aria-label={`Height for ${label}`}
-                            defaultValue={bin.heightIn == null ? "" : formatPackQty(bin.heightIn)}
-                            inputMode="decimal"
-                            onBlur={(event) => saveHeight(bin, event.target.value)}
-                          />
-                          in
-                        </span>
-                      ) : (
-                        formatBinSize(bin)
-                      )}
-                    </td>
-                    <td className="pick-code">
+                <tr key={bin.id} className="pack-package">
+                  <td className="pick-code">
+                    <span className="pack-box-cell">
+                      {label}
                       {editing ? (
-                        <input
-                          className="pack-measure"
-                          aria-label={`Weight for ${label}`}
-                          key={`${bin.id}-${bin.weightLb ?? ""}`}
-                          defaultValue={bin.weightLb == null ? "" : formatPackQty(bin.weightLb)}
-                          inputMode="decimal"
-                          placeholder="lb"
-                          onBlur={(event) => saveWeight(bin, event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              saveWeight(bin, event.currentTarget.value);
-                            }
-                          }}
-                        />
-                      ) : bin.weightLb == null ? (
-                        "—"
-                      ) : (
-                        `${formatPackQty(bin.weightLb)} lb`
-                      )}
-                    </td>
-                    <td>
-                      {chips.length === 0 ? (
-                        <span className="muted">Nothing in this package</span>
-                      ) : (
-                        <div className="pack-contents">
-                          {chips.map((chip) => {
-                            const line = sheet.lines.find((row) => row.allocationId === chip.allocationId);
-                            const chipTitle = packAssignmentLabel(bin.kind, bin.number, chip.kind === "item" ? chip.qty : 1);
-                            const removeLabel = chip.kind === "item"
-                              ? `Remove ${chip.label} from ${label}`
-                              : `Remove ${chip.serial} from ${label}`;
-                            return (
-                              <div
-                                key={chip.kind === "item" ? chip.assignmentId : chip.serialId}
-                                className={editing && chip.kind === "item" ? "pack-chip is-editing" : "pack-chip"}
-                              >
-                                <span className="pack-chip-read" title={chipTitle}>
-                                  {chip.label}
-                                </span>
-                                {editing && chip.kind === "item" ? (
-                                  <ItemContentEditor
-                                    key={`${chip.assignmentId}-${chip.allocationId}-${chip.qty}`}
-                                    bin={bin}
-                                    chip={chip}
-                                    lines={sheet.lines}
-                                    busy={busy}
-                                    onSave={(nextAllocationId, qtyText) =>
-                                      onEditItem(chip.assignmentId, chip.allocationId, chip.qty, nextAllocationId, qtyText)
-                                    }
-                                  />
-                                ) : null}
-                                {line?.replaced ? <span className="pick-planned">Planned {line.plannedSku}</span> : null}
-                                {editing ? (
-                                  <button
-                                    type="button"
-                                    className="secondary icon-button"
-                                    aria-label={removeLabel}
-                                    title={removeLabel}
-                                    data-pack-remove={chip.kind === "item" ? chip.assignmentId : chip.serialId}
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void run(() =>
-                                        chip.kind === "item"
-                                          ? releasePackItemQty(chip.assignmentId)
-                                          : removePackSerial(chip.serialId),
-                                      )
-                                    }
-                                  >
-                                    <Trash2 size={16} strokeWidth={1.75} aria-hidden />
-                                  </button>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </td>
-                    <td className={status === "Complete" ? "pack-status is-complete" : "pack-status muted"}>
-                      {status}
-                    </td>
-                    {editing ? (
-                      <td>
-                        <div className="pick-icon-cell">
-                          <button
-                            type="button"
-                            className="secondary icon-button"
-                            aria-label={`Add contents to ${label}`}
-                            title={`Add contents to ${label}`}
-                            aria-expanded={open}
-                            disabled={busy}
-                            onClick={() => setContentFor((current) => (current === bin.id ? null : bin.id))}
-                          >
-                            <Plus size={16} strokeWidth={1.75} aria-hidden />
-                          </button>
+                        <>
                           <button
                             type="button"
                             className="secondary icon-button"
@@ -678,30 +637,58 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
                           >
                             <Trash2 size={16} strokeWidth={1.75} aria-hidden />
                           </button>
-                        </div>
-                      </td>
-                    ) : null}
-                  </tr>
-                  {editing && open ? (
-                    <tr className="pack-editor-row">
-                      <td colSpan={7}>
-                        <AddContents
-                          bin={bin}
-                          lines={sheet.lines}
-                          busy={busy}
-                          serialsAvailable={serialsAvailable}
-                          onAddItem={(allocationId, qtyText) => onAddItem(bin.id, allocationId, qtyText)}
-                          onAddSerial={(serial) => onAddSerial(bin.id, serial)}
+                        </>
+                      ) : null}
+                    </span>
+                  </td>
+                  <td>{bin.typeName}</td>
+                  <td className="pick-code">
+                    {bin.kind === "pallet" && editing ? (
+                      <span className="pick-qty-cell">
+                        {formatPackQty(bin.lengthIn)} × {formatPackQty(bin.widthIn)} ×
+                        <input
+                          key={`${bin.id}-h-${bin.heightIn ?? ""}`}
+                          className="pack-measure"
+                          aria-label={`Height for ${label}`}
+                          defaultValue={bin.heightIn == null ? "" : formatPackQty(bin.heightIn)}
+                          inputMode="decimal"
+                          onBlur={(event) => saveHeight(bin, event.target.value)}
                         />
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
+                        in
+                      </span>
+                    ) : (
+                      formatBinSize(bin)
+                    )}
+                  </td>
+                  <td className="pick-code">
+                    {editing ? (
+                      <input
+                        className="pack-measure"
+                        aria-label={`Weight for ${label}`}
+                        key={`${bin.id}-${bin.weightLb ?? ""}`}
+                        defaultValue={bin.weightLb == null ? "" : formatPackQty(bin.weightLb)}
+                        inputMode="decimal"
+                        placeholder="lb"
+                        onBlur={(event) => saveWeight(bin, event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            saveWeight(bin, event.currentTarget.value);
+                          }
+                        }}
+                      />
+                    ) : bin.weightLb == null ? (
+                      "—"
+                    ) : (
+                      `${formatPackQty(bin.weightLb)} lb`
+                    )}
+                  </td>
+                </tr>
               );
             })}
             {editing ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={4}>
                   <div className="pack-add">
                     <label>
                       Packaging
@@ -804,14 +791,12 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
             ) : null}
           </tbody>
         </table>
-        {remainder.length > 0 ? (
-          <p className="muted">Still to pack: {remainder.join(", ")}</p>
-        ) : sheet.lines.length > 0 && sheet.bins.length > 0 ? (
-          <p className="muted">Everything picked is in a package.</p>
+        {sheet.bins.length === 0 ? (
+          <p className="muted">No packages yet. Add a box or a pallet, then enter quantities in the overview.</p>
         ) : null}
         {editing ? (
           <p className="muted">
-            Add a package, enter the weight, then add unpacked items. Adding starts at 1. Change the quantity or the item on a packed line. Duplicate copies a complete package.
+            Add a package and enter its weight. Quantities are edited in the overview. Duplicate copies a complete package.
           </p>
         ) : null}
         {editing && !sheet.packedAt && sheet.finishBlock ? <p className="muted">{sheet.finishBlock}</p> : null}
@@ -948,253 +933,42 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
   );
 }
 
-function ItemContentEditor({
-  bin,
-  chip,
-  lines,
+function MatrixQty({
+  sku,
+  label,
+  qty,
   busy,
-  onSave,
+  onCommit,
 }: {
-  bin: ShippingBin;
-  chip: Extract<PackContentChip, { kind: "item" }>;
-  lines: readonly PackLine[];
+  sku: string;
+  label: string;
+  qty: number;
   busy: boolean;
-  onSave: (nextAllocationId: string, qtyText: string) => Promise<boolean>;
+  onCommit: (qtyText: string) => void;
 }) {
-  const label = shippingBinLabel(bin.kind, bin.number);
-  const choices = packContentItemChoices(lines, chip.allocationId);
-  const [allocationId, setAllocationId] = useState(chip.allocationId);
-  const [qtyText, setQtyText] = useState(formatPackQty(chip.qty));
-  const saving = useRef(false);
-  const chosen = choices.some((line) => line.allocationId === allocationId) ? allocationId : chip.allocationId;
-  const mergeNote = packContentMergeNote(bin, lines, chosen, chip.allocationId);
-  const serialNote = packContentSerialNote(
-    bin.id,
-    lines.find((line) => line.allocationId === chip.allocationId),
-  );
+  const shown = formatPackQty(qty);
+  const [text, setText] = useState(shown);
 
-  function submit() {
-    if (busy || saving.current) return;
-    const dirty = chosen !== chip.allocationId || qtyText.trim() !== formatPackQty(chip.qty);
-    if (!dirty) return;
-    saving.current = true;
-    void onSave(chosen, qtyText).finally(() => {
-      saving.current = false;
-    });
+  function commit(value: string) {
+    if (busy || value.trim() === shown) return;
+    onCommit(value);
   }
 
   return (
-    <div
-      className="pack-chip-edit"
-      role="group"
-      aria-label={`Edit ${chip.label} in ${label}`}
-      onBlur={(event) => {
-        const next = event.relatedTarget;
-        if (next instanceof Node && event.currentTarget.contains(next)) return;
-        if (next instanceof Element && next.getAttribute("data-pack-remove")) return;
-        submit();
-      }}
+    <input
+      className="pack-measure pack-matrix-qty"
+      aria-label={`Quantity of ${sku} in ${label}`}
+      title={qty > 0 ? `${shown} in ${label}` : `Quantity of ${sku} in ${label}`}
+      value={text}
+      inputMode="numeric"
+      disabled={busy}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={(event) => commit(event.target.value)}
       onKeyDown={(event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
-        submit();
+        commit(event.currentTarget.value);
       }}
-    >
-      <label>
-        Qty
-        <input
-          className="pack-measure pack-content-qty"
-          aria-label={`Quantity of ${chip.sku} in ${label}`}
-          value={qtyText}
-          inputMode="numeric"
-          disabled={busy}
-          onChange={(event) => setQtyText(event.target.value)}
-        />
-      </label>
-      <span className="pack-times" aria-hidden="true">
-        ×
-      </span>
-      <label>
-        Item
-        <select
-          aria-label={`Item for ${chip.sku} in ${label}`}
-          value={chosen}
-          disabled={busy}
-          onChange={(event) => setAllocationId(event.target.value)}
-        >
-          {choices.map((line) => {
-            const unpacked = packRoom(
-              line.picked,
-              line.packed,
-              line.allocationId === chip.allocationId ? chip.qty : 0,
-            );
-            const room =
-              line.allocationId === chip.allocationId ? "" : ` · ${formatPackQty(unpacked)} unpacked`;
-            return (
-              <option key={line.allocationId} value={line.allocationId}>
-                {line.sku}
-                {room}
-                {line.name ? ` · ${line.name}` : ""}
-              </option>
-            );
-          })}
-        </select>
-      </label>
-      <button
-        type="button"
-        className="secondary icon-button"
-        aria-label={`Save ${chip.sku} in ${label}`}
-        title={`Save ${chip.sku} in ${label}`}
-        disabled={busy}
-        onClick={submit}
-      >
-        <Check size={16} strokeWidth={1.75} aria-hidden />
-      </button>
-      {mergeNote ? <p className="muted pack-content-note">{mergeNote}</p> : null}
-      {serialNote ? <p className="muted pack-content-note">{serialNote}</p> : null}
-    </div>
-  );
-}
-
-function AddContents({
-  bin,
-  lines,
-  busy,
-  serialsAvailable,
-  onAddItem,
-  onAddSerial,
-}: {
-  bin: ShippingBin;
-  lines: readonly PackLine[];
-  busy: boolean;
-  serialsAvailable: boolean;
-  onAddItem: (allocationId: string, qtyText: string) => Promise<boolean>;
-  onAddSerial: (serial: string) => Promise<boolean>;
-}) {
-  const label = shippingBinLabel(bin.kind, bin.number);
-  const openLines = lines.filter((line) => packRoom(line.picked, line.packed, 0) > 0);
-  const [mode, setMode] = useState<"item" | "serial">("item");
-  const [allocationId, setAllocationId] = useState(openLines[0]?.allocationId ?? "");
-  const [qtyText, setQtyText] = useState(PACK_ADD_QTY);
-  const [serialText, setSerialText] = useState("");
-  const addBy = serialsAvailable && mode === "serial" ? "serial" : "item";
-  const chosen = openLines.some((line) => line.allocationId === allocationId)
-    ? allocationId
-    : openLines[0]?.allocationId ?? "";
-  const unpackedSerials = lines.flatMap((line) =>
-    line.serials
-      .filter((serial) => serial.packageId == null)
-      .map((serial) => ({ serial: serial.serial, sku: line.sku })),
-  );
-
-  function submitItem() {
-    if (!chosen || busy) return;
-    void onAddItem(chosen, qtyText.trim() ? qtyText : PACK_ADD_QTY).then((saved) => {
-      if (saved) setQtyText(PACK_ADD_QTY);
-    });
-  }
-
-  function submitSerial() {
-    if (busy || serialText.trim().length === 0) return;
-    void onAddSerial(serialText).then((saved) => {
-      if (saved) setSerialText("");
-    });
-  }
-
-  return (
-    <div className="pack-editor">
-      <label>
-        Add by
-        <select
-          aria-label={`Add contents to ${label} by`}
-          value={addBy}
-          onChange={(event) => setMode(event.target.value === "serial" ? "serial" : "item")}
-        >
-          <option value="item">Item</option>
-          <option value="serial" disabled={!serialsAvailable}>
-            {serialsAvailable ? "Serial" : "Serial — none on this pick"}
-          </option>
-        </select>
-      </label>
-      {addBy === "item" ? (
-        <>
-          <label>
-            Item
-            <select
-              aria-label={`Item for ${label}`}
-              value={chosen}
-              onChange={(event) => setAllocationId(event.target.value)}
-            >
-              {openLines.length === 0 ? <option value="">Nothing left to pack</option> : null}
-              {openLines.map((line) => (
-                <option key={line.allocationId} value={line.allocationId}>
-                  {line.sku} · {formatPackQty(packRoom(line.picked, line.packed, 0))} unpacked
-                  {line.name ? ` · ${line.name}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Qty
-            <input
-              className="pack-measure"
-              aria-label={`Quantity for ${label}`}
-              value={qtyText}
-              inputMode="numeric"
-              onChange={(event) => setQtyText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
-                event.preventDefault();
-                submitItem();
-              }}
-            />
-          </label>
-          <button
-            type="button"
-            className="secondary icon-button"
-            aria-label={`Add item to ${label}`}
-            title={`Add item to ${label}`}
-            disabled={busy || !chosen}
-            onClick={submitItem}
-          >
-            <Plus size={16} strokeWidth={1.75} aria-hidden />
-          </button>
-        </>
-      ) : (
-        <>
-          <label>
-            Serial
-            <input
-              aria-label={`Serial for ${label}`}
-              value={serialText}
-              list={`pack-serials-${bin.id}`}
-              onChange={(event) => setSerialText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
-                event.preventDefault();
-                submitSerial();
-              }}
-            />
-          </label>
-          <datalist id={`pack-serials-${bin.id}`}>
-            {unpackedSerials.map((row) => (
-              <option key={`${row.serial}-${row.sku}`} value={row.serial}>
-                {row.sku}
-              </option>
-            ))}
-          </datalist>
-          <button
-            type="button"
-            className="secondary icon-button"
-            aria-label={`Add serial to ${label}`}
-            title={`Add serial to ${label}`}
-            disabled={busy || serialText.trim().length === 0}
-            onClick={submitSerial}
-          >
-            <Plus size={16} strokeWidth={1.75} aria-hidden />
-          </button>
-        </>
-      )}
-    </div>
+    />
   );
 }
