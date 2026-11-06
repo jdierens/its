@@ -10641,6 +10641,41 @@ button.so-new-order svg,
   min-width: 5.5rem;
 }
 
+.pick-sheet.pack-packages tr.pack-package td {
+  vertical-align: middle;
+}
+
+.pack-box-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pack-matrix-qty {
+  width: 4.5rem;
+  min-width: 4.5rem;
+  text-align: right;
+}
+
+.pack-matrix-read {
+  display: none;
+}
+
+.pack-serial-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pack-serial-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .pack-contents {
   display: flex;
   flex-direction: column;
@@ -10653,6 +10688,66 @@ button.so-new-order svg,
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.pack-chip.is-editing {
+  flex-wrap: wrap;
+}
+
+.pack-chip.is-editing .pack-chip-read {
+  display: none;
+}
+
+.pack-chip-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  align-items: end;
+}
+
+.pack-chip-edit label {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+}
+
+.pack-chip-edit select {
+  min-width: 12rem;
+  max-width: 22rem;
+  height: 2.25rem;
+  margin: 0;
+}
+
+.pack-content-qty {
+  width: 4.5rem;
+  min-width: 4.5rem;
+}
+
+.pack-times {
+  padding-bottom: 0.45rem;
+}
+
+.pack-content-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.pack-overview th {
+  white-space: nowrap;
+}
+
+@media print {
+  .pack-matrix-read {
+    display: inline;
+  }
+
+  .pack-chip.is-editing .pack-chip-read {
+    display: inline;
+  }
+
+  .pack-chip-edit {
+    display: none !important;
+  }
 }
 
 .pack-chip .pick-planned {

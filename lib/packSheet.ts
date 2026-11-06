@@ -139,6 +139,22 @@ export function packContentLabel(qty: number, sku: string): string {
   return `${formatPackQty(qty)} × ${sku}`;
 }
 
+export type PackBoxSummaryLine = {
+  allocationId: string;
+  sku: string;
+  qty: number;
+  label: string;
+};
+
+/** Quantities and SKUs already in one package. Same numbers as that package's overview column. */
+export function packBoxSummary(binId: string, lines: readonly PackLine[]): PackBoxSummaryLine[] {
+  return lines.flatMap((line) => {
+    const qty = line.assignments.find((row) => row.binId === binId && row.qty > 0)?.qty ?? 0;
+    if (qty <= 0) return [];
+    return [{ allocationId: line.allocationId, sku: line.sku, qty, label: packContentLabel(qty, line.sku) }];
+  });
+}
+
 /** A packed serial keeps the picked SKU beside it. The SKU comes from the pick, not from the scan. */
 export function packSerialLabel(serial: string, sku: string): string {
   return `${serial} · ${sku}`;
@@ -207,6 +223,169 @@ export type PackContentChip =
       serial: string;
       label: string;
     };
+
+export type PackOverviewRow = {
+  allocationId: string;
+  sku: string;
+  name: string;
+  plannedSku: string;
+  replaced: boolean;
+  picked: number;
+  remaining: number;
+  packedByBin: { binId: string; qty: number }[];
+};
+
+/**
+ * One row per picked line. Remaining is still unpacked.
+ * Each package column is the quantity of that line already in that package, including serials.
+ * Column order follows the packages passed in.
+ */
+export function packOverview(
+  lines: readonly PackLine[],
+  bins: readonly { id: string }[],
+): PackOverviewRow[] {
+  return lines.map((line) => ({
+    allocationId: line.allocationId,
+    sku: line.sku,
+    name: line.name,
+    plannedSku: line.plannedSku,
+    replaced: line.replaced,
+    picked: line.picked,
+    remaining: packRoom(line.picked, line.packed, 0),
+    packedByBin: bins.map((bin) => ({
+      binId: bin.id,
+      qty: line.assignments.find((row) => row.binId === bin.id && row.qty > 0)?.qty ?? 0,
+    })),
+  }));
+}
+
+/** The current item, plus any other picked line that can still take a whole unit. */
+export function packContentItemChoices(lines: readonly PackLine[], currentAllocationId: string): PackLine[] {
+  return lines.filter((line) => {
+    if (line.allocationId === currentAllocationId) return true;
+    return packRoom(line.picked, line.packed, 0) >= 1;
+  });
+}
+
+/** Shown before a save that adds onto a quantity of the same item already in the package. */
+export function packContentMergeNote(
+  bin: { id: string; kind: PackKind; number: number },
+  lines: readonly PackLine[],
+  nextAllocationId: string,
+  currentAllocationId: string,
+): string | null {
+  if (nextAllocationId === currentAllocationId) return null;
+  const line = lines.find((row) => row.allocationId === nextAllocationId);
+  const existing = line?.assignments.find((row) => row.binId === bin.id && row.qty > 0);
+  if (!line || !existing) return null;
+  return `${shippingBinLabel(bin.kind, bin.number)} already has ${packContentLabel(existing.qty, line.sku)}. This quantity is added to that.`;
+}
+
+/** Serials stay on the picked item when the loose quantity on the row changes. */
+export function packContentSerialNote(binId: string, line: PackLine | undefined): string | null {
+  if (!line) return null;
+  const count = line.serials.filter((row) => row.packageId === binId).length;
+  if (count < 1) return null;
+  const noun = count === 1 ? "serial" : "serials";
+  const verb = count === 1 ? "stays" : "stay";
+  return `${formatPackQty(count)} ${noun} in this package ${verb} on ${line.sku}.`;
+}
+
+export type PackContentEdit =
+  | { ok: true; allocationId: string; qty: number; unchanged: boolean }
+  | { ok: false; message: string };
+
+/**
+ * Edits the loose quantity on one content row.
+ * The same item can use the quantity already in the row. Another item only has its unpacked remainder.
+ */
+export function parsePackContentEdit(input: {
+  lines: readonly PackLine[];
+  allocationId: string;
+  itemQty: number;
+  nextAllocationId: string;
+  qtyText: string;
+}): PackContentEdit {
+  const next = input.lines.find((line) => line.allocationId === input.nextAllocationId);
+  if (!next) return { ok: false, message: "Choose an item that is still unpacked." };
+  const same = next.allocationId === input.allocationId;
+  const room = packRoom(next.picked, next.packed, same ? input.itemQty : 0);
+  const parsed = parsePackQty(input.qtyText, room);
+  if (!parsed.ok) return parsed;
+  return {
+    ok: true,
+    allocationId: next.allocationId,
+    qty: parsed.qty,
+    unchanged: same && parsed.qty === input.itemQty,
+  };
+}
+
+export type PackMatrixQtyAction =
+  | { type: "noop" }
+  | { type: "assign"; packageId: string; allocationId: string; qty: number }
+  | { type: "set"; contentId: string; allocationId: string; looseQty: number }
+  | { type: "release"; contentId: string }
+  | { type: "error"; message: string };
+
+/**
+ * Sets the quantity of one picked line in one package.
+ * The number in the cell is the whole quantity, including serials already in that package.
+ * Serials stay put. A lower number cannot drop them.
+ */
+export function packMatrixQtyAction(line: PackLine, binId: string, qtyText: string): PackMatrixQtyAction {
+  const assignment = line.assignments.find((row) => row.binId === binId && row.qty > 0);
+  const serials = line.serials.filter((row) => row.packageId === binId).length;
+  const inBin = assignment?.qty ?? 0;
+  const loose = inBin - serials;
+  const trimmed = qtyText.trim();
+  if (trimmed !== "" && !/^\d+$/.test(trimmed)) {
+    return { type: "error", message: "Enter a whole number, or 0 to take it out." };
+  }
+  const qty = trimmed === "" ? 0 : Number(trimmed);
+  const max = packRoom(line.picked, line.packed, inBin);
+  if (qty > max) {
+    if (max < 1) return { type: "error", message: "That line is already packed." };
+    return { type: "error", message: `Only ${formatPackQty(max)} can go in that bin.` };
+  }
+  if (qty < serials) {
+    return { type: "error", message: "That quantity is packed by serial. Remove the serial." };
+  }
+  if (qty === inBin) return { type: "noop" };
+  if (!assignment) {
+    if (qty < 1) return { type: "noop" };
+    return { type: "assign", packageId: binId, allocationId: line.allocationId, qty };
+  }
+  if (qty === serials) {
+    if (loose <= 0) return { type: "noop" };
+    return { type: "release", contentId: assignment.id };
+  }
+  if (loose > 0) {
+    return {
+      type: "set",
+      contentId: assignment.id,
+      allocationId: line.allocationId,
+      looseQty: qty - serials,
+    };
+  }
+  return { type: "assign", packageId: binId, allocationId: line.allocationId, qty: qty - inBin };
+}
+
+export type PackPackedSerial = {
+  serialId: string;
+  serial: string;
+  sku: string;
+  binId: string;
+};
+
+/** Serials already placed in a package. The SKU is the one the pick recorded. */
+export function packPackedSerials(lines: readonly PackLine[]): PackPackedSerial[] {
+  return lines.flatMap((line) =>
+    line.serials.flatMap((serial) => {
+      if (!serial.packageId) return [];
+      return [{ serialId: serial.id, serial: serial.serial, sku: line.sku, binId: serial.packageId }];
+    }),
+  );
+}
 
 /** Item quantity that is not already represented by a serial in this bin, then each serial. */
 export function packageContentChips(binId: string, lines: readonly PackLine[]): PackContentChip[] {

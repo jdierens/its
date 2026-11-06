@@ -22,6 +22,7 @@ import { getSupabase } from "@/lib/supabase";
 
 const MIGRATION = "supabase/migrations/20261028233000_sales_order_packing.sql";
 const ROW_MIGRATION = "supabase/migrations/20261106150000_pack_row_packages.sql";
+const CONTENT_MIGRATION = "supabase/migrations/20261106190000_pack_content_edit.sql";
 
 function raisePack(error: { code?: string; message?: string } | null, migration = MIGRATION): never {
   if (error && (error.code === "PGRST202" || /could not find the function|schema cache/i.test(error.message ?? ""))) {
@@ -194,6 +195,24 @@ export async function removePackAssignment(contentId: string): Promise<PackSheet
     p_operator: who.operator,
   });
   if (error) raisePack(error);
+  return sheet(data);
+}
+
+export async function setPackItemContent(input: {
+  contentId: string;
+  allocationId: string;
+  qty: number;
+}): Promise<PackSheetModel> {
+  await assertPacker();
+  const who = await actor();
+  const { data, error } = await (await getSupabase()).rpc("set_pack_item_content", {
+    p_content: input.contentId,
+    p_allocation: input.allocationId,
+    p_qty: input.qty,
+    p_initials: who.initials,
+    p_operator: who.operator,
+  });
+  if (error) raisePack(error, CONTENT_MIGRATION);
   return sheet(data);
 }
 
