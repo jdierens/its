@@ -52,6 +52,7 @@ import {
 const sql = readFileSync(new URL("../supabase/migrations/20261028233000_sales_order_packing.sql", import.meta.url), "utf8");
 const shippedSql = readFileSync(new URL("../supabase/migrations/20261102143000_pack_shipped_orders.sql", import.meta.url), "utf8");
 const packSheetUi = readFileSync(new URL("../components/PackSheet.tsx", import.meta.url), "utf8");
+const packCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const editSql = readFileSync(new URL("../supabase/migrations/20261106010000_pack_edit_after_finish.sql", import.meta.url), "utf8");
 const rowSql = readFileSync(new URL("../supabase/migrations/20261106150000_pack_row_packages.sql", import.meta.url), "utf8");
 const contentSql = readFileSync(new URL("../supabase/migrations/20261106190000_pack_content_edit.sql", import.meta.url), "utf8");
@@ -982,6 +983,9 @@ describe("pack sheet ui", () => {
     assert.match(packSheetUi, /aria-label=\{`Quantity of \$\{chip\.sku\} in \$\{label\}`\}/);
     assert.match(packSheetUi, /aria-label=\{`Item for \$\{chip\.sku\} in \$\{label\}`\}/);
     assert.match(packSheetUi, /aria-label=\{`Save \$\{chip\.sku\} in \$\{label\}`\}/);
+    assert.match(packSheetUi, /className="pick-sheet pack-packages"/);
+    assert.match(packSheetUi, /className="pack-package"/);
+    assert.match(packCss, /\.pick-sheet\.pack-packages tr\.pack-package td \{\s*vertical-align: middle;/);
     assert.doesNotMatch(packSheetUi, /Picked lines/);
     assert.doesNotMatch(packSheetUi, /formatPackQty\(room\)/);
     assert.doesNotMatch(packSheetUi, /Assign \$\{line\.sku\}/);

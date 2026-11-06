@@ -10641,6 +10641,10 @@ button.so-new-order svg,
   min-width: 5.5rem;
 }
 
+.pick-sheet.pack-packages tr.pack-package td {
+  vertical-align: middle;
+}
+
 .pack-contents {
   display: flex;
   flex-direction: column;

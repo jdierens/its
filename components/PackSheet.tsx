@@ -519,7 +519,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
         {sheet.bins.length === 0 ? (
           <p className="muted">No packages yet. Add a box or a pallet, then put unpacked items in it.</p>
         ) : null}
-        <table className="pick-sheet">
+        <table className="pick-sheet pack-packages">
           <thead>
             <tr>
               <th>Package</th>
@@ -540,7 +540,7 @@ export function PackSheet({ initial, canPack }: { initial: PackSheetModel; canPa
               const open = contentFor === bin.id;
               return (
                 <Fragment key={bin.id}>
-                  <tr>
+                  <tr className="pack-package">
                     <td className="pick-code">{label}</td>
                     <td>{bin.typeName}</td>
                     <td className="pick-code">

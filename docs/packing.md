@@ -10,6 +10,8 @@ Above the packages, the overview lists each picked SKU, the name, the quantity p
 
 A packed item reads as `1 × 106703`. The quantity and the item on that row can be changed without deleting the package. The quantity field starts at what is already in the package. It can go up while unpacked quantity of that SKU remains, and it can go down to 1. The trash control still takes that quantity out. The item can be replaced with another picked line that still has unpacked quantity. When that line is already in the package, the saved quantity is added to it. Serials stay on the item the pick recorded. Changing the item does not move them.
 
+Package, type, size, weight, contents, status, and the row actions sit on the vertical center of the package line.
+
 The trash control on a package row removes that package. The trash control on a content chip takes that quantity, or that serial, back out. Picked lines are not a second table of bin icons. A line can still be split across packages.
 
 Finish packing stays off until every picked quantity is in a package and every package has a weight. A pallet also needs its height. Finish is the save icon at the top of the sheet. The hint says Unsaved changes while finish can run, Saving… while it runs, and All changes saved otherwise. The icon stays grey until finish can run. Ctrl or Cmd+S finishes when the icon is enabled.
