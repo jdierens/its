@@ -120,6 +120,11 @@ export function shippingBinLabel(kind: PackKind, number: number): string {
   return `${kind === "pallet" ? "Pallet" : "Box"} ${number}`;
 }
 
+/** Quantity and bin stay in words so "Box 1" and qty 8 cannot read as box 18. */
+export function packAssignmentLabel(kind: PackKind, binNumber: number, qty: number): string {
+  return `${formatPackQty(qty)} in ${shippingBinLabel(kind, binNumber)}`;
+}
+
 export function formatInches(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return formatPackQty(value);
