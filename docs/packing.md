@@ -14,7 +14,7 @@ Duplicate copies a complete package into the next one: same type, size, weight, 
 
 The trash control on a package row removes that package. Picked lines are not a second table of bin icons. A line can still be split across packages.
 
-Finish packing stays off until every picked quantity is in a package and every package has a weight. A pallet also needs its height. Finish is the save icon at the top of the sheet. The hint says Unsaved changes while finish can run, Saving… while it runs, and All changes saved otherwise. The icon stays grey until finish can run. Ctrl or Cmd+S finishes when the icon is enabled.
+Finish packing stays off until every picked quantity is in a package and every package has a weight. A pallet also needs its height. Finish is the save icon at the top of the sheet. The hint says Unsaved changes while finish can run, Saving… while it runs, and All changes saved otherwise. Until finish can run, the icon is the same faded primary fill as a disabled sales-order action. Ctrl or Cmd+S finishes when the icon is enabled.
 
 Finish packing sets an order that is still packing to packed and stores `packed_at`. Warehouse → Shipping lists those orders. Carrier labels and rate shopping are not on this screen.
 
